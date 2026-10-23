@@ -152,7 +152,7 @@ test('a fos-points payout moves points on the ledger to the respondent and recor
   expect(pay.requirement!.satisfied).toBe(true)
   const rows = view(h.get(), [HOME_ID, 'survey', 'pay'])!.tasks
   const payout = rows.find(t => !!t.allocation)!
-  expect(payout.allocation).toMatchObject({ resource: 'fos:points', type: 'points', amount: 5, unit: 'ff', by: 'fos' })
+  expect(payout.allocation).toMatchObject({ resource: '', type: 'points', amount: 5, unit: 'ff', by: 'fos' })
   expect(payout.user).toMatchObject({ account: '2', username: 'bob', name: 'Bob' })
   expect(payout.title).toBe('5 fos points to Bob')
   expect(rows.find(t => !!t.supply)!.supply).toMatchObject({ capability: 'allocation', by: 'fos' })

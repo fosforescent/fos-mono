@@ -58,9 +58,9 @@ test('a requirement naming a user is filled only by that same user object', () =
   expect(view(r, [])!.tasks.find(t => t.id === 't')!.blockedBy).toBeUndefined()
   // an amount requirement for bob counts only bob's allocations
   r = addRow(r, ['t'], ALLOCATION_TYPE, 'reward', 5, { id: 'pay', requirement: { capability: 'allocation', resource: 'points', amount: 5, unit: 'ff' }, user: bob })
-  r = addRow(r, ['t', 'pay'], ALLOCATION_TYPE, '', 6, { id: 'p1', allocation: { resource: 'fos:points', type: 'points', amount: 5, unit: 'ff' } })
+  r = addRow(r, ['t', 'pay'], ALLOCATION_TYPE, '', 6, { id: 'p1', allocation: { resource: '', type: 'points', amount: 5, unit: 'ff' } })
   expect(view(r, ['t'])!.tasks.find(t => t.id === 'pay')!.requirement).toMatchObject({ satisfied: false, have: 0, summary: 'points 5 ff @bob' })
-  r = addRow(r, ['t', 'pay'], ALLOCATION_TYPE, '', 7, { id: 'p2', allocation: { resource: 'fos:points', type: 'points', amount: 5, unit: 'ff' }, user: bob })
+  r = addRow(r, ['t', 'pay'], ALLOCATION_TYPE, '', 7, { id: 'p2', allocation: { resource: '', type: 'points', amount: 5, unit: 'ff' }, user: bob })
   expect(view(r, ['t'])!.tasks.find(t => t.id === 'pay')!.requirement).toMatchObject({ satisfied: true, have: 5 })
 })
 

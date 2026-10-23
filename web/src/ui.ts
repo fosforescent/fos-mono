@@ -910,9 +910,9 @@ function constructorPalette(app: App, ids: string[]): HTMLElement {
 }
 const HOUR_MS = 3_600_000
 /** Calendar banks with the spans already allocated from them, for the time-block picker's timeline. */
-function timeBanks(app: App): TimeBank[] {
+function timeBanks(app: App, at: Scope = app.state.view): TimeBank[] {
   const allocations = app.allocations()
-  return app.banks().filter(({ row }) => row.resource.type === 'calendar').map(({ row }) => ({
+  return app.contextBanks(at).filter(({ row }) => row.resource.type === 'calendar').map(({ row }) => ({
     id: row.id, name: row.title,
     busy: allocations.filter(a => a.row.allocation?.resource === row.id && a.row.allocation.start !== undefined).map(a => ({
       start: a.row.allocation!.start!, end: a.row.allocation!.end ?? a.row.allocation!.start! + a.row.allocation!.amount * HOUR_MS,
@@ -924,8 +924,9 @@ function timeBanks(app: App): TimeBank[] {
 async function pickTimeForRequirement(app: App, path: Scope, task: TaskView): Promise<void> {
   const r = task.requirement; if (!r) return
   const store = app.state.replica.store
-  const bank = app.bankFor(path.slice(0, -1), 'calendar')
-  const picked = await openTimeBlockPicker({ title: task.title || 'Time requirement', text: task.title, amount: r.amount, start: r.start, end: r.end, banks: timeBanks(app), bank: bank?.id ?? '', requirement: true, cta: 'Create allocation' })
+  const candidates = app.contextBanks(path).filter(({ row }) => row.resource.type === 'calendar')
+  const bank = candidates.length === 1 ? candidates[0].row : null
+  const picked = await openTimeBlockPicker({ title: task.title || 'Time requirement', text: task.title, amount: r.amount, start: r.start, end: r.end, banks: timeBanks(app, path), bank: bank?.id ?? '', requirement: true, cta: 'Create allocation' })
   if (!picked || picked.start === undefined) return
   if (app.state.replica.store !== store) { app.notify('error', 'The data session changed. Pick the time again.'); return }
   try { app.applyConstructor(path, { type: ALLOCATION_TYPE, text: task.title, done: false, extras: { allocation: { type: 'calendar', amount: picked.amount, unit: 'h', resource: picked.bank, start: picked.start, end: picked.end } } }, true) }
@@ -957,7 +958,7 @@ function openConstructor(app: App, kind: string, path: Scope = [...app.state.vie
   // Time allocations can be placed on the zoomable timeline; the picker fills the amount, window and source bank below.
   const pickTime = div('pick-time', ''), pickSummary = document.createElement('code')
   const pickButton = button('secondary small', 'Pick time…', () => void (async () => {
-    const picked = await openTimeBlockPicker({ title: title.value || 'Time allocation', text: title.value, amount: Number(amount.value) || 1, start: start.value ? new Date(start.value).getTime() : undefined, end: end.value ? new Date(end.value).getTime() : undefined, banks: timeBanks(app), bank: bank.value })
+    const picked = await openTimeBlockPicker({ title: title.value || 'Time allocation', text: title.value, amount: Number(amount.value) || 1, start: start.value ? new Date(start.value).getTime() : undefined, end: end.value ? new Date(end.value).getTime() : undefined, banks: timeBanks(app, path), bank: bank.value })
     if (!picked) return
     amount.value = String(picked.amount); unit.value = 'h'; bank.value = picked.bank
     start.value = picked.start !== undefined ? localInputValue(picked.start) : ''; end.value = picked.end !== undefined ? localInputValue(picked.end) : ''
@@ -970,7 +971,7 @@ function openConstructor(app: App, kind: string, path: Scope = [...app.state.vie
     start.hidden = end.hidden = kind === 'bank' || !['calendar', 'inventory'].includes(select.value)
     pickTime.hidden = kind === 'bank' || select.value !== 'calendar'
     bank.replaceChildren(new Option('Unbound allocation', ''))
-    for (const entry of app.banks()) if (entry.row.resource.type === select.value) bank.append(new Option(entry.row.title, entry.row.id))
+    for (const entry of app.contextBanks(replace ? path.slice(0, -1) : path)) if (entry.row.resource.type === select.value) bank.append(new Option(entry.row.title, entry.row.id))
   }
   select.onchange = update; update()
   const error = div('error', ''), submit = button('primary', replace && !row?.requirement && row?.type !== HOME_TYPE ? 'Apply constructor' : 'Add child', () => undefined); submit.type = 'submit'

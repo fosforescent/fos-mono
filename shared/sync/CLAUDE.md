@@ -48,6 +48,10 @@ Record intended behavior and restrictions here. Keep implementation details in c
 - Scope discovery must not bypass member grants or masks. Unavailable or disabled providers must not satisfy dependencies.
 - Hosts list a step's available executors; the evaluator selects exactly one (`selectExecutor`). Several are a choice for the owner, never resolved by ordering on any host.
 - Native graph operations must consume compiled operands. Apply their results to editable rows through the compiler's source mapping; do not resolve node UUIDs inside unification or native argument interpretation.
+- Resource requirements are capabilities and banks supply handlers. Resolve them through the same scoped bindings as other capabilities; never pick the first bank from a tree-wide inventory. Distinct declarations may bind equal values. Same-name submissions in one scope address the same ref, and contradictory submissions require resolution.
+- Preserve the declaring scope of peer-offered handlers. Resolve their names through the same nearest-scope rule as direct declarations; a caller's location must not create a new resource identity.
+- Compile resource accounting into a closed binding frame before checking it. Declaration CIDs identify slots within that frame; capacity, amount and time checks must not consult editor paths or UUIDs. Recompile to observe changed resource values.
+- External receipts are opaque service data, not graph locators. Do not overload a graph-reference field with an issue number, account identifier or fake bank name.
 - Persist an effect's journal before dispatch. Interrupted or uncertain effects must not be retried automatically; expose recovery work.
 - Do not retain compatibility branches merely to satisfy old tests. Replace shortcut fixtures with explicit graph declarations and test the desired behavior.
 

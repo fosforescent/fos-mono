@@ -502,7 +502,10 @@ export function setRowContentAt(replica: Replica, at: Scope, aliasId: string, ty
     const converted = convertRow(replica.store, node, type, now, extras)
     const data: FosNodeContent['data'] = { ...converted.data, description: { content: body } }
     if (type === TASK_TYPE) data.todo = { completed: !!extras.done, time: node.data.todo?.time ?? now }
-    if (type === RESOURCE_TYPE && extras.resource) data.resource = extras.resource
+    if (type === RESOURCE_TYPE) {
+      data.name = { content: body }
+      if (extras.resource) data.resource = extras.resource
+    }
     if (type === QUERY_TYPE && extras.query) data.query = { ...(node.data.query ?? {}), ...extras.query }
     const next = withChildValue(replica.store, edge, userBound(replica, at, withTextParameters(replica.store, { ...converted, data: canonicalRowData(data) }), extras), now)
     const changed = identityCid(replica.store, next)
@@ -596,7 +599,7 @@ export function addRef(replica: Replica, at: Scope, targetAliasId: string, now: 
 }
 
 /** Satisfy a requirement row at `at`/`requirementId` with a supply (who, and for search/allocation which row by alias id). */
-export function addSupply(replica: Replica, at: Scope, requirementId: string, supply: { capability: string; by: string; ref?: string; choice?: number }, now: number, id?: string): Replica {
+export function addSupply(replica: Replica, at: Scope, requirementId: string, supply: { capability: string; by: string; ref?: string; receipt?: string; choice?: number }, now: number, id?: string): Replica {
   if (supply.capability === 'allocation' && supply.ref && !resolveRef(replica, supply.ref, [...at, requirementId])) {
     const source = findRowByAlias(replica.store, headCid(replica), supply.ref)
     if (!source) throw new Error('The supplied reference is unavailable.')

@@ -1,3 +1,4 @@
+import { resourceHandlers } from '../../shared/sync/resource-bindings'
 import { setLibraryArg } from '../../shared/sync/library'
 import { nativeRef, nodeTransportAt, offerNodeTransport, type NodeTransport } from '../../shared/sync/native-refs'
 import { primitiveImplementation } from '../../shared/sync/primitives'
@@ -448,7 +449,7 @@ export class App {
       if (this.syncInFlight) throw new Error('Wait for current sync to finish before evaluating Pull.')
       await this.syncNow('evaluate pull', true)
       if (this.state.connection !== 'online') throw new Error('Pull failed; review the sync status.')
-      this.set({ replica: addSupply(this.state.replica, step.path.slice(0, -1), step.path.at(-1)!, { capability: 'tool', by: this.state.replica.meta.peerId, ref: 'unit' }, this.now()) })
+      this.set({ replica: addSupply(this.state.replica, step.path.slice(0, -1), step.path.at(-1)!, { capability: 'tool', by: this.state.replica.meta.peerId, receipt: 'unit' }, this.now()) })
     },
     agent: async ({ step, operation }) => {
       await this.saveWorkflowReplica(queueAgentEffect(this.state.replica, step.path, operation, this.now()))
@@ -1608,48 +1609,19 @@ export class App {
     if (!branch) this.edit(next)
     if (!branch) this.set({ collapsed: this.state.collapsed.filter((c) => c !== taskId) })
   }
-  /** The closest resource-bank row on the path `at` (relative to the view), if any. */
-  nearestBank(at: Scope): (TaskView & { resource: NonNullable<TaskView['resource']> }) | null {
-    for (let i = at.length; i > 0; i--) {
-      const parentAt = at.slice(0, i - 1)
-      const id = at[i - 1] as string
-      const row = view(this.state.replica, [...this.state.view, ...parentAt])?.tasks.find((t) => t.id === id)
-      if (row?.type === RESOURCE_TYPE && row.resource) return row as TaskView & { resource: NonNullable<TaskView['resource']> }
-    }
-    return null
-  }
   /** The row `at` points at (relative to the view), if any. */
   rowAt(at: Scope): TaskView | null {
     const id = at[at.length - 1]
     if (!id) return null
     return view(this.state.replica, [...this.state.view, ...at.slice(0, -1)], true)?.tasks.find((t) => t.id === id) ?? null
   }
-  /**
-   * The bank an allocation of `type` added under `at` draws from, its parent context: the nearest bank of that type
-   * above it; otherwise, under an allocation requirement, a bank of the resource the requirement names; otherwise
-   * the default pool of the type (the first bank of that type at the top level, else the first anywhere); with no
-   * type (legacy), the nearest bank above or the only bank there is.
-   */
+  /** Resolve a resource handler in the allocation's parent scope; multiple handlers require a choice. */
   bankFor(at: Scope, type?: ResourceType | null, person?: string, replica = this.state.replica): (TaskView & { resource: NonNullable<TaskView['resource']> }) | null {
-    type Bank = TaskView & { resource: NonNullable<TaskView['resource']> }
-    const fits = (b: Bank) => (!type || b.resource.type === type) && (type !== 'person' || !person || b.title.trim().toLowerCase() === person.toLowerCase())
     const path = [...this.state.view, ...at]
-    for (let i = path.length; i > 0; i--) {
-      const row = view(replica, path.slice(0, i - 1))?.tasks.find(row => row.id === path[i - 1])
-      if (row?.type === RESOURCE_TYPE && row.resource && fits(row as Bank)) return row as Bank
-    }
-    const all = this.banks(replica)
-    const parent = view(replica, [...this.state.view, ...at.slice(0, -1)])?.tasks.find(row => row.id === at[at.length - 1])
-    const req = !!parent?.requirement ? parent.requirement : undefined
-    if (req?.capability === 'allocation' && req.resource && (!type || req.resource === type)) {
-      const match = all.find(({ row }) => row.resource.type === req.resource && fits(row))
-      if (match) return match.row
-    }
-    if (type) {
-      const pool = all.find(({ row, path }) => path.length === 0 && fits(row)) ?? all.find(({ row }) => fits(row))
-      return pool ? pool.row : null
-    }
-    return all.length === 1 ? (all[0] as { row: Bank }).row : null
+    const handlers = resourceHandlers(replica, path).filter(({ row }) =>
+      (!type || row.resource.type === type) && (type !== 'person' || !person || row.title.trim().toLowerCase() === person.toLowerCase()))
+    // Distinct handlers are a choice; traversal order must not select a bank.
+    return handlers.length === 1 ? handlers[0]!.row : null
   }
   /**
    * An allocation with its bank resolved from the parent context (`bankFor`), or null (with a notice) when there is
@@ -1660,15 +1632,12 @@ export class App {
     const base = allocation ?? { resource: '', type: 'inventory' as ResourceType, amount: 0, unit: 'unit' }
     const windowed = base.start !== undefined || base.end !== undefined
     if (base.type === 'person' && !windowed) return { ...base, by }
-    const bank = this.bankFor(at, allocation ? base.type : null, person, replica)
-    if (!bank && base.type === 'points') {
-      // fos points without a bank row draw from the account's balance (the fos peer is the pool); a payout moves them on the server's ledger when the task runs
-      if (this.state.points !== null && base.amount > this.state.points) this.notify('error', `That is more than the ${this.state.points} fos points on the account; the allocation is recorded anyway.`)
-      return { ...base, resource: 'fos:points', by }
-    }
+    const bank = base.resource
+      ? resourceHandlers(replica, [...this.state.view, ...at]).find(handler => handler.row.id === base.resource && handler.row.resource.type === base.type)?.row ?? null
+      : this.bankFor(at, allocation ? base.type : null, person, replica)
     if (!bank) {
       const names: Record<ResourceType, string> = { account: '@money Travel 500', calendar: '@calendar Week 40h', inventory: '@inventory Shelf 12', person: `@person ${person ?? 'name'} 40h`, points: '@points Pool 500', location: '@location Places' }
-      this.notify('error', base.type === 'person' ? `A person allocation with a window needs ${person ?? 'their'}'s calendar: add "${names.person}" at the top level.` : `No ${base.type === 'account' ? 'money' : base.type} bank in this context: add one at the top level as the default pool ("${names[base.type]}"), or above this row.`)
+      this.notify('error', base.type === 'person' ? `A person allocation with a window needs ${person ?? 'their'}'s calendar: add "${names.person}" at the top level.` : `No ${base.type === 'account' ? 'money' : base.type} bank in this context: declare one in an enclosing scope ("${names[base.type]}"), or above this row.`)
       return null
     }
     return { ...base, resource: bank.id, type: bank.resource.type, unit: base.unit === 'unit' ? bank.resource.unit : base.unit, by }
@@ -1753,11 +1722,11 @@ export class App {
     walk([])
     return out
   }
-  /** Banks visible from the current view: those above it (the context) plus those at this level. */
-  contextBanks(): Array<{ row: TaskView & { resource: NonNullable<TaskView['resource']> }; path: Scope }> {
-    const here = this.state.view
-    return this.banks().filter(({ path }) => path.length <= here.length && path.every((p, i) => here[i] === p))
+  /** Resource handlers available through the same enclosing declarations as other capabilities. */
+  contextBanks(at: Scope = this.state.view): Array<{ row: TaskView & { resource: NonNullable<TaskView['resource']> }; path: Scope }> {
+    return resourceHandlers(this.state.replica, at).map(handler => ({ row: handler.row, path: handler.scope?.path ?? at }))
   }
+
   /**
    * Peers in the context of the viewed node: the account server ("fos") with what it registered on the last sync
    * (the transport facts until then), the node's members with the capability rows this node's owner exposes to each
@@ -2650,7 +2619,7 @@ export class App {
       if (cid && localRepositoryHere(this.state.replica, target)) throw new Error('This node already has a local repository; edit its argument to change the path.')
     }
     const allocation = parsed.extras?.allocation
-    if (allocation?.resource && !this.banks().some(b => b.row.id === allocation.resource && b.row.resource.type === allocation.type)) throw new Error('The source bank is unavailable or has a different resource type.')
+    if (allocation?.resource && !this.contextBanks(parent).some(b => b.row.id === allocation.resource && b.row.resource.type === allocation.type)) throw new Error('The source bank is unavailable in this scope or has a different resource type.')
     const parentCid = path.length && resolveScope(this.state.replica.store, headCid(this.state.replica), path.slice(0, -1))
     const argument = parentCid && argumentRefs(this.state.replica.store, parentCid).find(a => content(this.state.replica.store, a.cid).data.alias?.id === path.at(-1) && !refValueCid(this.state.replica.store, content(this.state.replica.store, a.cid)))
     if (repo && repositoryAt(this.state.replica, target) && repositoryAt(this.state.replica, target) !== repo) throw new Error('Edit the existing repository argument to change its repository.')

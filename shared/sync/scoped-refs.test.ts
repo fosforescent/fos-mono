@@ -62,12 +62,14 @@ test('declarations in sibling documents are not ambient capabilities', () => {
   expect(discoverHandlers(r, ['private']).some(offer => offer.id === 'hidden')).toBe(true)
 })
 
-test('named text bindings use the nearest declaration while type lookups aggregate alternatives', () => {
+test('nearest names shadow for value and type lookup; distinct declarations remain alternatives', () => {
   let r = addTask(createReplica(), [], 'Child', 1, 'child')
   const text = r.store.primitive.documentField.getId()
   r = addRefAt(r, [], 'outer', text, 2, leaf(r, 'Ada'), 'recipient')
   r = addRefAt(r, ['child'], 'inner', text, 3, leaf(r, 'Grace'), 'recipient')
   expect(resolveText(r, ['child'], 'Hello {recipient}').text).toBe('Hello Grace')
+  expect(resolveBinding(r.store, text, null, contextBindings(r, ['child'])).status).toBe('ready')
+  r = addRefAt(r, ['child'], 'another', text, 4, leaf(r, 'Lin'), 'another recipient')
   expect(resolveBinding(r.store, text, null, contextBindings(r, ['child'])).status).toBe('ambiguous')
 })
 

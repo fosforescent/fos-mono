@@ -7,7 +7,7 @@ test('permissions do not become handlers; built-in offers use the same candidate
   expect(discoverHandlers(r, [])).toEqual([])
   r = installTestHandler(r, 'fos', 'llm')
   const offer = discoverHandlers(r, [])[0]!
-  expect(contextBindings(r, [])).toContainEqual({ cid: offer.cid, type: offer.type, name: 'llm', refIds: [offer.id] })
+  expect(contextBindings(r, [])).toContainEqual({ cid: offer.cid, type: offer.type, name: 'llm', refIds: [offer.id], scope: { store: r.store, path: [] } })
   expect(workHandler(r, []).status).toBe('ready')
   expect(discoverHandlers(r, [], { isPeerActive: () => false })[0]!.active).toBe(false)
   expect(contextBindings(r, [], { isPeerActive: () => false })).toEqual([])

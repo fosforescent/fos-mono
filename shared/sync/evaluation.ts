@@ -1,3 +1,4 @@
+import { compileResources, checkCompiledResources } from './compiled-resources'
 import { copyOuterScope } from './graph'
 /** Evaluation uses ordinary typed refs for its journal and ordinary tasks for compensation. */
 import { mergeNodes } from './merge'
@@ -12,7 +13,7 @@ import { compileInstructions } from './ref-compiler'
 import { instructionPrimitives } from './primitives'
 import { readRowValue, rowWithLeft, writeRowValue } from './row-values'
 import { executeLeft, isExecuteLeft, isTriggerLeft } from './capabilities'
-import { rowView, commitRoot, content, refValueCid, newId, put, refNodeContent, resolveScope, updateAtScope, valueContent, identityCid, scopeBranches, selectBranch, importNodes, reachableNodes, type Scope, type TaskView } from './graph'
+import { commitRoot, content, refValueCid, newId, put, refNodeContent, resolveScope, updateAtScope, valueContent, identityCid, scopeBranches, selectBranch, importNodes, reachableNodes, type Scope, type TaskView } from './graph'
 import { resolveRefIdentity } from './ref-paths'
 import { addRefAt, addTask, headCid, setTaskDone, view, loadReplica, serializeReplica, type Replica } from './replica'
 
@@ -350,57 +351,10 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
   return record
 }
 
-/** Check only resources used by this evaluation, counting competing allocations elsewhere. */
+/** Compile resource references before running the CID-only accounting interpreter. */
 export function allocationProblems(r: Replica, steps: EvaluationStep[]): string[] {
-  // Bind resource references during validation. Accounting compares the resulting node CIDs, never UUID names.
-  const source = (path: Scope, id: string) => {
-    const found = resolveRefIdentity(r, path.slice(0, -1), id)
-    return found.status === 'ready' ? found.locations[0] : undefined
-  }
-  const requested = steps.filter(step => step.row?.allocation?.resource)
-  if (!requested.length) return []
-  const errors: string[] = [], required = new Set<string>()
-  const banks = new Map<string, TaskView>(), allocations: TaskView[] = [], seen = new Set<string>()
-  for (const step of requested) {
-    const found = source(step.path, step.row!.allocation!.resource)
-    if (!found?.pattern) { errors.push(`Resource bank for ${step.row!.title} is unavailable in this scope.`); continue }
-    required.add(found.cid)
-    const row = rowView(found.store, found.cid, [found.pattern, found.cid])
-    if (row.resource) banks.set(found.cid, row)
-    if (row.requirement?.capability === 'allocation' && row.requirement.satisfied && row.requirement.amount !== undefined)
-      banks.set(found.cid, { ...row, resource: { type: row.requirement.resource ?? 'account', unit: row.requirement.unit ?? 'USD', capacity: row.requirement.amount, allocated: 0, available: row.requirement.amount } })
-  }
-  const walk = (path: Scope) => {
-    if (path.length > 64 || seen.size > 10000) throw new Error('Too many resource rows to check safely.')
-    for (const row of view(r, path)?.tasks ?? []) {
-      const at = [...path, row.id], occurrence = JSON.stringify(at)
-      if (seen.has(occurrence)) continue
-      seen.add(occurrence)
-      if (row.type === TEMPLATE_TYPE) continue
-      const bank = row.allocation?.resource ? source(at, row.allocation.resource) : undefined
-      if (row.allocation && bank && required.has(bank.cid)) allocations.push({ ...row, allocation: { ...row.allocation, resource: bank.cid } })
-      if (row.childCount) walk(at)
-    }
-  }
-  walk([])
-  for (const id of required) {
-    const bank = banks.get(id)
-    if (!bank?.resource) { errors.push(`Resource bank ${id} is unavailable.`); continue }
-    const changes: Array<{ at: number; amount: number }> = []
-    for (const row of allocations.filter(a => a.allocation!.resource === id)) {
-      const a = row.allocation!
-      if (!Number.isFinite(a.amount) || a.amount < 0 || a.type !== bank.resource.type || a.unit !== bank.resource.unit || (a.end !== undefined && a.start !== undefined && a.end <= a.start)) {
-        errors.push(`Invalid allocation: ${row.title}`); continue
-      }
-      changes.push({ at: a.start ?? -Infinity, amount: a.amount }, { at: a.end ?? Infinity, amount: -a.amount })
-    }
-    let amount = 0
-    for (const change of changes.sort((a, b) => a.at - b.at || a.amount - b.amount)) {
-      amount += change.amount
-      if (bank.resource.capacity !== undefined && amount > bank.resource.capacity + 1e-9) { errors.push(`Insufficient ${bank.title}: overlapping allocations exceed ${bank.resource.capacity} ${bank.resource.unit}.`); break }
-    }
-  }
-  return errors
+  const compiled = compileResources(r, steps)
+  return [...compiled.problems, ...checkCompiledResources(r.store, compiled.cid)]
 }
 
 /** Run under the same executor lock as evaluation, after confirming the old execution has stopped. */

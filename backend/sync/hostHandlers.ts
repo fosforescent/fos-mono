@@ -35,7 +35,7 @@ export function githubRepoHandler(deps: GitHubIssueDeps): HostHandler {
       const issue = await deps.createIssue(ctx.userId, { repo: requirement.repo, title: ctx.step.row!.title || 'from fos', ...(task ? { body: 'From a fos task.' } : {}) })
       let r = ctx.replica()
       r = addRow(r, ctx.step.path, PLAIN_TYPE, `${requirement.repo}#${issue.number} ${issue.url}`, ctx.now())
-      r = addSupply(r, ctx.step.path.slice(0, -1), ctx.step.path.at(-1)!, { capability: 'repo', by: 'integration:github', ref: String(issue.number) }, ctx.now())
+      r = addSupply(r, ctx.step.path.slice(0, -1), ctx.step.path.at(-1)!, { capability: 'repo', by: 'integration:github', receipt: String(issue.number) }, ctx.now())
       await ctx.update(r)
     }
   }
@@ -227,7 +227,7 @@ export function pointsHandler(deps: PointsDeps, identity: VerifyHandler): HostHa
       const memo = `${ctx.step.row!.title || 'fos points'} (${taskPath.join('/')})`
       await deps.transfer({ id: ctx.userId, username: ctx.username }, recipient.username, amount, memo, `points:${ctx.username}:${path.join('/')}`)
       const id = `points:${ctx.now().toString(36)}`
-      let next = addRow(ctx.replica(), path, ALLOCATION_TYPE, `${amount} fos points to ${recipient.name}`, ctx.now(), { id, allocation: { resource: 'fos:points', type: 'points', amount, unit: 'ff', by: 'fos' }, user: recipient })
+      let next = addRow(ctx.replica(), path, ALLOCATION_TYPE, `${amount} fos points to ${recipient.name}`, ctx.now(), { id, allocation: { resource: '', type: 'points', amount, unit: 'ff', by: 'fos' }, user: recipient })
       next = addSupply(next, taskPath, path.at(-1)!, { capability: 'allocation', by: 'fos', ref: id }, ctx.now())
       await ctx.update(next)
     }

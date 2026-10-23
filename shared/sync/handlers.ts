@@ -19,17 +19,17 @@ import { inspectRef, scopedRefs, type ScopedRef } from './scoped-refs'
 import { transferRefGraph } from './ref-transfer'
 
 export type HandlerEnvironment = { isPeerActive?: (peerId: string) => boolean }
-export type HandlerOffer = { id: string; cid: string; type: string; peerId: string; label: string; refPath?: string[]; refIds?: string[]; capability?: Capability; enabled: boolean; active: boolean }
+export type HandlerOffer = { id: string; cid: string; type: string; peerId: string; label: string; refPath?: string[]; refIds?: string[]; scope?: { store: FosStore; path: Scope }; capability?: Capability; enabled: boolean; active: boolean }
 
 /** Read policy in main, including ancestors; never use a preview branch's grants. */
-function contextMemberLayers(r: Replica, path: Scope): Array<{ peer: string; cid: string; depth: number }> {
+function contextMemberLayers(r: Replica, path: Scope): Array<{ peer: string; cid: string; depth: number; store: FosStore; scope: Scope }> {
   return withMainBranchPolicy(r.store, () => {
-    const peers: Array<{ peer: string; cid: string; depth: number }> = []
-    for (const [depth, { store, cid }] of [...enclosingScopes(r.store, headCid(r), path).entries()].reverse()) {
+    const peers: Array<{ peer: string; cid: string; depth: number; store: FosStore; scope: Scope }> = []
+    for (const [depth, { store, cid, path: scope }] of [...enclosingScopes(r.store, headCid(r), path).entries()].reverse()) {
       // resolveScope preserves branch constructors at the final path component.
       for (const ref of withMainBranchPolicy(store, () => refProperties(store, policyIdentity(store, cid), 'members'))) if (ref.peer) {
         if (store !== r.store) importNodes(r.store, reachableNodes(store, [ref.cid]))
-        peers.push({ peer: ref.peer, cid: ref.cid, depth })
+        peers.push({ peer: ref.peer, cid: ref.cid, depth, store, scope })
       }
     }
     return peers
@@ -57,7 +57,7 @@ export function discoverHandlers(r: Replica, path: Scope, environment: HandlerEn
       const enabled = inheritedEnabled && !off.includes(ref.id) && !(capability && off.includes(capability))
       const active = inheritedActive && (environment.isPeerActive?.(peer) ?? true)
       const cid = ref.values.length === 1 ? ref.cid : put(s, refNodeContent(s, content(s, ref.cid).data, value.cid, []))
-      if (!result.some(o => o.peerId === peer && o.cid === cid)) result.push({ id: ref.id, cid, type: ref.type, peerId: peer, refPath, refIds,
+      if (!result.some(o => o.peerId === peer && o.cid === cid)) result.push({ id: ref.id, cid, type: ref.type, peerId: peer, refPath, refIds, scope: { store: ref.store, path: ref.scope },
         label: ref.name ?? content(s, value.cid).data.description?.content ?? capability ?? ref.id,
         ...(capability ? { capability } : {}), enabled: !!enabled, active })
       for (const child of value.refs) add(child, peer, disabled, !!enabled, active, refPath, refIds)
@@ -70,11 +70,11 @@ export function discoverHandlers(r: Replica, path: Scope, environment: HandlerEn
     else if (depth === previous[0]!.depth) previous.push({ ref, peer, depth })
   }
   for (const ref of scopedRefs(r, path)) declare(ref, r.meta.peerId, ref.depth!)
-  for (const { peer: peerId, cid: memberCid, depth } of contextMemberLayers(r, path)) {
+  for (const { peer: peerId, cid: memberCid, depth, store, scope } of contextMemberLayers(r, path)) {
     const member = content(s, memberCid)
     for (const edge of member.children) {
       const incoming = edge[0] === s.primitive.acceptsNode.getId()
-      if (incoming) for (const [type, cid] of advertisedRows(s, edge[1])) declare(inspectRef(s, cid, type, path, peerId), peerId, depth)
+      if (incoming) for (const [type, cid] of advertisedRows(s, edge[1])) declare(inspectRef(store, cid, type, scope, peerId), peerId, depth)
     }
   }
   for (const alternatives of declarations.values()) for (const { ref, peer } of alternatives) add(ref, peer)

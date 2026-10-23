@@ -55,12 +55,19 @@ export function contextBindings(r: Replica, at: Scope, environment: BindingEnvir
     if (found.scope.store !== r.store) importNodes(r.store, reachableNodes(found.scope.store, values.flatMap(value => [value.cid, value.type])))
     return values
   })
-  return [...namedValues, ...discoverHandlers(r, at, environment).filter(o => o.enabled && o.active && !namedValues.some(value => value.cid === o.cid)).map(({ id, cid, type, refPath, refIds }) => {
+  const candidates: BindingCandidate[] = [...namedValues, ...discoverHandlers(r, at, environment).filter(o => o.enabled && o.active && !namedValues.some(value => value.cid === o.cid)).map(({ id, cid, type, refPath, refIds, scope }) => {
     const name = refPath?.join('.') ?? content(r.store, cid).data.name?.content
-    const declaration = namedValues.find(value => content(r.store, value.cid).data.alias?.id === id) ??
-      (name ? namedValues.find(value => value.name === name) : undefined)
-    return { cid, type, ...(name ? { name } : {}), ...(refIds ? { refIds } : {}), ...(declaration ? { alternativeOf: declaration.cid } : {}) }
+    const declaration = namedValues.find(value => content(r.store, value.cid).data.alias?.id === id)
+    return { cid, type, ...(name ? { name } : {}), ...(refIds ? { refIds } : {}), ...(scope ? { scope } : {}), ...(declaration ? { alternativeOf: declaration.cid } : {}) }
   })]
+  const visible = new Set<BindingCandidate>(candidates.filter(candidate => !candidate.name))
+  for (const name of new Set(candidates.flatMap(candidate => candidate.name ? [candidate.name] : []))) {
+    const found = lookupInScope(scopes, scope => candidates.filter(candidate => candidate.name === name &&
+      candidate.scope?.store === scope.store && JSON.stringify(candidate.scope.path) === JSON.stringify(scope.path)))
+    if (found.status === 'ready') visible.add(found.value)
+    else if (found.status === 'ambiguous') found.values.forEach(value => visible.add(value))
+  }
+  return candidates.filter(candidate => visible.has(candidate))
 }
 
 /** Explicit targets win. Multiple candidates remain choices; no first-provider wins. */

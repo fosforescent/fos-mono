@@ -26,6 +26,19 @@ import {
   PLAIN_TYPE
 } from './index'
 import { constructNodeValue, readGraphValue, nodeValueType } from './node-values'
+import { assertCompiledGraph, compileRefGraph } from './ref-compiler'
+
+test('native records and sequences have the same meaning after compilation without editor identities', () => {
+  const r = createReplica('device'), input = { nested: { count: 3 }, list: [null, 'hello', false] }
+  const editable = constructNodeValue(r.store, input, 'editor-uuid')
+  const compiled = compileRefGraph(r, editable.cid)
+  const immutable = constructNodeValue(r.store, input)
+  expect(compiled.complete).toBe(true)
+  expect(compiled.cid).toBe(immutable.cid)
+  expect(() => assertCompiledGraph(r.store, [immutable.cid])).not.toThrow()
+  expect(readGraphValue(r.store, compiled.cid)).toEqual(input)
+  expect(readGraphValue(r.store, immutable.cid)).toEqual(input)
+})
 
 test('records and lists are addressable typed refs with scalar leaves and generic form projections', () => {
   const input = { nested: { count: 3, yes: true }, list: [null, 'hello', false] }
@@ -77,11 +90,11 @@ test('list ordering follows ordinary row moves, including after reload', () => {
   expect(readNodeValue(loadReplica(serializeReplica(r)), [], 'items')).toEqual(['two', 'one'])
 })
 
-test('legacy JSON rewrites to fields; linked records preserve both their fields and graph links', () => {
+test('JSON-looking text is not a record; linked records preserve fields and graph links', () => {
   let r = createReplica('device')
   const legacy = put(r.store, { data: { description: { content: '{"count":1}' } }, children: [] })
   r = addRefAt(r, [], 'settings', r.store.primitive.documentField.getId(), 1, legacy, 'settings')
-  expect(readNodeValue(r, [], 'settings')).toEqual({ count: 1 })
+  expect(readNodeValue(r, [], 'settings')).toBeNull()
   r = writeLinkedNodeValue(r, [], 'settings', { count: 2 }, 2, { source: { id: 'external', owner: 'peer' } })
   expect(readNodeValue(r, [], 'settings')).toEqual({ count: 2 })
   const ref = content(r.store, resolveScope(r.store, headCid(r), ['settings'])!)

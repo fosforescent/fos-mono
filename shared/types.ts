@@ -174,6 +174,8 @@ export type FosDataContent = {
     by: string
     at: number
     ref?: string
+    /** Opaque receipt from an external service; never a graph reference. */
+    receipt?: string
     choice?: number
   },
   /** On a member reference: granted capabilities (CAPABILITY edges) the owner has switched off; the member still sees them, as offline. */
@@ -214,6 +216,8 @@ export type FosDataContent = {
   refRole?: 'input' | 'output',
   /** A compiler-local binder. References to it use this node's CID, never an editing alias. */
   refHole?: { slot: number; role: 'input' | 'output' },
+  /** A declaration in a compiled lexical frame. Its handler/value is the right side of its binding edge. */
+  refDeclaration?: { slot: number },
   refCompilation?: { cid: string },
   /** A type error node ([TYPE_ERROR, error]): the alias ids of the row's children its type does not accept. */
   typeError?: {
@@ -235,7 +239,7 @@ export type FosDataContent = {
     unit: string
     capacity?: number
   },
-  /** An allocation row: locks `amount` of a resource bank (alias id `resource`), optionally for a time window. */
+  /** An allocation locks `amount` for an optional time window. Compile its editor locator to a declaration CID before accounting. */
   allocation?: {
     /** Handler demands use the same signed entry as resource allocations. */
     capability?: NonNullable<FosDataContent['requirement']>['capability']
@@ -245,6 +249,8 @@ export type FosDataContent = {
     tool?: string
     at?: number
     ref?: string
+    /** Opaque receipt from an external service; never a graph reference. */
+    receipt?: string
     choice?: number
     resource: string
     type: 'calendar' | 'account' | 'inventory' | 'person' | 'points' | 'location'

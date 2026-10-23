@@ -8,7 +8,7 @@ import { headCid, type Replica } from './replica'
 export type RefSubmission = { cid: string; refs: ScopedRef[] }
 export type ScopedRef = {
   id: string; cid: string; type: string; name?: string; peerId?: string
-  scope: Scope; values: RefSubmission[]; depth?: number
+  scope: Scope; store: FosStore; values: RefSubmission[]; depth?: number
 }
 
 /** Accepted values include every alternative, without selecting or merging them.
@@ -71,7 +71,7 @@ export function inspectRef(store: FosStore, cid: string, rowType: string, scope:
   const node = content(store, cid), type = rowType
   if (!node.data.alias || !type) throw new Error('Expected a ref declaration.')
   const name = node.data.name ?? content(store, refValueCid(store, node) ?? cid).data.name
-  const ref: ScopedRef = { id: node.data.alias.id, cid, type, scope, values: [],
+  const ref: ScopedRef = { id: node.data.alias.id, cid, type, scope, store, values: [],
     ...(name ? { name: name.content } : {}),
     ...((node.data.peerId?.content ?? peerId) ? { peerId: node.data.peerId?.content ?? peerId } : {}) }
   if (ancestors.has(cid)) return ref
@@ -91,7 +91,7 @@ export function scopedRefs(replica: Replica, at: Scope): ScopedRef[] {
       const id = content(source, ref).data.alias!.id
       if (!declarations.has(id) || declarations.get(id)![0]!.depth === depth) {
         if (source !== store) importNodes(store, reachableNodes(source, [ref, type]))
-        declarations.set(id, [...(declarations.get(id) ?? []), { ...inspectRef(store, ref, type, scope), depth }])
+        declarations.set(id, [...(declarations.get(id) ?? []), { ...inspectRef(source, ref, type, scope), depth }])
       }
     }
   }

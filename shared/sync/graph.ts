@@ -794,7 +794,15 @@ export function rowContent(typeId: string, id: string, text: string, now: number
     else data.allocation = extra.allocation ?? DEFAULT_ALLOCATION
   }
   if (typeId === QUERY_TYPE) data.query = extra.query ?? {}
-  if (typeId === RESOURCE_TYPE) data.resource = extra.resource ?? { type: 'inventory', unit: 'unit' }
+  if (typeId === RESOURCE_TYPE) {
+    data.resource = extra.resource ?? { type: 'inventory', unit: 'unit' }
+    // Resource banks supply ordinary named bindings, just like other capability handlers.
+    data.name = { content: text }
+    if (extra.store) {
+      const { alias, name, updated, ...value } = data
+      return refNodeContent(extra.store, { alias, name, updated }, put(extra.store, { data: value, children: [] }))
+    }
+  }
   if (typeId === REF_TYPE) {
     data.ref = { id: extra.refId ?? '', ...(extra.refOwner ? { owner: extra.refOwner } : {}), ...(extra.refScope ? { scope: extra.refScope } : {}) }
     // a reference row is itself a ref node: TARGETPOINTER holds a snapshot of the row it stands for
@@ -873,7 +881,10 @@ export function convertRowContent(value: FosNodeContent, typeId: string, now: nu
     else data.allocation = extra.allocation ?? value.data.allocation ?? (value.data.requirement || value.data.supply ? canonicalRowData({ requirement: value.data.requirement, supply: value.data.supply }).allocation : DEFAULT_ALLOCATION)
   }
   if (typeId === QUERY_TYPE) data.query = value.data.query ?? {}
-  if (typeId === RESOURCE_TYPE) data.resource = value.data.resource ?? { type: 'inventory', unit: 'unit' }
+  if (typeId === RESOURCE_TYPE) {
+    data.resource = extra.resource ?? value.data.resource ?? { type: 'inventory', unit: 'unit' }
+    data.name = { content: value.data.description?.content ?? '' }
+  }
   return { ...value, data: canonicalRowData(data) }
 }
 
@@ -1100,6 +1111,11 @@ export function withChildValue(store: FosStore, edge: FosPathElem, nextValue: Fo
   }
   if (isRefNode(store, identity) && !isHandle(identity)) {
     return withIdentity(store, edge, put(store, relinkContent(store, identity, idCid, nextValue, now)))
+  }
+  if (nextValue.data.name && !isRefNode(store, nextValue)) {
+    const { alias, name, ...data } = nextValue.data
+    return withIdentity(store, edge, put(store, refNodeContent(store, { alias: alias ?? identity.data.alias, name },
+      put(store, { ...nextValue, data }))))
   }
   return withIdentity(store, edge, put(store, nextValue))
 }
@@ -1548,7 +1564,7 @@ export function flowOf(typeId: string, value: FosNodeContent): { requirement?: N
   const requirement = demandOf(value)
   if (requirement) return { requirement }
   const a = value.data.allocation
-  if (typeId === MONEY_TYPE) return a && a.amount > 0 ? { supply: { capability: 'allocation', by: a.by ?? '', at: a.at ?? 0, ...(a.ref ? { ref: a.ref } : {}) }, allocation: true } : {}
+  if (typeId === MONEY_TYPE) return a && a.amount > 0 ? { supply: { capability: 'allocation', by: a.by ?? '', at: a.at ?? 0, ...(a.ref ? { ref: a.ref } : {}), ...(a.receipt ? { receipt: a.receipt } : {}) }, allocation: true } : {}
   const supply = supplyOf(value)
   return supply ? { supply } : a ? { allocation: true } : {}
 }
@@ -1557,7 +1573,7 @@ export function flowOf(typeId: string, value: FosNodeContent): { requirement?: N
 export function supplyOf(value: FosNodeContent): FosDataContent['supply'] {
   if (value.data.supply) return value.data.supply
   const a = value.data.allocation
-  return a?.capability && a.amount > 0 ? { capability: a.capability, by: a.by ?? '', at: a.at ?? 0, ...(a.ref ? { ref: a.ref } : {}), ...(a.choice !== undefined ? { choice: a.choice } : {}) } : undefined
+  return a?.capability && a.amount > 0 ? { capability: a.capability, by: a.by ?? '', at: a.at ?? 0, ...(a.ref ? { ref: a.ref } : {}), ...(a.receipt ? { receipt: a.receipt } : {}), ...(a.choice !== undefined ? { choice: a.choice } : {}) } : undefined
 }
 
 /** A demand and a contribution are signed entries of the same resource. Legacy demand records still read. */

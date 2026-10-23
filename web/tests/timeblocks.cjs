@@ -82,6 +82,12 @@ async function main() {
   assert(child.allocation.start !== undefined && child.allocation.end > child.allocation.start)
   await tick()
   assert(a.rowAt([requirement]).requirement.satisfied, 'the allocation fills the requirement')
+  const privateFolder = a.addRowAtTop(parseRowInput('[ ] Private'))
+  const hidden = a.addRowAt([privateFolder], 'resource', 'Private calendar', { extras: { resource: { type: 'calendar', unit: 'h', capacity: 10 } } })
+  assert(!a.contextBanks().some(({ row }) => row.id === hidden), 'sibling-private banks are not ambient handlers')
+  assert.throws(() => a.applyConstructor([HOME_ID, requirement], { type: 'allocation', text: 'Private source', extras: { allocation: { resource: hidden, type: 'calendar', unit: 'h', amount: 1 } } }), /scope/, 'explicit bank selection must respect scope too')
+  a.addRowAtTop(parseRowInput('@calendar Another 20h'))
+  assert.equal(a.bankFor([], 'calendar'), null, 'several visible handlers require a choice')
   console.log('timeblocks ok')
 }
 main().catch(error => { console.error(error); process.exit(1) })

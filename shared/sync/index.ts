@@ -60,3 +60,6 @@ export * from './pattern-bindings'
 export * from './unify'
 export * from './parameters'
 export * from './constructor-rows'
+
+export * from './compiled-resources'
+export * from './resource-bindings'

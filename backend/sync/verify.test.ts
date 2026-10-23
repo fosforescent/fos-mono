@@ -85,7 +85,7 @@ test('a verify requirement is filled through the evaluation: the attested object
   expect(row.requirement).toMatchObject({ capability: 'verify', satisfied: true })
   expect(row.user).toMatchObject({ account: '42', username: 'bob', name: 'Bob Builder', verification: { by: 'fos', method: 'ed25519-server' } })
   expect(verify.verify(row.user!)).toBe(true)
-  expect(view(r, asked.path)!.tasks.find(t => t.supply)!.supply).toMatchObject({ capability: 'verify', by: 'fos', ref: '42' })
+  expect(view(r, asked.path)!.tasks.find(t => t.supply)!.supply).toMatchObject({ capability: 'verify', by: 'fos', receipt: '42' })
   // an unknown name is refused before anything runs; nothing is journaled
   const unknown = requestVerification(r, 'nobody', 3)
   h.set(unknown.replica)
