@@ -241,22 +241,22 @@ impl Workspace {
     }
 }
 
-/// (row type, text, done) from an add-bar line: the standard library row type (`lib:type:…`) the row is made from.
+/// (row type, text, done) from an add-bar line: the standard library field (its row type) the row is made from.
 pub fn parse_row_input(raw: &str) -> (&'static str, String, bool) {
     let t = raw.trim_end();
     if let Some(rest) = t.strip_prefix("[x]").or_else(|| t.strip_prefix("[X]")) {
-        return ("lib:type:task", rest.trim().to_string(), true);
+        return ("task", rest.trim().to_string(), true);
     }
     if let Some(rest) = t.strip_prefix("[]").or_else(|| t.strip_prefix("[ ]")) {
-        return ("lib:type:task", rest.trim().to_string(), false);
+        return ("task", rest.trim().to_string(), false);
     }
     if let Some(rest) = t.strip_prefix("> ").or_else(|| t.strip_prefix('>')) {
-        return ("lib:type:note", rest.trim_start().to_string(), false);
+        return ("note", rest.trim_start().to_string(), false);
     }
     if let Some(rest) = t.strip_prefix("//") {
-        return ("lib:type:comment", rest.trim().to_string(), false);
+        return ("comment", rest.trim().to_string(), false);
     }
-    ("lib:type:plain", t.trim().to_string(), false)
+    ("plain", t.trim().to_string(), false)
 }
 
 #[cfg(test)]
@@ -291,11 +291,11 @@ mod row_tests {
 
     #[test]
     fn prefixes_pick_the_row_kind() {
-        assert_eq!(parse_row_input("[] buy milk"), ("lib:type:task", "buy milk".into(), false));
-        assert_eq!(parse_row_input("[x] done"), ("lib:type:task", "done".into(), true));
-        assert_eq!(parse_row_input("> # Title"), ("lib:type:note", "# Title".into(), false));
-        assert_eq!(parse_row_input("- not a note"), ("lib:type:plain", "- not a note".into(), false));
-        assert_eq!(parse_row_input("// hmm"), ("lib:type:comment", "hmm".into(), false));
-        assert_eq!(parse_row_input("just text"), ("lib:type:plain", "just text".into(), false));
+        assert_eq!(parse_row_input("[] buy milk"), ("task", "buy milk".into(), false));
+        assert_eq!(parse_row_input("[x] done"), ("task", "done".into(), true));
+        assert_eq!(parse_row_input("> # Title"), ("note", "# Title".into(), false));
+        assert_eq!(parse_row_input("- not a note"), ("plain", "- not a note".into(), false));
+        assert_eq!(parse_row_input("// hmm"), ("comment", "hmm".into(), false));
+        assert_eq!(parse_row_input("just text"), ("plain", "just text".into(), false));
     }
 }
