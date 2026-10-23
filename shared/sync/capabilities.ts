@@ -40,7 +40,7 @@ export function isHandlerStateLeft(store: FosStore, left: string | null | undefi
 /** Capability compatibility must be established by their graph patterns in both directions. */
 export function sameCapabilityType(store: FosStore, a: string | null | undefined, b: string | null | undefined): boolean {
   if (!a || !b) return false
-  return matchesGraph(store, a, b) && matchesGraph(store, b, a)
+  return matchesGraph(store, a, b, { side: 'left' }) && matchesGraph(store, b, a, { side: 'left' })
 }
 
 export type CapabilitySyntax = Pick<NonNullable<FosDataContent['capabilityDefinition']>, 'name' | 'syntax'>

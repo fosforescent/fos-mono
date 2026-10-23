@@ -5,7 +5,8 @@
  */
 import type { FosNodeContent, FosPathElem } from '../types'
 import type { FosStore } from '../dag-implementation/store'
-import { content, identityCid, isPeerReference, put, refNodeContent, valueContent, withChildValue } from './graph'
+import { content, identityCid, isPeerReference, isRowEdge, put, refNodeContent, valueContent, withChildValue } from './graph'
+import { patternRows } from './pattern-bindings'
 import { truncateTitle } from './title'
 import { constructNodeValue, readGraphValue } from './node-values'
 
@@ -56,9 +57,12 @@ export function constructForm(store: FosStore, template: string, id: string, inp
     input = { ...input, text: body }
   }
   const fields = formFields(store, template)
+  const rows = patternRows(store, content(store, template))
+  const literals = rows.filter(([, right]) => !content(store, right).data.parameter)
   if (form.open && !fields.length) {
     const built = constructNodeValue(store, input ?? (form.repeat ? [] : {}), id)
-    return { ...content(store, built.cid), data: { ...data, ...content(store, built.cid).data } }
+    const node = content(store, built.cid)
+    return { ...node, data: { ...data, ...node.data }, children: [...literals, ...node.children] }
   }
   if (new Set(fields.map(field => field.name)).size !== fields.length) throw new Error('Constructor parameter names must be unique.')
   if (form.repeat && fields.length !== 1) throw new Error('A repeated template needs one parameter row.')
@@ -72,8 +76,12 @@ export function constructForm(store: FosStore, template: string, id: string, inp
     const ref = refNodeContent(store, { alias: { id: fieldId }, name: { content: name } }, put(store, target))
     children.push([type, put(store, ref)])
   }
-  if (form.repeat) (input as FormInput[] | undefined ?? []).forEach((value, index) => add(fields[0]!.type, String(index), value, index))
-  else for (const field of fields) add(field.type, field.name, inputAt(input, field.from))
+  for (const edge of rows) {
+    const parameter = content(store, edge[1]).data.parameter
+    if (!parameter) children.push(edge)
+    else if (form.repeat) (input as FormInput[] | undefined ?? []).forEach((value, index) => add(edge[0], String(index), value, index))
+    else add(edge[0], parameter.name, inputAt(input, parameter.from ?? [parameter.name]))
+  }
   return { data, children }
 }
 
@@ -135,9 +143,12 @@ export function formText(store: FosStore, node: FosNodeContent, definition?: Fos
 /** Record UI order in list entries so ordering is explicit graph data. */
 export function positionFormRows(store: FosStore, node: FosNodeContent, now: number): FosNodeContent {
   if (!node.data.presentation?.sequence) return node
-  return { ...node, children: node.children.map((edge, index) => {
+  let index = 0
+  return { ...node, children: node.children.map(edge => {
+    if (!content(store, identityCid(store, edge)).data.alias || !isRowEdge(store, edge)) return edge
+    const position = index++
     const value = valueContent(store, identityCid(store, edge))
-    return value.data.position?.value === index ? edge : withChildValue(store, edge, { ...value, data: { ...value.data, position: { value: index } } }, now)
+    return value.data.position?.value === position ? edge : withChildValue(store, edge, { ...value, data: { ...value.data, position: { value: position } } }, now)
   }) }
 }
 
@@ -201,7 +212,7 @@ export function formElements(store: FosStore, template: string, node: FosNodeCon
     if (isPeerReference(identity)) { result.fields.push({ label: fieldLabel, path: fieldPath, fields: [], available: false }); return }
     result.fields.push(formElements(store, type, valueContent(store, identityCid(store, edge)), fieldPath, fieldLabel, depth + 1))
   }
-  if (form.open && !fields.length) node.children.forEach(edge => append(edge[0], edge, content(store, identityCid(store, edge)).data.name?.content ?? ''))
+  if (form.open && !fields.length) node.children.filter(edge => isRowEdge(store, edge)).forEach(edge => append(edge[0], edge, content(store, identityCid(store, edge)).data.name?.content ?? ''))
   else if (form.repeat && fields[0]) node.children.filter(([type]) => type === fields[0]!.type).forEach((edge, index) => append(fields[0]!.type, edge, `${fields[0]!.label} ${index + 1}`))
   else for (const field of fields) append(field.type, node.children.find(edge => valueContent(store, identityCid(store, edge)).data.name?.content === field.name), field.label)
   return result

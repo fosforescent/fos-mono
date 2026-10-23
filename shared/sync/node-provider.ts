@@ -37,7 +37,8 @@ export type NodeShape = { data: FosDataContent; children: NodeChild[] }
  * membership row's alias), listed to the peers that receive them (`memberEntryVisible`) and synced in their own round
  * like any node. In a member entry, its grants
  * and offers (`[CAPABILITY|ACCEPTS, x]`, `template` = that primitive) are immutable children `pinned` to the cid of
- * `x`, whose content travels with the shape (`ProvidedNode.templates`, `NodeRequest.templateNodes`).
+ * `x`, whose content travels with the shape (`ProvidedNode.templates`, `NodeRequest.templateNodes`). Ordinary
+ * immutable value edges use the same pinned transport; mutable descendants must never be bundled this way.
  */
 /** `peer`: a membership's, whom it is for (the peer on its row's left). */
 export type NodeChild = { id: string; address: NodeAddress; template: string; held?: true; pinned?: string; right?: { name?: string; bound: boolean }; peer?: string }
@@ -47,7 +48,28 @@ export function rightChild(r: Replica, edge: FosPathElem): NodeChild['right'] {
   const ref = content(r.store, identityCid(r.store, edge))
   return isRowEdge(r.store, edge) && ref.data.alias && isRefNode(r.store, ref) && ref.data.name ? { ...(ref.data.name ? { name: ref.data.name.content } : {}), bound: !!refValueCid(r.store, ref) } : undefined
 }
-export const exchangedValueEdge = (r: Replica, edge: FosPathElem): boolean => isRowEdge(r.store, edge)
+/** Immutable value graphs travel with their edge. Mutable descendants require their own authorized load. */
+export function isLiteralEdge(store: Replica['store'], edge: FosPathElem): boolean {
+  if (isBookkeepingEdge(store, edge) || isGrantEdge(store, edge) || isMemberEdge(store, edge) || [
+    store.primitive.targetPointerConstructor.getId(), store.primitive.instructionPointerConstructor.getId(),
+    store.primitive.aliasConstructor.getId(), store.primitive.linkField.getId()
+  ].includes(edge[0])) return false
+  const seen = new Set<string>()
+  const immutable = (cid: string): boolean => {
+    if (seen.has(cid)) return true
+    const node = store.table.get(cid)
+    if (!node || node.data.alias || isRefNode(store, node) || isHandle(node)) return false
+    seen.add(cid)
+    return node.children.every(child => !isBookkeepingEdge(store, child) && !isGrantEdge(store, child) && !isMemberEdge(store, child) && immutable(child[1]))
+  }
+  return immutable(edge[1])
+}
+export function pinnedLiteralEdge(store: Replica['store'], child: NodeChild): FosPathElem {
+  const edge: FosPathElem = [child.template, child.pinned!]
+  if (!store.table.has(edge[0]) || !isLiteralEdge(store, edge) || child.id !== hashContent({ data: {}, children: [edge] })) throw new NodeAccessError('An immutable edge arrived without valid content.')
+  return edge
+}
+export const exchangedValueEdge = (r: Replica, edge: FosPathElem): boolean => isRowEdge(r.store, edge) || isLiteralEdge(r.store, edge)
 export const validRightChild = (child: NodeChild): boolean => child.right === undefined || (!!child.right && typeof child.right === 'object' && typeof child.right.bound === 'boolean' && !('type' in child.right) && (child.right.name === undefined || typeof child.right.name === 'string' && child.right.name.length <= 1024) && !child.pinned)
 export function unloadedRightEdge(store: Replica['store'], child: NodeChild): FosPathElem {
   const data = { alias: { id: child.id }, ...(child.right?.name !== undefined ? { name: { content: child.right.name } } : {}), ...(child.right?.bound ? { ref: { id: child.id, peer: child.address.peerId, version: 'unloaded', ...(child.held ? { held: true } : {}), scope: child.address.scope, ...(child.address.branches ? { branches: child.address.branches } : {}) } } : {}) }
@@ -258,11 +280,12 @@ export function isTransportOffer(store: Replica['store'], edge: FosPathElem): bo
   if (edge[0] !== store.primitive.acceptsNode.getId()) return false
   return advertisedRows(store, edge[1]).some(([left, ref]) => typeIdOf(store, left) === 'capabilities.provideNode' && refSubmissions(store, ref).some(value => primitiveValue(store, value)))
 }
-export function exchangedChildren(r: Replica, cid: string, path: Scope): Array<{ id: string; edge: FosPathElem; member?: true; grant?: true }> {
-  const value = valueContent(r.store, cid), out: Array<{ id: string; edge: FosPathElem; member?: true; grant?: true }> = []
+export function exchangedChildren(r: Replica, cid: string, path: Scope): Array<{ id: string; edge: FosPathElem; member?: true; grant?: true; literal?: true }> {
+  const value = valueContent(r.store, cid), out: Array<{ id: string; edge: FosPathElem; member?: true; grant?: true; literal?: true }> = []
   const entry = memberEntryPeerAt(r.store, headCid(r), path) !== null
   for (const edge of value.children) {
     if (entry && isGrantEdge(r.store, edge)) { if (!isTransportOffer(r.store, edge)) out.push({ id: grantChildId(r.store, edge), edge, grant: true }); continue }
+    if (isLiteralEdge(r.store, edge)) { out.push({ id: hashContent({ data: {}, children: [edge] }), edge, literal: true }); continue }
     if (isBookkeepingEdge(r.store, edge) || !exchangedValueEdge(r, edge)) continue
     const id = content(r.store, identityCid(r.store, edge)).data.alias?.id
     if (id && !isShippedLibrary(r.store, path, edge)) out.push({ id, edge })
@@ -300,7 +323,7 @@ export function provideNode(r: Replica, input: NodeRequest, authority: NodeAutho
       const identity = content(r.store, cid)
       if (isHandle(identity)) throw new NodeAccessError('Reference targets require their own attachment.')
       // a member entry is a child like a row, for the peers that receive it (`memberEntryVisible`)
-      const edge = exchangedChildren(r, cid, path).find(child => child.id === id && !child.grant && (!child.member || memberEntryVisible(memberPeerOf(r.store, child.edge), authority)))?.edge
+      const edge = exchangedChildren(r, cid, path).find(child => child.id === id && !child.grant && !child.literal && (!child.member || memberEntryVisible(memberPeerOf(r.store, child.edge), authority)))?.edge
       if (!edge) throw new NodeAccessError('Node unavailable.')
       cid = identityCid(r.store, edge)
       path.push(id)
@@ -320,10 +343,10 @@ export function provideNode(r: Replica, input: NodeRequest, authority: NodeAutho
     const data = Object.fromEntries(Object.entries(value.data).filter(([key]) => (!forbiddenFields.has(key) || (entry && MEMBER_ENTRY_FIELDS.has(key))) && (!fields || fields.has(key)))) as FosDataContent
     const children: NodeChild[] = []
     const pinned = new Set<string>(), wanted = new Set<string>(), grantNodes: string[] = []
-    for (const { id, edge, member, grant } of heldByRequester ? [] : exchangedChildren(r, cid, path)) {
+    for (const { id, edge, member, grant, literal } of heldByRequester ? [] : exchangedChildren(r, cid, path)) {
       if ((mask.children && !mask.children.includes(id)) || (member && !memberEntryVisible(memberPeerOf(r.store, edge), authority))) continue
       // a grant is pinned by its node's cid; its content goes with the answer (it is small and immutable)
-      if (grant) { grantNodes.push(edge[1]); children.push({ id, address: { peerId: r.meta.peerId, scope: [...path, id] }, template: edge[0], pinned: edge[1] }); continue }
+      if (grant || literal) { grantNodes.push(...edge); children.push({ id, address: { peerId: r.meta.peerId, scope: [...path, id] }, template: edge[0], pinned: edge[1] }); continue }
       const childCid = identityCid(r.store, edge), child = content(r.store, childCid)
       if (!permitted(r, childCid, authority, access)) continue
       const remote = isPeerReference(child) ? child.data.ref : undefined
@@ -364,10 +387,10 @@ export function acceptProvidedNode(r: Replica, at: Scope, request: NodeRequest, 
   if (memberEntryPeerAt(r.store, headCid(r), at) !== null) throw new NodeAccessError('A member entry syncs with its node.')
   const before = content(r.store, cid), local = nodeLinkMaskAt(r, at, node.peerId), ownMask = readMask(r, at, node.peerId, node.linkId)
   const data = Object.fromEntries(Object.entries(node.data).filter(([key]) => !forbiddenFields.has(key) && (!local.fields || local.fields.includes(key)))) as FosDataContent
-  const listed = node.children.filter(child => (!local.children || local.children.includes(child.id)) && !child.pinned)
+  const listed = node.children.filter(child => !local.children || local.children.includes(child.id))
   // A typed declaration carries its immutable schema, never the field's value or history.
   if (node.templates) {
-    const schemas: FosNodesData = {}, pending = listed.flatMap(child => child.right ? [child.template] : [])
+    const schemas: FosNodesData = {}, pending = listed.flatMap(child => child.pinned ? [child.template, child.pinned] : child.right ? [child.template] : [])
     while (pending.length) {
       const id = pending.pop()!, schema = node.templates[id]
       if (!schema || schemas[id]) continue
@@ -377,6 +400,7 @@ export function acceptProvidedNode(r: Replica, at: Scope, request: NodeRequest, 
     importNodes(r.store, schemas)
   }
   const children = listed.filter(child => child.peer === undefined).map(child => {
+    if (child.pinned) return pinnedLiteralEdge(r.store, child)
     if (child.right) return unloadedRightEdge(r.store, child)
     const stub = put(r.store, { data: { alias: { id: child.id }, ref: { id: child.id, peer: child.address.peerId, version: 'unloaded', ...(child.held ? { held: true } : {}), scope: child.address.scope, ...(child.address.branches ? { branches: child.address.branches } : {}) } }, children: [] })
     return pinnedRowEdge(r.store, stub, child.template)

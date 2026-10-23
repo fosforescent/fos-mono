@@ -1,20 +1,12 @@
 /** What types accept (their pattern rows), and the type errors a row in the wrong place makes. */
 import { upgradeLibrary } from './library'
 import { FosStore } from '../dag-implementation/store'
-import { HOME_ID, LIBRARY_ID, content, nestScope, put, refNodeContent, refValueCid, resolveScope, rootStoredTarget, rowTypeAt, typeIdOf, valueContent } from './graph'
+import { HOME_ID, LIBRARY_ID, content, constructorPattern, nestScope, put, refNodeContent, refValueCid, resolveScope, rootStoredTarget, rowTypeAt, typeIdOf, valueContent } from './graph'
 import { HOME_TYPE, NOTE_TYPE, PATTERN_TYPE, TASK_TYPE } from './library-types'
 import { addRow, addTask, applyProposalAt, copyNode, createReplica, deleteTask, ensureHomeContext, headCid, loadReplica, proposeRefAt, serializeReplica, view, type Replica } from './replica'
 import { installNodeShape } from './node-sync'
-import { acceptsChild, isTypeErrorEdge, rootTypeOf, typeErrorInner } from './patterns'
+import { acceptsChild, isTypeErrorEdge, placementRule, rootTypeOf, typeErrorInner } from './patterns'
 import { userView } from './test-helpers'
-import type { FosNodeContent } from '../types'
-
-/** A pattern row's node: the wildcard, or a row type (any version unless `versions` pins some). */
-function patternRowContent(owner: string, pattern: { any: true } | { type: string; versions?: string[] }): FosNodeContent {
-  if ('any' in pattern) return { data: { alias: { id: `${owner}:accepts:any` }, description: { content: 'Any row' }, pattern: { any: true } }, children: [] }
-  const versions = pattern.versions?.length ? [...pattern.versions] : undefined
-  return { data: { alias: { id: `${owner}:accepts:${pattern.type}${versions ? `@${versions.join(',')}` : ''}` }, description: { content: pattern.type }, pattern: { type: pattern.type, ...(versions ? { versions } : {}) } }, children: [] }
-}
 
 const device = () => addTask(ensureHomeContext(createReplica('d'), 1), [HOME_ID], 'Task', 2, 't')
 /** A document root (a project's), nested in a device root for its row types. */
@@ -94,25 +86,65 @@ test('a pattern matches a row type, and can pin the versions of it that match', 
   let r = device()
   const task = rowTypeAt(r.store, TASK_TYPE, [HOME_ID]), patternType = rowTypeAt(r.store, PATTERN_TYPE, [HOME_ID])
   const node = put(r.store, { data: { alias: { id: 'x' }, description: { content: 'x' }, todo: { completed: false, time: 1 } }, children: [] })
-  // a later library names a new version of task; the one it replaced is still task (the library ref's history)
+  // A replacement does not change the original constructor's own name or the pinned policy.
   const otherVersion = put(r.store, { ...content(r.store, task), data: { ...content(r.store, task).data, description: { content: 'To-do' } } })
   r = nextTaskVersion(r, otherVersion)
   const store = r.store
   expect(rowTypeAt(store, TASK_TYPE, [HOME_ID])).toBe(otherVersion)
   expect(typeIdOf(store, task)).toBe(TASK_TYPE)
-  const typeWith = (patterns: Parameters<typeof patternRowContent>[1][]) => put(store, { data: { alias: { id: 'strict' }, description: { content: 'Strict' } }, children: patterns.map(p => [patternType, put(store, patternRowContent('strict', p))]) })
+  const typeWith = (patterns: string[]) => put(store, { data: { alias: { id: 'strict' }, description: { content: 'Strict' } }, children: patterns.map(p => [patternType, p]) })
   // only tasks of one version
-  const pinned = typeWith([{ type: TASK_TYPE, versions: [task] }])
+  const pinned = typeWith([placementRule(store, [task], true)])
   expect(acceptsChild(store, pinned, [task, node])).toBe(true)
   expect(acceptsChild(store, pinned, [otherVersion, node])).toBe(false)
   // any version of a task, nothing else
-  const tasks = typeWith([{ type: TASK_TYPE }])
+  const taskRule = placementRule(store, [constructorPattern(store, TASK_TYPE)])
+  const tasks = typeWith([taskRule])
   expect(acceptsChild(store, tasks, [otherVersion, node])).toBe(true)
   expect(acceptsChild(store, tasks, [rowTypeAt(store, NOTE_TYPE, [HOME_ID]), node])).toBe(false)
   // the wildcard makes the patterns exclusions; absence of a placement policy imposes no editor restriction
-  expect(acceptsChild(store, typeWith([{ any: true }, { type: TASK_TYPE }]), [task, node])).toBe(false)
-  expect(acceptsChild(store, typeWith([{ any: true }, { type: TASK_TYPE }]), [rowTypeAt(store, NOTE_TYPE, [HOME_ID]), node])).toBe(true)
+  expect(acceptsChild(store, typeWith([placementRule(store, null), taskRule]), [task, node])).toBe(false)
+  expect(acceptsChild(store, typeWith([placementRule(store, null), taskRule]), [rowTypeAt(store, NOTE_TYPE, [HOME_ID]), node])).toBe(true)
   expect(acceptsChild(store, typeWith([]), [task, node])).toBe(true)
+})
+
+test('placement predicates work without any library or constructor names', () => {
+  const store = new FosStore(), patternType = constructorPattern(store, PATTERN_TYPE)
+  const key = put(store, { data: { scalar: { type: 'text', value: 'unit' } }, children: [] })
+  const unit = (value: string) => put(store, { data: { scalar: { type: 'text', value } }, children: [] })
+  const predicate = put(store, { data: {}, children: [[key, unit('hour')]] })
+  const accepted = put(store, { data: { description: { content: 'Time allocation' } }, children: [[key, unit('hour')]] })
+  const rejected = put(store, { data: {}, children: [[key, unit('dollar')]] })
+  const parent = put(store, { data: {}, children: [[patternType, placementRule(store, [predicate])]] })
+  const value = put(store, { data: { alias: { id: 'row' } }, children: [] })
+  expect(typeIdOf(store, accepted)).toBeNull()
+  expect(acceptsChild(store, parent, [accepted, value])).toBe(true)
+  expect(acceptsChild(store, parent, [rejected, value])).toBe(false)
+})
+
+test('malformed placement policies fail instead of becoming unrestricted', () => {
+  const store = new FosStore(), patternType = constructorPattern(store, PATTERN_TYPE)
+  const child = constructorPattern(store, TASK_TYPE)
+  const value = put(store, { data: { alias: { id: 'row' } }, children: [] })
+  const parent = (rule: string) => put(store, { data: {}, children: [[patternType, rule]] })
+  expect(() => placementRule(store, [])).toThrow('needs a graph predicate')
+  expect(() => acceptsChild(store, parent(put(store, { data: {}, children: [] })), [child, value])).toThrow('has no definition')
+  expect(() => acceptsChild(store, parent(put(store, { data: { pattern: {} }, children: [] })), [child, value])).toThrow('needs a graph predicate')
+  const predicate = constructorPattern(store, NOTE_TYPE), rule = placementRule(store, [predicate])
+  store.table.delete(predicate)
+  expect(() => acceptsChild(store, parent(rule), [child, value])).toThrow('predicate is unavailable')
+})
+
+test('placement matches scalar instructions as definitions, not as scalar values', () => {
+  const store = new FosStore(), policy = constructorPattern(store, PATTERN_TYPE)
+  const numeric = put(store, { data: { form: { primitive: 'number' } }, children: [] })
+  const text = put(store, { data: { form: { primitive: 'text' } }, children: [] })
+  const numericValue = put(store, { data: { scalar: { type: 'number', value: 3 } }, children: [] })
+  const parent = put(store, { data: {}, children: [[policy, placementRule(store, [numeric])]] })
+  const value = put(store, { data: { alias: { id: 'row' } }, children: [] })
+  expect(acceptsChild(store, parent, [numeric, value])).toBe(true)
+  expect(acceptsChild(store, parent, [text, value])).toBe(false)
+  expect(acceptsChild(store, parent, [numericValue, value])).toBe(false)
 })
 
 test('a bare root (as the seed and registration write it) commits as a document root, its rows accepted', () => {

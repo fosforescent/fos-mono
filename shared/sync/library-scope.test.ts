@@ -134,3 +134,34 @@ test('shared row envelopes preserve named namespaces and their declarations', ()
   expect(libAt(r.store).capabilities.llm).toBe(llm)
   expect(resolveRefExpression(r, [], 'lib.capabilities.llm').locations[0]?.cid).toBe(llm)
 })
+
+test('library aliases cannot reclassify pinned constructors, including after reload', () => {
+  let r = addTask(createReplica(), [], 'Existing task', 1, 'existing')
+  const store = r.store, binding = libraryBindingAt(store)!, library = content(store, binding.library)
+  const task = libAt(store).field('task'), note = libAt(store).field('note')
+  const renamed = put(store, { ...library, children: library.children.map(([left, right]) => {
+    const declaration = content(store, right), name = declaration.data.name?.content
+    return name === 'task' || name === 'note'
+      ? [left, put(store, { ...declaration, data: { ...declaration.data, name: { content: name === 'task' ? 'chore' : 'task' } } })] as [string, string]
+      : [left, right] as [string, string]
+  }) })
+  commitRoot(store, updateAtScope(store, headCid(r), [], node => ({ ...node, children: node.children.map(([left, right]) => [right === binding.cid ? renamed : left, right]) })), 2)
+  for (const replica of [r, loadReplica(serializeReplica(r))]) {
+    expect(libAt(replica.store).field('chore')).toBe(task)
+    expect(libAt(replica.store).field('task')).toBe(note)
+    expect(typeIdOf(replica.store, task)).toBe('task')
+    expect(typeIdOf(replica.store, note)).toBe('note')
+    expect(compileRow(replica, ['existing']).left.cid).toBe(task)
+  }
+})
+
+test('constructor names are explicit string rows and ambiguous names fail', () => {
+  const store = new FosStore(), key = store.primitive.nameField.getId()
+  const text = (value: string) => put(store, { data: { scalar: { type: 'text', value } }, children: [] })
+  const unnamed = put(store, { data: { name: { content: 'task' } }, children: [] })
+  expect(typeIdOf(store, unnamed)).toBeNull()
+  const ambiguous = put(store, { data: {}, children: [[key, text('task')], [key, text('note')]] })
+  expect(() => typeIdOf(store, ambiguous)).toThrow('Ambiguous constructor name')
+  const invalid = put(store, { data: {}, children: [[key, unnamed]] })
+  expect(() => typeIdOf(store, invalid)).toThrow('must be a string')
+})

@@ -1,4 +1,5 @@
 import { exchangeNodeContext } from './node-context'
+import { pinnedLiteralEdge } from './node-provider'
 import { primitiveValue } from './primitives'
 import { refSubmissions } from './scoped-refs'
 import { sameCapabilityType, capabilityName } from './capabilities'
@@ -53,7 +54,7 @@ export function validateNodeShape(shape: NodeShape, entryPeer: string | null = n
   if (!shape || !shape.data || typeof shape.data !== 'object' || Array.isArray(shape.data) || !Array.isArray(shape.children) || shape.children.length > 10000 ||
     Object.keys(shape.data).some(key => !shapeField(!!entry, key)) || shape.children.some(c => !c || typeof c.id !== 'string' || !c.id || c.id.length > 256 || (c.held !== undefined && c.held !== true) || !isCid(c.template) ||
       (c.peer !== undefined && typeof c.peer !== 'string') ||
-      !validRightChild(c) || (c.pinned !== undefined && (!entry || !isCid(c.pinned))) ||
+      !validRightChild(c) || (c.pinned !== undefined && (!isCid(c.pinned) || c.peer !== undefined || c.held !== undefined)) ||
       !c.address || typeof c.address.peerId !== 'string' || !Array.isArray(c.address.scope) || c.address.scope.length > 64 || c.address.scope.some(id => typeof id !== 'string' || !id || id === '.' || id === '..')) ||
     (entry && shape.data.peerId !== undefined && shape.data.peerId?.content !== entry) ||
     (entry && shape.data.disabledCapabilities !== undefined && (!Array.isArray(shape.data.disabledCapabilities?.content) || shape.data.disabledCapabilities.content.some(c => typeof c !== 'string'))) ||
@@ -66,8 +67,8 @@ export function nodeShape(r: Replica, path: Scope, root = headCid(r)): NodeShape
   if (!cid || isHandle(content(r.store, cid))) return empty()
   const value = valueContent(r.store, cid)
   const children: NodeChild[] = []
-  for (const { id, edge, member, grant } of exchangedChildren(r, cid, path)) {
-    if (grant) { children.push({ id, address: { peerId: r.meta.peerId, scope: [...path, id] }, template: edge[0], pinned: edge[1] }); continue }
+  for (const { id, edge, member, grant, literal } of exchangedChildren(r, cid, path)) {
+    if (grant || literal) { children.push({ id, address: { peerId: r.meta.peerId, scope: [...path, id] }, template: edge[0], pinned: edge[1] }); continue }
     const child = content(r.store, identityCid(r.store, edge))
     const ref = isPeerReference(child) ? child.data.ref : undefined
     // a reference error is the row it stands for, pinned to the template it waits for; a member entry's template is MEMBER
@@ -82,15 +83,15 @@ export function nodeShape(r: Replica, path: Scope, root = headCid(r)): NodeShape
 
 const isMemberChild = (_store: Replica['store'], child: NodeChild) => child.peer !== undefined
 
-/** Immutable grants and right type definitions travel with their declarations, never right values. */
+/** Immutable edges and right type definitions travel with their declarations; mutable values load separately. */
 export function pinnedContent(r: Replica, shape: NodeShape, other: NodeShape = empty()): FosNodesData | null {
-  const pins = shape.children.flatMap(c => c.right ? [c.template] : c.pinned && !other.children.some(o => o.id === c.id && o.pinned === c.pinned) ? [c.pinned] : [])
+  const pins = shape.children.flatMap(c => c.right ? [c.template] : c.pinned && !other.children.some(o => o.id === c.id && o.pinned === c.pinned && o.template === c.template) ? [c.template, c.pinned] : [])
   return pins.length ? reachableNodes(r.store, pins) : null
 }
 
 /** Take in declared grants and right schemas (verified by CID, limited to their reachable definitions). */
 export function acceptPinnedContent(r: Replica, shape: NodeShape, nodes: FosNodesData | undefined): void {
-  const pins = shape.children.flatMap(c => c.right ? [c.template] : c.pinned ?? [])
+  const pins = shape.children.flatMap(c => c.pinned ? [c.template, c.pinned] : c.right ? [c.template] : [])
   if (pins.length && nodes) importNodes(r.store, reachableFrom(nodes, pins))
 }
 
@@ -124,7 +125,8 @@ function installMemberEntry(r: Replica, path: Scope, shape: NodeShape, now: numb
   const grantTypes = [s.primitive.capabilityNode.getId(), s.primitive.acceptsNode.getId()]
   const children = shape.children.map(child => {
     if (child.pinned) {
-      if (!grantTypes.includes(child.template) || !s.table.has(child.pinned)) throw new NodeAccessError('A member grant arrived without its content.')
+      if (!grantTypes.includes(child.template)) return pinnedLiteralEdge(s, child)
+      if (!s.table.has(child.pinned)) throw new NodeAccessError('A member grant arrived without its content.')
       return [child.template, child.pinned] as [string, string]
     }
     const edge = rows.get(child.id)
@@ -197,7 +199,8 @@ export function installNodeShape(r: Replica, path: Scope, shape: NodeShape, now:
   const value = held ? { data: {}, children: [] } : valueContent(r.store, cid)
   const existing = new Map(value.children.filter(e => exchangedValueEdge(r, e)).map(e => [content(r.store, identityCid(r.store, e)).data.alias?.id, e]))
   const members = shape.children.filter(child => isMemberChild(r.store, child))
-  const children = shape.children.filter(child => !isMemberChild(r.store, child) && !child.pinned).map(child => {
+  const children = shape.children.filter(child => !isMemberChild(r.store, child)).map(child => {
+    if (child.pinned) return pinnedLiteralEdge(r.store, child)
     const edge = existing.get(child.id)
     if (child.right) return installRightChild(r, child, edge)
     if (edge) {

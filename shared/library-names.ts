@@ -5,11 +5,11 @@
  *   right a ref with no value  a declaration: the field is its left (a capability pattern, ...)
  *   right a named row          the field is the row itself (a template, a group such as `capabilities`)
  * A field's own named rows are its fields in turn (`capabilities.mail`, `task.complete`, reached by `fieldOf`); the index
- * below holds the library's fields and the declarations its groups make, a node keeping the first path it is given.
+ * below holds lookup paths only. A binding must never determine the meaning of the node it exposes.
  */
 import type { FosNodeContent } from './types'
 
-export type LibraryNames = { byName: Map<string, string>; byNode: Map<string, string>; ambiguous: Set<string> }
+export type LibraryNames = { byName: Map<string, string>; ambiguous: Set<string> }
 type Get = (cid: string) => FosNodeContent | null | undefined
 
 /** The node a named row `[left, right]` of a library stands for, or null when it is no field. */
@@ -57,11 +57,10 @@ export function fieldOf(get: Get, cid: string, name: string, target: string, ali
 
 /** The library value `root`'s fields and their fields (dotted paths); `target`/`alias` are the ref constructors. */
 export function libraryNames(get: Get, root: string, target: string, alias: string): LibraryNames {
-  const byName = new Map<string, string>(), byNode = new Map<string, string>(), ambiguous = new Set<string>()
+  const byName = new Map<string, string>(), ambiguous = new Set<string>()
   const name = (path: string, node: string) => {
     if (byName.has(path)) ambiguous.add(path)
     else byName.set(path, node)
-    if (!byNode.has(node)) byNode.set(node, path)
   }
   const fields: Array<{ name: string; node: string }> = []
   for (const edge of valueOf(get, root, target)?.children ?? []) {
@@ -74,5 +73,5 @@ export function libraryNames(get: Get, root: string, target: string, alias: stri
     const inner = fieldNode(get, edge as [string, string], target, alias)
     if (inner && inner.node === edge[0]) name(`${field.name}.${inner.name}`, inner.node)
   }
-  return { byName, byNode, ambiguous }
+  return { byName, ambiguous }
 }

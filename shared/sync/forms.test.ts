@@ -1,5 +1,5 @@
 import { addConstructedRow, addRow, createReplica, headCid, loadReplica, moveNode, renameTask, serializeReplica, setRowContentAt, view } from './replica'
-import { content, formValueAt, isRefNode, put, reachableNodes, importNodes, resolveScope, rowTypeAt, valueContent, copyRowContent, commitRoot } from './index'
+import { content, formValueAt, isRefNode, put, reachableNodes, importNodes, resolveScope, rowTypeAt, valueContent, copyRowContent, commitRoot, constructorPattern, matchesGraph, formRecord } from './index'
 import { constructForm, formText, formTitle } from './forms'
 import { mergeNodes } from './merge'
 import { syncWith } from './test-helpers'
@@ -10,6 +10,32 @@ import type { FosNodeContent } from '../types'
 
 /** A row type of the kind older builds wrote: no graph identity, only the retired markers. */
 const retiredType = (name: string, kind: string): FosNodeContent => ({ data: { description: { content: name }, instanceKind: { kind }, behavior: { content: `builtin:${kind}` } }, children: [] })
+const fields = (store: Parameters<typeof content>[0], node: FosNodeContent) => node.children.filter(([, right]) => !!content(store, right).data.alias)
+
+test('construction preserves literal graph constraints alongside product and repeated parameters', () => {
+  const { store } = createReplica()
+  const named = content(store, constructorPattern(store, 'custom'))
+  const text = rowTypeAt(store, 'text')
+  const parameter = put(store, { data: { parameter: { name: 'value' } }, children: [] })
+  for (const repeat of [false, true]) {
+    const definition = put(store, { data: { form: repeat ? { repeat: true } : {} }, children: [...named.children, [text, parameter]] })
+    const input = repeat ? ['hello'] : { value: 'hello' }
+    const built = constructForm(store, definition, 'custom-instance', input, 1)
+    expect(built.children[0]).toEqual(named.children[0])
+    expect(formRecord(store, definition, built)).toEqual(input)
+    expect(matchesGraph(store, definition, put(store, built))).toBe(true)
+    const missingLiteral = put(store, { ...built, children: built.children.slice(1) })
+    expect(matchesGraph(store, definition, missingLiteral)).toBe(false)
+    let next = 0
+    const copied = content(store, copyRowContent(store, put(store, built), 2, () => `copy-${next++}`))
+    expect(copied.children[0]).toEqual(named.children[0])
+    expect(matchesGraph(store, definition, put(store, copied))).toBe(true)
+  }
+  const open = put(store, { ...named, data: { form: { open: true } } })
+  const dynamic = constructForm(store, open, 'dynamic', { field: 'value' }, 1)
+  expect(formRecord(store, open, dynamic)).toEqual({ field: 'value' })
+  expect(matchesGraph(store, open, put(store, dynamic))).toBe(true)
+})
 
 test('notes are a title line plus a Markdown body row, bindings, and ordinary child rows', () => {
   let r = createReplica('a')
@@ -83,15 +109,15 @@ test('comments instantiate graph fields; editing the body preserves person, list
   const node = () => valueContent(r.store, resolveScope(r.store, headCid(r), ['message'])!)
   expect(node().data.comment).toBeUndefined()
   expect(node().data.description).toBeUndefined()
-  expect(node().children.every(e => isRefNode(r.store, content(r.store, e[1])))).toBe(true)
+  expect(fields(r.store, node()).every(e => isRefNode(r.store, content(r.store, e[1])))).toBe(true)
   expect(view(r, [])!.tasks.find(t => t.id === 'message')).toMatchObject({ title: 'Hello', author: { id: 'alice', name: 'Alice', time: 1 } })
   const person = node().children[1]!, list = node().children[2]!, body = node().children[0]!
-  const items = valueContent(r.store, list[1]).children
+  const items = fields(r.store, valueContent(r.store, list[1]))
   expect(items).toHaveLength(2)
   expect(items[0]![1]).not.toBe(items[1]![1])
   expect(items.map(e => valueContent(r.store, e[1]).data.position?.value)).toEqual([0, 1])
   r = setRowContentAt(r, [], 'message', COMMENT_TYPE, 'Edited', {}, 2)
-  expect(node().children.slice(1)).toEqual([person, list])
+  expect(fields(r.store, node()).slice(1)).toEqual([person, list])
   expect(content(r.store, node().children[0]![1]).data.alias).toEqual(content(r.store, body[1]).data.alias)
   expect(view(r, [])!.tasks.find(t => t.id === 'message')).toMatchObject({ title: 'Edited', author: { name: 'Alice', time: 1 } })
   r = loadReplica(serializeReplica(r))
@@ -123,8 +149,10 @@ test('list entries can be added, edited and reordered through ordinary row opera
   r = moveNode(r, path, 'two', path, { relativeTo: 'one', position: 'above' }, 5)
   expect(view(r, path)!.tasks.map(t => t.title)).toEqual(['Second', '// literal text'])
   const list = valueContent(r.store, resolveScope(r.store, headCid(r), path)!)
-  expect(list.children.map(e => valueContent(r.store, e[1]).data.position?.value)).toEqual([0, 1])
-  expect(list.children.every(e => isRefNode(r.store, content(r.store, e[1])))).toBe(true)
+  expect(fields(r.store, list).map(e => valueContent(r.store, e[1]).data.position?.value)).toEqual([0, 1])
+  expect(fields(r.store, list).every(e => isRefNode(r.store, content(r.store, e[1])))).toBe(true)
+  const name = list.children.find(([left]) => left === r.store.primitive.nameField.getId())!
+  expect(content(r.store, name[1]).data.position).toBeUndefined()
 })
 
 test('independent fields merge, and copies own fresh field refs', () => {
@@ -142,8 +170,8 @@ test('independent fields merge, and copies own fresh field refs', () => {
   let index = 0
   const copy = valueContent(base.store, copyRowContent(base.store, merged.cid, 4, () => `copy-${index++}`))
   expect(copy.children.map(e => content(base.store, e[1]).data.alias?.id)).not.toEqual(node.children.map(e => content(base.store, e[1]).data.alias?.id))
-  expect(copy.children.every(e => isRefNode(base.store, content(base.store, e[1])))).toBe(true)
-  expect(formValueAt(base.store, copy, ['person'])!.children.every(e => isRefNode(base.store, content(base.store, e[1])))).toBe(true)
+  expect(fields(base.store, copy).every(e => isRefNode(base.store, content(base.store, e[1])))).toBe(true)
+  expect(fields(base.store, formValueAt(base.store, copy, ['person'])!).every(e => isRefNode(base.store, content(base.store, e[1])))).toBe(true)
   expect(formTitle(base.store, copy)).toBe('After')
 })
 

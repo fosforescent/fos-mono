@@ -5,28 +5,25 @@
  * `primitive` row to check leaf values; other parameters such as `negative` say which way a value goes).
  */
 import type { FosStore } from '../dag-implementation/store'
-import { typeIdOf } from './graph'
+import type { FosDataContent } from '../types'
 
-/** Library fields (the library's named rows). */
-export const PRIMITIVE_ID = 'primitive'
-export const NEGATIVE_ID = 'negative'
-export const STRING_ID = 'string'
+type ParameterKind = NonNullable<FosDataContent['parameterDefinition']>['kind']
 
-/** The right of `node`'s row keyed by the library constructor `constructorId`, or null. */
-export function parameter(store: FosStore, node: string, constructorId: string): string | null {
-  return store.table.get(node)?.children.find(([left]) => typeIdOf(store, left) === constructorId)?.[1] ?? null
+/** Interpret the parameter key's own definition, independent of library names and other scopes. */
+export function parameter(store: FosStore, node: string, kind: ParameterKind): string | null {
+  const rows = store.table.get(node)?.children.filter(([left]) => store.table.get(left)?.data.parameterDefinition?.kind === kind) ?? []
+  if (rows.length > 1) throw new Error(`Ambiguous ${kind} parameter.`)
+  return rows[0]?.[1] ?? null
 }
 
-/** The name of the primitive a node's `primitive` row holds (the library ref naming it, e.g. lib:string), or null. */
+/** The pinned value predicate held by the primitive parameter, or null. Never turn it into a field name. */
 export function primitiveOf(store: FosStore, node: string): string | null {
-  const value = parameter(store, node, PRIMITIVE_ID)
-  if (!value) return null
-  return typeIdOf(store, value) ?? value
+  return parameter(store, node, 'primitive')
 }
 
 /** Whether the node has a `negative` row: a value the row sends or asks for, the inverse of one it receives. */
 export function isNegative(store: FosStore, node: string): boolean {
-  return parameter(store, node, NEGATIVE_ID) !== null
+  return parameter(store, node, 'negative') !== null
 }
 
 /**

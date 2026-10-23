@@ -542,18 +542,19 @@ holds those contents exactly (with the pattern rows they hold, `SeedRow.nodes`).
 Every row on the wire names its template; a peer missing one shows the row as a
 reference error and asks for it.
 
-**What a type accepts** (`shared/sync/patterns.ts`). Every type says which rows
-it accepts as children with **pattern rows** of its own, made from the Pattern
-type (patterns as types, `docs/language-design.md` §2.1). A pattern names a row
-type (`pattern.type`, e.g. `lib.home`) and optionally the versions of it
-that match (`pattern.versions`, pinned cids; none = any version); `pattern.any`
-is the wildcard. Without the wildcard a type accepts what its patterns match;
-with it, everything except what they match. A child is matched by its row type
-(its edge's left node's graph identity) and its version (the template its edge pins).
-The seed's ordinary types accept anything but Home and the store roots. A
-template row is the type of the tasks made from it, so a new template gets the
-Task type's pattern rows as its own (`withInstancePatterns`); an instance does
-not copy them. Being rows, patterns sync, copy and change by vote like the rest.
+**Placement constraints** (`shared/sync/patterns.ts`). A placement policy must
+hold its predicates as graph edges and match the child's pinned instruction.
+Use structural matching by default and exact CID equality when the policy
+explicitly requests it. A wildcard makes the other rules exclusions; without
+one, declared rules form an allow list. No policy means no placement restriction,
+but a malformed policy must fail rather than silently become unrestricted.
+
+Constructor identity is its CID. Library field names are bindings for reaching
+that node; renaming a binding must not change a pinned row's meaning. A
+constructor may carry an ordinary name row containing a string, which a graph
+predicate can constrain. Neither placement nor native classification may
+recover meaning from a reverse index of library names, unrelated scopes, or
+library history. These constraints must hold after upgrades, reload, and exchange.
 
 **Store roots and Home are types.** A store root's type is its root alias's
 instruction (`rootTypeOf`): a **Device root** (a device's own root, and each

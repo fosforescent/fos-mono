@@ -11,7 +11,7 @@ import { plainEdge } from './patterns'
 import { bookkeepingOf, isBookkeepingEdge, namesInLibrary, refNodeContent, valueCidOf } from './graph'
 import { hashContent } from '../dag-implementation/cid'
 
-/** The library's field holding the manual fallback handlers (`manualHandlers`). */
+/** The library field holding manual fallback handlers. */
 export const MANUAL_HANDLERS = 'manual'
 /** The library's version is the data version (shared/version.ts); the compiler refuses a library graph in another. */
 export const LIBRARY_VERSION: string = FOS_DATA_VERSION

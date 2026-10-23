@@ -35,7 +35,7 @@ async function main() {
   const rowEdge = c.findEdge(s, c.valueContent(s, c.resolveScope(s, c.headCid(app.state.replica), home)), `a:${fetchRow.at(-1)}`)
   assert.equal(rowEdge[0], fetchNode, 'the left is the library fetch node itself')
   // the fetch node's rows: what it sends and receives is structural, parameter rows on each ref's left
-  const refs = c.openRefs(s, fetchNode), [primitive, negative, string] = [c.PRIMITIVE_ID, c.NEGATIVE_ID, c.STRING_ID].map(id => c.libAt(s).field(id))
+  const refs = c.openRefs(s, fetchNode), [primitive, negative, string] = ['primitive', 'negative', 'string'].map(name => c.libAt(s).field(name))
   assert.deepEqual(refs.map(ref => [ref.name, ref.sent, ref.received]), [['url', true, false], ['method', true, false], ['response', false, true]])
   assert.deepEqual(c.content(s, refs[0].left).children, [[primitive, string], [negative, c.put(s, { data: {}, children: [] })]])
   assert.equal(c.textOf(app.state.replica, refs[1].defaultValue), 'GET', 'method is an open ref with a default')
