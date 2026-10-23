@@ -117,6 +117,8 @@ Tree/grid/chat/queue share the children area; List is removed. Chat collects des
 - Import opens a Markdown/YAML file dialog (1 MB); YAML node-document exports retain their graph importer, ordinary YAML/Markdown use the clipboard tree parser. Uploads never follow navigation into another data session.
 
 ### Constructor palette
+Placeholder type selection must use the shared declaration resolver and preserve ambiguity and access failures. Reading a declaration's pattern may include an unfilled parameter; it must not pretend that parameter has a value.
+
 Library menus and constructor suggestions must use the library instance in the destination scope. Missing or incomplete definitions must remain unavailable; the UI must not substitute the build bundle. Existing rows must retain their pinned definitions.
 
 The device tab's Peer constructor is draggable; This device holds inventory/calendar/money allocations and resource banks; the search includes every built-in. Click adds a child; drop onto an ordinary row applies the constructor while preserving its children; drop onto a requirement preserves it and creates a child value. Typed argument targets validate the constructor capability and use the existing ref proposal/application path.

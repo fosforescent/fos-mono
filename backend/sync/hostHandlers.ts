@@ -1,4 +1,5 @@
 import { requirementInput, findRowByAlias } from '@fosforescent/shared/sync/index'
+import { addRefAt, constructNodeValue, newId, nodeValueType, setRefValueAt, bindingProperties, selectBinding } from '@fosforescent/shared/sync/index'
 import { QUERY_TYPE } from '@fosforescent/shared/sync/index'
 import { standardHostRef } from './host-runtime'
 import { cronObserver } from '@fosforescent/shared/sync/trigger-primitives'
@@ -123,15 +124,35 @@ export type MarketDeps = {
  * in the server's name.
  */
 export function marketHandler(deps: MarketDeps): HostHandler {
+  const resultBinding = (ctx: EffectContext) => {
+    const r = ctx.replica(), path = ctx.step.path, cid = resolveScope(r.store, headCid(r), path)!
+    return selectBinding([bindingProperties({ store: r.store, cid, path })], 'listing', false, true)
+  }
   return {
     peerId: 'fos', ref: standardHostRef('fos', 'market'),
+    async prepare(ctx) {
+      let result = resultBinding(ctx)
+      if (result.status === 'missing') {
+        const r = ctx.replica()
+        await ctx.update(addRefAt(r, ctx.step.path, newId(), nodeValueType(r.store, 'record'), ctx.now(), null, 'listing'))
+        result = resultBinding(ctx)
+      }
+      if (result.status !== 'ready') throw new Error('The listing result must have one accessible declaration.')
+      return { outputs: result.locations[0]!.assignments.map(assignment => assignment.path.at(-1)!) }
+    },
     async effect(ctx) {
       const path = ctx.step.path
       if (path.length < 2) throw new Error('Market requirements go under a task; the task is what gets listed.')
       const taskPath = path.slice(0, -1)
       await ctx.update(setMarketAt(ctx.replica(), taskPath, true, ctx.now()))
       await deps.index({ id: ctx.userId, username: ctx.username }, ctx.replica().store)
-      await ctx.update(addSupply(ctx.replica(), taskPath, path.at(-1)!, { capability: 'market', by: 'fos', ref: taskPath.at(-1)! }, ctx.now()))
+      // Fulfillment must not depend on the task whose requirements include this request.
+      const r = ctx.replica(), binding = resultBinding(ctx)
+      if (binding.status !== 'ready') throw new Error('The listing result declaration is unavailable.')
+      const result = constructNodeValue(r.store, { listed: true, indexed: true, owner: ctx.username })
+      let next = r
+      for (const assignment of binding.locations[0]!.assignments) next = setRefValueAt(next, assignment.path, result.cid, ctx.now())
+      await ctx.update(addSupply(next, taskPath, path.at(-1)!, { capability: 'market', by: 'fos', ref: binding.locations[0]!.id }, ctx.now()))
     }
   }
 }

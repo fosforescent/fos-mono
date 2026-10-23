@@ -62,7 +62,7 @@ test('a record instance retains requirements and bound properties with instance-
   expect(userView(r)!.tasks.find(t => t.id === 'instance')!.checkable).toBe(true)
 })
 
-test('amount outputs bind allocation arguments and enforce the fulfilled source capacity', async () => {
+test('amount outputs retain their values but cannot manufacture an executable resource handler', async () => {
   const { allocationProblems, evaluationSteps } = await import('./index')
   let r = addTask(createReplica('owner'), [], 'Use budget', 1, 'work')
   r = addRow(r, ['work'], ALLOCATION_TYPE, 'Budget', 2, { id: 'budget', requirement: { capability: 'allocation', resource: 'account', amount: 50, unit: 'USD' } })
@@ -76,8 +76,8 @@ test('amount outputs bind allocation arguments and enforce the fulfilled source 
   expect(view(r, ['work'])!.tasks.find(t => t.id === 'deposit')!.allocation).toBeUndefined()
   r = addRow(r, ['work', 'budget'], ALLOCATION_TYPE, 'Funded', 7, { allocation: { type: 'account', resource: 'external', amount: 50, unit: 'USD' } })
   expect(view(r, ['work'])!.tasks.find(t => t.id === 'deposit')!.allocation?.amount).toBe(10)
-  expect(allocationProblems(r, evaluationSteps(r, ['work', 'deposit']))).toEqual([])
+  expect(allocationProblems(r, evaluationSteps(r, ['work', 'deposit']))).toEqual([expect.stringContaining('does not match the row pattern')])
   r = addRow(r, ['work'], ALLOCATION_TYPE, 'Duplicate spend', 8, { id: 'duplicate', allocation: { type: 'account', resource: '', amount: 0, unit: 'USD' } })
   r = linkRequirementOutput(r, ['work', 'duplicate'], outputs[0]!.cid, 9)
-  expect(allocationProblems(r, evaluationSteps(r, ['work', 'duplicate']))).toEqual([expect.stringContaining('Insufficient Budget')])
+  expect(allocationProblems(r, evaluationSteps(r, ['work', 'duplicate']))).toEqual([expect.stringContaining('does not match the row pattern')])
 })

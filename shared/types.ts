@@ -218,6 +218,8 @@ export type FosDataContent = {
   refHole?: { slot: number; role: 'input' | 'output' },
   /** A declaration in a compiled lexical frame. Its handler/value is the right side of its binding edge. */
   refDeclaration?: { slot: number },
+  /** Rows in this node submit alternative handlers to the capability on their left. They are not equalities. */
+  refAlternatives?: true,
   refCompilation?: { cid: string },
   /** A type error node ([TYPE_ERROR, error]): the alias ids of the row's children its type does not accept. */
   typeError?: {

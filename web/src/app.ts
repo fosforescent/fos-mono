@@ -11,7 +11,7 @@ import { nativeRefValues } from '../../shared/sync/native-refs'
 import { sameValue } from '../../shared/sync/merge'
 import { parseRowInput } from './rows'
 import { isHandlerStateLeft } from '../../shared/sync/capabilities'
-import { capabilityDeclarations, scopedRefs, flattenRefs, requirementHandlerTypes, sameCapabilityType, compileInstructions, executionInputs, addRefCall, primitiveValue, refSubmissions, matchesInstructionRef, templateValuePattern, solveAt, usePatternAt, patternBindings, choosePatternBindingAt, findEdge, valueCidOf, type PatternBinding, constructAt, namesInLibrary, rowConstructor, openRefs, assignedValue, assignRefAt, textOf, capabilityName, readProposals, type OpenRef } from '../../shared/sync/index'
+import { capabilityDeclarations, visibleBindings, bindingTree, bindingLayers, selectBinding, requirementHandlerTypes, sameCapabilityType, compileInstructions, executionInputs, addRefCall, primitiveValue, refSubmissions, matchesInstructionRef, templateValuePattern, solveAt, usePatternAt, patternBindings, choosePatternBindingAt, findEdge, valueCidOf, type PatternBinding, constructAt, namesInLibrary, rowConstructor, openRefs, assignedValue, assignRefAt, textOf, capabilityName, readProposals, type OpenRef } from '../../shared/sync/index'
 import { createDeviceHandlers } from './device-handlers'
 import { compileConstructorCall } from '../../shared/sync/constructor-rows'
 import { capabilityOfTarget } from '../../shared/sync/graph'
@@ -2491,8 +2491,8 @@ export class App {
     })
   }
   parseRowInput(text: string, path = this.constructorContext()) {
-    const declarations = flattenRefs(scopedRefs(this.state.replica, path)).filter(ref => !!ref.name).map(ref => ({
-      name: capabilityOfTarget(this.state.replica.store, ref.type) ?? ref.type, syntax: [ref.name!]
+    const declarations = visibleBindings(this.state.replica, path).flatMap(binding => bindingTree(binding)).filter(ref => !!ref.name).map(ref => ({
+      name: capabilityOfTarget(ref.store, ref.pattern) ?? ref.pattern, syntax: [ref.name!]
     }))
     const offers = this.handlerOffers(path).map(offer => ({ name: offer.capability ?? offer.type, syntax: [offer.label] }))
     return parseRowInput(text, [...declarations, ...offers, ...capabilityDeclarations(this.state.replica.store, path)])
@@ -3112,7 +3112,17 @@ export class App {
       const cid = library?.cid ?? (local && resolveScope(r.store, headCid(r), [...local.path, local.row.id]))
       if (!cid) throw new Error('This template is unavailable in the enclosing scope.')
       type = templateValuePattern(r.store, cid)
-    } else type = typeName === 'text' ? r.store.primitive.documentField.getId() : flattenRefs(scopedRefs(r, destination)).find(ref => ref.name === typeName.trim())?.type ?? libAt(r.store, destination).capabilities[typeName.trim()]!
+    } else if (typeName === 'text') type = r.store.primitive.documentField.getId()
+    else {
+      // A declaration's pattern is available even when its value is still an unfilled parameter.
+      const found = selectBinding(bindingLayers(r, destination), typeName.trim(), false, true)
+      if (found.status !== 'ready' && found.status !== 'missing') throw new Error('Choose an available, unambiguous placeholder type.')
+      if (found.status === 'ready') {
+        const binding = found.locations[0]!
+        if (new Set(binding.assignments.map(assignment => assignment.pattern)).size !== 1) throw new Error('The placeholder declarations have incompatible patterns.')
+        type = binding.pattern
+      } else type = libAt(r.store, destination).capabilities[typeName.trim()]!
+    }
     this.edit(addRefAt(r, destination, newId(), type, this.now(), null, name))
   }
   placeholders(at: Scope = []) {

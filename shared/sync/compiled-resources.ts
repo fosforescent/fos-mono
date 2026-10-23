@@ -1,18 +1,17 @@
 /** Bind editable resource locators before accounting. The checker consumes only this immutable graph. */
 import type { FosStore } from '../dag-implementation/store'
 import type { FosDataContent } from '../types'
-import { content, put, rowView, importNodes, reachableNodes, valueContent, type Scope, type TaskView } from './graph'
+import { content, put, rowView, valueContent, type Scope, type TaskView } from './graph'
 import { view, type Replica } from './replica'
 import { resolveRefIdentity } from './ref-paths'
 import { assertCompiledGraph } from './ref-compiler'
 import { TEMPLATE_TYPE } from './library-types'
-import { contextBindings, resolveBinding } from './bindings'
-import { refSubmissions } from './scoped-refs'
-import { discoverHandlers } from './handlers'
+import { resolveBinding } from './bindings'
+import { scopedBindingKey, type ScopedBinding } from './scope-bindings'
 
 export type ResourceSelection = { path: Scope; row: TaskView | null }
 export type CompiledResources = { cid: string; problems: string[] }
-type ResourceDeclaration = { store: FosStore; valueStore: FosStore; cid: string; scope: Scope; name: string; pattern: string }
+type ResourceDeclaration = ScopedBinding
 
 /** The frame binds declaration CIDs to resource values, retaining distinct declarations with equal values. */
 export function compileResources(r: Replica, selected: ResourceSelection[]): CompiledResources {
@@ -20,41 +19,23 @@ export function compileResources(r: Replica, selected: ResourceSelection[]): Com
   const bindings: Array<{ location: ResourceDeclaration; ref: string; row: TaskView; allocations: string[] }> = []
   const declarations = new Map<FosStore, Map<string, number>>()
   const lookup = (path: Scope, id: string, replica = r): ResourceDeclaration | undefined => {
-    const candidates = contextBindings(replica, path.slice(0, -1))
     const found = resolveRefIdentity(replica, path.slice(0, -1), id)
-    const location = found.status === 'ready' ? found.locations[0] : undefined
-    const name = location ? content(location.store, location.cid).data.name?.content :
-      discoverHandlers(replica, path.slice(0, -1)).find(offer => offer.id === id && offer.enabled && offer.active)?.refPath?.join('.')
-    const candidate = candidates.find(candidate => name !== undefined ? candidate.name === name : content(replica.store, candidate.cid).data.alias?.id === id)
-    if (candidate?.scope) return { store: candidate.scope.store, valueStore: replica.store, cid: candidate.cid, scope: candidate.scope.path,
-      name: candidate.name ?? id, pattern: candidate.type }
-    // A fulfilled resource request can itself expose the supplied value as an explicit argument.
-    if (location?.pattern && !rowView(location.store, location.cid, [location.pattern, location.cid]).resource)
-      return { store: location.store, valueStore: location.store, cid: location.cid, scope: location.path.slice(0, -1), name: name ?? id, pattern: location.pattern }
-    return undefined
+    return found.status === 'ready' ? found.locations[0] : undefined
   }
-  const key = (location: ResourceDeclaration) => JSON.stringify([location.scope, location.name])
+  const key = scopedBindingKey
   const indexOf = (location: ResourceDeclaration) => declarations.get(location.store)?.get(key(location))
   for (const step of selected) {
     if (!step.row?.allocation?.resource) continue
     const location = lookup(step.path, step.row.allocation.resource)
     if (!location?.pattern) { problems.push(`Resource bank for ${step.row.title} is unavailable in this scope.`); continue }
-    const row = rowView(location.valueStore, location.cid, [location.pattern, location.cid])
-    if (row.resource || refSubmissions(location.valueStore, location.cid).some(cid => !!valueContent(location.valueStore, cid).data.resource)) {
-      if (location.valueStore !== r.store) importNodes(r.store, reachableNodes(location.valueStore, [location.cid]))
-      const claim = step.row.allocation
-      const capability = put(r.store, { data: { resource: { type: claim.type, unit: claim.unit } }, children: [] })
-      const candidates = contextBindings(r, step.path.slice(0, -1)), name = location.name
-      const named = name !== undefined && candidates.some(candidate => candidate.name === name)
-      const binding = resolveBinding(r.store, capability, named ? null : location.cid, candidates, named ? name : undefined,
-        { scope: { replica: r, path: step.path.slice(0, -1) } })
-      if (binding.status !== 'ready') { problems.push(...binding.problems); continue }
-      const value = valueContent(r.store, binding.cid!).data.resource!
-      row.resource = { ...value, allocated: 0, available: value.capacity ?? null }
-    }
-    if (!row.resource && row.requirement?.capability === 'allocation' && row.requirement.satisfied && row.requirement.amount !== undefined)
-      row.resource = { type: row.requirement.resource ?? 'account', unit: row.requirement.unit ?? 'USD', capacity: row.requirement.amount, allocated: 0, available: row.requirement.amount }
-    if (!row.resource) { problems.push(`Resource bank for ${step.row.title} is unavailable.`); continue }
+    const claim = step.row.allocation
+    const capability = put(r.store, { data: { resource: { type: claim.type, unit: claim.unit } }, children: [] })
+    const binding = resolveBinding(r.store, capability, location)
+    if (binding.status !== 'ready') { problems.push(...binding.problems); continue }
+    const resource = valueContent(r.store, binding.cid!).data.resource
+    if (!resource) { problems.push(`Resource bank for ${step.row.title} is unavailable.`); continue }
+    const row = rowView(r.store, binding.cid!, [location.pattern, binding.cid!])
+    row.resource = { ...resource, allocated: 0, available: resource.capacity ?? null }
     if (indexOf(location) !== undefined) continue
     if (!declarations.has(location.store)) declarations.set(location.store, new Map())
     const slot = bindings.length

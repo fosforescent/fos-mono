@@ -1052,6 +1052,35 @@ in each ancestor; never siblings or descendants. Multiple library instances in
 one scope must be reported as ambiguous. Library fields and capabilities must
 resolve through the selected instance, including in nested stores and drafts.
 
+An explicitly supplied argument must take precedence over ambient name lookup.
+A structural path to an ancestor selects that ancestor's declaration; a nearer
+declaration with the same name must not redirect the argument. Unqualified names
+should use the nearest provided declaration. An unfilled parameter may request
+fulfillment from outside, but an explicit reference to an unfilled declaration
+must remain unfilled rather than borrow a different same-name provider.
+
+Resources, supply evidence, ordinary arguments, and advertised handlers must
+share declaration resolution, source scopes, submissions, and availability
+checks. Member advertisements belong to their declaring group. Disabled or
+inaccessible declarations must not expose an outer provider as a fallback.
+Preserve every assignment to the same ref for conflict checking; never resolve
+contradictions by traversal order.
+
+Several peers providing Tools must submit explicit alternatives to one shared
+capability node in the group. Local handlers must use that same graph
+relationship (`refAlternatives`). Repeated names alone denote assignments to
+one ref, not alternatives. Withdrawing one explicit alternative may leave
+others available; it must not expose an outer same-name assignment as fallback.
+
+Spendable requirement slices still need graph-bound reservation results with
+resource provenance and conservation constraints. During declaration
+consolidation, the shortcut that manufactured a bank from a satisfied requirement
+was removed. Amount and choice projections may supply values; an amount alone
+must not authorize spending. Restore that functionality through the explicit
+handler/result relationship, not another special resource lookup. Likewise,
+workflow fulfillment must supply independent evidence, not a circular reference
+to the task whose completion depends on that requirement.
+
 Pinned definitions must survive library upgrades and reloads. Native offers must
 be addressed by their capability node. Restoring a native implementation must
 not restore a withdrawn offer. Trigger behavior must come from the selected

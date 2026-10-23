@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express'
 import { createHash } from 'node:crypto'
 import { TITLE_SYSTEM, handlerResult, requestTitle } from '@fosforescent/shared/sync/index'
+import { readGraphValue, deleteTask, compileRequirement, checkCompiledRequirement } from '@fosforescent/shared/sync/index'
 import { MARKET_PEER, addMemberAt, addRow, addSupply, addTask, content, createReplica, decideTaskResult, ensureHomeContext, evaluationRecord, headCid, HOME_ID, loadReplica, readMembers, resolveScope, serializeReplica, setMemberCapabilitiesAt, sharedProjection, view, workAttempts, writeParticipation, type Replica } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
@@ -107,7 +108,15 @@ test('the market effect lists the task, indexes the account, and records the sup
   expect(after.market).toBe(true)
   expect(after.done).toBe(false) // listing a task does not complete it; only its listing requirement is filled
   const supplies = view(h.get(), [HOME_ID, 'logo', 'list'])!.tasks.filter(t => !!t.supply)
-  expect(supplies.map(s => [s.supply!.capability, s.supply!.by, s.supply!.ref])).toEqual([['market', 'fos', 'logo']])
+  expect(supplies).toHaveLength(1)
+  expect(supplies[0]!.supply).toMatchObject({ capability: 'market', by: 'fos' })
+  const resultId = supplies[0]!.supply!.ref!
+  expect(resultId).not.toBe('logo')
+  const resultPath = [HOME_ID, 'logo', 'list', resultId]
+  expect(readGraphValue(h.get().store, resolveScope(h.get().store, headCid(h.get()), resultPath)!)).toEqual({ listed: true, indexed: true, owner: 'owner' })
+  const withdrawn = deleteTask(h.get(), resultPath.slice(0, -1), resultId, 200)
+  const request = resolveScope(withdrawn.store, headCid(withdrawn), [HOME_ID, 'logo', 'list'])!
+  expect(checkCompiledRequirement(withdrawn.store, compileRequirement(withdrawn.store, request)).satisfied).toBe(false)
   // the listing is the market peer as a member of the task
   expect(readMembers(h.get().store, content(h.get().store, resolveScope(h.get().store, headCid(h.get()), [HOME_ID, 'logo'])!)).map(m => m.peerId)).toContain(MARKET_PEER)
 })

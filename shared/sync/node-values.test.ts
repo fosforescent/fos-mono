@@ -22,7 +22,7 @@ import {
   view,
   isRowEdge,
   setRowContentAt,
-  inspectRef,
+  bindingProperties,
   PLAIN_TYPE
 } from './index'
 import { constructNodeValue, readGraphValue, nodeValueType } from './node-values'
@@ -50,7 +50,7 @@ test('records and lists are addressable typed refs with scalar leaves and generi
   expect(value.children.every(edge => isRowEdge(r.store, edge))).toBe(true)
   const id = content(r.store, arg.cid).data.alias!.id
   expect(view(r, [id])!.tasks.map(row => row.id)).toEqual(value.children.map(([, cid]) => content(r.store, cid).data.alias!.id))
-  expect(inspectRef(r.store, arg.cid, arg.type).values[0]!.refs.map(ref => ref.name)).toEqual(['list', 'nested'])
+  expect(bindingProperties({ store: r.store, cid: arg.cid, path: [id] }).bindings.map(ref => ref.name)).toEqual(['list', 'nested'])
   expect(readNodeValue(r, [], 'settings')).toEqual(input)
   const leaf = resolveRefExpression(r, [], '.settings.nested.count')
   expect(leaf.status).toBe('ready')

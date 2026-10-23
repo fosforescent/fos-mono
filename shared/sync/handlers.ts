@@ -5,79 +5,39 @@ import type { FosStore } from '../dag-implementation/store'
 import { handlerOfferId, publishedTemplateId } from './graph'
 import { sameCapabilityType } from './capabilities'
 
-import { membershipOf, libAt, branchEdge, isBranchChoice, readMembers, MARKET_PEER, capabilityOfTarget, content, identityCid, isMemberEdge, marketMemberOf, memberHandlers, put, refNodeContent, advertisedRows, memberHandlerRows, resolveScope, isRowEdge, isRowOfType, valueContent, withMainBranchPolicy, type Capability, type Scope } from './graph'
+import { membershipOf, libAt, readMembers, MARKET_PEER, capabilityOfTarget, content, identityCid, isMemberEdge, marketMemberOf, memberHandlers, put, refNodeContent, advertisedRows, memberHandlerRows, resolveScope, isRowEdge, isRowOfType, valueContent, withMainBranchPolicy, type Capability, type Scope } from './graph'
 
 import { addMemberAt, setHandlerOffersAt, headCid, type Replica } from './replica'
 
 import { marketGrantsAt } from './market'
 
-import { refProperties } from './refs'
+import { contextMemberRefs, policyIdentity, visibleBindings, bindingTree, submissionRef, type ScopedBinding, type BindingAccess } from './scope-bindings'
+export { contextMemberRefs } from './scope-bindings'
 
-import { enclosingScopes, importNodes, reachableNodes } from './graph'
+import { importNodes, reachableNodes } from './graph'
 
-import { inspectRef, scopedRefs, type ScopedRef } from './scoped-refs'
 import { transferRefGraph } from './ref-transfer'
+import { resolveBinding } from './bindings'
 
-export type HandlerEnvironment = { isPeerActive?: (peerId: string) => boolean }
-export type HandlerOffer = { id: string; cid: string; type: string; peerId: string; label: string; refPath?: string[]; refIds?: string[]; scope?: { store: FosStore; path: Scope }; capability?: Capability; enabled: boolean; active: boolean }
+export type HandlerEnvironment = BindingAccess
+export type HandlerOffer = { id: string; cid: string; type: string; peerId: string; label: string; refPath?: string[]; refIds?: string[]; scope?: { store: FosStore; path: Scope }; capability?: Capability; enabled: boolean; active: boolean; binding?: ScopedBinding }
 
-/** Read policy in main, including ancestors; never use a preview branch's grants. */
-function contextMemberLayers(r: Replica, path: Scope): Array<{ peer: string; cid: string; depth: number; store: FosStore; scope: Scope }> {
-  return withMainBranchPolicy(r.store, () => {
-    const peers: Array<{ peer: string; cid: string; depth: number; store: FosStore; scope: Scope }> = []
-    for (const [depth, { store, cid, path: scope }] of [...enclosingScopes(r.store, headCid(r), path).entries()].reverse()) {
-      // resolveScope preserves branch constructors at the final path component.
-      for (const ref of withMainBranchPolicy(store, () => refProperties(store, policyIdentity(store, cid), 'members'))) if (ref.peer) {
-        if (store !== r.store) importNodes(r.store, reachableNodes(store, [ref.cid]))
-        peers.push({ peer: ref.peer, cid: ref.cid, depth, store, scope })
-      }
-    }
-    return peers
-  })
-}
-export function contextMemberRefs(r: Replica, path: Scope): Map<string, string> {
-  return new Map(contextMemberLayers(r, path).map(ref => [ref.peer, ref.cid]))
-}
-function policyIdentity(store: FosStore, cid: string): string {
-  const node = content(store, cid)
-  const edge = isBranchChoice(store, node) ? branchEdge(store, cid) : null
-  return edge ? policyIdentity(store, identityCid(store, edge)) : cid
-}
-
+/** Presentation adapter: scope and submissions are supplied by the shared resolver. */
 export function discoverHandlers(r: Replica, path: Scope, environment: HandlerEnvironment = {}): HandlerOffer[] {
-  const s = r.store, result: HandlerOffer[] = []
-  const members = contextMemberRefs(r, path)
-  const add = (ref: ScopedRef, peerId: string, disabled: string[] = [], inheritedEnabled = true, inheritedActive = true, ancestors: string[] = [], ancestorIds: string[] = []) => {
-    const refPath = [...ancestors, ref.name ?? ref.id]
-    const refIds = [...ancestorIds, ref.id]
-    const capability = capabilityOfTarget(s, ref.type)
-    for (const value of ref.values) {
-      const peer = content(s, value.cid).data.peerId?.content ?? ref.peerId ?? peerId
-      const member = members.get(peer), off = [...disabled, ...(member ? content(s, member).data.disabledCapabilities?.content ?? [] : [])]
-      const enabled = inheritedEnabled && !off.includes(ref.id) && !(capability && off.includes(capability))
-      const active = inheritedActive && (environment.isPeerActive?.(peer) ?? true)
-      const cid = ref.values.length === 1 ? ref.cid : put(s, refNodeContent(s, content(s, ref.cid).data, value.cid, []))
-      if (!result.some(o => o.peerId === peer && o.cid === cid)) result.push({ id: ref.id, cid, type: ref.type, peerId: peer, refPath, refIds, scope: { store: ref.store, path: ref.scope },
-        label: ref.name ?? content(s, value.cid).data.description?.content ?? capability ?? ref.id,
-        ...(capability ? { capability } : {}), enabled: !!enabled, active })
-      for (const child of value.refs) add(child, peer, disabled, !!enabled, active, refPath, refIds)
+  const result: HandlerOffer[] = []
+  for (const binding of visibleBindings(r, path, environment).flatMap(binding => bindingTree(binding, environment))) {
+    const capability = capabilityOfTarget(binding.store, binding.pattern)
+    for (const value of binding.submissions) {
+      const cid = submissionRef(binding, value)
+      if (binding.store !== r.store) importNodes(r.store, reachableNodes(binding.store, [cid, binding.pattern]))
+      const resolved = resolveBinding(r.store, null, cid === binding.cid || binding.assignments.length > 1 ? binding : cid, [], undefined,
+        { ...environment, checkDependencies: false, scope: { replica: { ...r, store: binding.store }, path: binding.scope.path } })
+      if (!result.some(offer => offer.peerId === value.peerId && offer.cid === cid)) result.push({ id: binding.id, cid, type: binding.pattern,
+        binding, peerId: value.peerId, refPath: binding.refPath, refIds: binding.refIds, scope: binding.scope,
+        label: binding.name ?? content(binding.store, value.cid).data.description?.content ?? capability ?? binding.id,
+        ...(capability ? { capability } : {}), enabled: value.enabled && resolved.status === 'ready', active: value.active })
     }
   }
-  const declarations = new Map<string, Array<{ ref: ScopedRef; peer: string; depth: number }>>()
-  const declare = (ref: ScopedRef, peer: string, depth: number) => {
-    const previous = declarations.get(ref.id)
-    if (!previous || depth < previous[0]!.depth) declarations.set(ref.id, [{ ref, peer, depth }])
-    else if (depth === previous[0]!.depth) previous.push({ ref, peer, depth })
-  }
-  for (const ref of scopedRefs(r, path)) declare(ref, r.meta.peerId, ref.depth!)
-  for (const { peer: peerId, cid: memberCid, depth, store, scope } of contextMemberLayers(r, path)) {
-    const member = content(s, memberCid)
-    for (const edge of member.children) {
-      const incoming = edge[0] === s.primitive.acceptsNode.getId()
-      if (incoming) for (const [type, cid] of advertisedRows(s, edge[1])) declare(inspectRef(store, cid, type, scope, peerId), peerId, depth)
-    }
-  }
-  for (const alternatives of declarations.values()) for (const { ref, peer } of alternatives) add(ref, peer)
   return result
 }
 

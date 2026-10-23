@@ -2,11 +2,10 @@
 import { contextBindings, type BindingEnvironment } from './bindings'
 import { content, rowView, valueContent, type Scope, type TaskView } from './graph'
 import type { Replica } from './replica'
-import { refSubmissions } from './scoped-refs'
 
 export function resourceHandlers(r: Replica, at: Scope, environment: BindingEnvironment = {}) {
   // Discovery enumerates accepted handler values. Their prerequisites are checked when compiling an invocation.
-  return contextBindings(r, at, environment).flatMap(candidate => refSubmissions(r.store, candidate.cid).flatMap(value => {
+  return contextBindings(r, at, environment).flatMap(candidate => (candidate.binding?.submissions ?? []).flatMap(({ cid: value }) => {
     const resource = valueContent(r.store, value).data.resource
     if (!resource) return []
     const row = rowView(r.store, candidate.cid, [candidate.type, candidate.cid])

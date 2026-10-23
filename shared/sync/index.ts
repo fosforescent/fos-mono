@@ -64,3 +64,5 @@ export * from './constructor-rows'
 
 export * from './compiled-resources'
 export * from './resource-bindings'
+
+export * from './scope-bindings'

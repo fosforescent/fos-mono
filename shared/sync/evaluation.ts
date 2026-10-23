@@ -229,7 +229,8 @@ const instruction = (r: Replica, path: Scope, outputs: string[] = [], opens = fa
   const candidates = contextBindings(r, path)
   const resolved = args.filter(input).map(arg => {
     const value = resolveBinding(r.store, arg.type, arg.cid, candidates, undefined, { scope: { replica: r, path } })
-    return { ...arg, status: value.status, value: value.cid }
+    // Declaration provenance is compiler/UI state, never part of the persisted execution signature.
+    return { cid: arg.cid, type: arg.type, name: arg.name, status: value.status, value: value.cid }
   })
   const text = resolveText(r, path, formText(r.store, valueContent(r.store, cid)))
   return JSON.stringify({ data, instruction: compileInstructions(r, path, { outputs, openOutputs: true }).cid, arguments: resolved,

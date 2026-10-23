@@ -844,7 +844,8 @@ describe('requirements, supplies, resource banks and market listings', () => {
     r = addSupply(r, ['t'], 'rp', { capability: 'peer', by: 'bob' }, 5)
     expect(userView(r)!.tasks[0]!.blockedBy).toEqual(['market'])
     r = addSupply(r, ['t'], 'rm', { capability: 'market', by: 'fos', ref: 't' }, 6)
-    expect(userView(r)!.tasks[0]!.blockedBy).toBeUndefined()
+    // Referring back to a task that depends on this requirement is cyclic evidence.
+    expect(userView(r)!.tasks[0]!.blockedBy).toEqual(['market'])
     expect(view(r, ['t', 'rm'])!.tasks[0]).toMatchObject({ type: ALLOCATION_TYPE, title: 'listed on the market by fos' })
   })
 

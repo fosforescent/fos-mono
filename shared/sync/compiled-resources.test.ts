@@ -86,12 +86,12 @@ test('peer-offered banks bind in the declaring group and share accounting across
   expect(content(r.store, compiled.cid).children).toHaveLength(1)
   expect(checkCompiledResources(r.store, compiled.cid)).toEqual([expect.stringMatching(/Insufficient Tools/)])
   r = addRow(r, ['group', 'one'], RESOURCE_TYPE, 'Tools', 6, { id: 'local-bank', resource: { type: 'inventory', unit: 'drill', capacity: 3 } })
-  expect(resourceHandlers(r, ['group', 'one']).map(handler => handler.row.id)).toEqual(['local-bank'])
-  // The inherited editor locator binds the nearest declaration of that ref's name.
+  expect(resourceHandlers(r, ['group', 'one']).map(handler => handler.row.id)).toEqual(['local-bank', 'bank'])
+  // An explicit reference retains its declaration even when a nearer name is available.
   const overridden = compileResources(r, evaluationSteps(r, ['group']))
   expect(overridden.problems).toEqual([])
-  expect(content(r.store, overridden.cid).children).toHaveLength(2)
-  expect(checkCompiledResources(r.store, overridden.cid)).toEqual([])
+  expect(content(r.store, overridden.cid).children).toHaveLength(1)
+  expect(checkCompiledResources(r.store, overridden.cid)).toEqual([expect.stringMatching(/Insufficient Tools/)])
   r = setHandlerEnabledAt(r, ['group'], 'remote', 'bank', false, 6)
   expect(compileResources(r, evaluationSteps(r, ['group'])).problems).toEqual([
     expect.stringMatching(/unavailable in this scope/), expect.stringMatching(/unavailable in this scope/)

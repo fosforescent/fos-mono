@@ -2075,7 +2075,7 @@ export function advertisedRows(store: FosStore, cid: string): FosPathElem[] {
   return content(store, cid).children.filter(edge => isRowEdge(store, edge) && isRefNode(store, content(store, edge[1])) && !!content(store, edge[1]).data.alias)
 }
 export function advertisement(store: FosStore, pattern: string, ref: string): string {
-  return put(store, { data: {}, children: [[pattern, ref]] })
+  return put(store, { data: { refAlternatives: true }, children: [[pattern, ref]] })
 }
 
 /** The capability a [CAPABILITY, x] edge grants (the `to` direction), or null for any other edge. */

@@ -10,6 +10,7 @@ import { matchesGraph } from './structural'
 import { isNegative, primitiveOf } from './parameters'
 import { resolveRefExpression, resolveRefIdentity, type RefAccess, type RefLocation } from './ref-paths'
 import { resolveRequirementOutput } from './destructure'
+import { bindingAssignments, type ScopedBinding } from './scope-bindings'
 
 export type RefHole = { cid: string; id: string; type?: string; path: Scope; reason: 'unbound' | 'unavailable' | 'denied' | 'cycle' | 'ambiguous' | 'type'; role: 'input' | 'output' }
 export type CompiledRef = { cid: string; holes: RefHole[]; complete: boolean; sources: string[]; locations: Array<{ source: string; path: Scope; cid: string }> }
@@ -57,6 +58,10 @@ export function compileRefGraph(r: Replica, cid: string, at: Scope = [], options
     visiting.add(current)
     try {
       const previousHoleCount = holes.length
+      if (node.data.refAlternatives && options.selected) {
+        const values = [...new Set(node.children.map(([, value]) => value))]
+        return values.length === 1 ? walk(store, values[0]!, path, role, depth + 1, type) : hole(id, type, path, values.length ? 'ambiguous' : 'unbound', role)
+      }
       if (role === 'output' && options.openOutputs) return hole(id, type, path, 'unbound', role)
       if (node.data.refHole) {
         holes.push({ cid: current, id: current, ...(type ? { type } : {}), path, reason: 'unbound', role: node.data.refHole.role })
@@ -77,14 +82,14 @@ export function compileRefGraph(r: Replica, cid: string, at: Scope = [], options
         const resolved = resolveRefExpression(context, path.slice(0, -1), node.data.refExpression, options)
         if (resolved.status !== 'ready') return hole(id, type, path, resolved.status === 'missing' ? 'unbound' : resolved.status, role)
         const target = resolved.locations[0]!
-        return walk(target.store, target.cid, target.path, role, depth + 1, type)
+        return compileBinding(target, role, depth + 1, type)
       }
       if (node.data.ref?.id) {
         const resolved = resolveRefIdentity({ ...r, store }, path.slice(0, -1), node.data.ref.id, options)
         if (resolved.status !== 'ready') return hole(node.data.ref.id, type, path, resolved.status === 'missing' ? 'unavailable' : resolved.status, role)
         const target = resolved.locations[0]!
         // The link row's instruction describes a reference, not the referenced value's constructor.
-        return walk(target.store, target.cid, target.path, role, depth + 1)
+        return compileBinding(target, role, depth + 1)
       }
       if (isBranchChoice(store, node)) {
         if (options.selected) {
@@ -141,6 +146,13 @@ export function compileRefGraph(r: Replica, cid: string, at: Scope = [], options
     const cid = visit(store, current, path, role, depth, type)
     locations.push({ source: current, path, cid })
     return cid
+  }
+  const compileBinding = (binding: RefLocation, role: RefHole['role'], depth: number, type: string | null = null): string => {
+    const assignments = 'assignments' in binding ? bindingAssignments(binding as ScopedBinding) : [binding]
+    if (!assignments.length) return hole(binding.path.at(-1) ?? binding.cid, type, binding.path, 'unbound', role)
+    const values = assignments.map(source => walk(source.store, source.cid, source.path, role, depth, type))
+    if (new Set(values).size !== 1) return hole(binding.path.at(-1) ?? binding.cid, type, binding.path, 'ambiguous', role)
+    return values[0]!
   }
   const result = walk(r.store, cid, at)
   return { cid: result, holes, complete: holes.length === 0, sources: [...sources], locations }

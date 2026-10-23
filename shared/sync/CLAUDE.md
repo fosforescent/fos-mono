@@ -5,15 +5,17 @@ Record intended behavior and restrictions here. Keep implementation details in c
 ## Scope and library resolution
 
 - Resolve both sides of a row from its parent scope. Declarations inside the row are available to its children, not to the row itself. Do not introduce recursive bindings implicitly.
+- An explicitly supplied argument or structural ancestor path must retain its selected declaration. A different nearer declaration with the same name must not redirect it. Only an unqualified name lookup selects by nearest name; overriding a passed ref requires addressing that ref.
+- Resources, supplies, ordinary arguments, and handler discovery must consume the same scoped declaration records, including source store, declaring scope, assignments, accepted submissions, and availability. Keep presentation adapters free of independent scope walks or identity-to-name fallback.
 - Search direct declarations in each enclosing scope, nearest first. Siblings and descendants must not contribute ambient bindings.
 - Identity links obey the same boundary as named refs. UUIDs are local editor conveniences; typechecking/compilation must resolve graph references to CIDs through scope. Evaluation must not search for a UUID or consult an editor identity map.
 - Keep compiler diagnostics and mappings back to editable rows outside the executable graph. Unfilled parameters must have content-addressed binders too. Renaming editor UUIDs alone must not change compiled meaning; changing a bound value requires recompilation. Mutable access must be mediated by explicit graph refs and handlers.
 - A group must be the shared lexical frame for its participants' live refs. Sharing across subtrees must declare the ref in their lowest common enclosing scope and leave explicit references at the source and destination. Do not silently capture a source's private dependencies when changing its scope.
 - Passing an outside ref must create an ordinary typed declaration. Its recipient supplies a handler, including a node-message transport when needed. Local overrides must not rewrite the group's accepted value or a sibling's handler.
 - An independent copy must close external refs into values or reject unresolved dependencies. Preserve internal reference remapping and the copied constructor; a snapshot must not retain a hidden live UUID link.
-- Every lookup by name or kind goes through `lookupInScope`/`nearestInScope`: the nearest scope that declares anything answers, several there are ambiguous, and an unusable declaration there blocks. Never walk paths by hand or fall through to an outer scope.
+- Scope lookup must use the shared declaration resolver (and `lookupInScope`/`nearestInScope` for library selection). An unusable nearer provider blocks lookup. Equal-name assignments in the same frame address one ref; preserve all of them for conflict checking, never choose the first.
 - A nearer name hides an outer one of any type. An unfilled declaration is a hole bound from further out. Only declarations bind (`declares`); text conventions such as `key: value` titles or frontmatter never do.
-- Collecting a type's alternatives (handler discovery) reads every visible declaration; only the same declaration identity shadows, and more than one candidate is a choice.
+- Handler alternatives must be explicit graph relationships to one shared capability node. Peer advertisements and local alternatives must use the same representation (`refAlternatives`), never infer choices from peer namespaces or repeated names. Name lookup respects nearer names; capability lookup may enumerate explicit alternatives, with the same declaration identity shadowing outer submissions.
 - Apply that identity-shadowing rule across both direct refs and member advertisements. An empty nearer declaration must block an outer handler of the same identity. Competing transport handlers require a choice too.
 - Bind the library instance before selecting a field. A nearer instance shadows the whole namespace; a missing field must not fall through to an outer library or the build bundle.
 - Missing, unavailable, or ambiguous bindings must remain visible failures. Never manufacture a capability because code requested an unfamiliar name.
@@ -34,6 +36,7 @@ Record intended behavior and restrictions here. Keep implementation details in c
 - Required rows form products; choices form alternatives. An alternative must satisfy a whole pattern; do not assemble a match from pieces of different alternatives.
 - Native scalar predicates may inspect leaf values. Aliases and presentation metadata must not establish structural compatibility.
 - Ref declarations and accepted submissions are the registration mechanism for handlers. Permissions alone must not create executable offers.
+- Discovery must validate declaration availability and assignment agreement without invoking a callable's body. Invocation must also check its dependencies. Keep both operations on the shared binding resolver; a template with unfilled inputs remains discoverable.
 - Native implementations provide local meaning to graph values. Restoring them after reload must not republish withdrawn declarations or change pinned capability versions.
 - Discover handlers, observers, and node transports through scoped declarations. Do not add another dispatch path keyed by names or parsed IDs.
 - Partial assignments may retain holes. A partial assignment is not proof that an instruction is executable.
@@ -54,8 +57,15 @@ Record intended behavior and restrictions here. Keep implementation details in c
 - Compile requirement evidence and output projections before interpreting them. Supply locators must resolve through accessible enclosing declarations; cached siblings and unaccepted proposal rows must not supply values. Repeated references to one allocation count once, while distinct declarations retain distinct accounting identities.
 - Keep source locations for requirement outputs outside their executable graph. A compiled output must retain its pinned evidence and use content-addressed local bindings; editing or revoking the source requires recompilation.
 - External receipts are opaque service data, not graph locators. Do not overload a graph-reference field with an issue number, account identifier or fake bank name.
+- Resolving supply evidence must check the referenced value's dependencies. A reference to an enclosing task that depends on the same requirement is circular evidence, not fulfillment. A row's instruction must not automatically be treated as its result's value predicate; requested constraints belong to the consuming operation.
 - Persist an effect's journal before dispatch. Interrupted or uncertain effects must not be retried automatically; expose recovery work.
 - Do not retain compatibility branches merely to satisfy old tests. Replace shortcut fixtures with explicit graph declarations and test the desired behavior.
+
+## Intended functionality awaiting replacement
+
+- Requirement slices should become reservations against an explicitly bound resource handler, preserving provenance and conservation when split or reused. The automatic conversion of a satisfied requirement into a bank has been removed during declaration consolidation. Amount/choice projections remain usable as values, but an amount projection alone must not authorize spending. Restore spendable slices through graph-bound reservation results, not a synthesized bank or a special lookup fallback.
+- Market/workflow fulfillment must carry an independent result or receipt. The former shortcut accepting a circular reference back to the requesting task must remain blocked.
+- Replace the remaining requirement-name fulfillment switch and specialized evidence/accounting frames with graph-selected operations and common compiled interactions. Declaration consolidation alone is not that migration. Compatible constraint refinement still needs graph semantics; do not claim exact-value agreement implements refinement.
 
 ## Validation
 

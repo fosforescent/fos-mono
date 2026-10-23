@@ -1,12 +1,14 @@
 /** Compile supply locators before interpreting requirement evidence. */
 import type { FosStore } from '../dag-implementation/store'
 import type { FosDataContent } from '../types'
-import { allocationMatches, childRows, content, demandOf, flowOf, isTaskRow, put, typeIdOf, valueContent, type Scope } from './graph'
+import { allocationMatches, childRows, content, demandOf, flowOf, isTaskRow, put, valueContent } from './graph'
 import { allocationValue } from './destructure'
 import { isAllocationType, QUERY_TYPE } from './library-types'
 import { nodeOccurrence, resolveRefIdentity, type RefAccess } from './ref-paths'
 import { constructNodeValue, readGraphValue } from './node-values'
 import { assertCompiledGraph } from './ref-compiler'
+import { resolveBinding } from './bindings'
+import { bindingProperties, scopedBindingKey, type ScopedBinding } from './scope-bindings'
 import { sameUser, userOf, userPeerId, type UserRecord } from './users'
 
 type Requirement = NonNullable<FosDataContent['requirement']>
@@ -50,25 +52,29 @@ export function compileRequirement(store: FosStore, cid: string, at = nodeOccurr
     const metadata = constructNodeValue(store, { request: request ?? null, user: userOf(store, valueContent(store, cid)), cyclic, outputs, outputsBlocked }).cid
     const declarations = new Map<FosStore, Map<string, string>>()
     let slots = 0
-    const declaration = (source: FosStore, path: Scope | undefined, node: string) => {
+    const declaration = (binding: ScopedBinding) => {
+      const source = binding.store
       if (!declarations.has(source)) declarations.set(source, new Map())
-      const key = path ? JSON.stringify([path.slice(0, -1), content(source, node).data.name?.content ?? path.at(-1)]) : node
+      const key = scopedBindingKey(binding)
       const refs = declarations.get(source)!
       if (!refs.has(key)) refs.set(key, put(store, { data: { refDeclaration: { slot: slots++ } }, children: [] }))
       return refs.get(key)!
     }
     const entries: Array<[string, string]> = []
+    const properties = bindingProperties({ store, cid, path: at ?? [] }, access).bindings
     if (!cyclic) for (const row of childRows(store, cid)) {
-      const rowPath = at && [...at, content(store, row.cid).data.alias?.id ?? row.cid]
+      const binding = properties.find(binding => binding.cid === row.cid)
+      if (!binding) continue
+      const rowPath = binding.path
       if (access.canRead && !access.canRead(store, row.cid, rowPath ?? [])) {
-        entries.push([declaration(store, rowPath, row.cid), constructNodeValue(store, { kind: 'other', user: null, missing: true }).cid])
+        entries.push([declaration(binding), constructNodeValue(store, { kind: 'other', user: null, missing: true }).cid])
         continue
       }
       // Output declarations are projections of fulfillment, never evidence for their own source.
       if (content(store, row.cid).data.ref && content(store, row.cid).data.name) continue
       const flow = flowOf(row.type, row.value)
       const evidence: Evidence = { kind: 'other', user: userOf(store, row.value) }
-      let source = declaration(store, at && [...at, content(store, row.cid).data.alias?.id ?? row.cid], row.cid)
+      let source = declaration(binding)
       if (isAllocationType(row.type) && flow.allocation) {
         evidence.kind = 'allocation'; evidence.allocation = allocationEvidence(allocationValue(store, row.cid, access))
       } else if (isTaskRow(store, row.edge)) {
@@ -83,13 +89,14 @@ export function compileRequirement(store: FosStore, cid: string, at = nodeOccurr
         if (supply.ref) {
           const resolved = at && resolveRefIdentity({ store }, at, supply.ref, access)
           const found = resolved && resolved.status === 'ready' ? resolved.locations[0] : undefined
-          evidence.linked = !!found
-          evidence.missing = !found
-          if (found) source = declaration(found.store, found.path, found.cid)
-          if (found && supply.capability === 'allocation') {
-            const target = valueContent(found.store, found.cid)
-            evidence.allocation = found.pattern && isAllocationType(typeIdOf(found.store, found.pattern) ?? '') ? allocationEvidence(allocationValue(found.store, found.cid, access)) : undefined
-            evidence.user = userOf(found.store, target)
+          const supplied = found && resolveBinding(store, null, found, [], undefined, access)
+          evidence.linked = supplied?.status === 'ready'
+          evidence.missing = !evidence.linked
+          if (found) source = declaration(found)
+          if (supplied?.status === 'ready' && supply.capability === 'allocation') {
+            const target = valueContent(store, supplied.cid!)
+            evidence.allocation = allocationEvidence(allocationValue(store, supplied.cid!, access))
+            evidence.user = userOf(store, target)
           }
         }
       }
