@@ -4,7 +4,7 @@ import { HOME_ID, LIBRARY_ID, content, hasCapability, isLibraryRef, libraryRowOf
 import { addMemberAt, addRefAt, makeLinkAt, addRow, addTask, createReplica, ensureHomeContext, headCid, proposeRefAt, view, type Replica } from './replica'
 import { nodeAuthorityAt } from './node-context'
 import { acceptSubmission, missingApprovals } from './approvals'
-import { BUNDLED_LIBRARY, ensureDeviceLibrary, exportLibrary, exportLocalLibrary, libraryPath, manualHandlers, manualHandlersFor } from './library'
+import { BUNDLED_LIBRARY, upgradeLibrary, useLibrary, ensureDeviceLibrary, exportLibrary, exportLocalLibrary, libraryPath, manualHandlers, manualHandlersFor } from './library'
 import { LIBRARY_TYPE, PLAIN_TYPE, TASK_TYPE } from './library-types'
 
 const TEAM = 'team-library'
@@ -37,6 +37,8 @@ test('a device root has its library ref, a row of the Library type, found by wha
 test('a library shared by a group is an ordinary ref: members submit, the ref\'s rule accepts, rows under it use it', () => {
   let r = ensureHomeContext(createReplica('user:alice'), 1)
   r = addRefAt(r, [HOME_ID], TEAM, rowTypeAt(r.store, LIBRARY_TYPE), 2, changedLibrary(r, 'Chore'), 'Team library')
+  // Home uses it: its own instance, pinned to the definition's value
+  r = useLibrary(r, [HOME_ID], [HOME_ID, TEAM], 2)
   // nearest ancestor: under Home the team's library, at the root the device's
   expect(libraryPath(r)).toEqual([HOME_ID, TEAM])
   expect(libraryPath(r, [])).toEqual([LIBRARY_ID])
@@ -51,6 +53,9 @@ test('a library shared by a group is an ordinary ref: members submit, the ref\'s
   const accepted = acceptSubmission(r, [HOME_ID, TEAM], proposed.proposalCid, 'user:carol', 5)
   expect(accepted.merged).toBe(true)
   r = accepted.replica
+  // Home still uses the version it pinned until it upgrades
+  expect(taskTitle(r, [HOME_ID])).toBe('Chore')
+  r = upgradeLibrary(r, [HOME_ID], [HOME_ID, TEAM], 5)
   expect(taskTitle(r, [HOME_ID])).toBe('Errand')
   r = addTask(r, [HOME_ID], 'Shopping', 6, 'shop')
   expect(view(r, [HOME_ID])!.tasks.find(t => t.id === 'shop')!.type).toBe(TASK_TYPE)

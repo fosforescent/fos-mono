@@ -41,7 +41,7 @@ import { sharedAddressAt } from './sharing'
 import { dispatchEvent, type FosEvent } from './events'
 import { readNodeValue } from './evaluation'
 import { LIBRARY_VERSION, ensureDeviceLibrary, exportLocalLibrary } from './library'
-import { capabilityTarget, libraryRowOf, content, importNodes, put, resolveScope, valueContent, valueCidOf } from './graph'
+import { capabilityTarget, libraryInstanceOf, libraryRowOf, content, importNodes, put, resolveScope, valueContent, valueCidOf } from './graph'
 import { nativeRef, publishNativeRef } from './native-refs'
 import { discoverHandlers } from './handlers'
 import { writeGraphNode, nativeDefaultsApplied, markNativeDefaultsApplied } from './replica'
@@ -154,12 +154,12 @@ export const api = {
   tree(handle: string, atJson: string): string {
     const r = get(handle)
     const lines: string[] = []
-    const library = libraryRowOf(r.store, headCid(r))?.id
+    const library = [libraryRowOf(r.store, headCid(r))?.id, libraryInstanceOf(r.store, headCid(r))?.id]
     const walk = (at: Scope, depth: number) => {
       const node = view(r, at)
       if (!node) return
       for (const t of node.tasks) {
-        if (!at.length && t.id === library) continue // the library the store ships (not its own rows)
+        if (!at.length && library.includes(t.id)) continue // the library the store ships and its instance (not its own rows)
         lines.push(`${'  '.repeat(depth)}${t.checkable ? (t.done ? '[x]' : '[ ]') : t.type === NOTE_TYPE ? ' ≡ ' : t.type === COMMENT_TYPE ? ' " ' : t.refId !== undefined ? ' → ' : ' · '} ${t.id.includes(':') ? t.id : t.id.slice(0, 8)} ${t.refPeer ? `${t.title} (held by ${t.refPeer.slice(0, 8)})` : t.refId !== undefined ? `ref ${t.refId.slice(0, 8)}` : t.title.split('\n')[0]}${t.childCount ? ` (${t.subtreeDone}/${t.subtreeTasks})` : ''}${t.isLink ? ' ⛓' : ''}`)
         if (t.childCount) walk([...at, t.id], depth + 1)
       }

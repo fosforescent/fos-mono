@@ -1,4 +1,5 @@
 /** What types accept (their pattern rows), and the type errors a row in the wrong place makes. */
+import { upgradeLibrary } from './library'
 import { FosStore } from '../dag-implementation/store'
 import { HOME_ID, LIBRARY_ID, content, nestScope, put, refNodeContent, refValueCid, resolveScope, rootStoredTarget, rowTypeAt, typeIdOf, valueContent } from './graph'
 import { HOME_TYPE, NOTE_TYPE, PATTERN_TYPE, TASK_TYPE } from './library-types'
@@ -85,7 +86,8 @@ function nextTaskVersion(r: Replica, version: string): Replica {
   const store = r.store, ref = resolveScope(store, headCid(r), [LIBRARY_ID])!, value = refValueCid(store, content(store, ref))!
   const next = put(store, { ...content(store, value), children: content(store, value).children.map(edge => content(store, edge[1]).data.name?.content === TASK_TYPE ? [edge[0], put(store, refNodeContent(store, content(store, edge[1]).data, version))] as [string, string] : edge) })
   const submitted = proposeRefAt(r, [LIBRARY_ID], next, 'member', 3, 'binding:member')
-  return applyProposalAt(submitted.replica, [LIBRARY_ID], submitted.proposalCid, r.meta.peerId, 4)
+  // and the device root's instance upgraded to it
+  return upgradeLibrary(applyProposalAt(submitted.replica, [LIBRARY_ID], submitted.proposalCid, r.meta.peerId, 4), [], [LIBRARY_ID], 4)
 }
 
 test('a pattern matches a row type, and can pin the versions of it that match', () => {

@@ -222,24 +222,56 @@ export type ResourceType = 'calendar' | 'account' | 'inventory' | 'person' | 'po
 export const LIBRARY_ID = hashContent({ data: { description: { content: 'Standard library' } }, children: [] })
 
 /**
- * Whether `node` is a library ref: a ref whose value (here, not a peer's unloaded node) is a library, the namespace
- * that defines the Library type. It is a container: the names in its value resolve as names (`namesInLibrary`), never
- * as lexical bindings.
+ * A library takes two rows. Its **definition** is a ref whose value is the library (the namespace that defines the
+ * Library type): a mutable ref like any other, edited by submissions. Its **instance** is the row `[library, lib]`:
+ * the library version it pins on its left, and on its right the ref `lib`, the binding code reaches the library by
+ * (`lib.task`, ...), whose value passes the library what it needs from the device (its natives). Upgrading an
+ * instance moves its left to a newer value of the definition.
  */
-export function isLibraryRef(store: FosStore, node: FosNodeContent): boolean {
+export const LIBRARY_BINDING = 'lib'
+/** What a new instance's `lib` ref is called: a content address (code finds it by its name). */
+export const LIBRARY_INSTANCE_ID = hashContent({ data: { description: { content: 'Standard library instance' } }, children: [] })
+
+/** Whether `node` is a library definition: a ref whose value (here, not a peer's unloaded node) is a library. */
+export function isLibraryDefinition(store: FosStore, node: FosNodeContent): boolean {
   if (isHandle(node) || isPeerReference(node)) return false
   const target = refValueCid(store, node)
   if (!target || !store.table.has(target)) return false
-  return namesInLibrary(store, valueCidOf(store, target)).byName.has(LIBRARY_TYPE)
+  return isLibraryValue(store, valueCidOf(store, target))
 }
-/** The library ref among the rows of the node `cid`, if it has one: its id there and its cid. */
+/** Whether `cid` is a library: a value that defines the Library type. */
+export function isLibraryValue(store: FosStore, cid: string): boolean {
+  return store.table.has(cid) && namesInLibrary(store, cid).byName.has(LIBRARY_TYPE)
+}
+/** Whether `node` is a library instance's `lib` ref. */
+export function isLibraryInstance(store: FosStore, node: FosNodeContent): boolean {
+  return node.data.name?.content === LIBRARY_BINDING && isRefNode(store, node)
+}
+/**
+ * A library's definition or instance: containers, not data. The names in a library resolve as its fields
+ * (`namesInLibrary`), never as lexical bindings; an instance's arguments are the library's.
+ */
+export function isLibraryRef(store: FosStore, node: FosNodeContent): boolean {
+  return isLibraryDefinition(store, node) || isLibraryInstance(store, node)
+}
+/** The library definition among the rows of the node `cid`, if it has one: its id there and its cid. */
 export function libraryRowOf(store: FosStore, cid: string): { id: string; cid: string } | null {
   for (const edge of valueContent(store, cid).children) {
     if (!isRowEdge(store, edge)) continue
     const child = identityCid(store, edge)
     if (!store.table.has(child)) continue
     const node = content(store, child), id = aliasIdOf(node)
-    if (id && isLibraryRef(store, node)) return { id, cid: child }
+    if (id && isLibraryDefinition(store, node)) return { id, cid: child }
+  }
+  return null
+}
+/** The library instance among the rows of the node `cid`, if it has one: its id there, its `lib` ref and the library it pins. */
+export function libraryInstanceOf(store: FosStore, cid: string): { id: string; cid: string; library: string } | null {
+  for (const edge of valueContent(store, cid).children) {
+    const plain = plainEdge(store, edge)
+    if (!store.table.has(plain[1])) continue
+    const node = content(store, plain[1]), id = aliasIdOf(node)
+    if (id && isLibraryInstance(store, node) && isLibraryValue(store, plain[0])) return { id, cid: plain[1], library: plain[0] }
   }
   return null
 }
@@ -332,6 +364,8 @@ function libraryValues(store: FosStore): string[] {
   const refs = [libraryRowOf(store, root)?.cid, home ? libraryRowOf(store, home)?.cid : null].filter((cid): cid is string => !!cid)
   const values: string[] = []
   const add = (cid: string) => { if (store.table.has(cid) && !values.includes(cid)) values.push(cid) }
+  // the versions the instances pin, then the definitions' values and their history
+  for (const at of [home, root]) { const instance = at ? libraryInstanceOf(store, at) : null; if (instance) add(instance.library) }
   for (const ref of refs) {
     let current: string | undefined = ref
     for (let depth = 0; current && depth < 32; depth++) {
@@ -452,8 +486,10 @@ export function resolveRowType(store: FosStore, type: string, at: Scope = [], ro
  * to `at`, or null when no library above has it. New rows of that type are edges `[this cid, row]`.
  */
 function nearestLibraryType(store: FosStore, typeId: string, at: Scope, root: string): string | null {
-  const library = findNearestRow(store, root, at, (row) => isLibraryRef(store, content(store, row.cid)) && !!libraryRowType(store, row.cid, typeId))
-  if (library) return libraryRowType(store, library.cid, typeId)!
+  // the nearest `lib` whose library (the version its instance pins) has the field
+  const field = (edge: FosPathElem) => { const left = plainEdge(store, edge)[0]; return isLibraryValue(store, left) ? namesInLibrary(store, left).byName.get(typeId) ?? null : null }
+  const library = findNearestRow(store, root, at, (row) => isLibraryInstance(store, content(store, row.cid)) && !!field(row.edge))
+  if (library) return field(library.edge)
   // a draft of a node stands where that node is: its ancestors continue in the host
   const outer = outerScopes.get(store)
   if (outer) {
@@ -497,20 +533,15 @@ export function enclosingScopes(store: FosStore, root: string, at: Scope): Array
   return result
 }
 
-/** The node the library ref `library` names `typeId`, when its value is here (not a peer's unloaded node). */
-function libraryRowType(store: FosStore, library: string, typeId: string): string | null {
-  if (isPeerReference(content(store, library)) || !refValueCid(store, content(store, library))) return null
-  return namesInLibrary(store, valueCidOf(store, library)).byName.get(typeId) ?? null
-}
 
 /**
  * The library row a device root ships is local to that device: node exchange of a root leaves it out on both sides,
  * and installing a root received from a peer keeps this device's own.
  */
 export function isShippedLibrary(store: FosStore, path: Scope, edge: FosPathElem): boolean {
-  if (path.length || !isRowEdge(store, edge)) return false
-  const cid = identityCid(store, edge)
-  return store.table.has(cid) && isLibraryRef(store, content(store, cid))
+  if (path.length) return false
+  const right = plainEdge(store, edge)[1]
+  return store.table.has(right) && isLibraryRef(store, content(store, right))
 }
 
 /**
@@ -522,13 +553,22 @@ export function isShippedLibrary(store: FosStore, path: Scope, edge: FosPathElem
 export function ensureLibraryRow(store: FosStore, first: string = shippedLibrary(store)): void {
   setRootType(store, DEVICE_ROOT_TYPE)
   const root = rootTargetCid(store)
-  if (libraryRowOf(store, root)) return
-  const type = shippedRef(store, LIBRARY_TYPE)!
-  const data = { alias: { id: LIBRARY_ID }, description: { content: 'Standard library' } }
-  const empty = put(store, withMember(store, refNodeContent(store, data, null), 'fos', 'fos', ['persist'], ['persist']))
-  const library = put(store, withPrev(store, { ...content(store, empty), children: [[store.primitive.targetPointerConstructor.getId(), first], ...content(store, empty).children] }, empty))
+  const children: FosPathElem[] = []
+  if (!libraryRowOf(store, root)) {
+    const type = shippedRef(store, LIBRARY_TYPE)!
+    const data = { alias: { id: LIBRARY_ID }, description: { content: 'Standard library' } }
+    const empty = put(store, withMember(store, refNodeContent(store, data, null), 'fos', 'fos', ['persist'], ['persist']))
+    children.push([type, put(store, withPrev(store, { ...content(store, empty), children: [[store.primitive.targetPointerConstructor.getId(), first], ...content(store, empty).children] }, empty))])
+  }
+  // the instance code uses: this version of the library, and what this device passes it (nothing yet)
+  if (!libraryInstanceOf(store, root)) children.push(libraryInstanceEdge(store, first))
+  if (!children.length) return
   const value = valueContent(store, root)
-  commitRoot(store, put(store, { ...value, children: [...value.children, [type, library]] }), 0)
+  commitRoot(store, put(store, { ...value, children: [...value.children, ...children] }), 0)
+}
+/** A library instance row: the library `library` on its left, its `lib` ref (with `args`, what is passed in) on its right. */
+export function libraryInstanceEdge(store: FosStore, library: string, args: string = put(store, { data: {}, children: [] }), id: string = LIBRARY_INSTANCE_ID): FosPathElem {
+  return [library, put(store, refNodeContent(store, { alias: { id }, name: { content: LIBRARY_BINDING } }, args))]
 }
 
 /** Stand-in type for a row pinned to template `cid` that this store does not hold (see `resolveReferenceErrors`). */
@@ -1079,8 +1119,8 @@ export function homeCidOf(store: FosStore, rootCid: string): string | null {
   // the Home type the build ships, and the one the root's own library names (not through the names of the store's
   // libraries: finding those starts from Home)
   const types = new Set([shippedRef(store, HOME_TYPE)])
-  const library = libraryRowOf(store, rootCid)?.cid
-  const named = library ? namesInLibrary(store, valueCidOf(store, library)).byName.get(HOME_TYPE) : undefined
+  const library = libraryInstanceOf(store, rootCid)?.library
+  const named = library ? namesInLibrary(store, library).byName.get(HOME_TYPE) : undefined
   if (named) types.add(named)
   // a branched Home is its selected branch's row
   const leftOf = (raw: FosPathElem): string | null => {
@@ -1730,6 +1770,8 @@ export function viewNode(store: FosStore, cid: string, constructors = false): No
     }
   }
   for (const edge of value.children) {
+    // a library instance is the library's binding, a container, not one of the node's rows (Settings lists it)
+    if (isRowEdge(store, edge) && !constructors && isLibraryInstance(store, content(store, identityCid(store, edge)))) continue
     if (isRowEdge(store, edge)) {
       view.tasks.push(rowView(store, identityCid(store, edge), edge))
     } else if (isChoiceEdge(store, edge)) {

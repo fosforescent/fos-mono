@@ -1,5 +1,5 @@
 /** Test helpers. */
-import { libraryRowOf, SERVER_TRANSPORT_CAPABILITIES, type NodeView, type Scope } from './graph'
+import { libraryInstanceOf, libraryRowOf, SERVER_TRANSPORT_CAPABILITIES, type NodeView, type Scope } from './graph'
 import { headCid, view, type Replica } from './replica'
 import { accountContextAbove, exchangeNode, nodeTreeSync } from './node-sync'
 import type { NodeBranch, NodeRequest } from './node-provider'
@@ -19,8 +19,8 @@ export function installTestObservers(r: Replica, peers = [r.meta.peerId], publis
 /** The root view without the root's own shipped library row: what the tests' rows are compared against. */
 export function userView(r: Replica): NodeView | null {
   const root = view(r, [])
-  const library = libraryRowOf(r.store, headCid(r))?.id
-  return root && { ...root, tasks: root.tasks.filter(t => t.id !== library) }
+  const library = [libraryRowOf(r.store, headCid(r))?.id, libraryInstanceOf(r.store, headCid(r))?.id]
+  return root && { ...root, tasks: root.tasks.filter(t => !library.includes(t.id)) }
 }
 
 export type SyncOptions = {

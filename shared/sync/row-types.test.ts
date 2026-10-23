@@ -4,7 +4,7 @@ import { HOME_ID, LIBRARY_ID, SERVER_MEMBER, content, namesInLibrary, readPropos
 import { exchangeNode, nodeShape, templateNodesAt } from './node-sync'
 import { acceptProvidedNode, type NodeAuthority, type NodeRequest } from './node-provider'
 import { addRefAt, addRow, addTask, createReplica, ensureHomeContext, findTemplateByName, headCid, proposeRefAt, view, type Replica } from './replica'
-import { ensureDeviceLibrary, exportLibrary, submitLibrary } from './library'
+import { ensureDeviceLibrary, exportLibrary, submitLibrary, upgradeLibrary, useLibrary } from './library'
 import { acceptSubmission } from './approvals'
 import { NOTE_TYPE, TASK_TYPE, TEMPLATE_TYPE } from './library-types'
 
@@ -21,9 +21,10 @@ function renamed(r: Replica, library: string[], name: string, title: string): st
     return [edge[0], put(store, refNodeContent(store, ref.data, node))] as [string, string]
   }) })
 }
-/** A library ref at `at` whose task is titled `title` (what a library looks like after its members changed it). */
+/** A library defined at `at` whose task is titled `title` (what a library looks like after its members changed it), used there. */
 function withLibrary(r: Replica, at: string[], title: string): Replica {
-  return addRefAt(r, at, LIBRARY_ID, put(r.store, { data: {}, children: [] }), 1, renamed(r, [LIBRARY_ID], TASK_TYPE, title))
+  r = addRefAt(r, at, LIBRARY_ID, put(r.store, { data: {}, children: [] }), 1, renamed(r, [LIBRARY_ID], TASK_TYPE, title))
+  return useLibrary(r, at, [...at, LIBRARY_ID], 1)
 }
 
 test('every device root has the standard library ref, and its rows are made from the nodes it names', () => {
@@ -67,6 +68,8 @@ test('a library value the members accept makes the new rows; rows made before ke
   const before = edgeOf(r, [HOME_ID], 'before')[0]
   const submitted = proposeRefAt(r, [LIBRARY_ID], renamed(r, [LIBRARY_ID], TASK_TYPE, 'To-do'), 'member', 4)
   r = acceptSubmission(submitted.replica, [LIBRARY_ID], submitted.proposalCid, r.meta.peerId, 4).replica
+  // the device root's instance moves to it: an explicit upgrade
+  r = upgradeLibrary(r, [], [LIBRARY_ID], 4)
   r = addTask(r, [HOME_ID], 'After', 5, 'after')
   const after = edgeOf(r, [HOME_ID], 'after')[0]
   expect(after).not.toBe(before)
@@ -85,6 +88,7 @@ test("a later build ships its library as the fos peer's submission: the library 
   const submission = readProposals(r.store, content(r.store, resolveScope(r.store, headCid(r), [LIBRARY_ID])!)).find(p => p.peerId === SERVER_MEMBER)!
   // accepted like any submission: the owner's approval, under the library ref's rule
   r = acceptSubmission(r, [LIBRARY_ID], submission.cid, r.meta.peerId, 3).replica
+  r = upgradeLibrary(r, [], [LIBRARY_ID], 3)
   expect(valueCidOf(r.store, resolveScope(r.store, headCid(r), [LIBRARY_ID])!)).toBe(later)
 })
 
@@ -117,7 +121,7 @@ test('templates resolve by nearest ancestor like every mutable ref', () => {
 test('an exported library is a submission another device takes as it is, so it makes the same rows', () => {
   let owner = createReplica('user:owner')
   const submitted = proposeRefAt(owner, [LIBRARY_ID], renamed(owner, [LIBRARY_ID], NOTE_TYPE, 'Document'), 'member', 2)
-  owner = acceptSubmission(submitted.replica, [LIBRARY_ID], submitted.proposalCid, owner.meta.peerId, 2).replica
+  owner = upgradeLibrary(acceptSubmission(submitted.replica, [LIBRARY_ID], submitted.proposalCid, owner.meta.peerId, 2).replica, [], [LIBRARY_ID], 2)
   const bundle = exportLibrary(owner, [LIBRARY_ID])
   // a device that never synced takes the bundle as its first library value
   const fresh = new FosStore()

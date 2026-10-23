@@ -11,13 +11,14 @@
  * root's for everything under Home (`libraryPath`, `rowTypeAt` in graph.ts).
  */
 import { homePath, proposeRefAt, view, type Replica } from './replica'
-import { content, ensureLibraryRow, importNodes, reachableNodes, findNearestRow, isLibraryRef, isPeerReference, libraryRowOf, put, refValueCid, resolveScope, valueContent, SERVER_MEMBER, type Scope } from './graph'
+import { commitRoot, content, ensureLibraryRow, importNodes, reachableNodes, findNearestRow, isLibraryDefinition, isPeerReference, libraryInstanceEdge, libraryInstanceOf, libraryRowOf, updateAtScope, put, refValueCid, resolveScope, valueContent, SERVER_MEMBER, type Scope } from './graph'
 import type { FosNodesData } from '../types'
 import { headCid } from './replica'
 import { FOS_DATA_VERSION } from '../version'
 import * as COMPILED_LIBRARY from './library.generated.json'
 import { compileLibrary, type LibrarySource } from '../library-compiler'
 import { fieldNode } from '../library-names'
+import { plainEdge } from './patterns'
 import { isBookkeepingEdge, refNodeContent, valueCidOf } from './graph'
 
 /** The library's field holding the manual fallback handlers (`manualHandlers`). */
@@ -53,12 +54,36 @@ export function exportLocalLibrary(r: Replica, at: Scope | null = libraryPath(r)
 export type ManualHandler = { id: string; label: string; capability: Requirement['capability']; resource?: Requirement['resource']; device: boolean }
 
 /**
- * The library a row at `at` sees, by nearest ancestor: one referenced in Home (once its content is here) under Home,
- * the device root's elsewhere.
+ * The library definition a row at `at` sees, by nearest ancestor: one referenced in Home (once its content is here)
+ * under Home, the device root's elsewhere. Rows are made from the version its instance pins (`lib`, graph.ts).
  */
 export function libraryPath(r: Replica, at: Scope = homePath(r)): Scope | null {
-  const found = findNearestRow(r.store, headCid(r), at, row => isLibraryRef(r.store, content(r.store, row.cid)))
+  const found = findNearestRow(r.store, headCid(r), at, row => isLibraryDefinition(r.store, content(r.store, row.cid)))
   return found ? [...found.path, found.id] : null
+}
+
+/** Use the library defined at `definition` under the node at `at`: its instance there, pinned to the definition's current value. */
+export function useLibrary(r: Replica, at: Scope, definition: Scope, now: number): Replica {
+  const def = resolveScope(r.store, headCid(r), definition), node = resolveScope(r.store, headCid(r), at)
+  if (!def || !node || !isLibraryDefinition(r.store, content(r.store, def))) throw new Error('That is no library.')
+  if (libraryInstanceOf(r.store, node)) return upgradeLibrary(r, at, definition, now)
+  const edge = libraryInstanceEdge(r.store, valueCidOf(r.store, def))
+  commitRoot(r.store, updateAtScope(r.store, headCid(r), at, value => ({ ...value, children: [...value.children, edge] })), now)
+  return { ...r }
+}
+
+/**
+ * Upgrade the library instance of the node at `at` to the current value of the definition at `definition`: its left
+ * moves to that version, what it passes in stays. Rows made before keep the version they were made from.
+ */
+export function upgradeLibrary(r: Replica, at: Scope, definition: Scope, now: number): Replica {
+  const def = resolveScope(r.store, headCid(r), definition), node = resolveScope(r.store, headCid(r), at)
+  const instance = node && libraryInstanceOf(r.store, node)
+  if (!def || !instance) throw new Error('There is no library here to upgrade.')
+  const next = valueCidOf(r.store, def)
+  if (next === instance.library) return r
+  commitRoot(r.store, updateAtScope(r.store, headCid(r), at, value => ({ ...value, children: value.children.map(edge => plainEdge(r.store, edge)[1] === instance.cid ? [next, instance.cid] : edge) })), now)
+  return { ...r }
 }
 
 /** The path of the row that is the field `field` of the library at `at` (a template, a group), if it has one. */
