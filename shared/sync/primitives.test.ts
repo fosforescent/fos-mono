@@ -1,4 +1,4 @@
-import {
+import { content,
   addRefCall, createReplica, nativeRef, publishNativeRef, primitiveExecutors, discoverHandlers, evaluationSteps, evaluateNode, put,
   refSubmissions, primitiveValue, resolveRefExpression, compileRow, setHandlerEnabledAt, serializeReplica, loadReplica,
   addRefAt, primitiveRef
@@ -12,7 +12,7 @@ test('host primitives are execute-only sub-refs and ordinary rows call them with
   for (const definition of [render, other]) r = publishNativeRef(r, [], 'host', nativeRef(r.store, 'host', definition), 1)
   const ref = resolveRefExpression(r, [], '.host.render').locations[0]!
   expect(ref).toBeDefined()
-  expect(primitiveValue(r.store, refSubmissions(r.store, ref.cid)[0]!)).toEqual({ implementation: 'native:render', host: 'host', access: 'execute' })
+  expect(primitiveValue(r.store, refSubmissions(r.store, ref.cid)[0]!)).toEqual({ implementation: render.id, host: 'host', access: 'execute' })
   r = addRefCall(r, [], ref.cid, 2, 'call')
   r = loadReplica(serializeReplica(r))
   // Loading data restores refs; reconstructing host primitive values restores their runtime meanings.
@@ -27,7 +27,7 @@ test('host primitives are execute-only sub-refs and ordinary rows call them with
   expect(completed.error).toBeUndefined()
   expect(completed.status).toBe('committed')
   expect(calls).toBe(1)
-  r = setHandlerEnabledAt(r, [], 'host', 'native:render', false, 4)
+  r = setHandlerEnabledAt(r, [], 'host', content(r.store, ref.cid).data.alias!.id, false, 4)
   expect(primitiveExecutors(r, step, 'host')).toEqual([])
   await expect(evaluateNode(['call'], { get: () => r, save: () => {}, now: () => 5, check: () => [], handles: () => false })).rejects.toThrow(/no available executor/)
 })

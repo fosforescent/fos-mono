@@ -3,7 +3,7 @@
  */
 import type { FosStore } from '../dag-implementation/store'
 import type { FosDataContent } from '../types'
-import { allocationMatches, capabilityTarget, childRows, findRowByAlias, flowOf, isTaskRow, requirementProgress, rootTargetCid, valueContent, type ChildRow, type TaskView } from './graph'
+import { allocationMatches, libAt, childRows, findRowByAlias, flowOf, isTaskRow, requirementProgress, rootTargetCid, valueContent, type ChildRow, type TaskView } from './graph'
 import { allocationValue } from './destructure'
 import { isAllocationType, MONEY_TYPE, QUERY_TYPE } from './library-types'
 import { sameUser, userOf, userPeerId } from './users'
@@ -11,7 +11,7 @@ import { sameUser, userOf, userPeerId } from './users'
 type Requirement = NonNullable<FosDataContent['requirement']>
 type Supply = NonNullable<FosDataContent['supply']>
 /** Resource syntax adapters request the corresponding handler pattern. */
-export function requirementHandlerTypes(store: FosStore, row: TaskView): string[] {
+export function requirementHandlerTypes(store: FosStore, row: TaskView, at: import('./graph').Scope): string[] {
   const req = row.requirement
   if (!req) return []
   const names = [req.capability]
@@ -20,7 +20,7 @@ export function requirementHandlerTypes(store: FosStore, row: TaskView): string[
     if (req.resource === 'points') names.push('points')
     if ((req.resource === 'calendar' || req.resource === 'person') && req.start !== undefined) names.push('calendar')
   }
-  return names.map(name => capabilityTarget(store, name))
+  return names.map(name => libAt(store, at).capabilities[name]!)
 }
 export function standardRequirementSatisfied(store: FosStore, cid: string, req: Requirement, root?: string): boolean {
   const rows = childRows(store, cid), named = userOf(store, valueContent(store, cid))

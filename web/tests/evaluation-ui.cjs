@@ -128,8 +128,8 @@ async function main() {
   assert(!triggers('Fos server').includes('Cron trigger'), 'Cron trigger is not offered before a provider advertises it')
   assert(triggers('Standard library').includes('Child evaluation'), 'the registered device handler advertises child evaluation at startup')
   app.recordServerOffers([...SERVER_TRANSPORT_CAPABILITIES, 'cron']) // the account server reports its scheduler
-  const { nativeRef, publishNativeRef, capabilityTarget, setHandlerOffersAt } = require(path.join(dir, 'test.cjs'))
-  const cron = nativeRef(store, 'fos', { id: 'server:cron', type: s => capabilityTarget(s, 'cron') })
+  const { nativeRef, publishNativeRef, libAt, setHandlerOffersAt } = require(path.join(dir, 'test.cjs'))
+  const cron = nativeRef(store, 'fos', { id: 'server:cron', type: s => libAt(s).capabilities.cron })
   app.set({ replica: publishNativeRef(app.state.replica, [], 'fos', cron, Date.now()) })
   const serverTriggers = triggers('Fos server')
   for (const label of ['Public template endpoint', 'Fos template endpoint', 'Cron trigger']) assert(serverTriggers.includes(label), label)

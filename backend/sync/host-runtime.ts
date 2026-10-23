@@ -3,7 +3,7 @@
  * Input definitions reconstruct this host's primitives after loading; only refs
  * present in the graph make values available to execution and lifecycle hooks.
  */
-import { SERVER_TRANSPORT_CAPABILITIES, handlerOfferId, capabilityTarget, capabilityName, content, refSubmissions, contextMemberRefs, nativeRef, publishNativeRef, primitiveExecutors, nativeRefValues, discoverHandlers, sameCapabilityType, reachableNodes, type PrimitiveDefinition, type Capability, type EvaluationStep, type HostOffers, type Replica, type Scope } from '@fosforescent/shared/sync/index'
+import { SERVER_TRANSPORT_CAPABILITIES, handlerOfferId, libAt, capabilityName, content, refSubmissions, contextMemberRefs, nativeRef, restoreNativeRef, publishNativeRef, primitiveExecutors, nativeRefValues, discoverHandlers, sameCapabilityType, reachableNodes, createReplica, type PrimitiveDefinition, type Capability, type EvaluationStep, type HostOffers, type Replica, type Scope } from '@fosforescent/shared/sync/index'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
 
 export type EffectContext = {
@@ -54,46 +54,31 @@ export type HostHandler = {
 export type HostRuntime = ReturnType<typeof createHostRuntime>
 
 /** Standard-library adapter used by native implementations, not by discovery or dispatch. */
-export function standardHostRef(peer: string, name: string, id = handlerOfferId(peer, name)): PrimitiveDefinition<EffectContext> {
-  return { id, label: name, type: store => capabilityTarget(store, name) }
+export function standardHostRef(peer: string, name: string, id = name): PrimitiveDefinition<EffectContext> {
+  return { id, label: name, type: (store, at) => libAt(store, at).capabilities[name]! }
 }
 
 export function createHostRuntime(input: HostHandler[]) {
   const handlers: HostHandler[] = input.map(handler => ({ ...handler, handles: handler.handles ?? handler.ref.handles, effect: handler.effect ?? handler.ref.effect, trigger: handler.trigger ?? handler.ref.trigger }))
-  const catalogue = new FosStore()
+  const catalogue = createReplica().store
   const unique = (caps: Capability[]) => [...new Set(caps)].sort()
   const provides = (h: HostHandler, peerId: string) => h.peerId === peerId || !!h.matches?.(peerId)
-  const offers = (peerId: string): Capability[] => unique(handlers.filter(h => h.peerId === peerId).map(h => { const type = h.ref.type(catalogue); return capabilityName(catalogue, type) ?? type }))
+  const offers = (peerId: string): Capability[] => unique(handlers.filter(h => h.peerId === peerId).map(h => { const type = h.ref.type(catalogue, []); return capabilityName(catalogue, type) ?? type }))
   const peers = [...new Set(handlers.map(h => h.peerId))]
   const materialize = (replica: Replica, at: Scope) => {
     // Restore runtime meanings after loading; this creates no ref rows or advertisements.
     const peers = new Set([...contextMemberRefs(replica, at).keys(), ...discoverHandlers(replica, at).map(offer => offer.peerId)])
-    for (const peer of peers) for (const handler of handlers) if (provides(handler, peer)) nativeRef(replica.store, peer, handler.ref, handler)
+    for (const peer of peers) for (const handler of handlers) if (provides(handler, peer)) restoreNativeRef(replica, at, peer, handler.ref, handler)
   }
   return {
     restore: materialize,
     handlers,
     /** Publish native implementations through the same ref constructor used on devices. */
     declare(replica: Replica, at: Scope, peerId: string, now: number): Replica {
-      for (const handler of handlers) if (provides(handler, peerId)) replica = publishNativeRef(replica, at, peerId, nativeRef(replica.store, peerId, handler.ref, handler), now)
+      for (const handler of handlers) if (provides(handler, peerId)) replica = publishNativeRef(replica, at, peerId, nativeRef(replica.store, peerId, handler.ref, handler, at), now)
       return replica
     },
     provides,
-    /** Upgrade existing host advertisements once; a withdrawn offer is never recreated. */
-    migrate(replica: Replica, at: Scope, now: number): Replica {
-      materialize(replica, at)
-      const legacy = discoverHandlers(replica, at).filter(offer => offer.legacy ||
-        handlers.some(handler => provides(handler, offer.peerId) && offer.id === handler.ref.id && refSubmissions(replica.store, offer.cid).every(cid => {
-          const value = content(replica.store, cid)
-          return value.children.every(edge => content(replica.store, offer.type).children.some(row => row[0] === edge[0] && row[1] === edge[1])) && value.data.peerId?.content === offer.peerId && value.data.description?.content === handler.ref.label && Object.keys(value.data).every(key => ['peerId', 'description', 'behavior'].includes(key))
-        })))
-      for (const peer of new Set(legacy.map(offer => offer.peerId))) {
-        for (const handler of handlers) if (provides(handler, peer) && legacy.some(offer => offer.peerId === peer && sameCapabilityType(replica.store, offer.type, handler.ref.type(replica.store)))) {
-          replica = publishNativeRef(replica, at, peer, nativeRef(replica.store, peer, handler.ref, handler), now)
-        }
-      }
-      return replica
-    },
     providers(step: EvaluationStep, replica: Replica, handler: HostHandler): string[] {
       materialize(replica, step.path)
       return [...new Set(primitiveExecutors<EffectContext, HostHandler>(replica, step).filter(value => value.native === handler).map(value => value.host))]
@@ -109,17 +94,18 @@ export function createHostRuntime(input: HostHandler[]) {
     /** Everything `ensureHomeContext` needs to write into an account's context. */
     hostOffers(): HostOffers {
       const keys = Object.fromEntries(handlers.filter(h => h.publicKey).map(h => [h.peerId, h.publicKey!]))
-      const peers = Object.fromEntries([...new Set(handlers.filter(h => !h.matches).map(h => h.peerId))].map(peer => [peer, handlers.filter(h => h.peerId === peer).map(h => [h.ref.type(catalogue), nativeRef(catalogue, peer, h.ref, h)] as [string, string])]))
+      const peers = Object.fromEntries([...new Set(handlers.filter(h => !h.matches).map(h => h.peerId))].map(peer => [peer, handlers.filter(h => h.peerId === peer).map(h => [h.ref.type(catalogue, []), nativeRef(catalogue, peer, h.ref, h)] as [string, string])]))
       return { server: this.serverCapabilities(), integrations: this.integrationOffers(), native: { peers, nodes: reachableNodes(catalogue, Object.values(peers).flat(2)) }, ...(Object.keys(keys).length ? { keys } : {}) }
     },
     /** Every handler that reacts to a submission, run on the node it landed at (see `HostHandler.submission`). */
     afterSubmission(replica: Replica, path: Scope, now: number): Replica {
-      replica = this.migrate(replica, path, now)
+      materialize(replica, path)
       for (const { native } of nativeRefValues<EffectContext, HostHandler>(replica, path)) if (native.submission) replica = native.submission(replica, path, now)
       return replica
     },
     async onLoad(ctx: Parameters<NonNullable<HostHandler['load']>>[0]): Promise<Replica> {
-      let replica = this.migrate(ctx.replica, ctx.path, ctx.now)
+      materialize(ctx.replica, ctx.path)
+      let replica = ctx.replica
       for (const { native } of nativeRefValues<EffectContext, HostHandler>(replica, ctx.path)) if (native.load) replica = await native.load({ ...ctx, replica })
       return replica
     },

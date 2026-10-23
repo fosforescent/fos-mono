@@ -66,7 +66,7 @@ async function main() {
   assert.equal(eagerCalls, 1, 'eager traversal stops at the same mask as lazy pulls')
   let relay = c.createReplica('relay')
   const foreign = c.put(relay.store, { data: { alias: { id: 'remote' }, ref: { id: 'remote', peer: 'device', version: 'unloaded', scope: ['device-home', 'remote'] } }, children: [] })
-  c.commitRoot(relay.store, c.put(relay.store, { data: {}, children: [c.rowEdgeAt(relay.store, c.PLAIN_TYPE, foreign, [])] }), 1)
+  c.commitRoot(relay.store, c.put(relay.store, { data: {}, children: [...c.valueContent(relay.store, c.headCid(relay)).children, c.rowEdgeAt(relay.store, c.PLAIN_TYPE, foreign, [])] }), 1)
   const forwarded = c.provideNode(relay, request, { ...authority, owner: true }, 2).node
   assert.deepEqual(forwarded.children[0].address, { peerId: 'device', scope: ['device-home', 'remote'] }, 'a relay preserves the actual provider address')
   let moving = c.addTask(c.createReplica('server'), [], 'Moves with policy', 1, 'moving')

@@ -20,7 +20,7 @@ import { plainEdge } from './patterns'
 import { FIELD_TYPES, MARKDOWN_TYPE, PEER_TYPE, VISITOR_SUBMISSION } from './published-types'
 export * from './published-types'
 import { PLAIN_TYPE, REF_TYPE, TEMPLATE_TYPE } from './library-types'
-import { isRowEdge, membershipPath, newId, SERVER_MEMBER, aliasIdOf, identityCid, capabilityTarget, nestScope, commitRoot, content, hasCapability, importNodes, makeLink, memberFor, proposalContent, put, reachableNodes, readMembers, readProposals, resolveScope, isRefNode, refValueCid, rootTargetCid, updateAtScope, valueContent, withProposal, type Capability, type Scope } from './graph'
+import { isRowEdge, membershipPath, newId, SERVER_MEMBER, aliasIdOf, identityCid, typeIdOf, libAt, nestScope, commitRoot, content, hasCapability, importNodes, makeLink, memberFor, proposalContent, put, reachableNodes, readMembers, readProposals, resolveScope, isRefNode, refValueCid, rootTargetCid, updateAtScope, valueContent, withProposal, type Capability, type Scope } from './graph'
 
 export type Audience = 'public' | 'users'
 export const AUDIENCES: readonly Audience[] = ['public', 'users']
@@ -65,11 +65,11 @@ export function visitorExecution(r: Replica, template: Scope, peer: string): Sco
 }
 /** What the account server's `url` handler records on its member entry: where share pages are, and whose account it is. */
 export type PageBase = { base: string; owner: string }
-const urlLeft = (r: Replica) => capabilityTarget(r.store, 'url')
+const isUrl = (store: Replica['store'], left: string) => typeIdOf(store, left) === 'capabilities.url'
 /** Record where this account's share pages are (the `url` handler, on the server's member entry at `entry`). */
 export function writePageBase(r: Replica, entry: Scope, base: PageBase, now: number): Replica {
-  const current = readRowValue<PageBase>(r, entry, urlLeft(r))
-  return current?.base === base.base && current.owner === base.owner ? r : writeRowValue(r, entry, urlLeft(r), base, now)
+  const current = readRowValue<PageBase>(r, entry, isUrl)
+  return current?.base === base.base && current.owner === base.owner ? r : writeRowValue(r, entry, libAt(r.store, entry).capabilities.url!, base, now, undefined, isUrl)
 }
 /** The share page's address for a node: the web app with the owner and the node's path. */
 export function nodeUrl(webUrl: string, address: SharedAddress): string {
@@ -83,7 +83,7 @@ export function publishedUrl(r: Replica, path: Scope): string | null {
     const at = path.slice(0, i), cid = resolveScope(r.store, headCid(r), at)
     if (!cid || !readMembers(r.store, content(r.store, cid)).some(m => m.peerId === SERVER_MEMBER)) continue
     const fos = membershipPath(r.store, headCid(r), at, SERVER_MEMBER)
-    const base = fos && readRowValue<PageBase>(r, fos, urlLeft(r))
+    const base = fos && readRowValue<PageBase>(r, fos, isUrl)
     if (base) return nodeUrl(base.base, { owner: base.owner, path: [...r.meta.scope, ...path] })
   }
   return null

@@ -2,7 +2,7 @@ import { matchesGraph } from './structural'
 /** Host-language implementations are opaque execute-only values, constructed as graph refs. */
 import type { FosStore } from '../dag-implementation/store'
 import { content, put, refNodeContent, isRefNode, resolveScope } from './graph'
-import { capabilityPattern, sameCapabilityType } from './capabilities'
+import { libAt, sameCapabilityType } from './capabilities'
 import { addRow, headCid, type Replica } from './replica'
 import type { EvaluationStep } from './evaluation'
 import { refSubmissions } from './scoped-refs'
@@ -38,7 +38,7 @@ export function primitiveValue(store: FosStore, cid: string): Primitive | null {
 
 /** Row instructions are refs. Old signed-resource syntax is adapted only at this boundary. */
 export function instructionRefType(replica: Replica, step: EvaluationStep): string | null {
-  if (step.row?.requirement) return capabilityPattern(replica.store, step.row.requirement.capability)
+  if (step.row?.requirement) return libAt(replica.store, step.path.slice(0, -1)).capabilities[step.row.requirement.capability]!
   const cid = resolveScope(replica.store, headCid(replica), step.path)
   const left = step.row?.typeCid ?? step.row?.type
   return left && replica.store.table.has(left) ? left :

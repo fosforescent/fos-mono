@@ -20,7 +20,7 @@ export function createEvaluationService(deps: AccountStoreDeps, runtime: HostRun
       const evaluate = async (path: Scope) => {
         // Persist the one-time legacy advertisement upgrade before pinning execution instructions.
         const before = headCid(r)
-        r = runtime.migrate(r, path, now())
+        runtime.restore(r, path)
         if (headCid(r) !== before) await save(r)
         // Live availability of every provider that could execute something below `path`, checked once per run.
         const active = new Map<string, boolean>()

@@ -1,5 +1,6 @@
+import { declareTestCapability } from './test-helpers'
 import {
-  addRefAt, addTask, applyProposalAt, capabilityTarget, compileRefGraph, compileRow, content, createReplica,
+  addRefAt, addTask, applyProposalAt, libAt, compileRefGraph, compileRow, content, createReplica,
   headCid, putBranches, loadReplica, matchesRefPattern, parseRefExpression, proposeRefAt, put, refNodeContent,
   resolveRefExpression, resolveScope, resolveText, serializeReplica, updateAtScope, commitRoot, refValueCompatible,
   saveRefCompilation, valueContent, executionInputs, executionInput, executionSnapshot, evaluateNode,
@@ -101,7 +102,7 @@ test('cached but forbidden values stay holes and are absent from compiled conten
 })
 
 test('branches form sums, rows form products, and capability and handler assignments share checks', () => {
-  let r = createReplica(), a = capabilityTarget(r.store, 'a'), b = capabilityTarget(r.store, 'b')
+  let r = ['a', 'b', 'c'].reduce((r, name) => declareTestCapability(r, name), createReplica()), a = libAt(r.store).capabilities.a!, b = libAt(r.store).capabilities.b!
   const aHandler = put(r.store, refNodeContent(r.store, { alias: { id: 'handler-a' } }, a, []))
   const sum = putBranches(r.store, 'sum', null, [{ peerId: 'a', edge: [a, a] }, { peerId: 'b', edge: [b, b] }], 'a')
   expect(refValueCompatible(r.store, a, a)).toBe(true)
@@ -116,7 +117,7 @@ test('branches form sums, rows form products, and capability and handler assignm
   expect(matchesRefPattern(r.store, a, at(r, ['choice']))).toBe(false)
   const compiled = compileRefGraph(r, at(r, ['choice']))
   expect(compiled.complete).toBe(true)
-  const bad = proposeRefAt(r, ['choice'], capabilityTarget(r.store, 'c'), 'owner', 4)
+  const bad = proposeRefAt(r, ['choice'], libAt(r.store).capabilities.c!, 'owner', 4)
   expect(() => applyProposalAt(bad.replica, ['choice'], bad.proposalCid, 'owner', 5)).toThrow(/incompatible/)
 })
 

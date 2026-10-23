@@ -17,10 +17,11 @@ async function main() {
   const app = new c.App({ baseUrl: 'http://localhost', autoLogin: null, storage: c.createMemoryStorage() })
   app.scheduleSync = () => {}
   c.mountUi(document.getElementById('app'), app); await tick()
+  const parse = text => c.parseRowInput(text, c.capabilityDeclarations(app.state.replica.store, app.state.view))
   const me = app.state.replica.meta.peerId
   const offers = app.handlerOffers([]).filter(offer => offer.peerId === me)
   assert(offers.some(offer => offer.capability === 'fetch') && offers.some(offer => offer.capability === 'solve'), 'this device offers fetch and solve')
-  const parsed = c.parseRowInput('-fetch POST https://example.com/hook ping')
+  const parsed = parse('-fetch POST https://example.com/hook ping')
   assert.deepEqual(parsed.construct, { capability: 'fetch', values: { url: 'https://example.com/hook', method: 'POST' } })
   assert.equal(parsed.extras, undefined, 'nothing about the request is row data')
 
@@ -28,13 +29,13 @@ async function main() {
   const home = [c.HOME_ID]
   const requests = []
   globalThis.fetch = async (url, init) => { requests.push([url, init.method]); return { status: 200, text: async () => 'hello from the network' } }
-  const fetchRow = app.applyConstructor(home, c.parseRowInput('-fetch https://example.com/data greeting'))
+  const fetchRow = app.applyConstructor(home, parse('-fetch https://example.com/data greeting'))
   app.set({ view: home }); await tick()
-  const s = app.state.replica.store, fetchNode = c.capabilityTarget(s, 'fetch')
+  const s = app.state.replica.store, fetchNode = c.libAt(s, home).capabilities.fetch
   const rowEdge = c.findEdge(s, c.valueContent(s, c.resolveScope(s, c.headCid(app.state.replica), home)), `a:${fetchRow.at(-1)}`)
   assert.equal(rowEdge[0], fetchNode, 'the left is the library fetch node itself')
   // the fetch node's rows: what it sends and receives is structural, parameter rows on each ref's left
-  const refs = c.openRefs(s, fetchNode), [primitive, negative, string] = [c.PRIMITIVE_ID, c.NEGATIVE_ID, c.STRING_ID].map(id => c.libraryNode(s, id))
+  const refs = c.openRefs(s, fetchNode), [primitive, negative, string] = [c.PRIMITIVE_ID, c.NEGATIVE_ID, c.STRING_ID].map(id => c.libAt(s).field(id))
   assert.deepEqual(refs.map(ref => [ref.name, ref.sent, ref.received]), [['url', true, false], ['method', true, false], ['response', false, true]])
   assert.deepEqual(c.content(s, refs[0].left).children, [[primitive, string], [negative, c.put(s, { data: {}, children: [] })]])
   assert.equal(c.textOf(app.state.replica, refs[1].defaultValue), 'GET', 'method is an open ref with a default')
@@ -65,10 +66,10 @@ async function main() {
   const trip = [...home, 'trip']
   for (const [id, city] of [['alice', 'Paris'], ['bob', 'Rome']]) { r = c.addTask(r, trip, id, 1, id); r = c.addRow(r, [...trip, id], c.PLAIN_TYPE, city, 2, { id: `${id}-city` }) }
   app.set({ replica: r, view: trip }); await tick()
-  const solveRow = app.applyConstructor(trip, c.parseRowInput('-solve where can we go'))
+  const solveRow = app.applyConstructor(trip, parse('-solve where can we go'))
   r = c.addRefAt(app.state.replica, solveRow, 'city', app.state.replica.store.primitive.documentField.getId(), 3, null, 'city')
   app.set({ replica: r }); await tick()
-  assert.equal(c.findEdge(app.state.replica.store, c.valueContent(app.state.replica.store, c.resolveScope(app.state.replica.store, c.headCid(app.state.replica), trip)), `a:${solveRow.at(-1)}`)[0], c.capabilityTarget(app.state.replica.store, 'solve'))
+  assert.equal(c.findEdge(app.state.replica.store, c.valueContent(app.state.replica.store, c.resolveScope(app.state.replica.store, c.headCid(app.state.replica), trip)), `a:${solveRow.at(-1)}`)[0], c.libAt(app.state.replica.store, trip).capabilities.solve)
   await app.evaluateAt(solveRow); await tick()
   const city = c.content(app.state.replica.store, c.resolveScope(app.state.replica.store, c.headCid(app.state.replica), [...solveRow, 'city']))
   const options = c.readProposals(app.state.replica.store, city).filter(p => p.status === 'open').map(p => c.valueContent(app.state.replica.store, p.contentCid).data.description?.content).sort()

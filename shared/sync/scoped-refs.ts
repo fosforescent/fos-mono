@@ -1,7 +1,7 @@
 /** Lexically scoped declarations and their accepted submissions. No capability vocabulary. */
 import { isHandlerStateLeft } from './capabilities'
 import type { FosStore } from '../dag-implementation/store'
-import { isLibraryRef, content, enclosingScopes, importNodes, reachableNodes, identityCid, isBranchChoice, isGrantEdge, isMemberEdge, isRowEdge, put, readChoice, refNodeContent, isRefNode, refValueCid, typeIdOf, type Scope } from './graph'
+import { isTemplateType, isLibraryRef, content, enclosingScopes, importNodes, reachableNodes, identityCid, isBranchChoice, isGrantEdge, isMemberEdge, isRowEdge, put, readChoice, refNodeContent, isRefNode, refValueCid, typeIdOf, type Scope } from './graph'
 import { matchesGraph } from './structural'
 import { headCid, type Replica } from './replica'
 
@@ -58,7 +58,7 @@ function declarationRows(store: FosStore, cid: string): Array<{ cid: string; typ
     if (isRowEdge(store, edge) && isHandlerStateLeft(store, edge[0])) return []
     // Linked library document rows are containers, not implicit lexical names.
     // Explicit names and ref constructor arguments declare bindings.
-    const declaration = ref.data.name || !typeIdOf(store, edge[0]) || left.data.capabilityDefinition || left.data.form?.primitive
+    const declaration = ref.data.name || !isTemplateType(store, edge[0]) && (!typeIdOf(store, edge[0]) || left.data.capabilityDefinition || left.data.form?.primitive)
     const type = isRowEdge(store, edge) && (namedRow || isRefNode(store, ref) && declaration) ? edge[0] : null
     if (!ref.data.alias || !type) return []
     return edge[0] === type || isRowEdge(store, edge) || isMemberEdge(store, edge) ||

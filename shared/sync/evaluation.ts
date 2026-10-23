@@ -1,3 +1,4 @@
+import { copyOuterScope } from './graph'
 /** Evaluation uses ordinary typed refs for its journal and ordinary tasks for compensation. */
 import { mergeNodes } from './merge'
 import { hashContent } from '../dag-implementation/cid'
@@ -81,7 +82,7 @@ function executionState(r: Replica, path: Scope): ExecutionState {
   return state && typeof state === 'object' ? state : {}
 }
 function writeExecutionState(r: Replica, path: Scope, change: ExecutionState, now: number): Replica {
-  return writeRowValue(r, path, executeLeft(r.store), { ...executionState(r, path), ...change }, now)
+  return writeRowValue(r, path, executeLeft(r.store, path), { ...executionState(r, path), ...change }, now)
 }
 /** Write the journal into the node's execute row (made when the node has none). */
 export function writeEvaluationRecord(r: Replica, path: Scope, record: EvaluationRecord, now: number): Replica {
@@ -286,6 +287,7 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
     const allocationErrors = allocationProblems(live, steps)
     if (allocationErrors.length) throw new Error(allocationErrors.join('\n'))
     let r = loadReplica(serializeReplica(live))
+    copyOuterScope(live.store, r.store)
     for (const step of steps) for (const [id, name] of Object.entries(scopeBranches(live.store, headCid(live), step.path))) selectBranch(r.store, id, name)
     for (const step of [...steps].reverse()) if (step.row?.checkable) {
       r = setTaskDone(r, step.path.slice(0, -1), step.path.at(-1)!, true, driver.now())

@@ -1,3 +1,4 @@
+import { installTestHandler } from './test-helpers'
 import {
   addMemberAt, addPlanningTemplate, addRef, addRow, addSupply, addTask, beginTaskWork,
   createReplica, decideTaskResult, loadReplica, proposeTaskResult,
@@ -7,7 +8,7 @@ import { PLAIN_TYPE } from './library-types'
 import { NOTE_TYPE, ALLOCATION_TYPE } from './library-types'
 
 function setup() {
-  let r = addMemberAt(createReplica('owner'), [], 'fos', 'fos', ['llm'], 0)
+  let r = installTestHandler(createReplica('owner'), 'fos', 'llm')
   r = addRow(r, [], PLAIN_TYPE, 'Home', 1, { id: 'home' })
   r = addTask(r, ['home'], 'Rental app', 2, 'project')
   r = addRow(r, ['home', 'project'], NOTE_TYPE, 'Architecture: keep inventory in one database.', 3, { id: 'brief' })
@@ -81,7 +82,7 @@ test('changed criteria prevent accepting an old answer, and oversized context is
 })
 
 test('the reusable work template requires readiness and uses the existing instantiator', () => {
-  let r = addMemberAt(createReplica('owner'), [], 'fos', 'fos', ['llm'], 0)
+  let r = installTestHandler(createReplica('owner'), 'fos', 'llm')
   r = addTask(r, [], 'Build availability', 1, 'task')
   r = addPlanningTemplate(r, ['task'], 2)
   const rows = view(r, ['task'])!.tasks

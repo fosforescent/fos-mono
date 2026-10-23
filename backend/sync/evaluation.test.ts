@@ -39,6 +39,7 @@ function setup() {
     return { url: 'https://example.test/issues/1', number: 1 }
   } }
   const runtime = createHostRuntime([githubRepoHandler({ connected: () => effects.connected(), createIssue: () => effects.createIssue() })])
+  r = runtime.declare(r, [], 'integration:github', 1)
   const deps = { loadStore: async () => ({ user: { id: 1, username: 'owner' }, store: r.store }), saveStore: async (_user: unknown, store: any) => { r = { ...r, store } }, now: () => 10 }
   const service = createEvaluationService(deps, runtime)
   // Owners evaluate through the event grammar: a `complete` event at the node (backend/sync/events.ts → runNode).

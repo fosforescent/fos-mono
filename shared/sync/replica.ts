@@ -1,7 +1,7 @@
 import { sameCapabilityType } from './capabilities'
 import { refValueCompatible } from './scoped-refs'
 import { matchesGraph } from './structural'
-import { parseRefExpression, textRefExpressions } from './ref-paths'
+import { parseRefExpression, textRefExpressions, resolveRefIdentity } from './ref-paths'
 import { contextMemberRefs, discoverHandlers, marketplaceOffers } from './handlers'
 import { nodeBranches, materializedNodePaths, nodeShape, sameNodeShape, nodeSyncKey, nodePersistenceAllowed } from './node-sync'
 /**
@@ -22,9 +22,9 @@ import { legacyCommentMetadata } from './legacy-comment'
 import { knownUser, publishPeerKey, userType, withUserField, type UserRecord } from './users'
 import { membershipPath, withMembershipRow, homeIdOf, isValueSubmission, settingOf, withRequirementInputs } from './graph'
 import {
-  withMainBranchPolicy, capabilityTarget, refValueCid, putRefValueBranches, selectBranch, isBranchChoice, branchEdge, branchSelection, readChoice, scopeBranches,
+  withMainBranchPolicy, libAt, refValueCid, putRefValueBranches, selectBranch, isBranchChoice, branchEdge, branchSelection, readChoice, scopeBranches,
   HOME_ID,
-  CAPABILITIES,
+  capabilityNames,
   homeContextCid,
   canonicalRowData,
   type Capability,
@@ -44,7 +44,6 @@ import {
   isLibraryType,
   libraryTypeAt,
   findRowByAlias,
-  findNearestRow,
   rowView,
   findTemplate,
   refNodeContent,
@@ -223,6 +222,7 @@ export function markNativeDefaultsApplied(replica: Replica, at: Scope, source: s
 /** Move legacy document rows into Home without copying their identities or losing root bookkeeping. */
 export function ensureHomeContext(replica: Replica, now: number, offers?: HostOffers): Replica {
   if (replica.meta.scope.length) return replica
+  if (offers?.native) importNodes(replica.store, offers.native.nodes)
   const before = headCid(replica)
   const seeded = nativeDefaultsApplied(replica, [], 'server')
   const next = homeContextCid(replica.store, before, now, seeded ? {} : offers)
@@ -240,16 +240,7 @@ export function ensureHomeContext(replica: Replica, now: number, offers?: HostOf
         if (type) groups.set(type, [...(groups.get(type) ?? []), cid])
       }
       for (const [type, values] of groups) {
-        const existing = discoverHandlers(r, at).filter(offer => offer.peerId === peer && sameCapabilityType(r.store, offer.type, type))
-        const preserved = existing.filter(offer => !offer.legacy && !values.some(cid => content(r.store, cid).data.alias?.id === offer.id)).map(offer => offer.cid)
-        const defaults = values.map(cid => {
-          const prior = existing.find(offer => !offer.legacy && offer.id === content(r.store, cid).data.alias?.id)
-          if (!prior) return cid
-          const target = refValueCid(r.store, content(r.store, prior.cid)), value = target ? content(r.store, target) : null
-          const stub = value && value.children.every(edge => content(r.store, type).children.some(row => row[0] === edge[0] && row[1] === edge[1])) && value.data.peerId?.content === peer && value.data.description?.content === prior.capability && Object.keys(value.data).every(key => ['peerId', 'description', 'behavior'].includes(key))
-          return stub ? cid : prior.cid
-        })
-        if (existing.length !== defaults.length + preserved.length || defaults.some(cid => !existing.some(offer => offer.cid === cid))) r = setHandlerOffersAt(r, at, peer, type, [...preserved, ...defaults], now)
+        r = setHandlerOffersAt(r, at, peer, type, values, now)
       }
     }
     r = markNativeDefaultsApplied(r, [], 'server', now)
@@ -522,7 +513,7 @@ export function setRowContentAt(replica: Replica, at: Scope, aliasId: string, ty
 function userBound(replica: Replica, at: Scope, node: FosNodeContent, extras: Omit<RowExtras, 'store'>): FosNodeContent {
   // a requirement's inputs, as `extras.inputs` gives them: named fields its capability declares
   const capability = node.data.requirement?.capability ?? extras.requirement?.capability
-  if (extras.inputs && capability) node = withRequirementInputs(replica.store, node, capability, extras.inputs)
+  if (extras.inputs && capability) node = withRequirementInputs(replica.store, node, capability, extras.inputs, at)
   if (extras.user === undefined) return node
   return withUserField(replica.store, node, extras.user && knownUser(replica, extras.user), userType(replica.store, at))
 }
@@ -588,7 +579,7 @@ export function addSupply(replica: Replica, at: Scope, requirementId: string, su
 }
 
 /** The template row called `name` that a row at `at` sees (nearest ancestor first), or null. */
-export function findTemplateByName(replica: Replica, name: string, at: Scope = []): { path: Scope; row: TaskView; cid: string } | null {
+export function findTemplateByName(replica: Replica, name: string, at: Scope = []): { row: TaskView; cid: string } | null {
   const root = headCid(replica)
   return root ? findTemplate(replica.store, root, name, at) : null
 }
@@ -743,11 +734,11 @@ export function copyNode(replica: Replica, fromPath: Scope, aliasId: string, toP
 }
 
 /** Resolve a reference row's target: path (relative to the replica) and view, or null when it no longer exists. */
-/** The row with alias `targetAliasId` that a row at `at` refers to: by nearest ancestor (`findNearestRow`). */
+/** Resolve explicit identity links through the same resolver used by compiled refs. */
 export function resolveRef(replica: Replica, targetAliasId: string, at: Scope = []): { path: Scope; row: TaskView } | null {
-  const root = headCid(replica)
-  const found = root ? findNearestRow(replica.store, root, at, row => row.id === targetAliasId) : null
-  return found ? { path: found.path, row: rowView(replica.store, found.cid, found.edge) } : null
+  const result = resolveRefIdentity(replica, at, targetAliasId)
+  const found = result.status === 'ready' ? result.locations[0] : undefined
+  return found?.pattern && found.store === replica.store ? { path: found.path.slice(0, -1), row: rowView(found.store, found.cid, [found.pattern, found.cid]) } : null
 }
 
 function updateTask(replica: Replica, at: Scope, taskId: string, now: number, change: (task: FosNodeContent) => FosNodeContent | null): Replica {
@@ -828,7 +819,7 @@ export function makeLinkAt(replica: Replica, at: Scope, now: number): Replica {
 }
 
 export function addMemberAt(replica: Replica, at: Scope, peerId: string, name: string | null, capabilities: Capability[], now: number): Replica {
-  return editPolicy(replica, at, now, (node) => withMember(replica.store, makeLink(replica.store, node, now), peerId, name, capabilities))
+  return editPolicy(replica, at, now, (node) => withMember(replica.store, makeLink(replica.store, node, now), peerId, name, capabilities, [], [], at))
 }
 
 /**
@@ -841,8 +832,8 @@ export function addMemberAt(replica: Replica, at: Scope, peerId: string, name: s
  */
 export function linkLocalStore(replica: Replica, peerId: string, name: string, now: number, shares: Scope = []): Replica {
   const member = readMembers(replica.store, content(replica.store, headCid(replica))).find(m => m.peerId === peerId)
-  if (member && member.name === name && CAPABILITIES.every(c => member.capabilities.includes(c))) return replica
-  let next = editNode(replica, [], now, (node) => withMember(replica.store, node, peerId, name, CAPABILITIES))
+  if (member && member.name === name && capabilityNames(replica.store).every(c => member.capabilities.includes(c))) return replica
+  let next = editNode(replica, [], now, (node) => withMember(replica.store, node, peerId, name, capabilityNames(replica.store)))
   if (!member) {
     const id = localStoreRowId(peerId), store = next.store
     const held = put(store, { data: { alias: { id }, description: { content: name }, ref: { id, peer: peerId, version: 'unloaded', scope: [...shares] } }, children: [] })
@@ -874,7 +865,7 @@ export function setMemberCapabilitiesAt(replica: Replica, at: Scope, peerId: str
   return editPolicy(replica, at, now, (node) => {
     const link = makeLink(replica.store, node, now)
     const existing = readMembers(replica.store, link).find((m) => m.peerId === peerId)
-    const next = withMember(replica.store, link, peerId, existing?.name ?? null, capabilities, disabled, accepts ?? existing?.accepts ?? [])
+    const next = withMember(replica.store, link, peerId, existing?.name ?? null, capabilities, disabled, accepts ?? existing?.accepts ?? [], at)
     return peerId === 'fos' && disabled.includes('persist') ? withPeer(replica.store, next, replica.meta.peerId) : next
   })
 }

@@ -1,5 +1,6 @@
+import { declareTestCapability } from './test-helpers'
 import {
-  addMemberAt, addRefAt, addRow, addSupply, ALLOCATION_TYPE, addTask, applyProposalAt, capabilityTarget, content, contextBindings, nativeRef, publishNativeRef, primitiveExecutors,
+  addMemberAt, addRefAt, addRow, addSupply, ALLOCATION_TYPE, addTask, applyProposalAt, libAt, content, contextBindings, nativeRef, publishNativeRef, primitiveExecutors,
   createReplica, discoverHandlers, headCid, inspectRef, matchesRefPattern, parsePolicy, proposeRefAt, put,
   refNodeContent, refSubmissions, requirementSatisfied, resolveBinding, resolveScope, resolveText, scopedRefs,
   serializeReplica, loadReplica, nestScope, setHandlerEnabledAt, type EvaluationStep
@@ -9,15 +10,15 @@ const leaf = (r: ReturnType<typeof createReplica>, name: string) => put(r.store,
 const at = (r: ReturnType<typeof createReplica>, path: string[]) => resolveScope(r.store, headCid(r), path)!
 
 test('a nested document inherits device ref declarations without writing device declarations into the document', () => {
-  let device = createReplica('device')
-  device = publishNativeRef(device, [], 'device', nativeRef(device.store, 'device', { id: 'device:custom', type: store => capabilityTarget(store, 'custom') }), 1)
+  let device = declareTestCapability(createReplica('device'), 'custom')
+  device = publishNativeRef(device, [], 'device', nativeRef(device.store, 'device', { id: 'device:custom', type: store => libAt(store).capabilities.custom! }), 1)
   const document = createReplica('device')
   const before = headCid(document)
   nestScope(document.store, { store: device.store, root: headCid(device), at: [] })
-  expect(discoverHandlers(document, []).some(offer => offer.id === 'device:custom')).toBe(true)
+  expect(discoverHandlers(document, []).some(offer => offer.type === libAt(device.store).capabilities.custom)).toBe(true)
   expect(headCid(document)).toBe(before)
   const shared = addMemberAt(document, [], 'device', 'Device', ['read'], 2)
-  expect(discoverHandlers(shared, []).some(offer => offer.id === 'device:custom')).toBe(true)
+  expect(discoverHandlers(shared, []).some(offer => offer.type === libAt(device.store).capabilities.custom)).toBe(true)
 })
 
 test('custom ref declarations work in scope without a capability enum, member, or global registry', () => {
@@ -82,21 +83,21 @@ test('patterns recurse through rows and submitted refs without node type declara
 })
 
 test('device and host native implementations are selected through published refs and respect disabled offers', async () => {
-  let r = createReplica('device'), calls = 0
-  const ref = nativeRef<void>(r.store, 'device', { id: 'custom:executor', type: store => capabilityTarget(store, 'extension:paint'), effect: async () => { calls++ } })
+  let r = declareTestCapability(createReplica('device'), 'extension:paint'), calls = 0
+  const ref = nativeRef<void>(r.store, 'device', { id: 'custom:executor', type: store => libAt(store).capabilities['extension:paint']!, effect: async () => { calls++ } })
   const step = { path: [], row: { requirement: { capability: 'extension:paint' } } } as unknown as EvaluationStep
   expect(primitiveExecutors(r, step, 'device')).toEqual([])
   r = publishNativeRef(r, [], 'device', ref, 1)
   await primitiveExecutors<void>(r, step, 'device')[0]!.native.effect!()
   expect(calls).toBe(1)
-  r = setHandlerEnabledAt(r, [], 'device', 'custom:executor', false, 2)
+  r = setHandlerEnabledAt(r, [], 'device', content(r.store, ref).data.alias!.id, false, 2)
   expect(primitiveExecutors(r, step, 'device')).toEqual([])
 })
 
 test('a native implementation is reached through an assigned ref rather than the declaration name', () => {
-  let r = createReplica('device')
-  const reference = nativeRef<void>(r.store, 'device', { id: 'native:paint', type: store => capabilityTarget(store, 'paint'), effect: async () => {} })
-  r = addRefAt(r, [], 'my-handler', capabilityTarget(r.store, 'paint'), 1, reference)
+  let r = declareTestCapability(createReplica('device'), 'paint')
+  const reference = nativeRef<void>(r.store, 'device', { id: 'native:paint', type: store => libAt(store).capabilities.paint!, effect: async () => {} })
+  r = addRefAt(r, [], 'my-handler', libAt(r.store).capabilities.paint!, 1, reference)
   const step = { path: [], row: { requirement: { capability: 'paint' } } } as unknown as EvaluationStep
   expect(primitiveExecutors(r, step, 'device')).toHaveLength(1)
   r = setHandlerEnabledAt(r, [], 'device', 'my-handler', false, 2)
@@ -115,5 +116,5 @@ test('an old nominal annotation cannot satisfy a structural pattern', () => {
   let r = createReplica('device')
   const old = r.store.primitive.llmCapability.getId(), value = leaf(r, 'model')
   r = addRefAt(r, [], 'old-model', old, 1, value)
-  expect(resolveBinding(r.store, capabilityTarget(r.store, 'llm'), null, contextBindings(r, [])).status).toBe('missing')
+  expect(resolveBinding(r.store, libAt(r.store).capabilities.llm!, null, contextBindings(r, [])).status).toBe('missing')
 })

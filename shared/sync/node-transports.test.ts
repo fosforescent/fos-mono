@@ -2,7 +2,7 @@
  * A peer is reached like any capability: its connection is the native of its `provideNode` offer on its row, and what
  * reaches it from a node is that offer found by scope search (`nodeTransportAt`), not a choice made from its id.
  */
-import { setMemberCapabilitiesAt, membershipPathAt, nodeShape, addTask, createReplica, discoverHandlers, handlerOfferId, nodeTransportAt, offerNodeTransport, setHandlerEnabledAt, type NodeTransport, type ProvidedNode } from './index'
+import { setMemberCapabilitiesAt, membershipPathAt, nodeShape, addTask, createReplica, discoverHandlers, handlerOfferId, libAt, nodeTransportAt, offerNodeTransport, setHandlerEnabledAt, type NodeTransport, type ProvidedNode } from './index'
 
 const transport = (calls: string[], available = () => true): NodeTransport => ({
   capabilities: ['provideNode'], available, attachment: () => [],
@@ -29,7 +29,7 @@ test('an unavailable connection or a switched-off offer reaches nothing', () => 
   expect(nodeTransportAt(r, [], 'host')).toBeNull()
   online = true
   expect(nodeTransportAt(r, [], 'host')).not.toBeNull()
-  r = setHandlerEnabledAt(r, [], 'host', handlerOfferId('host', 'provideNode'), false, 2)
+  r = setHandlerEnabledAt(r, [], 'host', handlerOfferId('host', libAt(r.store).capabilities.provideNode!, 'transport'), false, 2)
   expect(nodeTransportAt(r, [], 'host')).toBeNull()
 })
 

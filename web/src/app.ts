@@ -10,19 +10,20 @@ import { nativeRefValues } from '../../shared/sync/native-refs'
 import { sameValue } from '../../shared/sync/merge'
 import { parseRowInput } from './rows'
 import { isHandlerStateLeft } from '../../shared/sync/capabilities'
-import { STANDARD_CAPABILITY_PATTERNS, scopedRefs, flattenRefs, requirementHandlerTypes, sameCapabilityType, compileInstructions, executionInputs, addRefCall, primitiveValue, refSubmissions, matchesInstructionRef, templateValuePattern, solveAt, usePatternAt, patternBindings, choosePatternBindingAt, findEdge, valueCidOf, type PatternBinding, constructAt, namesInLibrary, rowConstructor, openRefs, assignedValue, assignRefAt, textOf, capabilityName, readProposals, type OpenRef } from '../../shared/sync/index'
+import { capabilityDeclarations, scopedRefs, flattenRefs, requirementHandlerTypes, sameCapabilityType, compileInstructions, executionInputs, addRefCall, primitiveValue, refSubmissions, matchesInstructionRef, templateValuePattern, solveAt, usePatternAt, patternBindings, choosePatternBindingAt, findEdge, valueCidOf, type PatternBinding, constructAt, namesInLibrary, rowConstructor, openRefs, assignedValue, assignRefAt, textOf, capabilityName, readProposals, type OpenRef } from '../../shared/sync/index'
 import { createDeviceHandlers } from './device-handlers'
 import { capabilityOfTarget } from '../../shared/sync/graph'
 import { workClaims, saveWorkClaims } from '../../shared/sync/work-claims'
 import { BUNDLED_LIBRARY as LIBRARY_BUNDLE } from '../../shared/sync/library'
 import { runProjectWorkflows, queueAgentEffect } from './project-workflow'
 import { AGENT_TOOL } from '../../shared/sync/project-workflow'
-import { libraryPath, libraryFieldPath, MANUAL_HANDLERS } from '../../shared/sync/library'
+import { libraryPath, MANUAL_HANDLERS } from '../../shared/sync/library'
+import { libraryBindingAt, childRows, rowView } from '../../shared/sync/graph'
 import { addSpecification, specificationRows, importSpecifications, queueSpecificationVerification, type FeatureSpecification } from '../../shared/sync/specifications'
 import { executionInput, executionSnapshot } from '../../shared/sync/execution-access'
 import { setConstructorEnabledAt, contextMemberRefs, discoverHandlers, contextMembers, publishTemplate, setHandlerEnabledAt, instantiateTemplateValue, copyBidRow, draftBid, rowsOfType, supplyOf } from '../../shared/sync/index'
 import { ensureLocalMcp, stopLocalMcp } from './node-agent'
-import { CAPABILITY_LABEL, MARKET_PEER } from '../../shared/sync/graph'
+import { capabilityLabels, MARKET_PEER } from '../../shared/sync/graph'
 import { NODE_PERMISSION_DEFAULT, isNodeProjection, nodeBranches, nodeBranchBase, validateNodeShape, exchangeNode, nodeShape, sameNodeShape, mergeNodeShape, installNodeShape, materializedNodePaths, nodePersistenceAllowed, rememberNodeSync, nodeSyncKey, nodeSyncRequest, outgoingNodeShape, establishNodeSync, provideNode, pullNode, acceptProvidedNode, acceptTemplateNodes, planNodeSync, nodeSyncPush, finishNodeSync, nodeTemplateRequests, blankNodeRequest, ownHeldChildren, isBlank as isBlankShape, finishBlankNode, nodeLinkEndpoint, nodeRequestLinkId, setNodeLinkMask, isPeerReference, acceptSubmissionRows, type NodeMask, type NodeRequest, type NodeProvider, type ProvidedNode, type ProposalView } from '../../shared/sync/index'
 import { requestPeerNode } from './api'
 import { membershipSyncContext, sendPullRequest, UNKNOWN_PROVIDER, type NodeSyncContext } from '../../shared/sync/node-sync'
@@ -69,10 +70,11 @@ import { searchFosUsers, evaluateOnServer, createRepositoryBranch, readRepositor
 import { VirtualPeers, type VirtualPeer } from './virtual'
 import { EditHistory } from './history'
 import {
-  HOME_ID, isLibraryRef, ensureDeviceLibrary, linkLocalStore, localStores, findRowByAlias, type LibraryBundle, type ManualHandler, destructureRequirement, linkRequirementOutput, bookkeepingOf, refBranches, updateAtScope, refNodeContent, matchesGraph, isRefNode, capabilityTarget, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, copyProposalBranch, createBranch, setBranchMergeRequest, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, decideTaskResult, taskWorkContext, workAttempts, type WorkContext,
+  HOME_ID, isLibraryRef, ensureDeviceLibrary, linkLocalStore, localStores, findRowByAlias, type LibraryBundle, type ManualHandler, destructureRequirement, linkRequirementOutput, bookkeepingOf, refBranches, updateAtScope, refNodeContent, matchesGraph, isRefNode, libAt, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, copyProposalBranch, createBranch, setBranchMergeRequest, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, decideTaskResult, taskWorkContext, workAttempts, type WorkContext,
   addRef,
   createReplica,
   importNodes,
+  copyOuterScope,
   reachableNodes,
   commitRoot,
   mergeNodes,
@@ -80,7 +82,7 @@ import {
   addMemberAt,
   addSupply,
   addTask,
-  CAPABILITIES,
+  capabilityNames,
   copyNode,
   DEFAULT_DEVICE_POLICY,
   findTemplateByName,
@@ -663,7 +665,7 @@ export class App {
         geolocation.getCurrentPosition(position => resolve({ lat: Math.round(position.coords.latitude * 1e5) / 1e5, lng: Math.round(position.coords.longitude * 1e5) / 1e5 }), reject, { timeout: 15_000, maximumAge: 60_000 })
       })
     }
-    const native = nativeRef(r.store, peer, { id: handlerOfferId(peer, 'allocation', 'location'), label: 'This device', type: store => capabilityTarget(store, 'allocation') }, reader as never)
+    const native = nativeRef(r.store, peer, { id: 'location', label: 'This device', type: (store, at) => libAt(store, at).capabilities.allocation! }, reader as never)
     try { return setLibraryArg(r, [], 'deviceLocation', native, 0) } catch { return r }
   }
   /** The native a device fallback runs (what this device passed its library), when the device can run it now. */
@@ -1407,7 +1409,7 @@ export class App {
       let next = rememberNodeSync(acceptProvidedNode(this.state.replica, path, request, node, this.now()), path, node)
       next = { ...next, meta: { ...next.meta, sharedNodes: { ...next.meta.sharedNodes, [JSON.stringify(path)]: { owner, scope: located.path } } } }
       this.set({ replica: next })
-      if (navigate) { this.goTo(path); this.notify('info', `Shared by @${owner}: you can ${(node.grants ?? []).map(g => CAPABILITY_LABEL[g] ?? g).join(', ') || 'read'} here.`) }
+      if (navigate) { this.goTo(path); this.notify('info', `Shared by @${owner}: you can ${(node.grants ?? []).map(g => capabilityLabels(this.state.replica.store, path)[g] ?? g).join(', ') || 'read'} here.`) }
       // a library is used offline: pull all of it, not just the node being looked at
       if (this.isLibrary(path)) void this.materializeSharedTree(path)
     } catch (error) { if (navigate) this.notify('error', error instanceof Error ? error.message : String(error)) }
@@ -1597,7 +1599,7 @@ export class App {
     const replica = branch ?? this.state.replica
     const template = findTemplateByName(replica, name, [...this.state.view, ...at])
     if (!template) { this.notify('error', `No template called “${name}”. Make one with a \`${name} row and put its requirements (- …) inside.`); return }
-    const next = instantiateTemplate(replica, [...this.state.view, ...at], taskId, template.row.id, this.now())
+    const next = instantiateTemplateValue(replica, [...this.state.view, ...at], taskId, template.cid, this.now())
     if (!branch) this.edit(next)
     if (!branch) this.set({ collapsed: this.state.collapsed.filter((c) => c !== taskId) })
   }
@@ -1819,7 +1821,7 @@ export class App {
     return peers
   }
   /** Every capability a peer row can carry, for the owner's "add" control. */
-  allCapabilities(): Capability[] { return [...new Set([...CAPABILITIES, ...this.handlerOffers().flatMap(offer => offer.capability ? [offer.capability] : [offer.type])])] }
+  allCapabilities(): Capability[] { return [...new Set([...capabilityNames(this.state.replica.store, this.constructorContext()), ...this.handlerOffers().flatMap(offer => offer.capability ? [offer.capability] : [offer.type])])] }
   /**
    * What the account server offers: the list it reported in its last response, else what this device recorded on its
    * fos member from an earlier session, else only the transport facts. Services appear here only when the server's
@@ -2184,7 +2186,7 @@ export class App {
   actorName(): string { return this.state.session?.username ?? this.state.deviceName }
   private peerRowReplica(r: Replica, path: Scope, handler: string | undefined): Replica {
     if (!resolveScope(r.store, headCid(r), path)) return r
-    const pattern = capabilityTarget(r.store, 'peer')
+    const pattern = libAt(r.store, path.slice(0, -1)).capabilities.peer!
     const next = updateAtScope(r.store, headCid(r), path, identity => {
       const cid = put(r.store, identity), value = valueContent(r.store, cid)
       const { name: _name, ...data } = identity.data
@@ -2520,32 +2522,29 @@ export class App {
       name: capabilityOfTarget(this.state.replica.store, ref.type) ?? ref.type, syntax: [ref.name!]
     }))
     const offers = this.handlerOffers(path).map(offer => ({ name: offer.capability ?? offer.type, syntax: [offer.label] }))
-    return parseRowInput(text, [...declarations, ...offers, ...STANDARD_CAPABILITY_PATTERNS])
+    return parseRowInput(text, [...declarations, ...offers, ...capabilityDeclarations(this.state.replica.store, path)])
   }
   handlerOffers(path = this.constructorContext()) {
     return discoverHandlers(this.state.replica, path, { isPeerActive: id => id === this.state.replica.meta.peerId || this.isOnline(id) })
   }
-  /** Read the nearest library (Home's linked one, else the device root's shipped one), never a UI catalog. */
-  libraryConstructors() {
-    const path = libraryPath(this.state.replica, this.constructorContext())
-    if (!path) return []
-    const r = this.state.replica, ref = resolveScope(r.store, headCid(r), path)
-    // the library's templates (not its types: `isTemplateType`), but the manual handlers' group
-    const manual = libraryFieldPath(r, MANUAL_HANDLERS, this.constructorContext())?.at(-1)
-    const template = (id: string) => { const cid = ref && resolveScope(r.store, headCid(r), [...path, id]); return !!cid && isTemplateType(r.store, cid) }
-    return (view(this.state.replica, path)?.tasks ?? [])
-      .filter(row => row.type === TEMPLATE_TYPE && row.id !== manual && template(row.id) && row.title.trim())
-      .map(row => ({ id: row.id, label: row.title.trim(), path: [...path, row.id], icon: this.templateIcon([...path, row.id]) || 'template' }))
+  /** Menus must use the same pinned namespace as construction and execution. */
+  libraryConstructors(path = this.constructorContext()) {
+    const r = this.state.replica, binding = libraryBindingAt(r.store, path)
+    if (!binding) return []
+    const manual = namesInLibrary(r.store, binding.library).byName.get(MANUAL_HANDLERS)
+    return childRows(r.store, binding.library)
+      .filter(row => row.type === TEMPLATE_TYPE && (!manual || valueCidOf(r.store, row.cid) !== valueCidOf(r.store, manual)) && isTemplateType(r.store, row.cid))
+      .map(row => ({ id: rowView(r.store, row.cid, row.edge).id, cid: row.cid, label: row.value.data.description?.content.trim() ?? '', icon: row.value.data.presentation?.icon || 'template' }))
+      .filter(row => row.label)
   }
   /**
    * The nearest library's fields a row is made from (its types and the capabilities it declares; its templates are
    * `libraryConstructors`), each the node a row made from it has on its left.
    */
   libraryNames(path = this.constructorContext()): Array<{ name: string; node: string; label: string }> {
-    const library = libraryPath(this.state.replica, path)
-    const r = this.state.replica, ref = library && resolveScope(r.store, headCid(r), library)
-    if (!ref) return []
-    return [...namesInLibrary(r.store, valueCidOf(r.store, ref)).byName].filter(([, node]) => !isTemplateType(r.store, node)).map(([name, node]) => {
+    const r = this.state.replica, binding = libraryBindingAt(r.store, path)
+    if (!binding) return []
+    return [...namesInLibrary(r.store, binding.library).byName].filter(([, node]) => !isTemplateType(r.store, node)).map(([name, node]) => {
       const value = valueContent(r.store, node)
       return { name, node, label: value.data.capabilityDefinition?.label ?? value.data.description?.content ?? name }
     })
@@ -2556,19 +2555,19 @@ export class App {
     return this.applyConstructor(path, { type: name, text: label, done: false })
   }
   insertLibraryConstructor(id: string, path = this.constructorContext(), replace = false): Scope {
-    const template = this.libraryConstructors().find(item => item.id === id)
+    const template = this.libraryConstructors(path).find(item => item.id === id)
     if (!template) throw new Error('This standard library constructor is unavailable.')
-    const queue = [template.path], seen = new Set<string>()
+    const queue = [template.cid], seen = new Set<string>()
     while (queue.length) {
-      const at = queue.pop()!, cid = resolveScope(this.state.replica.store, headCid(this.state.replica), at)
-      if (!cid || isPeerReference(content(this.state.replica.store, cid))) throw new Error('This library template is still downloading. Try again once it has loaded.')
+      const cid = queue.pop()!
+      if (!this.state.replica.store.table.has(cid) || isPeerReference(content(this.state.replica.store, cid))) throw new Error('This library template is still downloading. Try again once it has loaded.')
       if (seen.has(cid)) continue
       seen.add(cid)
-      for (const row of view(this.state.replica, at)?.tasks ?? []) queue.push([...at, row.id])
+      for (const edge of content(this.state.replica.store, cid).children) queue.push(...edge)
     }
     const current = replace && path.length ? view(this.state.replica, path.slice(0, -1))?.tasks.find(row => row.id === path.at(-1)) : undefined
     const title = current && !current.requirement && current.type !== HOME_TYPE ? current.title || template.label : template.label
-    return this.applyConstructor(path, { type: TASK_TYPE, text: title, done: false }, replace, undefined, undefined, id)
+    return this.applyConstructor(path, { type: TASK_TYPE, text: title, done: false }, replace, undefined, undefined, template.cid)
   }
   publishCurrentTemplate(market = false): void {
     if (!this.canApprove() || this.currentRow()?.type !== TEMPLATE_TYPE) return
@@ -2636,7 +2635,7 @@ export class App {
   applyConstructor(path: Scope, parsed: import('./rows').ParsedInput, replace = false, repo?: string, localDirectory?: string, templateId?: string): Scope {
     if (!view(this.state.replica, path)) throw new Error('The destination no longer exists.')
     const template = templateId ? resolveRef(this.state.replica, templateId) : null
-    const templateCid = template?.row.type === TEMPLATE_TYPE ? resolveScope(this.state.replica.store, headCid(this.state.replica), [...template.path, template.row.id]) : null
+    const templateCid = templateId && this.state.replica.store.table.has(templateId) && isTemplateType(this.state.replica.store, templateId) ? templateId : template?.row.type === TEMPLATE_TYPE ? resolveScope(this.state.replica.store, headCid(this.state.replica), [...template.path, template.row.id]) : null
     if (templateId && !templateCid) throw new Error('This template is unavailable.')
     const current = path.length ? view(this.state.replica, path.slice(0, -1))?.tasks.find(row => row.id === path.at(-1)) : undefined
     replace = replace && !!current && current.type !== HOME_TYPE && !current.requirement
@@ -2656,12 +2655,13 @@ export class App {
       // rejected value cannot change the live graph or leave an extra row.
       const live = this.state.replica
       let r = argument ? loadReplica(serializeReplica(live)) : live
+      if (argument) copyOuterScope(live.store, r.store)
       if (replace && current?.construction?.handler) r = this.peerRowReplica(r, target, undefined)
       r = replace ? setRowContentAt(r, parent, id, parsed.type, parsed.text, parsed.extras ?? {}, this.now()) : addRow(r, parent, parsed.type, parsed.text, this.now(), { id, done: parsed.done, ...parsed.extras })
       this.resolveUser(parsed.extras?.user)
       if (templateCid) r = instantiateTemplateValue(r, parent, id, templateCid, this.now())
       if (parsed.peer !== undefined) r = this.peerRowReplica(r, target, parsed.peer)
-      if (parsed.construct) r = constructAt(r, target, capabilityTarget(r.store, parsed.construct.capability), parsed.construct.values, this.now())
+      if (parsed.construct) r = constructAt(r, target, libAt(r.store, target.slice(0, -1)).capabilities[parsed.construct.capability]!, parsed.construct.values, this.now())
       if (repo) { r = bindRepository(r, target, repo, this.now()); r = this.withIntegrationPeer(r, target, 'github') }
       if (localDirectory) {
         const peer = `git:${r.meta.peerId}:${encodeURIComponent(localDirectory)}`
@@ -2672,10 +2672,13 @@ export class App {
       if (argument) {
         let value = resolveScope(r.store, headCid(r), target)!
         if (parsed.extras?.requirement) {
-          // A composed handler supplies its body on the right of the
-          // constructor's property rows; its type is checked from those rows.
-          const constructor = content(r.store, capabilityTarget(r.store, parsed.extras.requirement.capability))
-          value = put(r.store, { data: {}, children: constructor.children.map(([left]) => [left, value]) })
+          // Fill unconstrained property values with the body. Preserve literal
+          // constraints (including name rows) so composition keeps its pattern.
+          const constructor = content(r.store, libAt(r.store, target.slice(0, -1)).capabilities[parsed.extras.requirement.capability]!)
+          value = put(r.store, { data: {}, children: constructor.children.map(([left, right]) => {
+            const pattern = content(r.store, right)
+            return [left, !pattern.children.length && !Object.keys(pattern.data).length ? value : right]
+          }) })
         }
         if (!matchesGraph(r.store, argument.type, value)) throw new Error('Choose a constructor matching this input pattern.')
         r = setRefValueAt(r, path, value, this.now())
@@ -2888,7 +2891,7 @@ export class App {
     if (step.row?.requirement?.satisfied) return false
     const replica = this.state.replica
     if (this.deviceHandlers.executors(replica, step, replica.meta.peerId).length) return false
-    const patterns = step.row ? requirementHandlerTypes(replica.store, step.row) : []
+    const patterns = step.row ? requirementHandlerTypes(replica.store, step.row, step.path.slice(0, -1)) : []
     return this.handlerOffers(step.path).some(offer => offer.enabled &&
       (offer.peerId === 'fos' || offer.peerId.startsWith('integration:') || offer.peerId.startsWith('mcp:')) &&
       (matchesInstructionRef(replica, step, offer) || patterns.some(pattern => sameCapabilityType(replica.store, pattern, offer.type))))
@@ -3125,7 +3128,7 @@ export class App {
     if (!/^[A-Za-z_][\w.-]*$/.test(name) || !typeName.trim()) { this.notify('error', 'Give the placeholder a name and type.'); return }
     const r = this.state.replica
     const template = typeName.startsWith('template:') ? resolveRef(r, typeName.slice(9)) : null
-    const type = template ? templateValuePattern(r.store, resolveScope(r.store, headCid(r), [...template.path, template.row.id])!) : typeName === 'text' ? r.store.primitive.documentField.getId() : flattenRefs(scopedRefs(r, destination)).find(ref => ref.name === typeName.trim())?.type ?? capabilityTarget(r.store, typeName.trim())
+    const type = template ? templateValuePattern(r.store, resolveScope(r.store, headCid(r), [...template.path, template.row.id])!) : typeName === 'text' ? r.store.primitive.documentField.getId() : flattenRefs(scopedRefs(r, destination)).find(ref => ref.name === typeName.trim())?.type ?? libAt(r.store, destination).capabilities[typeName.trim()]!
     this.edit(addRefAt(r, destination, newId(), type, this.now(), null, name))
   }
   placeholders(at: Scope = []) {
@@ -3139,7 +3142,7 @@ export class App {
       id: content(r.store, a.cid).data.alias!.id, name: a.name ?? 'Value',
       branches: refBranches(r.store, content(r.store, a.cid)),
       child: (() => { const target = refValueCid(r.store, content(r.store, a.cid)); return target && isRefNode(r.store, content(r.store, target)) ? content(r.store, target).data.name?.content ?? 'Value' : null })(),
-      type: a.type === r.store.primitive.documentField.getId() ? 'text' : (capabilityOfTarget(r.store, a.type) ?? content(r.store, a.type).data.name?.content ?? 'Named type').replace(/^fos:(capability|type):/, ''),
+      type: a.type === r.store.primitive.documentField.getId() ? 'text' : capabilityOfTarget(r.store, a.type) ?? content(r.store, a.type).data.name?.content ?? 'Named type',
       status: resolveBinding(r.store, a.type, content(r.store, a.cid).data.refExpression ? a.cid : refValueCid(r.store, content(r.store, a.cid)), candidates, a.name, { isPeerActive: id => this.isOnline(id), scope: { replica: r, path } }).status,
       candidates: candidates.filter(c => c.cid !== a.cid && matchesGraph(r.store, a.type, c.cid)).map(c => ({ cid: c.cid, label: c.name ?? content(r.store, c.cid).data.description?.content ?? 'Matching handler' }))
     }))
@@ -4152,7 +4155,7 @@ export class App {
     const installed = this.installedSettings, peer = r.meta.peerId
     for (const [key, value] of Object.entries(defaults)) {
       if (installed.includes(key) || readNodeValue(r, [], key, peer) !== null) continue
-      const type = capabilityTarget(r.store, ['server', 'direct', 'invite', 'virtual', 'phone', 'share'].includes(key) ? 'peer' : 'tool')
+      const type = libAt(r.store).capabilities[['server', 'direct', 'invite', 'virtual', 'phone', 'share'].includes(key) ? 'peer' : 'tool']!
       r = writeNodeValue(r, [], key, value, this.now(), typeof value === 'object' ? { type, peer } : { peer })
     }
     if (Object.keys(defaults).some(key => !installed.includes(key))) { this.installedSettings = [...new Set([...installed, ...Object.keys(defaults)])]; this.savePrefs() }

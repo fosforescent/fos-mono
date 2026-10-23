@@ -5,8 +5,8 @@ import { keyValueOf, splitFrontmatter } from './notes'
 import { formText, formTitle } from './forms'
 import type { FosStore } from '../dag-implementation/store'
 import {
-  isBranchChoice, selectedBranchValue, capabilityTarget, type Capability, put, childRows, flowOf, requirementSatisfied, content, identityCid, isChoiceEdge, isRefNode, refValueCid,
-  resolveScope, valueContent, importNodes, reachableNodes, typeIdOf, isLibraryRef, type Scope
+  isBranchChoice, selectedBranchValue, libraryTypeAt, type Capability, put, childRows, flowOf, requirementSatisfied, content, identityCid, isChoiceEdge, isRefNode, refValueCid,
+  resolveScope, valueContent, importNodes, reachableNodes, typeIdOf, isTemplateType, isLibraryRef, type Scope
 } from './graph'
 import { PLAIN_TYPE, isAllocationType } from './library-types'
 import { headCid, type Replica } from './replica'
@@ -35,7 +35,7 @@ export function argumentRefs(store: FosStore, cid: string): BindingCandidate[] {
     if (isHandlerStateLeft(store, ref.type)) return false
     const pattern = ref.type && content(store, ref.type)
     return node.data.name || valueContent(store, ref.cid).data.name || isRefNode(store, node) &&
-      (!typeIdOf(store, ref.type) || !!pattern && (pattern.data.capabilityDefinition || pattern.data.form?.primitive))
+      !!ref.type && !isTemplateType(store, ref.type) && (!typeIdOf(store, ref.type) || !!pattern && (pattern.data.capabilityDefinition || pattern.data.form?.primitive))
   }).map(ref => ({ cid: ref.cid, type: ref.type!, ...(content(store, ref.cid).data.name || valueContent(store, ref.cid).data.name ? { name: ref.name } : {}) }))
 }
 
@@ -175,6 +175,7 @@ export function resolveText(r: Replica, at: Scope, text: string, defaults: Bindi
 
 /** Nearest bindings shadow ancestors. Offers are distinct from permissions granted to a peer. */
 export function capabilityPeers(r: Replica, path: Scope, capability: Capability): string[] {
-  const type = capabilityTarget(r.store, capability)
+  const type = libraryTypeAt(r.store, `capabilities.${capability}`, path)
+  if (!type) return []
   return [...new Set(discoverHandlers(r, path).filter(o => o.enabled && sameCapabilityType(r.store, o.type, type)).map(o => o.peerId))]
 }

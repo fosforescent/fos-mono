@@ -82,7 +82,7 @@ async function main() {
   assert.equal(excessive.status, 400, 'cannot consume more than offered')
   const submitted = await call('submit', { ...a.body.address, visitorToken: a.body.visitorToken, revision: a.body.node.revision, approvals: [], ranking: [], fields: Object.fromEntries(a.body.node.inputs.map(f => [f.key, { value: f.kind === 'text' ? 'Only my research' : f.kind === 'confirmation' ? true : f.kind === 'choice' ? 0 : { amount: 1, type: 'inventory', unit: 'item' } }])) })
   assert.equal(submitted.status, 200, JSON.stringify(submitted.body))
-  assert.equal(submitted.body.node.execution.status, 'committed')
+  assert.equal(submitted.body.node.execution.status, 'committed', JSON.stringify(submitted.body.node.execution))
   assert.equal(c.executionInputs(replicas.host, b.body.address.path).length, 5)
   assert.equal(c.sharedInputs(replicas.host, ['form']).length, 3, 'template remains unchanged (its text slot, choice and allocation)')
   replicas.host = c.removeMemberAt(replicas.host, b.body.address.path, b.body.node.mine.peer, 101)

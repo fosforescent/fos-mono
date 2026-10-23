@@ -1,6 +1,6 @@
 import { settingOf } from '@fosforescent/shared/sync/index'
 import type { Request, Response } from 'express'
-import { evaluationRecord, formTitle, recoverEvaluation, setTaskDone, discoverHandlers, setHandlerEnabledAt, addRow, addTask, addRefAt, applyProposalAt, proposeRefAt, capabilityTarget, content, headCid, memberHandlers, refArguments, resolveScope, setMemberCapabilitiesAt, valueContent, createReplica, view, type Replica } from '@fosforescent/shared/sync/index'
+import { evaluationRecord, formTitle, recoverEvaluation, setTaskDone, discoverHandlers, setHandlerEnabledAt, addRow, addTask, addRefAt, applyProposalAt, proposeRefAt, libAt, content, headCid, memberHandlers, refArguments, resolveScope, setMemberCapabilitiesAt, valueContent, createReplica, view, type Replica } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
@@ -55,7 +55,7 @@ const weather: McpServerInfo = { id: 5, name: 'Weather MCP', endpoint: 'ws://x',
 test('an MCP primitive ref executes as a row instruction without a capability-name requirement', async () => {
   const { deps, calls, replica, run } = setup([weather])
   await call(createMcpPeerHandlers(deps).attach, { scope: ['proj'], serverId: 5 })
-  const offer = discoverHandlers(replica(), ['proj']).find(value => value.id === 'mcp:5/forecast')!
+  const offer = discoverHandlers(replica(), ['proj']).find(value => value.peerId === 'mcp:5' && value.label === 'forecast')!
   addRefCall(replica(), ['proj', 'trip'], offer.cid, 11, 'direct')
   expect(view(replica(), ['proj', 'trip'])!.tasks.find(row => row.id === 'direct')!.requirement).toBeUndefined()
   const result = await run(['proj', 'trip'], 'direct')
@@ -157,7 +157,7 @@ test('an explicit handler ref is honored and the return ref addresses the result
   const ads = memberHandlers(store, content(store, resolveScope(store, headCid(r), ['proj'])!), 'mcp:5')
   expect(ads).toHaveLength(2)
   const handler = ads.find((cid) => valueContent(store, cid).data.description?.content === 'weather')!
-  r = addRefAt(r, scope, 'selected-provider', capabilityTarget(store, 'tool'), 20)
+  r = addRefAt(r, scope, 'selected-provider', libAt(store).capabilities.tool!, 20)
   const proposal = proposeRefAt(r, [...scope, 'selected-provider'], handler, 'owner', 21)
   r = applyProposalAt(proposal.replica, [...scope, 'selected-provider'], proposal.proposalCid, 'owner', 22)
   // Editing grants must preserve handler refs, including template-backed ones.
@@ -167,7 +167,7 @@ test('an explicit handler ref is honored and the return ref addresses the result
   expect(calls[0]![0]).toBe(5)
   r = replica()
   const request = valueContent(store, resolveScope(store, headCid(r), scope)!)
-  expect(refArguments(store, request, capabilityTarget(store, 'tool'))[0]!.targetCid).toBe(handler)
+  expect(refArguments(store, request, libAt(store).capabilities.tool!)[0]!.targetCid).toBe(handler)
   const returned = refArguments(store, request, store.primitive.documentField.getId()).filter(a => !settingOf(store, content(store, a.cid)))
   expect(returned).toHaveLength(1)
   expect(formTitle(store, valueContent(store, returned[0]!.targetCid!))).toBe('weather(Paris next week) = sunny')

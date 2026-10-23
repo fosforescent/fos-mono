@@ -19,6 +19,7 @@ const identity = verifyHandler({ findUser: async username => accounts[username] 
 /** Each scenario gets its own store: a failed run leaves its journal in the store it ran against. */
 const fresh = (r: Replica) => loadReplica(serializeReplica(r))
 function host(r: Replica, runtime: ReturnType<typeof createHostRuntime>) {
+  r = ensureHomeContext(r, 0, runtime.hostOffers())
   const deps = { loadStore: async () => ({ user: { id: 1, username: 'owner' }, store: r.store }), saveStore: async (_user: unknown, store: any) => { r = { ...r, store } }, now: () => 100 }
   const events = createEventService(deps, createEvaluationService(deps, runtime).runNode)
   const send = async (scope: string[], event: any) => {

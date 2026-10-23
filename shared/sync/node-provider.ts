@@ -1,9 +1,9 @@
 import { approvalsOf } from './approvals'
 import type { FosDataContent, FosNodeContent, FosNodesData, FosPathElem } from '../types'
 import { hashContent, isCid } from '../dag-implementation/cid'
-import { content, put, refNodeContent, refValueCid, isRefNode, capabilityTarget, commitRoot, updateAtScope, resolveScope, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, isShippedLibrary, reachableNodes, bookkeepingOf, rootTargetCid, withPeer,
+import { content, put, refNodeContent, refValueCid, isRefNode, typeIdOf, libAt, commitRoot, updateAtScope, resolveScope, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, isShippedLibrary, reachableNodes, bookkeepingOf, rootTargetCid, withPeer,
   membershipOf, valueContent, readMembers, memberFor, memberPeerOf, peerNode, memberEntryPeerAt, isGrantEdge, grantChildId, memberEdgesOf, isMemberEdge, capabilityOf, isHandle, isPeerReference, isBookkeepingEdge, isRowEdge, identityCid, withMainBranchPolicy,
-  readProposals, submissionAdditions, CAPABILITIES, type MemberRecord, type ProposalView, type Capability, type Scope } from './graph'
+  readProposals, submissionAdditions, capabilityNames, type MemberRecord, type ProposalView, type Capability, type Scope } from './graph'
 import { advertisedRows, importNodes } from './graph'
 import { sameCapabilityType } from './capabilities'
 import { primitiveValue } from './primitives'
@@ -109,7 +109,7 @@ function linkAt(r: Replica, path: Scope, peer: string, remoteId: string) {
   // One endpoint per peer at a node. A caller cannot evade a mask by choosing a new link id.
   const node = sourceId(r, path)
   const edge = content(r.store, r.store.rootNodeId).children.find(e => {
-    if (e[0] !== capabilityTarget(r.store, 'provideNode')) return false
+    if (!content(r.store, e[1]).data.nodeLink) return false
     const data = content(r.store, e[1]).data
     return data.nodeLink?.node === node && data.ref?.peer === peer
   })
@@ -146,7 +146,7 @@ export function isNodeProjection(r: Replica, path: Scope): boolean {
   if (isPeerReference(content(r.store, cid))) return true
   const id = sourceId(r, path)
   return content(r.store, r.store.rootNodeId).children.some(e => {
-    if (e[0] !== capabilityTarget(r.store, 'provideNode')) return false
+    if (!content(r.store, e[1]).data.nodeLink) return false
     const link = content(r.store, e[1]).data.nodeLink
     return !!link?.projection && link.node === id
   })
@@ -175,7 +175,7 @@ export function setNodeLinkMask(r: Replica, path: Scope, peer: string, remoteId:
   // Endpoint refs belong to this peer's root alias, outside its shared TARGETPOINTER.
   // They persist locally but never become another peer's mergeable policy.
   const root = content(r.store, r.store.rootNodeId)
-  r.store.rootNodeId = put(r.store, { ...root, children: [...root.children.filter(e => !previous || e[1] !== previous.cid), [capabilityTarget(r.store, 'provideNode'), ref]] })
+  r.store.rootNodeId = put(r.store, { ...root, children: [...root.children.filter(e => !previous || e[1] !== previous.cid), [libAt(r.store).capabilities.provideNode!, ref]] })
   r.store.updateCtxCallback?.(r.store.exportContext([]))
   return { ...r }
 }
@@ -183,7 +183,7 @@ export function setNodeLinkMask(r: Replica, path: Scope, peer: string, remoteId:
 /** Grants that include reading the node: read itself, and edit and execute (a peer reads what it changes or runs). */
 const READING: Capability[] = ['read', 'edit', 'execute']
 export function inheritedNodeGrants(r: Replica, path: Scope, authority: NodeAuthority): Capability[] {
-  let grants: Capability[] = authority.owner ? [...CAPABILITIES] : []
+  let grants: Capability[] = authority.owner ? capabilityNames(r.store) : []
   for (let i = 0; i <= path.length; i++) {
     const cid = resolveScope(r.store, headCid(r), path.slice(0, i))
     if (!cid) throw new NodeAccessError('Attachment unavailable.')
@@ -256,8 +256,7 @@ export function exchangedMember(store: Replica['store'], edge: FosPathElem): boo
 /** A peer's transport offered here (`offerNodeTransport`): a native `provideNode` value, this device's connection to that peer, never exchanged. */
 export function isTransportOffer(store: Replica['store'], edge: FosPathElem): boolean {
   if (edge[0] !== store.primitive.acceptsNode.getId()) return false
-  const type = capabilityTarget(store, 'provideNode')
-  return advertisedRows(store, edge[1]).some(([left, ref]) => sameCapabilityType(store, left, type) && refSubmissions(store, ref).some(value => primitiveValue(store, value)))
+  return advertisedRows(store, edge[1]).some(([left, ref]) => typeIdOf(store, left) === 'capabilities.provideNode' && refSubmissions(store, ref).some(value => primitiveValue(store, value)))
 }
 export function exchangedChildren(r: Replica, cid: string, path: Scope): Array<{ id: string; edge: FosPathElem; member?: true; grant?: true }> {
   const value = valueContent(r.store, cid), out: Array<{ id: string; edge: FosPathElem; member?: true; grant?: true }> = []

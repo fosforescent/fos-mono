@@ -1,5 +1,5 @@
 import {
-  refBranches, readChoice, branchEdge, selectBranch, createBranch, resolveBinding, addRefAt, addRow, addSupply, addTask, applyProposalAt, capabilityTarget, content,
+  refBranches, readChoice, branchEdge, selectBranch, createBranch, resolveBinding, addRefAt, addRow, addSupply, addTask, applyProposalAt, libAt, content,
   copyRowContent, createReplica, headCid, instantiateTemplate, mergeNodes, newId,
   proposeRefAt, put, refArguments, refNodeContent, refValueCid, resolveScope,
   valueContent, formTitle, view, serializeReplica, loadReplica, type Replica

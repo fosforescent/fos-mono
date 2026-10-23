@@ -7,8 +7,8 @@ import type { FosPathElem } from '../types'
 import { parseToml, peerPolicyOf, serverPolicyOf, type FosProjectConfig } from './project'
 import {
   acceptsFrom,
-  capabilityTarget,
-  CAPABILITIES,
+  libAt,
+  capabilityNames,
   SERVER_TRANSPORT_CAPABILITIES,
   INTEGRATION_PEERS,
   HOME_ID,
@@ -534,8 +534,8 @@ describe('link nodes: history, members and proposals', () => {
     const reviewer = nodeContent(store, memberships.find((e) => memberPeerOf(store, e) === 'reviewer')![1])
     expect(reviewer.data).not.toHaveProperty('actor')
     expect(reviewer.children).toEqual([
-      [store.primitive.capabilityNode.getId(), capabilityTarget(store, 'read')],
-      [store.primitive.capabilityNode.getId(), capabilityTarget(store, 'edit')]
+      [store.primitive.capabilityNode.getId(), libAt(store).capabilities.read!],
+      [store.primitive.capabilityNode.getId(), libAt(store).capabilities.edit!]
     ])
     // deciding proposals is how edit is exercised on a node with several peers: no grant of its own
     expect(hasCapability(store, linkValue, 'reviewer', 'edit')).toBe(true)
@@ -1008,7 +1008,7 @@ describe('peer capabilities', () => {
   })
 
   it('the serving side reports the capabilities it registers with the peer', () => {
-    const server = createReplica('user:ada', new FosStore())
+    const server = createReplica('user:ada')
     const served = exchangeNode(server, { peerId: 'dev', scope: [], path: [], linkId: 'dev-root' }, { peerId: 'dev', scope: [], owner: true, capabilities: ['provideNode', 'http', 'ws', 'relay', 'search'] }, 2)
     expect(served.node.capabilities).toEqual(['provideNode', 'http', 'ws', 'relay', 'search'])
   })
@@ -1017,10 +1017,10 @@ describe('peer capabilities', () => {
 
 describe('service capability registration', () => {
   it('round-trips every advertised capability through member graph edges in both directions', () => {
-    const store = new FosStore()
+    const store = createReplica().store
     const root = { data: { alias: { id: 'home' }, description: { content: 'Home' } }, children: [] }
-    const member = withMember(store, root, 'user:services', 'Services', CAPABILITIES, [], CAPABILITIES)
-    expect(readMembers(store, member)[0]).toEqual({ peerId: 'user:services', name: 'Services', capabilities: CAPABILITIES, accepts: CAPABILITIES })
+    const member = withMember(store, root, 'user:services', 'Services', capabilityNames(store), [], capabilityNames(store))
+    expect(readMembers(store, member)[0]).toEqual({ peerId: 'user:services', name: 'Services', capabilities: capabilityNames(store), accepts: capabilityNames(store) })
   })
 
   it('advertises only transport facts about fos by default; services come from host ref declarations', () => {

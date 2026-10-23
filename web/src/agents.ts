@@ -5,7 +5,7 @@ import { localRepositoryHere } from '../../shared/sync/repository'
  * opens a session the user can watch: the CLI in a new terminal, connected to this node's MCP as that peer (its Read /
  * Write / Execute grants here decide the tools), or the Claude Code VS Code tab / a Claude Desktop chat with the prompt.
  */
-import { argumentRefs, capabilityTarget, content, headCid, refValueCid, resolveScope, resolveText, view, type Replica, type Scope } from '../../shared/sync/index'
+import { argumentRefs, libAt, content, headCid, refValueCid, resolveScope, resolveText, view, type Replica, type Scope } from '../../shared/sync/index'
 import { inTauri, tauriInvoke } from './project'
 import { connectNodeAgent, startPeerMcp } from './node-agent'
 import { detachSelf } from './api'

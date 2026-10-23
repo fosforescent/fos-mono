@@ -1,3 +1,4 @@
+import { libAt } from '@fosforescent/shared/sync/index'
 import { installTestObservers } from '@fosforescent/shared/sync/test-helpers'
 import {
   addRow, addTask, bindRepository, createBranch, createReplica,
@@ -22,7 +23,7 @@ function fixture() {
 test('server load mediates PR -> Fos request -> Fos merge -> ordinary template trigger, once after reload', async () => {
   let { r, snapshot, fetch, load } = fixture()
   r = addRow(r, [], TEMPLATE_TYPE, 'An arbitrary continuation', 5, { id: 'continue' })
-  r = setNodeTrigger(installTestObservers(r, ['desktop']), ['continue'], { kind: 'ref-change', enabled: true, peer: 'desktop', created: 5, watch: { path: ['project'], branch: 'main', merges: true, baseline: watchedRefValue(r, ['project'], 'main', true)! } }, 5)
+  r = setNodeTrigger(installTestObservers(r, ['desktop']), ['continue'], { observer: libAt(r.store).capabilities['ref-change']!, enabled: true, peer: 'desktop', created: 5, watch: { path: ['project'], branch: 'main', merges: true, baseline: watchedRefValue(r, ['project'], 'main', true)! } }, 5)
   let runs = 0
   const driver = { get: () => r, save: (next: Replica) => { r = next }, now: () => 90_000, available: () => true, evaluate: async () => { runs++ } }
   r = await load(r, 10)

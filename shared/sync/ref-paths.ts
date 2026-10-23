@@ -1,6 +1,7 @@
 /** Property paths and their parenthesized spelling share one small, serializable grammar. */
 import type { FosStore } from '../dag-implementation/store'
-import { content, advertisedRows, enclosingScopes, identityCid, isBranchChoice, isRowEdge, isMemberEdge, memberPeerOf, isGrantEdge, refValueCid, selectedBranchValue, type Scope } from './graph'
+import { content, advertisedRows, enclosingScopes, identityCid, isBranchChoice, isLibraryInstance, isHandle, isRowEdge, isMemberEdge, memberPeerOf, isGrantEdge, refValueCid, selectedBranchValue, type Scope } from './graph'
+import { fieldNode } from '../library-names'
 import { headCid, type Replica } from './replica'
 
 export type RefExpression = { up: number; path: string[]; lexical: boolean }
@@ -35,7 +36,7 @@ export function parseRefExpression(source: string): RefExpression {
 }
 export const formatRefExpression = (expression: RefExpression) => `${'.'.repeat(expression.up + 1)}${expression.path.join('.')}`
 export type RefAccess = { canRead?(store: FosStore, cid: string, path: Scope): boolean }
-export type RefLocation = { store: FosStore; cid: string; path: Scope; pattern?: string }
+export type RefLocation = { store: FosStore; cid: string; path: Scope; pattern?: string; libraryField?: true }
 export type RefPathResult = { status: 'ready' | 'missing' | 'ambiguous' | 'denied' | 'cycle'; locations: RefLocation[]; message?: string }
 
 /** Resolve only actual properties, never descendants or peers elsewhere in the graph. */
@@ -46,7 +47,9 @@ export function resolveRefExpression(r: Replica, at: Scope, expression: string |
   let failure: RefPathResult['status'] = 'missing'
   const properties = (location: RefLocation, name: string): RefLocation[] => {
     const { store, path } = location
-    let cid = location.cid
+    const instance = store.table.get(location.cid)
+    const libraryField = location.libraryField || !!instance && isLibraryInstance(store, instance)
+    let cid = instance && isLibraryInstance(store, instance) && location.pattern ? location.pattern : location.cid
     const seen = new Set<string>()
     while (true) {
       if (access.canRead && !access.canRead(store, cid, path)) { failure = 'denied'; return [] }
@@ -65,7 +68,9 @@ export function resolveRefExpression(r: Replica, at: Scope, expression: string |
         if (child.data.alias?.id !== name && rowName !== name && (isMemberEdge(store, edge) ? memberPeerOf(store, edge) : child.data.peerId?.content) !== name) return []
         const childPath = [...path, child.data.alias?.id ?? name]
         if (access.canRead && !access.canRead(store, childCid, childPath)) { failure = 'denied'; return [] }
-        return [{ store, cid: childCid, path: childPath, pattern: edge[0] }]
+        const field = libraryField
+          ? fieldNode(id => store.table.get(id), edge, store.primitive.targetPointerConstructor.getId(), store.primitive.aliasConstructor.getId()) : null
+        return [{ store, cid: field?.node ?? childCid, path: childPath, pattern: edge[0], ...(libraryField ? { libraryField: true as const } : {}) }]
       })
       if (matches.length) return matches
       if (target) { cid = target; continue }
@@ -98,11 +103,11 @@ export function resolveRefIdentity(r: Replica, at: Scope, id: string, access: Re
       if (access.canRead && !access.canRead(store, cid, path)) { denied = true; return }
       if (!store.table.has(cid)) return
       const node = content(store, cid)
-      if (node.data.ref?.owner || node.data.ref?.peer) return
       if (node.data.alias?.id === id) {
         if (!locations.some(found => found.cid === cid && JSON.stringify(found.path) === JSON.stringify(path))) locations.push(location)
         return
       }
+      if (isHandle(node)) return
       active.add(cid)
       try {
         const target = isBranchChoice(store, node) ? selectedBranchValue(store, cid) : refValueCid(store, node)

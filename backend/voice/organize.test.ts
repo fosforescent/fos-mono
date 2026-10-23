@@ -44,6 +44,8 @@ function usage(spent = 0, paying = false): VoiceUsage & { records: number[] } {
 function host(initial: Replica, handler = organizeHandler(() => model())) {
   let store = initial.store
   const runtime = createHostRuntime([handler])
+  initial = ensureHomeContext(initial, 0, runtime.hostOffers())
+  store = initial.store
   const deps: AccountStoreDeps = { async loadStore(username) { return username === 'alice' ? { user: { id: 1, username }, store } : null }, async saveStore(_u, next) { store = next }, now: () => Date.UTC(2026, 9, 20, 9, 30), runtime }
   const evaluation = createEvaluationService(deps, runtime)
   const events = createEventService(deps, evaluation.runNode)

@@ -46,7 +46,7 @@ test('scoped desktop sync targets its named branch and refuses an unknown checko
   let host = addTask(createReplica('host'), [], 'Project', 1, 'p')
   host = addTask(host, ['p'], 'Main task', 2, 'task')
   host = createBranch(host, ['p'], 'test1', 3)
-  let desktop = createReplica('desktop', new FosStore())
+  let desktop = createReplica('desktop')
   desktop.meta.scope = ['p']
   const sync = (branch: string) => { desktop = syncWith(desktop, host, { at: ['p'], branches: [{ scope: ['p'], name: branch }] }) }
   sync('test1')
@@ -110,7 +110,7 @@ test('default branch survives serialization and a scoped attachment pins ancesto
 })
 
 test('merge requests are typed children of branch constructors and survive edits, reload and removal', async () => {
-  const { setBranchMergeRequest, readChoice, resolveScope, content, capabilityTarget } = await import('./index')
+  const { setBranchMergeRequest, readChoice, resolveScope, content, libAt } = await import('./index')
   let r = addTask(createReplica('a'), [], 'Project', 1, 'p')
   r = createBranch(r, ['p'], 'feature', 2)
   r = setBranchMergeRequest(r, ['p'], 'feature', true, 3)

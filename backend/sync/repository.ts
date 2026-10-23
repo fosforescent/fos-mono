@@ -1,3 +1,4 @@
+import { copyOuterScope } from '@fosforescent/shared/sync/index'
 import { standardHostRef } from './host-runtime'
 import { handlerOfferId } from '@fosforescent/shared/sync/index'
 /** GitHub mediates repository state into ordinary Fos branches and merge requests.
@@ -30,7 +31,7 @@ export type RepositoryLoadDeps = {
 export function repositoryLoadHandler(deps: RepositoryLoadDeps): HostHandler {
   const checked = new Map<string, number>()
   return {
-    peerId: 'integration:github', ref: standardHostRef('integration:github', 'repo', handlerOfferId('integration:github', 'repo', 'load')), available: user => deps.connected(user),
+    peerId: 'integration:github', ref: standardHostRef('integration:github', 'repo', 'load'), available: user => deps.connected(user),
     async load(ctx) {
       const { path, now, userId } = ctx
       if (!path.length) return ctx.replica
@@ -58,6 +59,7 @@ export function repositoryLoadHandler(deps: RepositoryLoadDeps): HostHandler {
       checked.set(cacheKey, now)
       // Work on an isolated replica so a failed refresh cannot leave half a merge in the account.
       let r = loadReplica(serializeReplica(ctx.replica))
+      copyOuterScope(ctx.replica.store, r.store)
       const id = path.at(-1)!, ancestors = Object.fromEntries(ancestorBranches.map(b => [b.scope.at(-1)!, b.name]))
       return withBranches(r.store, ancestors, () => {
         const cid = resolveScope(r.store, headCid(r), path)

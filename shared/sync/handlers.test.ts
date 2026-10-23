@@ -1,10 +1,11 @@
-import { addMemberAt, addTask, capabilityPeers, capabilityTarget, contextBindings, createBranch, createReplica, discoverHandlers, headCid, put, refNodeContent, resolveBinding, selectBranch, setHandlerEnabledAt, setHandlerOffersAt, setMemberCapabilitiesAt, workHandler, view } from './index'
+import { installTestHandler } from './test-helpers'
+import { addMemberAt, addTask, capabilityPeers, libAt, contextBindings, createBranch, createReplica, discoverHandlers, headCid, put, refNodeContent, resolveBinding, selectBranch, setHandlerEnabledAt, setHandlerOffersAt, setMemberCapabilitiesAt, workHandler, view } from './index'
 import { TEMPLATE_TYPE } from './library-types'
 
 test('permissions do not become handlers; built-in offers use the same candidates as typed offers', () => {
   let r = addMemberAt(createReplica('owner'), [], 'guest', 'Guest', ['llm', 'edit'], 1)
   expect(discoverHandlers(r, [])).toEqual([])
-  r = addMemberAt(r, [], 'fos', 'fos', ['llm'], 2)
+  r = installTestHandler(r, 'fos', 'llm')
   const offer = discoverHandlers(r, [])[0]!
   expect(contextBindings(r, [])).toContainEqual({ cid: offer.cid, type: offer.type, name: 'llm', refIds: [offer.id] })
   expect(workHandler(r, []).status).toBe('ready')
@@ -42,7 +43,7 @@ test('main controls capability discovery while editing an alternative; policy ed
 test('wrong handler type is rejected without advancing the head', () => {
   const r = addMemberAt(createReplica(), [], 'peer', 'Peer', [], 0), before = headCid(r)
   const handler = put(r.store, refNodeContent(r.store, {}, null, []))
-  expect(() => setHandlerOffersAt(r, [], 'peer', capabilityTarget(r.store, 'repo'), [handler], 1)).toThrow()
+  expect(() => setHandlerOffersAt(r, [], 'peer', libAt(r.store).capabilities.repo!, [handler], 1)).toThrow()
   expect(headCid(r)).toBe(before)
 })
 

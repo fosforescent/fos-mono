@@ -488,14 +488,12 @@ is the store root of a device's own replica (Home, attached devices, ...).
 A *mutable node* (ref) is any node with a stable alias whose content changes
 by version; rows are mutable nodes.
 
-**Nearest ancestor.** Mutable refs resolve by nearest ancestor
-(`findNearestRow`): from where the ref is used, the first match in the
-closest ancestor's subtree (shallowest first), widening to the store root.
-`resolveRef`, `findTemplate` (`` [ ] `Trip` ``) and the row types all resolve
-this way. A store root that ships no library of its own is a *nested scope*
-(`nestScope`): a browser virtual-peer document is nested in the browser's
-device root, a server account store in the server's own device root, a draft
-in the node it drafts, so what it does not resolve itself continues there.
+**Scope constraints.** Both sides of a row must resolve from its parent scope.
+Only direct declarations in enclosing scopes may contribute ambient bindings;
+siblings' descendants must not leak into scope. Explicit identity links may
+address nodes elsewhere through the shared ref resolver. They must not create
+a second name-lookup mechanism. A nested store must retain its enclosing graph
+scope, including when it is copied for evaluation or exchange.
 
 **Stores on one machine (desktop).** Every `.fos` store is a device root of its
 own: Home's (`~/.fos`, the home context, the only one with Home) and each
@@ -526,18 +524,16 @@ fields: one row per type (`lib.task`,
 is told apart by that left node alone (`rowTypeOf`, `isRowOfType`, any pinned
 version, by graph identity); there is no row kind and no `builtin:` behavior
 marker. Data from builds before data version 0.0.1 (which had such markers)
-is not readable and is not migrated (`docs/cid-versioning.md`). New rows
-are made from the nearest library ref above them that has the
-type (`rowTypeAt`; a library seeded before a type existed falls back to the
-build's definition); with none, making a row is an error. A library ref is a
+is not readable and is not migrated (`docs/cid-versioning.md`). New rows must use the library instance declared in the nearest enclosing scope.
+The instance shadows the whole namespace: missing fields must fail rather than
+falling back to an ancestor or the build bundle. A library ref is a
 ref whose value is a library, the namespace that defines the Library type
 (`isLibraryRef`, `libraryRowOf`): it is found by what it holds, not by a name.
 The **device root has one**, a row of the Library type filled from the
 client's build (`ensureLibraryRow`, `ensureDeviceLibrary`); it is local to that
 device: node exchange of a root leaves it out on both sides
 (`isShippedLibrary`). A library shared across accounts is an ordinary ref
-someone publishes to its members; a member's Home references it, and once its
-content is there it overrides the device root's under Home (nearest ancestor). A changed row type is a new version:
+someone publishes to its members; a member's Home references it, and its members may explicitly bind a local instance to that version. A changed row type is a new version:
 new rows are made from it, rows made before keep the version they pin. The
 library's `version` is the data version (`FOS_DATA_VERSION`), the one its cids
 carry.
@@ -997,25 +993,24 @@ Sync itself needs no schema change; nodes land in `FosNodeModel` like any other.
 
 ## The standard library (`shared/sync/library.ts`)
 
-The standard library is a mutable ref like any other: every device root has one
-(above), and a group shares one the way it shares any node. There is no system
-account and no server-owned copy. It changes like any ref's value, by a
-submission being accepted (`acceptSubmission`) under the ref's merge rule: a
-later build's library is the fos peer's submission to the device's library ref
-(`ensureDeviceLibrary`, `submitLibrary`); a member's change to a shared library
-is that member's submission on the owner's node.
+Both instruction and argument lookup must start at the row's parent scope.
+Declarations inside a row belong to its children. Search only direct declarations
+in each ancestor; never siblings or descendants. Multiple library instances in
+one scope must be reported as ambiguous. Library fields and capabilities must
+resolve through the selected instance, including in nested stores and drafts.
 
-**Audiences are groups.** `memberFor` (graph.ts) resolves a peer's member entry
-to its own, else to `audience:users` for any `user:*` peer, else to
-`audience:public`; every grant check (`hasCapability`, `inheritedNodeGrants`,
-`nodeAuthorityAt`, `allowedToEdit`, the provider) goes through it. Sharing a
-node with an audience therefore makes it a group nobody has to join one by one;
-an explicit member entry still wins, so a single account can be restricted.
+Pinned definitions must survive library upgrades and reloads. Native offers must
+be addressed by their capability node. Restoring a native implementation must
+not restore a withdrawn offer. Trigger behavior must come from the selected
+instruction node's own definition, with no name-based default.
 
-**Offline.** When a shared node the web app opens turns out to be a library, it
-pulls the whole tree (`openSharedNode` → `materializeSharedTree`, and
-`syncSharedNodes` keeps it current), so `findTemplateByName` finds its templates
-in the local replica and `` [ ] `Invoice` `` instantiates them offline.
+
+Library definitions should be editable and shareable through ordinary graph
+operations. Merely editing, importing, or opening a definition must not change
+which version consumers use. An explicit instance selects a version; an explicit
+upgrade changes that selection. Menus, named constructors, manual handlers, and
+execution must all use that same selection. Existing rows must keep the nodes
+they were constructed from.
 
 **In the build.** Clients carry the library in their bundle so a device that
 never goes online still has its templates: the build compiles the checked-in
@@ -1247,8 +1242,7 @@ confined to the linked root, refusing `..`, symbolic links, `.fos` and `.git`). 
 row is a reference because its type node is a version of that type
 (`isLibraryType`, any pinned version), never because of other data. The fields are
 ordinary mutable-ref rows, so node exchange (node by node, the fields included),
-merge and copies carry them. The file itself is never stored. A library seeded before
-the type existed resolves it from the build's definition (`libraryTypeAt`). On render, a device resolves the reference
+merge and copies carry them. The file itself is never stored. A missing type must require an explicit library upgrade; runtime lookup must not use a build fallback. On render, a device resolves the reference
 against the nearest node at or above the row's parent that has a linked directory,
 hashes the file again (results are cached for 5 s; Refresh clears them) and marks the
 reference **current** (with **Open file**), **stale** (with **Update reference**,

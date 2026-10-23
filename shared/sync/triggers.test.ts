@@ -4,7 +4,7 @@ import { addTask, addRow, createReplica as bareReplica, cronMatches, setNodeTrig
 import { TEMPLATE_TYPE } from './library-types'
 import { bindTemplateTriggers } from './triggers'
 import { writeRowValue, readRowValue } from './row-values'
-import { capabilityTarget } from './graph'
+import { libAt } from './graph'
 import { isTriggerLeft } from './capabilities'
 
 test('any graph template can declare and rebind a trigger without workflow-specific code', () => {
@@ -12,7 +12,7 @@ test('any graph template can declare and rebind a trigger without workflow-speci
   r = addRow(r, [], TEMPLATE_TYPE, 'User-defined continuation', 2, { id: 'template' })
   // the declaration is a trigger row whose fields hold placeholders
   const declaration = { peer: '{{executor}}', enabled: true, created: 0, watch: { path: '{{input}}', branch: '{{branch}}', merges: true } }
-  r = writeRowValue(r, ['template'], capabilityTarget(r.store, 'ref-change'), declaration, 3)
+  r = writeRowValue(r, ['template'], libAt(r.store).capabilities['ref-change']!, declaration, 3)
   r = bindTemplateTriggers(r, ['template'], { executor: 'first-peer', input: ['source'], branch: 'main' }, 4)
   expect(nodeTrigger(r, ['template'])).toMatchObject({ kind: 'ref-change', peer: 'first-peer', watch: { path: ['source'], merges: true } })
   // bound again from the declaration it keeps
@@ -33,7 +33,7 @@ test('UTC cron validates fields and handles ranges, steps and day OR semantics',
 })
 test('timer belongs to one device, claims before running and does not replay after reload', async () => {
   let r = addRow(createReplica('device'), [], TEMPLATE_TYPE, 'Run', 0, { id: 'task' }), time = 10
-  r = setNodeTrigger(r, ['task'], { kind: 'timer', peer: 'device', enabled: true, created: 0, due: 20 }, 0)
+  r = setNodeTrigger(r, ['task'], { observer: libAt(r.store).capabilities['timer']!, peer: 'device', enabled: true, created: 0, due: 20 }, 0)
   let runs = 0
   const driver = { get: () => r, save: (next: typeof r) => { r = next }, now: () => time, available: (id: string) => id === 'device', evaluate: async () => { expect(triggerState(r, ['task'])?.status).toBe('running'); runs++ } }
   await runNodeTriggers(driver); expect(runs).toBe(0)
@@ -45,7 +45,7 @@ test('timer belongs to one device, claims before running and does not replay aft
 test('parent completion fires once; editing its title does not refire; reopening arms it again', async () => {
   let r = addTask(createReplica('device'), [], 'Parent', 1, 'parent')
   r = addRow(r, ['parent'], TEMPLATE_TYPE, 'After parent', 1, { id: 'child' })
-  r = setNodeTrigger(r, ['parent', 'child'], { kind: 'task-completion', peer: 'device', enabled: true, created: 1 }, 1)
+  r = setNodeTrigger(r, ['parent', 'child'], { observer: libAt(r.store).capabilities['task-completion']!, peer: 'device', enabled: true, created: 1 }, 1)
   let runs = 0
   const driver = { get: () => r, save: (next: typeof r) => { r = next }, now: () => 10, available: () => true, evaluate: async () => { runs++ } }
   await runNodeTriggers(driver); expect(runs).toBe(0)
@@ -57,7 +57,7 @@ test('parent completion fires once; editing its title does not refire; reopening
 test('template triggers create an independent instance and failed runs do not spin', async () => {
   let r = addRow(createReplica('device'), [], TEMPLATE_TYPE, 'Workflow', 1, { id: 'template' })
   r = addTask(r, ['template'], 'Step', 1, 'step')
-  r = setNodeTrigger(r, ['template'], { kind: 'timer', peer: 'device', enabled: true, created: 1, due: 2 }, 1)
+  r = setNodeTrigger(r, ['template'], { observer: libAt(r.store).capabilities['timer']!, peer: 'device', enabled: true, created: 1, due: 2 }, 1)
   let runs = 0
   const driver = { get: () => r, save: (next: typeof r) => { r = next }, now: () => 3, available: () => true, evaluate: async (path: string[]) => { runs++; expect(path).not.toEqual(['template']); expect(view(r, path)!.tasks[0]!.title).toBe('Step'); throw new Error('Needs confirmation') } }
   await runNodeTriggers(driver); await runNodeTriggers(driver)
@@ -69,7 +69,7 @@ test('template triggers create an independent instance and failed runs do not sp
 test('an incoming proposal fires the request trigger and its saved occurrence is not replayed', async () => {
   const { makeLinkAt, proposalContent, withProposal, commitRoot, updateAtScope, headCid, resolveScope, put, rowContent } = await import('./index')
   let r = makeLinkAt(addRow(createReplica('device'), [], TEMPLATE_TYPE, 'Inbox', 1, { id: 'inbox' }), ['inbox'], 1)
-  r = setNodeTrigger(r, ['inbox'], { kind: 'request', peer: 'device', enabled: true, created: 2 }, 2)
+  r = setNodeTrigger(r, ['inbox'], { observer: libAt(r.store).capabilities['request']!, peer: 'device', enabled: true, created: 2 }, 2)
   let runs = 0
   const driver = { get: () => r, save: (next: typeof r) => { r = next }, now: () => 10, available: () => true, evaluate: async () => { runs++ } }
   await runNodeTriggers(driver); expect(runs).toBe(0)
@@ -86,16 +86,16 @@ test('an incoming proposal fires the request trigger and its saved occurrence is
 })
 
 test('changing the trigger reuses its row and switches its left observer', async () => {
-  const { capabilityTarget, matchesGraph, headCid, resolveScope, rowsWithLeft } = await import('./index')
+  const { libAt, matchesGraph, headCid, resolveScope, rowsWithLeft } = await import('./index')
   let r = addRow(createReplica('device'), [], TEMPLATE_TYPE, 'Task', 1, { id: 'task' })
-  r = setNodeTrigger(r, ['task'], { kind: 'timer', peer: 'device', enabled: true, created: 1, due: 10 }, 1)
+  r = setNodeTrigger(r, ['task'], { observer: libAt(r.store).capabilities['timer']!, peer: 'device', enabled: true, created: 1, due: 10 }, 1)
   const rows = () => rowsWithLeft(r.store, resolveScope(r.store, headCid(r), ['task'])!, isTriggerLeft)
-  expect(matchesGraph(r.store, capabilityTarget(r.store, 'timer'), rows()[0]!.edge[0])).toBe(true)
+  expect(matchesGraph(r.store, libAt(r.store).capabilities.timer!, rows()[0]!.edge[0])).toBe(true)
   const id = rows()[0]!.alias
-  r = setNodeTrigger(r, ['task'], { kind: 'request', peer: 'device', enabled: true, created: 2 }, 2)
+  r = setNodeTrigger(r, ['task'], { observer: libAt(r.store).capabilities['request']!, peer: 'device', enabled: true, created: 2 }, 2)
   expect(rows()).toHaveLength(1)
   expect(rows()[0]!.alias).toBe(id)
-  expect(matchesGraph(r.store, capabilityTarget(r.store, 'request'), rows()[0]!.edge[0])).toBe(true)
+  expect(matchesGraph(r.store, libAt(r.store).capabilities.request!, rows()[0]!.edge[0])).toBe(true)
 })
 
 
@@ -103,7 +103,7 @@ test('child evaluation creates a fresh template instance for each completed pare
   const { writeNodeValue } = await import('./index')
   let r = addTask(createReplica('device'), [], 'Parent', 1, 'parent')
   r = addRow(r, ['parent'], TEMPLATE_TYPE, 'Child workflow', 1, { id: 'child' })
-  r = setNodeTrigger(r, ['parent', 'child'], { kind: 'task-completion', peer: 'device', enabled: true, created: 1 }, 1)
+  r = setNodeTrigger(r, ['parent', 'child'], { observer: libAt(r.store).capabilities['task-completion']!, peer: 'device', enabled: true, created: 1 }, 1)
   const targets: string[][] = []
   const driver = { get: () => r, save: (next: typeof r) => { r = next }, now: () => 10, available: () => true, evaluate: async (path: string[]) => { targets.push(path) } }
   r = writeEvaluationRecord(r, ['parent'], { id: 'one', status: 'committed', started: 2, effects: [] }, 3)
@@ -113,7 +113,7 @@ test('child evaluation creates a fresh template instance for each completed pare
   await runNodeTriggers(driver)
   expect(targets).toHaveLength(2)
   expect(targets[0]).not.toEqual(targets[1])
-  expect(() => setNodeTrigger(r, ['parent'], { kind: 'cron', peer: 'fos', enabled: true, created: 1, expression: '* * * * *' }, 1)).toThrow('This observer instantiates a template.')
+  expect(() => setNodeTrigger(r, ['parent'], { observer: libAt(r.store).capabilities['cron']!, peer: 'fos', enabled: true, created: 1, expression: '* * * * *' }, 1)).toThrow('This observer instantiates a template.')
 })
 
 test('a response trigger continues the requester when the asked peer commits or rejects', async () => {

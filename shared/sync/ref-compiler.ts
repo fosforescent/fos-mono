@@ -84,7 +84,7 @@ export function compileRefGraph(r: Replica, cid: string, at: Scope = [], options
         if (isRowEdge(store, edge) && isHandlerStateLeft(store, edge[0])) continue
         const childPath = isRowEdge(store, edge) ? [...path, child?.data.alias?.id ?? edge[1]] : path
         // Constructor identities are immutable graph nodes too, and may contain refs.
-        const instruction = walk(store, edge[0], path, role, depth + 1)
+        const instruction = walk(store, edge[0], childPath, role, depth + 1)
         children.push([instruction, walk(store, edge[1], childPath, role, depth + 1, isRowEdge(store, edge) ? edge[0] : type)])
       }
       const { alias: _alias, updated: _updated, ref: _ref, refExpression: _expression, refRole: _role, ...data } = node.data

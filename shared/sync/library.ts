@@ -1,17 +1,6 @@
-/**
- * The standard library: a mutable ref in the graph, a row of the Library type in every device root. Its value is the
- * library's content (its rows: named refs such as `lib.task`, templates, groups), and it changes like any ref's
- * value: by a submission being accepted (approvals.ts). The first one is the build's: `.fos/library.json`, compiled by
- * scripts/compile-library.cjs, is the content a fresh device root's library ref holds (`ensureDeviceLibrary`), offline
- * from the first run; a later build's is the fos peer's submission. A library shared across devices and accounts is a
- * ref like any other: published to its members, referenced in theirs, changed by their submissions under its merge
- * rule. `fos . library export` writes the value a store sees back as the build source.
- *
- * Like every mutable ref the library resolves by nearest ancestor, so a library referenced in Home overrides the device
- * root's for everything under Home (`libraryPath`, `rowTypeAt` in graph.ts).
- */
+/** Library definitions are editable values. Runtime consumers must use explicitly pinned instances. */
 import { homePath, proposeRefAt, view, type Replica } from './replica'
-import { commitRoot, content, ensureLibraryRow, importNodes, reachableNodes, findNearestRow, isLibraryDefinition, isPeerReference, libraryInstanceEdge, libraryInstanceOf, libraryRowOf, updateAtScope, put, refValueCid, resolveScope, valueContent, SERVER_MEMBER, type Scope } from './graph'
+import { commitRoot, content, ensureLibraryRow, importNodes, reachableNodes, enclosingScopes, libraryBindingAt, libraryTypeAt, viewNode, isLibraryDefinition, isPeerReference, libraryInstanceEdge, libraryInstanceOf, libraryRowOf, updateAtScope, put, refValueCid, resolveScope, valueContent, SERVER_MEMBER, type Scope } from './graph'
 import type { FosNodeContent, FosNodesData } from '../types'
 import { headCid } from './replica'
 import { FOS_DATA_VERSION } from '../version'
@@ -62,8 +51,17 @@ export type ManualHandler = { id: string; label: string; capability: Requirement
  * under Home, the device root's elsewhere. Rows are made from the version its instance pins (`lib`, graph.ts).
  */
 export function libraryPath(r: Replica, at: Scope = homePath(r)): Scope | null {
-  const found = findNearestRow(r.store, headCid(r), at, row => isLibraryDefinition(r.store, content(r.store, row.cid)))
-  return found ? [...found.path, found.id] : null
+  for (const scope of enclosingScopes(r.store, headCid(r), at)) {
+    // This is the editable definition, not runtime field resolution. Never search
+    // an unrelated child document for a definition.
+    const definitions = valueContent(scope.store, scope.cid).children.flatMap(([, right]) => {
+      const node = scope.store.table.get(right)
+      return node?.data.alias && isLibraryDefinition(scope.store, node) ? [node.data.alias.id] : []
+    })
+    if (definitions.length > 1) throw new Error('Choose which library definition to edit.')
+    if (definitions.length) return scope.store === r.store ? [...scope.path, definitions[0]!] : null
+  }
+  return null
 }
 
 /** Use the library defined at `definition` under the node at `at`: its instance there, pinned to the definition's current value. */
@@ -93,16 +91,6 @@ export function upgradeLibrary(r: Replica, at: Scope, definition: Scope, now: nu
 /** The library's field declaring what it needs passed in by the device that uses it (its natives). */
 export const LIBRARY_REQUIRES = 'requires'
 
-/** The nearest library instance a row at `at` sees: the node it is on and the instance. */
-function nearestInstance(r: Replica, at: Scope): { at: Scope; instance: NonNullable<ReturnType<typeof libraryInstanceOf>> } | null {
-  for (let i = at.length; i >= 0; i--) {
-    const path = at.slice(0, i), cid = resolveScope(r.store, headCid(r), path)
-    const instance = cid && libraryInstanceOf(r.store, cid)
-    if (instance) return { at: path, instance }
-  }
-  return null
-}
-
 /**
  * Pass `value` (a native this device registered, `nativeRef`) into the library instance of the node at `at` as its
  * argument `name`: what the library's `requires.<name>` declares. The library never calls a native itself; it uses
@@ -114,7 +102,7 @@ export function setLibraryArg(r: Replica, at: Scope, name: string, value: string
   const left = namesInLibrary(store, instance.library).byName.get(`${LIBRARY_REQUIRES}.${name}`)
   if (!left) throw new Error(`The library requires no ${name}.`)
   const ref = content(store, instance.cid), args = content(store, refValueCid(store, ref) ?? put(store, { data: {}, children: [] }))
-  const existing = args.children.find(([, right]) => store.table.get(right)?.data.name?.content === name)
+  const existing = args.children.find(([type]) => type === left)
   if (existing && refValueCid(store, content(store, existing[1])) === value) return r
   const arg = put(store, refNodeContent(store, { alias: { id: hashContent({ data: { name: { content: name } }, children: [] }) }, name: { content: name } }, value))
   const nextArgs = put(store, { ...args, children: [...args.children.filter(edge => edge !== existing), [left, arg]] })
@@ -128,9 +116,9 @@ export function setLibraryArg(r: Replica, at: Scope, name: string, value: string
  * and node) with the native the device passed, when it passed one.
  */
 export function libraryArgs(r: Replica, at: Scope): Array<{ name: string; declaration: FosNodeContent; value: string }> {
-  const near = nearestInstance(r, at)
-  if (!near) return []
-  const store = r.store, { instance } = near
+  const instance = libraryBindingAt(r.store, at)
+  if (!instance) return []
+  const store = r.store
   const target = store.primitive.targetPointerConstructor.getId(), alias = store.primitive.aliasConstructor.getId(), get = (id: string) => store.table.get(id)
   const group = namesInLibrary(store, instance.library).byName.get(LIBRARY_REQUIRES)
   const args = refValueCid(store, content(store, instance.cid))
@@ -138,7 +126,7 @@ export function libraryArgs(r: Replica, at: Scope): Array<{ name: string; declar
   return content(store, group).children.flatMap(edge => {
     const declared = fieldNode(get, edge as [string, string], target, alias)
     if (!declared) return []
-    const passed = content(store, args).children.find(([, right]) => get(right)?.data.name?.content === declared.name)
+    const passed = content(store, args).children.find(([left]) => left === declared.node)
     const value = passed && refValueCid(store, content(store, passed[1]))
     return value ? [{ name: declared.name, declaration: content(store, edge[1]), value }] : []
   })
@@ -156,9 +144,9 @@ export function libraryFieldPath(r: Replica, field: string, at?: Scope): Scope |
 
 /** The manual (and device) fallback handlers the library at `at` carries: the rows of its `manual` field. */
 export function manualHandlers(r: Replica, at?: Scope): ManualHandler[] {
-  const path = libraryFieldPath(r, MANUAL_HANDLERS, at)
-  if (!path) return []
-  return (view(r, path)?.tasks ?? []).flatMap(row => {
+  const field = libraryTypeAt(r.store, MANUAL_HANDLERS, at ?? homePath(r))
+  if (!field) return []
+  return viewNode(r.store, field).tasks.flatMap(row => {
     const req = row.requirement
     if (!req || !row.title.trim()) return []
     return [{ id: row.id, label: row.title.trim(), capability: req.capability, ...(req.resource ? { resource: req.resource } : {}), device: false }]

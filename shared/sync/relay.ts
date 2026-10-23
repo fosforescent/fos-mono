@@ -23,8 +23,8 @@ import type { FosStore } from '../dag-implementation/store'
 import { hashContent } from '../dag-implementation/cid'
 import {
   commitRoot, content, findChild, identityCid, isMemberEdge, isPeerReference, isRowOfType, libraryTypeAt, membershipIdOf, memberPeerOf, inMemberEntry, moveChild, aliasIdOf,
-  capabilityTarget, put, proposalContent, readProposals, refNodeContent, resolveScope, updateAtScope, valueContent, withMainBranchPolicy, withProposal,
-  isLibraryRef, handlerOfferId, shippedLibrary, findNearestRow, memberEdgesOf, isRowEdge, type ProposalRecord, type Scope, type TaskView,
+  libAt, put, proposalContent, readProposals, refNodeContent, resolveScope, updateAtScope, valueContent, withMainBranchPolicy, withProposal,
+  isLibraryRef, handlerOfferId, shippedLibrary, memberEdgesOf, isRowEdge, type ProposalRecord, type Scope, type TaskView,
 } from './graph'
 import { constructForm } from './forms'
 import { addMemberAt, headCid, setHandlerOffersAt, view, type Replica } from './replica'
@@ -238,10 +238,10 @@ export function relayTemplate(r: Replica, at: Scope = []): string {
 export function offerRelay(r: Replica, at: Scope, now: number): Replica {
   const peerId = r.meta.peerId
   if (!contextMemberRefs(r, at).has(peerId)) r = addMemberAt(r, at, peerId, peerId, [], now)
-  const type = capabilityTarget(r.store, 'relay')
+  const type = libAt(r.store, at).capabilities.relay!
   const template = valueContent(r.store, relayTemplate(r, at))
   const value = put(r.store, { ...template, children: [...template.children, ...content(r.store, type).children] })
-  const handler = put(r.store, refNodeContent(r.store, { alias: { id: handlerOfferId(peerId, 'relay') }, name: { content: 'Relay' } }, value, []))
+  const handler = put(r.store, refNodeContent(r.store, { alias: { id: handlerOfferId(peerId, type) }, name: { content: 'Relay' } }, value, []))
   return setHandlerOffersAt(r, at, peerId, type, [handler], now)
 }
 

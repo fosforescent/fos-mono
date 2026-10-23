@@ -1,7 +1,7 @@
 import { handlerOfferId } from '@fosforescent/shared/sync/index'
 import { membershipPathAt } from '@fosforescent/shared/sync/index'
 import { standardHostRef } from './host-runtime'
-import { CAPABILITIES, SERVER_TRANSPORT_CAPABILITIES, RELAY_QUEUE_ID, addMemberAt, addRelayMessage, addTask, createReplica, ensureHomeContext, view, HOME_ID } from '@fosforescent/shared/sync/index'
+import { capabilityNames, libAt, SERVER_TRANSPORT_CAPABILITIES, RELAY_QUEUE_ID, addMemberAt, addRelayMessage, addTask, createReplica, ensureHomeContext, view, HOME_ID } from '@fosforescent/shared/sync/index'
 import { createHostRuntime } from './host-runtime'
 import { relayHandler } from './hostHandlers'
 import { put, nativeRef, addRefCall, addRefAt, evaluationSteps, updateAtScope, commitRoot, headCid, content, setHandlerEnabledAt, setHandlerOffersAt, serializeReplica, loadReplica, discoverHandlers, type EvaluationStep } from '@fosforescent/shared/sync/index'
@@ -14,13 +14,13 @@ test('a host registers and discovers a custom ref pattern without a capability n
   } }])
   let replica = ensureHomeContext(createReplica('owner'), 1, runtime.hostOffers())
   replica = await runtime.onLoad({ userId: 1, replica, path: [], branches: [], now: 2 })
-  const handler = runtime.handlers[0]!, type = handler.ref!.type(replica.store)
-  const step = { path: [], row: { requirement: { capability: type } } } as unknown as EvaluationStep
+  const handler = runtime.handlers[0]!, type = handler.ref!.type(replica.store, [])
+  const step = { path: [], row: { typeCid: type } } as unknown as EvaluationStep
   expect(runtime.executors(step, replica)).toEqual([handler])
   expect(runtime.providers(step, replica, handler)).toEqual(['fos'])
   await handler.effect!({ userId: 1, username: 'owner', step, replica: () => replica, update: async next => { replica = next }, now: () => 3 })
   expect(calls).toBe(1)
-  replica = setHandlerEnabledAt(replica, [], 'fos', 'extension:render', false, 4)
+  replica = setHandlerEnabledAt(replica, [], 'fos', handlerOfferId('fos', type, 'extension:render'), false, 4)
   expect(runtime.providers(step, replica, handler)).toEqual([])
 })
 
@@ -67,19 +67,20 @@ test('availability follows the handler, and every advertised capability is a kno
   expect(await runtime.active('integration:github', 2)).toBe(false)
   expect(await runtime.active('fos', 2)).toBe(true)
   expect(await runtime.active('integration:google', 1)).toBe(false)
-  for (const cap of runtime.serverCapabilities()) expect(CAPABILITIES).toContain(cap)
+  for (const cap of runtime.serverCapabilities()) expect(capabilityNames(createReplica().store)).toContain(cap)
 })
 
 test('reloading and applying host defaults never resurrects a withdrawn declaration', () => {
   const runtime = createHostRuntime([{ peerId: 'fos', ref: standardHostRef('fos', 'search'), effect: async () => {} }])
   let r = ensureHomeContext(createReplica('owner'), 1, runtime.hostOffers())
-  const offer = discoverHandlers(r, []).find(value => value.id === handlerOfferId('fos', 'search'))!
+  const offer = discoverHandlers(r, []).find(value => value.id === handlerOfferId('fos', libAt(r.store).capabilities.search!, 'search'))!
   expect(offer).toBeDefined()
   r = addRefCall(r, [], offer.cid, 2, 'call')
   expect(runtime.executors(evaluationSteps(r, ['call'])[0]!, r)).toHaveLength(1)
   r = setHandlerOffersAt(r, [], 'fos', offer.type, [], 3)
   r = loadReplica(serializeReplica(r))
-  r = runtime.migrate(ensureHomeContext(r, 4, runtime.hostOffers()), [], 5)
+  r = ensureHomeContext(r, 4, runtime.hostOffers())
+  runtime.restore(r, [])
   expect(discoverHandlers(r, []).some(value => value.id === offer.id)).toBe(false)
   expect(runtime.executors(evaluationSteps(r, ['call'])[0]!, r)).toHaveLength(0)
 })

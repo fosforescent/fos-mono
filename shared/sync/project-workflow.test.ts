@@ -1,3 +1,4 @@
+import { libAt } from './index'
 import { installTestObservers } from './test-helpers'
 import { createReplica as bareReplica, addTask, bindRepository, configureProjectWorkflow, createBranch, enqueueWorkflowJob, projectWorkflows, workflowAt, workflowJob, writeWorkflowJob, writeExecutionRequest, loadReplica as bareLoadReplica, serializeReplica, selectBranch, renameTask, addRow, TEMPLATE_TYPE, setNodeTrigger, watchedRefValue, triggerOccurrence, nodeTrigger, runNodeTriggers, triggerState, view, type ProjectWorkflow } from './index'
 import { ensureHomeContext, shareHome, HOME_ID, withBranches, writeNodeValue, repositoryAt, workflowTriggerPath, mergeBranch, workflowText } from './index'
@@ -94,7 +95,7 @@ test('ref-change watches main independently of the displayed branch and cannot t
   r = createBranch(r, ['project'], 'phone-feature', 4)
   const path = [...workflowAt(r, ['project'])!, 'watch']
   r = addRow(r, path.slice(0, -1), TEMPLATE_TYPE, 'Watch', 5, { id: 'watch' })
-  r = setNodeTrigger(r, path, { kind: 'ref-change', peer: 'desktop', enabled: true, created: 6, watch: { path: ['project'], branch: 'main', baseline: watchedRefValue(r, ['project'], 'main')! } }, 6)
+  r = setNodeTrigger(r, path, { observer: libAt(r.store).capabilities['ref-change']!, peer: 'desktop', enabled: true, created: 6, watch: { path: ['project'], branch: 'main', baseline: watchedRefValue(r, ['project'], 'main')! } }, 6)
   expect(triggerOccurrence(r, path, nodeTrigger(r, path)!, 7)).toBeNull()
   r = renameTask(r, [], 'project', 'Feature edited', 7)
   expect(triggerOccurrence(r, path, nodeTrigger(r, path)!, 8)).toBeNull()

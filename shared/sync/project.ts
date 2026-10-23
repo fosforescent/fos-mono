@@ -13,7 +13,7 @@ export const STATE_DIR = '.fos'
 
 /**
  * Shape of fos.config.toml. `[server]` is this directory's policy towards the account server (`to` = what leaves the
- * device, `from` = what it takes in; capability ids from `CAPABILITIES`); `[peers.<name>]` the same towards another
+ * device, `from` = what it takes in; capability names from the bound library); `[peers.<name>]` the same towards another
  * peer. Absent: `DEFAULT_DEVICE_POLICY` (everything flows both ways).
  */
 export type FosProjectConfig = {

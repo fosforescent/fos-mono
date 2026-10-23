@@ -89,8 +89,6 @@ function childType(store: FosStore, edge: FosPathElem): { type: string; version:
 /** Does a node of type `typeCid` accept the row `child` (a plain row edge) among its children? */
 export function acceptsChild(store: FosStore, typeCid: string, child: FosPathElem): boolean {
   if (!store.table.has(typeCid)) return true // a missing type is a reference error, not a type error
-  // a type with no graph identity (a retired format, a reference error's stand-in) is not one this peer knows: no type errors
-  if (!typeIdOf(store, typeCid)) return true
   const definition = content(store, typeCid)
   // A callable ref supplies instructions; its right-side call arguments remain
   // ordinary rows, governed by the function's input patterns during binding.
@@ -99,7 +97,7 @@ export function acceptsChild(store: FosStore, typeCid: string, child: FosPathEle
   if (definition.data.capabilityDefinition && !definition.data.form && !patternsOf(store, typeCid).length) return true
   if (definition.data.form) {
     if (!isRowEdge(store, child)) return true
-    if (definition.children.some(([pattern]) => matchesGraph(store, pattern, child[0]))) return true
+    if (definition.children.some(([pattern]) => pattern === child[0] || matchesGraph(store, pattern, child[0]))) return true
     if (!definition.data.form.open) return false
   }
   const type = childType(store, child)

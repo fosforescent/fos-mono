@@ -1,5 +1,5 @@
 import {
-  addTask,
+  addTask, content,
   createReplica,
   nativeRef,
   publishNativeRef,
@@ -51,9 +51,9 @@ test('an unfamiliar observer executes only through its scoped declaration, pinne
   // a trigger given one observer's declaration is pinned to it: the row's left is that offer
   expect(nodeTrigger(r, ['task'])?.handler).toBe(ref)
   expect(triggerOccurrence(r, ['task'], nodeTrigger(r, ['task'])!, 2)).toBe('custom-event')
-  r = setHandlerEnabledAt(r, [], 'host', 'user-authored-observer', false, 2)
+  r = setHandlerEnabledAt(r, [], 'host', content(r.store, ref).data.alias!.id, false, 2)
   expect(triggerOccurrence(r, ['task'], nodeTrigger(r, ['task'])!, 2)).toBeNull()
-  r = setHandlerEnabledAt(r, [], 'host', 'user-authored-observer', true, 2)
+  r = setHandlerEnabledAt(r, [], 'host', content(r.store, ref).data.alias!.id, true, 2)
   r = loadReplica(serializeReplica(r))
   expect(triggerOccurrence(r, ['task'], nodeTrigger(r, ['task'])!, 2)).toBeNull()
   nativeRef(r.store, 'host', def) // restore the host meaning without registering anything
@@ -107,7 +107,7 @@ test('a selected observer never silently switches to another declaration of the 
     two = nativeRef(r.store, 'host', second)
   r = publishNativeRef(publishNativeRef(r, [], 'host', one, 1), [], 'host', two, 1)
   r = setNodeTrigger(r, ['task'], { handler: one, peer: 'host', enabled: true, created: 1 }, 1)
-  r = setHandlerOffersAt(r, [], 'host', first.type(r.store), [two], 2)
+  r = setHandlerOffersAt(r, [], 'host', first.type(r.store, []), [two], 2)
   expect(triggerOccurrence(r, ['task'], nodeTrigger(r, ['task'])!, 3)).toBeNull()
 })
 

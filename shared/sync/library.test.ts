@@ -1,7 +1,7 @@
 /** The standard library: a mutable ref like any other, found by what it holds, changed by accepted submissions. */
 import { nativeRef } from './native-refs'
 import { primitiveImplementation } from './primitives'
-import { capabilityTarget, handlerOfferId } from './graph'
+import { libAt, handlerOfferId } from './graph'
 import { FosStore } from '../dag-implementation/store'
 import { HOME_ID, LIBRARY_ID, content, hasCapability, isLibraryRef, libraryRowOf, memberFor, namesInLibrary, put, refNodeContent, resolveScope, rowTypeAt, valueCidOf, valueContent } from './graph'
 import { addMemberAt, addRefAt, makeLinkAt, addRow, addTask, createReplica, ensureHomeContext, headCid, proposeRefAt, view, type Replica } from './replica'
@@ -105,7 +105,7 @@ test('the library carries manual fallback handlers for every kind of requirement
 test('the library requires natives the device passes in: its lib instance carries them, and they fill what they are declared for', () => {
   let r = ensureHomeContext(createReplica('user:device'), 1)
   const locate = { locate: async () => ({ lat: 1, lng: 2 }) }
-  const native = nativeRef(r.store, r.meta.peerId, { id: handlerOfferId(r.meta.peerId, 'allocation', 'location'), label: 'This device', type: store => capabilityTarget(store, 'allocation') }, locate as never)
+  const native = nativeRef(r.store, r.meta.peerId, { id: 'location', label: 'This device', type: store => libAt(store).capabilities.allocation! }, locate as never)
   expect(() => setLibraryArg(r, [], 'nothingDeclared', native, 2)).toThrow(/requires no/)
   r = setLibraryArg(r, [], 'deviceLocation', native, 2)
   expect(headCid(setLibraryArg(r, [], 'deviceLocation', native, 3))).toBe(headCid(r))

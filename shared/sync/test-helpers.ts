@@ -5,11 +5,34 @@ import { accountContextAbove, exchangeNode, nodeTreeSync } from './node-sync'
 import type { NodeBranch, NodeRequest } from './node-provider'
 import { nativeRef, publishNativeRef } from './native-refs'
 import { deviceTriggerDefinitions, cronObserver } from './trigger-primitives'
-import { capabilityTarget } from './graph'
+import { libAt, libraryBindingAt, libraryInstanceEdge, commitRoot, updateAtScope, content, put, refNodeContent } from './graph'
+
+/** An extension must be declared in a library instance before code can address its field. */
+export function declareTestCapability(r: Replica, name: string, at: Scope = [], data: import('../types').FosDataContent = {}): Replica {
+  const store = r.store, binding = libraryBindingAt(store, at)!, library = content(store, binding.library)
+  const group = libAt(store, at).field('capabilities'), namespace = content(store, group)
+  const operation = put(store, { data: { description: { content: 'name' } }, children: [] })
+  const kind = put(store, { data: { scalar: { type: 'text', value: name } }, children: [] })
+  const type = put(store, { data: { capabilityDefinition: { name, label: name }, ...data }, children: [[operation, kind]] })
+  const declaration = put(store, refNodeContent(store, { name: { content: name } }, null))
+  const nextGroup = put(store, { ...namespace, children: [...namespace.children.filter(([, right]) => content(store, right).data.name?.content !== name), [type, declaration]] })
+  const nextLibrary = put(store, { ...library, children: library.children.map(([left, right]) => [left, right === group ? nextGroup : right]) })
+  commitRoot(store, updateAtScope(store, headCid(r), at, node => {
+    const instance = libraryInstanceOf(store, put(store, node))
+    return { ...node, children: [...node.children.filter(([, right]) => right !== instance?.cid), libraryInstanceEdge(store, nextLibrary)] }
+  }), 0)
+  return { ...r }
+}
+
+/** Services are registered explicitly; granting permission must never manufacture a handler. */
+export function installTestHandler(r: Replica, peer: string, capability: string, at: Scope = []): Replica {
+  const definition = { id: `test:${capability}`, label: capability, type: (store: Replica['store'], scope: Scope) => libAt(store, scope).capabilities[capability]! }
+  return publishNativeRef(r, at, peer, nativeRef(r.store, peer, definition, {}, at), 0)
+}
 
 /** Explicit host setup for tests exercising observers; construction alone never registers them. */
 export function installTestObservers(r: Replica, peers = [r.meta.peerId], publish = true): Replica {
-  for (const peer of peers) for (const definition of [...deviceTriggerDefinitions, { id: 'test:cron', type: (store: Replica['store']) => capabilityTarget(store, 'cron'), trigger: cronObserver }]) {
+  for (const peer of peers) for (const definition of [...deviceTriggerDefinitions, { id: 'test:cron', type: (store: Replica['store']) => libAt(store).capabilities.cron!, trigger: cronObserver }]) {
     const ref = nativeRef(r.store, peer, definition)
     if (publish) r = publishNativeRef(r, [], peer, ref, 0)
   }

@@ -1,4 +1,4 @@
-import { branchEdge, capabilityTarget, commitRoot, content, identityCid, importNodes, isBranchChoice, isHandle, isPeerReference, put, putBranches, readChoice, readMembers, memberFor, readProposals, reachableNodes, resolveScope, rowEdgeAt, updateAtScope, withIdentity, withBranches, withMainBranchPolicy, type Scope, type Capability } from './graph'
+import { branchEdge, copyOuterScope, commitRoot, content, identityCid, importNodes, isBranchChoice, isHandle, isPeerReference, put, putBranches, readChoice, readMembers, memberFor, readProposals, reachableNodes, resolveScope, rowEdgeAt, updateAtScope, withIdentity, withBranches, withMainBranchPolicy, type Scope, type Capability } from './graph'
 import { PLAIN_TYPE } from './library-types'
 import { createBranch } from './branches'
 import { headCid, loadReplica, serializeReplica, type Replica } from './replica'
@@ -39,6 +39,7 @@ export function exchangeNodeContext(r: Replica, input: NodeRequest, authority: N
   const branches = [...(request.branches ?? [])].sort((a, b) => a.scope.length - b.scope.length)
   for (const branch of branches) if (!prefix(authority.scope, branch.scope) || !prefix(branch.scope, path)) throw new NodeAccessError('Branch is outside the requested attachment.')
   let fork = loadReplica(serializeReplica(r))
+  copyOuterScope(r.store, fork.store)
   const wrappers: Array<{ scope: Scope; cid: string; name: string; before: string }> = []
   for (const branch of branches) {
     let cid = resolveScope(fork.store, headCid(fork), branch.scope)
@@ -95,9 +96,9 @@ export function exchangeNodeContext(r: Replica, input: NodeRequest, authority: N
   }
   importNodes(r.store, reachableNodes(fork.store, [fork.store.rootNodeId]))
   if (!request.proposal && headCid(fork) !== headCid(r)) commitRoot(r.store, headCid(fork), now)
-  const type = capabilityTarget(r.store, 'provideNode'), root = content(r.store, r.store.rootNodeId)
-  const endpoints = content(fork.store, fork.store.rootNodeId).children.filter(e => e[0] === type)
-  r.store.rootNodeId = put(r.store, { ...root, children: [...root.children.filter(e => e[0] !== type), ...endpoints] })
+  const root = content(r.store, r.store.rootNodeId)
+  const endpoints = content(fork.store, fork.store.rootNodeId).children.filter(e => !!content(fork.store, e[1]).data.nodeLink)
+  r.store.rootNodeId = put(r.store, { ...root, children: [...root.children.filter(e => !content(r.store, e[1]).data.nodeLink), ...endpoints] })
   return { replica: { ...r }, node: served.node }
 }
 
