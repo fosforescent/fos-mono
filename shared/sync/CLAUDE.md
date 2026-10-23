@@ -14,11 +14,14 @@ Record intended behavior and restrictions here. Keep implementation details in c
 - Bootstrap may import the bundled library explicitly. Runtime lookup must not consult that bundle as a fallback.
 - Access capabilities as fields of the bound library. Offer identities must refer to capability nodes; do not encode or parse capability names in IDs.
 - A trigger's definition must come from its own instruction node. A familiar name must not supply missing behavior or metadata.
+- Parameter keys must carry their native interpretation in their own data, and primitive parameters must refer to the value predicate node. Library names, sibling declarations, and the shipped bundle must not assign meaning to an existing parameter graph.
 
 ## Structural semantics
 
 - A row is an ordered pair: instruction/pattern on the left, argument/value on the right. Do not add an independent type annotation to a node.
 - Patterns must express their distinctions in graph structure. A constructor may have a name row containing a string. Such a row is ordinary graph data, not a lookup into a separate behavior catalog.
+- Library binding names must not classify constructors. Native adapters may read a constructor's own name row; aliases assigned by other libraries must not change its meaning.
+- Placement rules must hold their predicates as graph edges and match the pinned instruction structurally, or compare its exact CID when explicitly requested. Do not reverse-index library fields or recover retired definitions through library history to interpret a rule.
 - Required rows form products; choices form alternatives. An alternative must satisfy a whole pattern; do not assemble a match from pieces of different alternatives.
 - Native scalar predicates may inspect leaf values. Aliases and presentation metadata must not establish structural compatibility.
 - Ref declarations and accepted submissions are the registration mechanism for handlers. Permissions alone must not create executable offers.
@@ -29,6 +32,7 @@ Record intended behavior and restrictions here. Keep implementation details in c
 ## Mutation, exchange, and execution
 
 - Equal graph content must have the same CID on every peer. Preserve row order and direction; validate imported content and data versions.
+- Preserve literal graph constraints through construction, copying, reordering, and node exchange. Immutable payloads must respect child masks; mutable descendants must require their own authorized load.
 - Preserve mutable-ref identity while recording content history. Do not keep using an older replica object after an edit.
 - Preserve complete choice alternatives and keep branch preview content separate from authoritative policy.
 - Exchange only authorized graph content. Do not traverse remote references using cached data as a substitute for access checks.

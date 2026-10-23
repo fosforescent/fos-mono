@@ -117,8 +117,8 @@ export function readGraphValue(store: FosStore, cid: string, depth = 0, active =
       const entries: Array<[string, NodeValue, number]> = [],
         names = new Set<string>()
       for (const [type, child] of node.children) {
-        // Links are graph relationships, not scalar record fields.
-        if (type === store.primitive.linkField.getId()) continue
+        // Literal constraints and links are not mutable record fields.
+        if (type === store.primitive.linkField.getId() || !isRowEdge(store, [type, child])) continue
         const field = content(store, child),
           name = field.data.name?.content ?? valueContent(store, child).data.name?.content
         if (name === undefined || !field.data.alias || !isRowEdge(store, [type, child])) return undefined

@@ -34,6 +34,8 @@ export type FosDataContent = {
   };
   /** A constructor row's parameter, optionally bound from the caller's environment. */
   parameter?: { name: string; from?: string[] };
+  /** Native interpretation of a parameter key; field names must not supply this meaning. */
+  parameterDefinition?: { kind: 'primitive' | 'negative' };
   /** Presentation and invocation contract of an observer ref, supplied by its declaration. */
   triggerDefinition?: { label: string; icon: string; mode: 'instantiate' | 'resume'; hidden?: boolean; schedule?: { field: string; input: 'datetime-local' | 'text'; label: string } };
   scalar?: { type: 'text' | 'number' | 'peer' | 'time' | 'boolean' | 'null'; value: string | number | boolean | null };
@@ -190,11 +192,10 @@ export type FosDataContent = {
   behavior?: {
     content: string
   },
-  /** A pattern row (one of a type's rows, sync/patterns.ts): the wildcard, or the row type it names and the versions that match (none = any). */
+  /** Placement policy: its rows contain graph predicates on child instructions. `any` makes other rules exclusions. */
   pattern?: {
     any?: boolean
-    type?: string
-    versions?: string[]
+    exact?: boolean
   },
   /** Standard-library adapter metadata. Custom patterns need no registered name. */
   capabilityDefinition?: {

@@ -1,11 +1,9 @@
 /**
  * What a row's type accepts as its children, and type errors.
  *
- * A type (a row type in the library, a template row, a store root's type) has pattern rows
- * (made from the library's Pattern type, `lib.pattern`). A pattern names a row type (`pattern.type`, e.g. `lib.home`) and
- * optionally pinned versions of it (`pattern.versions`); `pattern.any` is the wildcard. Without the wildcard a
- * type accepts the children its patterns match; with it, every child except those. A child is matched by its row type
- * (the graph identity of its edge's left node) and its version (the template its edge is pinned to).
+ * Placement rules must carry their predicates as graph edges. Match the child's instruction against those
+ * predicates structurally (or by exact CID when requested). Library aliases and unrelated declarations must not
+ * influence a pinned rule. `pattern.any` makes the other rules exclusions instead of an allow list.
  *
  * A row holding children its type does not accept is a type error: its edge is replaced by `[TYPE_ERROR, error]`,
  * the error node keeping the row's edge exactly ([INSTRUCTIONPOINTER, template] [TARGETPOINTER, row]) and naming the
@@ -20,7 +18,7 @@ import type { FosStore } from '../dag-implementation/store'
 import type { FosNodeContent, FosPathElem } from '../types'
 import { matchesGraph } from './structural'
 import { DOCUMENT_ROOT_TYPE, PATTERN_TYPE } from './library-types'
-import { shippedRef, content, valueContent, isHandle, isRefNode, refValueCid, put, isRowEdge, isRowOfType, rowTypeIdOf, typeIdOf, aliasIdOf, isChoiceEdge, missingTemplateOf } from './graph'
+import { shippedRef, content, valueContent, isHandle, isRefNode, refValueCid, put, isRowEdge, isRowOfType, aliasIdOf, isChoiceEdge, missingTemplateOf } from './graph'
 
 export function isTypeErrorEdge(store: FosStore, edge: FosPathElem): boolean {
   return edge[0] === store.primitive.typeErrorConstructor.getId()
@@ -65,25 +63,35 @@ export function unwrapRootTarget(store: FosStore, target: string): string {
   return node.children.find(([i]) => i === store.primitive.targetPointerConstructor.getId())?.[1] ?? target
 }
 
-type Pattern = { any: true } | { any: false; type: string; versions?: string[] }
+type Pattern = { any: true } | { any: false; predicates: string[]; exact: boolean }
+
+/** A placement rule pins its predicates as ordinary graph edges. An empty list is not a wildcard. */
+export function placementRule(store: FosStore, predicates: string[] | null, exact = false): string {
+  if (predicates && !predicates.length) throw new Error('A placement rule needs a graph predicate.')
+  const empty = put(store, { data: {}, children: [] })
+  return put(store, { data: { pattern: predicates ? { exact } : { any: true } }, children: (predicates ?? []).map(predicate => [predicate, empty]) })
+}
 
 /** A type's patterns: its pattern rows. */
 function patternsOf(store: FosStore, typeCid: string): Pattern[] {
   return content(store, typeCid).children.flatMap((edge): Pattern[] => {
     if (!isRowOfType(store, edge, PATTERN_TYPE)) return []
-    const p = valueContent(store, edge[1]).data.pattern
+    const node = valueContent(store, edge[1]), p = node.data.pattern
     if (p?.any) return [{ any: true }]
-    return p?.type ? [{ any: false, type: p.type, ...(p.versions?.length ? { versions: p.versions } : {}) }] : []
+    if (!p) throw new Error('A placement rule has no definition.')
+    const predicates = node.children.map(([left]) => left)
+    if (!predicates.length) throw new Error('A placement rule needs a graph predicate.')
+    if (predicates.some(cid => !store.table.has(cid))) throw new Error('A placement predicate is unavailable.')
+    return [{ any: false, predicates, exact: p.exact === true }]
   })
 }
 
 /**
- * A child row's type (the graph identity of its edge's left node, '' for a type without one) and version (the template
- * it is pinned to). Null for what is not a row, and for a row whose template has not arrived (a reference error).
+ * The child's pinned instruction, independent of any names assigned by surrounding libraries.
  */
-function childType(store: FosStore, edge: FosPathElem): { type: string; version: string } | null {
+function childType(store: FosStore, edge: FosPathElem): string | null {
   if (missingTemplateOf(store, edge) || !isRowEdge(store, edge)) return null
-  return { type: rowTypeIdOf(store, edge) ?? '', version: edge[0] }
+  return plainEdge(store, edge)[0]
 }
 
 /** Does a node of type `typeCid` accept the row `child` (a plain row edge) among its children? */
@@ -97,7 +105,7 @@ export function acceptsChild(store: FosStore, typeCid: string, child: FosPathEle
   if (definition.data.capabilityDefinition && !definition.data.form && !patternsOf(store, typeCid).length) return true
   if (definition.data.form) {
     if (!isRowEdge(store, child)) return true
-    if (definition.children.some(([pattern]) => pattern === child[0] || matchesGraph(store, pattern, child[0]))) return true
+    if (definition.children.some(([pattern]) => pattern === child[0] || matchesGraph(store, pattern, child[0], { side: 'left' }))) return true
     if (!definition.data.form.open) return false
   }
   const type = childType(store, child)
@@ -106,7 +114,7 @@ export function acceptsChild(store: FosStore, typeCid: string, child: FosPathEle
   // Placement policies constrain the editor only when explicitly declared.
   // Structural value patterns (including sums) are checked by matchesGraph.
   if (!patterns.length) return true
-  const matches = patterns.some(p => !p.any && p.type === type.type && (!p.versions || p.versions.includes(type.version)))
+  const matches = patterns.some(p => !p.any && p.predicates.some(predicate => p.exact ? predicate === type : matchesGraph(store, predicate, type, { side: 'left' })))
   return patterns.some(p => p.any) ? !matches : matches
 }
 

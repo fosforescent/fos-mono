@@ -3,7 +3,7 @@ import type { FosStore } from '../dag-implementation/store'
 import type { FosNodeContent, FosPathElem } from '../types'
 import { content, isBookkeepingEdge, isBranchChoice, isChoiceEdge, isHandle, isRefNode, put, readChoice, refValueCid } from './graph'
 import { plainEdge } from './patterns'
-import { primitiveOf, STRING_ID } from './parameters'
+import { primitiveOf } from './parameters'
 
 /** A named ref constructor is itself a graph value, usable on either side of a row. */
 export function namedRefPattern(store: FosStore, title: string): string {
@@ -20,7 +20,7 @@ function properties(pattern: unknown, value: unknown): boolean {
   return Object.entries(pattern).every(([key, expected]) => Object.hasOwn(value, key) && properties(expected, (value as Record<string, unknown>)[key]))
 }
 
-export function matchesGraph(store: FosStore, pattern: string, value: string, options: { allowHoles?: boolean } = {}): boolean {
+export function matchesGraph(store: FosStore, pattern: string, value: string, options: { allowHoles?: boolean; side?: 'left' | 'right' } = {}): boolean {
   const active = new Set<string>(), memo = new Map<string, boolean>()
   let remaining = 20000
   const rows = (node: FosNodeContent) => node.children.filter(edge => !isBookkeepingEdge(store, edge) &&
@@ -73,7 +73,7 @@ export function matchesGraph(store: FosStore, pattern: string, value: string, op
         // A node with a `primitive` parameter row holds that native value; its other parameters (negative, …) say
         // which way it goes, not what it is.
         const primitive = primitiveOf(store, expected)
-        if (primitive === STRING_ID) { const leaf = v.data.scalar ? v.data.scalar.value : v.data.description?.content; return typeof leaf === 'string' }
+        if (primitive) return match(primitive, actual, false, depth + 1)
         // Native scalar constructors check the leaf value, never a declared type.
         const scalar = p.data.form?.primitive
         const text = [store.primitive.documentField.getId(), store.primitive.labelField.getId()].includes(expected)
@@ -95,5 +95,5 @@ export function matchesGraph(store: FosStore, pattern: string, value: string, op
     }
     try { const result = evaluate(); memo.set(cacheKey, result); return result } finally { active.delete(cacheKey) }
   }
-  return match(pattern, value, false, 0)
+  return match(pattern, value, options.side === 'left', 0)
 }

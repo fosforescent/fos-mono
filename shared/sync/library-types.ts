@@ -1,8 +1,7 @@
 /**
- * The standard library's row types: fields of the library (`lib.task`, `lib.note`, ...), by field name. A row is the
- * edge `[type, row]`: its left node is what it is, and code tells rows apart by the library field that node is
- * (graph.ts `isRowOfType`, `rowTypeIdOf`); there is no other row discriminator. No imports, so the standalone embed
- * script can use it.
+ * Standard constructor names used by native adapters. A constructor must carry its own name as a string row;
+ * library field names are lookup bindings and must not assign meaning to the node they expose. Structural
+ * compatibility must be checked against graph predicates, not these strings or a reverse library index.
  */
 export const TASK_TYPE = 'task'
 /** The plain row: a row that is its text. Rows of a type this peer does not know render like it. */

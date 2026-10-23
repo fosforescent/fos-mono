@@ -11,8 +11,8 @@ import { libAt, libraryBindingAt, libraryInstanceEdge, commitRoot, updateAtScope
 export function declareTestCapability(r: Replica, name: string, at: Scope = [], data: import('../types').FosDataContent = {}): Replica {
   const store = r.store, binding = libraryBindingAt(store, at)!, library = content(store, binding.library)
   const group = libAt(store, at).field('capabilities'), namespace = content(store, group)
-  const operation = put(store, { data: { description: { content: 'name' } }, children: [] })
-  const kind = put(store, { data: { scalar: { type: 'text', value: name } }, children: [] })
+  const operation = store.primitive.nameField.getId()
+  const kind = put(store, { data: { scalar: { type: 'text', value: `capabilities.${name}` } }, children: [] })
   const type = put(store, { data: { capabilityDefinition: { name, label: name }, ...data }, children: [[operation, kind]] })
   const declaration = put(store, refNodeContent(store, { name: { content: name } }, null))
   const nextGroup = put(store, { ...namespace, children: [...namespace.children.filter(([, right]) => content(store, right).data.name?.content !== name), [type, declaration]] })

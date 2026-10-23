@@ -339,71 +339,21 @@ function isPrimitive(store: FosStore, cid: string): boolean {
   return ids.has(cid)
 }
 
-/**
- * The name of the left node `typeCid`: the name a library ref in this store gives it (its library ref and the one
- * linked in Home, any of their earlier values, then the build's), else a template row's own id. Nodes do not name
- * themselves; names are refs in the graph.
- */
+/** A constructor's own name row. Names assigned by enclosing libraries must not change its meaning. */
 export function typeIdOf(store: FosStore, typeCid: string | null | undefined): string | null {
   if (!typeCid || !store.table.has(typeCid)) return null
-  return nodeNames(store).get(typeCid) ?? null
+  const rows = content(store, typeCid).children.filter(([left]) => left === store.primitive.nameField.getId())
+  if (rows.length > 1) throw new Error('Ambiguous constructor name.')
+  if (!rows.length) return null
+  const name = content(store, rows[0]![1]).data.scalar
+  if (name?.type !== 'text' || typeof name.value !== 'string') throw new Error('A constructor name must be a string.')
+  return name.value
 }
 
-/** Node → name for the libraries this store's root has, memoized per root. */
-const rootNames = new WeakMap<FosStore, { root: string; outer?: Map<string, string>; byNode: Map<string, string> }>()
-function nodeNames(store: FosStore): Map<string, string> {
-  const enclosing = outerScopes.get(store)
-  const outer = enclosing ? nodeNames(enclosing.store) : undefined
-  const cached = rootNames.get(store)
-  if (cached?.root === store.rootNodeId && cached.outer === outer) return cached.byNode
-  const byNode = new Map<string, string>()
-  const add = (names: Map<string, string>) => { for (const [node, name] of names) if (!byNode.has(node)) byNode.set(node, name) }
-  for (const value of libraryValues(store)) add(namesInLibrary(store, value).byNode)
-  if (outer) add(outer)
-  rootNames.set(store, { root: store.rootNodeId, outer, byNode })
-  return byNode
-}
-
-/** Provenance is reachable graph structure, including pinned versions retained in history. */
-const libraryProvenance = new WeakMap<FosStore, Map<string, string[]>>()
-function libraryValues(store: FosStore): string[] {
-  let cache = libraryProvenance.get(store)
-  if (!cache) { cache = new Map(); libraryProvenance.set(store, cache) }
-  const pending: Array<{ cid: string; expanded: boolean }> = [{ cid: store.rootNodeId, expanded: false }]
-  const results = new Map<string, { values: string[]; complete: boolean }>(), visiting = new Set<string>()
-  while (pending.length) {
-    const frame = pending.pop()!, { cid } = frame
-    if (results.has(cid)) continue
-    const known = cache.get(cid)
-    if (known) { results.set(cid, { values: known, complete: true }); continue }
-    const node = store.table.get(cid)
-    if (!node || isHandle(node)) { results.set(cid, { values: [], complete: !!node }); continue }
-    if (!frame.expanded) {
-      if (visiting.has(cid)) { results.set(cid, { values: [], complete: false }); continue }
-      visiting.add(cid)
-      pending.push({ cid, expanded: true })
-      for (const edge of node.children) for (const child of edge) if (!results.has(child)) pending.push({ cid: child, expanded: false })
-      continue
-    }
-    visiting.delete(cid)
-    const values = new Set<string>()
-    let complete = true
-    for (const [left, right] of node.children) {
-      const ref = store.table.get(right)
-      if (ref && isLibraryInstance(store, ref) && isLibraryValue(store, left)) values.add(left)
-      for (const child of [left, right]) {
-        const result = results.get(child)
-        if (!result?.complete) complete = false
-        for (const value of result?.values ?? []) values.add(value)
-      }
-    }
-    const result = { values: [...values], complete }
-    results.set(cid, result)
-    // Missing dependencies may arrive later. Only complete immutable subgraphs
-    // can be reused when a new root extends the history.
-    if (complete) cache.set(cid, result.values)
-  }
-  return results.get(store.rootNodeId)?.values ?? []
+/** A structural predicate on a constructor's name row; it carries its own graph meaning. */
+export function constructorPattern(store: FosStore, name: string): string {
+  const text = put(store, { data: { scalar: { type: 'text', value: name } }, children: [] })
+  return put(store, { data: {}, children: [[store.primitive.nameField.getId(), text]] })
 }
 /** Whether `typeCid` (a row edge's left node) is a version of the library type `typeId`. */
 export function isLibraryType(store: FosStore, typeCid: string, typeId: string): boolean {
@@ -441,7 +391,7 @@ export function rowTypeOf(store: FosStore, edge: FosPathElem): string | null {
   return type
 }
 
-/** The graph identity of a row's type (`typeIdOf(rowTypeOf(edge))`): null for non-rows and for types without one. */
+/** The instruction's own constructor name, if present; its identity remains its CID. */
 export function rowTypeIdOf(store: FosStore, edge: FosPathElem): string | null {
   return typeIdOf(store, rowTypeOf(store, edge))
 }
@@ -554,7 +504,6 @@ export function nestScope(draft: FosStore, outer: { store: FosStore; root: strin
     if (parent.store === draft) throw new Error('A scope cannot enclose itself.')
   }
   outerScopes.set(draft, outer)
-  rootNames.delete(draft)
 }
 const outerScopes = new WeakMap<FosStore, { store: FosStore; root: string; at: Scope }>()
 
@@ -857,8 +806,8 @@ export function withInstancePatterns(store: FosStore, cid: string, at: Scope, ro
   const task = rowTypeAt(store, TASK_TYPE, at, root), owner = node.data.alias?.id ?? cid
   // the same patterns as rows of this template's own (ids of its own)
   const patterns = content(store, task).children.filter((edge) => isRowOfType(store, edge, PATTERN_TYPE)).map(([type, row]): FosPathElem => {
-    const value = content(store, row), p = value.data.pattern
-    return [type, put(store, { ...value, data: { ...value.data, alias: { id: `${owner}:accepts:${p?.any ? 'any' : p?.type ?? row}` } } })]
+    const value = content(store, row)
+    return [type, put(store, { ...value, data: { ...value.data, alias: { id: hashContent({ data: { name: { content: owner } }, children: [[type, row]] }) } } })]
   })
   return put(store, { ...node, children: [...node.children, ...patterns] })
 }
@@ -1317,7 +1266,6 @@ export function importNodes(store: FosStore, nodes: FosNodesData): string[] {
     pending = rest
   }
   if (accepted.length) {
-    rootNames.delete(store)
     const added = new Set(accepted), cache = libraryNameCache.get(store)
     if (cache) for (const [value, entry] of cache) if ([...entry.missing].some(cid => added.has(cid))) cache.delete(value)
   }
@@ -2527,13 +2475,14 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
     // an instance is no type: what its template accepts (its pattern rows) stays with the template
     if (isRowEdge(store, edge)) return !(instantiate && !definition && (type === PATTERN_TYPE || (isAllocationType(type) && !!flowOf(type!, valueContent(store, identityCid(store, edge))).supply)))
     if (isBookkeepingEdge(store, edge) || edge[0] === store.primitive.targetPointerConstructor.getId() || edge[0] === store.primitive.instructionPointerConstructor.getId()) return false
-    return isRefNode(store, content(store, identityCid(store, edge)))
+    return true // Literal graph constraints must survive copying alongside owned rows.
   })
   const collect = (cid: string) => {
     if (owned.has(cid)) return
-    owned.add(cid)
     const identity = content(store, cid)
     const id = aliasIdOf(identity)
+    if (cid !== nodeCid && !id && !isRefNode(store, identity)) return
+    owned.add(cid)
     if (id && !ids.has(id)) ids.set(id, cid === nodeCid && options.rootId ? options.rootId : freshId())
     if (isBranchChoice(store, identity)) {
       const choice = readChoice(store, cid)
@@ -2556,6 +2505,7 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
   // A row made from a template copied along is pinned to the copy; templates outside stay pinned as they are.
   const ownedValues = new Map([...owned].map((cid) => [valueCidOf(store, cid), cid]))
   const copyEdge = (edge: FosPathElem): FosPathElem => {
+    if (!owned.has(identityCid(store, edge))) return edge
     if (isRowEdge(store, edge) && isExecuteLeft(store, plainEdge(store, edge)[0])) return [edge[0], copy(executeRequestOnly(identityCid(store, edge))!)]
     const template = isRowEdge(store, edge) ? ownedValues.get(edge[0]) : undefined
     return [template ? valueCidOf(store, copy(template)) : edge[0], copy(identityCid(store, edge))]

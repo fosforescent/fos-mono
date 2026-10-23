@@ -9,6 +9,8 @@ import { nodeAuthorityAt } from './node-context'
 import { acceptSubmission, missingApprovals } from './approvals'
 import { BUNDLED_LIBRARY, setLibraryArg, upgradeLibrary, useLibrary, ensureDeviceLibrary, exportLibrary, exportLocalLibrary, libraryPath, manualHandlers, manualHandlersFor } from './library'
 import { LIBRARY_TYPE, PLAIN_TYPE, TASK_TYPE } from './library-types'
+import { libraryBindingAt, libraryTypeAt, loadReplica, serializeReplica, setRefValueAt, openRefs, matchesGraph, rowConstructor } from './index'
+import type { FosNodeContent } from '../types'
 
 const TEAM = 'team-library'
 /** The device root's library value with its task type titled `title`: a library its members changed. */
@@ -22,6 +24,65 @@ function changedLibrary(r: Replica, title: string): string {
   }) })
 }
 const taskTitle = (r: Replica, at: string[]) => content(r.store, rowTypeAt(r.store, TASK_TYPE, at)).data.description?.content
+
+test('parameter predicates, row types, and manual handlers follow the same explicit library upgrade', () => {
+  let r = addTask(createReplica(), [], 'Workspace', 1, 'workspace')
+  const at = ['workspace'], store = r.store, original = libraryBindingAt(store)!.library
+  r = addRefAt(r, at, 'definition', rowTypeAt(store, LIBRARY_TYPE), 2, original)
+  r = useLibrary(r, at, [...at, 'definition'], 3)
+  const oldTask = rowTypeAt(store, TASK_TYPE, at)
+  const oldFetch = libAt(store, at).capabilities.fetch!
+  const oldInput = openRefs(store, oldFetch).find(ref => ref.name === 'url')!.left
+  r = addRow(r, at, oldFetch, 'Pinned call', 4, { id: 'old-call' })
+  const replacements = new Map<string, FosNodeContent>([
+    [libAt(store, at).field('string'), { data: { form: { primitive: 'number' } }, children: [] }],
+    [oldTask, { ...content(store, oldTask), data: { ...content(store, oldTask).data, description: { content: 'Revised task' } } }]
+  ])
+  const memo = new Map<string, string>()
+  const copy = (cid: string): string => {
+    if (memo.has(cid)) return memo.get(cid)!
+    const node = replacements.get(cid) ?? content(store, cid)
+    const data = node.data.description?.content === 'Sent it myself'
+      ? { ...node.data, description: { content: 'Recorded manually' } } : node.data
+    const result = put(store, { data, children: node.children.map(([left, right]) => [copy(left), copy(right)]) })
+    memo.set(cid, result); return result
+  }
+  r = setRefValueAt(r, [...at, 'definition'], copy(original), 5)
+  const labels = () => manualHandlersFor(r, { capability: 'mail' }, at).map(h => h.label)
+  expect(labels()).toEqual(['Sent it myself'])
+  expect(rowTypeAt(store, TASK_TYPE, at)).toBe(oldTask)
+  expect(libAt(store, at).capabilities.fetch).toBe(oldFetch)
+  r = upgradeLibrary(r, at, [...at, 'definition'], 6)
+  r = loadReplica(serializeReplica(r))
+  expect(labels()).toEqual(['Recorded manually'])
+  expect(rowTypeAt(r.store, TASK_TYPE, at)).not.toBe(oldTask)
+  const newFetch = libAt(r.store, at).capabilities.fetch!
+  expect(newFetch).not.toBe(oldFetch)
+  const newInput = openRefs(r.store, newFetch).find(ref => ref.name === 'url')!.left
+  const text = put(r.store, { data: { scalar: { type: 'text', value: 'value' } }, children: [] })
+  const number = put(r.store, { data: { scalar: { type: 'number', value: 12 } }, children: [] })
+  expect(matchesGraph(r.store, oldInput, text)).toBe(true)
+  expect(matchesGraph(r.store, oldInput, number)).toBe(false)
+  expect(matchesGraph(r.store, newInput, text)).toBe(false)
+  expect(matchesGraph(r.store, newInput, number)).toBe(true)
+  expect(rowConstructor(r, [...at, 'old-call'])).toBe(oldFetch)
+  // A sibling uses its enclosing instance, unaffected by the workspace upgrade.
+  expect(libAt(r.store).capabilities.fetch).toBe(oldFetch)
+  expect(manualHandlersFor(r, { capability: 'mail' }, []).map(h => h.label)).toEqual(['Sent it myself'])
+})
+
+test('a nearer library without a field cannot borrow manual handlers or row types from the bundle', () => {
+  let r = addTask(createReplica(), [], 'Workspace', 1, 'workspace')
+  const library = content(r.store, libraryBindingAt(r.store)!.library)
+  const restricted = put(r.store, { ...library, children: library.children.filter(([, right]) => !['manual', 'task'].includes(content(r.store, right).data.name?.content ?? '')) })
+  r = addRefAt(r, ['workspace'], 'definition', rowTypeAt(r.store, LIBRARY_TYPE), 2, restricted)
+  r = useLibrary(r, ['workspace'], ['workspace', 'definition'], 3)
+  expect(manualHandlers(r, ['workspace'])).toEqual([])
+  expect(libraryTypeAt(r.store, TASK_TYPE, ['workspace'])).toBeNull()
+  expect(() => rowTypeAt(r.store, TASK_TYPE, ['workspace'])).toThrow('row type task')
+  expect(manualHandlers(r, []).length).toBeGreaterThan(0)
+  expect(libraryTypeAt(new FosStore(), TASK_TYPE)).toBeNull()
+})
 
 test('a device root has its library ref, a row of the Library type, found by what it holds', () => {
   const r = ensureHomeContext(createReplica('user:alice'), 1)

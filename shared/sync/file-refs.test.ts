@@ -30,7 +30,7 @@ test('a file reference is a row of the library type, its values in the type\'s f
   expect(() => addFileReference(r, [HOME_ID], { ...pinned, sha256: 'nope' }, 8)).toThrow()
 })
 
-test('a library seeded before the type existed falls back to the build\'s definition', () => {
+test('a fresh replica explicitly binds a library that defines file references', () => {
   let r = ensureHomeContext(createReplica('old'), 1)
   r = addFileReference(r, [HOME_ID], pinned, 2, 'ref')
   expect(fileReferenceAt(r, [HOME_ID, 'ref'])).toEqual(pinned)
@@ -50,8 +50,9 @@ test('file references and their fields travel through node exchange', () => {
   }
   pull([])
   const row = pull(['ref'])
-  expect(row.children.map(c => c.id).sort()).toEqual(['ref/field/path', 'ref/field/sha256', 'ref/field/size'])
-  for (const field of row.children) pull(['ref', field.id])
+  expect(row.children.filter(c => !c.pinned).map(c => c.id).sort()).toEqual(['ref/field/path', 'ref/field/sha256', 'ref/field/size'])
+  expect(row.children.filter(c => c.pinned)).toHaveLength(1)
+  for (const field of row.children) if (!field.pinned) pull(['ref', field.id])
   expect(isLibraryType(receiver.store, edgeOf(receiver, [HOME_ID], 'ref')[0], FILE_REFERENCE_TYPE)).toBe(true)
   expect(fileReferenceAt(receiver, [HOME_ID, 'ref'])).toEqual(pinned)
   expect(nodeShape(owner, [HOME_ID, 'ref', 'ref/field/sha256']).data.scalar).toEqual({ type: 'text', value: pinned.sha256 })
