@@ -27,6 +27,19 @@ test('explicit bindings stay pinned and multiple providers are a choice', () => 
   expect(resolveBinding(r.store, type, 'missing', candidates).status).toBe('missing')
 })
 
+test('following a binding uses its declaration scope, not a caller override', () => {
+  let r = createReplica(), type = r.store.primitive.documentField.getId()
+  r = addRefAt(r, [], 'outer-value', type, 1, literal(r, 'Outer'), 'value')
+  const expression = put(r.store, { data: { refExpression: { up: 0, path: ['value'], lexical: true } }, children: [] })
+  r = addRefAt(r, [], 'source', type, 2, expression, 'source')
+  r = addTask(r, [], 'Child', 3, 'child')
+  r = addRefAt(r, ['child'], 'inner-value', type, 4, literal(r, 'Inner'), 'value')
+  expect(resolveText(r, ['child'], '{source} / {value}').text).toBe('Outer / Inner')
+  const nested = createReplica()
+  nestScope(nested.store, { store: r.store, root: headCid(r), at: ['child'] })
+  expect(resolveText(nested, [], '{source} / {value}').text).toBe('Outer / Inner')
+})
+
 test('named text arguments substitute through templates; duplicate assertions report both sources', () => {
   let r = createReplica(); const type = r.store.primitive.documentField.getId()
   r = addRow(r, [], TEMPLATE_TYPE, 'Letter', 1, { id: 'template' })

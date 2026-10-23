@@ -1,8 +1,9 @@
 /** Requirement outputs are named typed refs pointing at their source's stable identity. */
 import type { FosStore } from '../dag-implementation/store'
-import { newId, childRows, commitRoot, content, demandOf, findRowByAlias, flowOf, identityCid, put, refNodeContent, isRefNode, rowTypeOf, refValueCid, requirementSatisfied, resolveScope, rootTargetCid, updateAtScope, valueContent, type Scope } from './graph'
+import { newId, childRows, commitRoot, content, demandOf, flowOf, identityCid, put, refNodeContent, isRefNode, rowTypeOf, refValueCid, requirementSatisfied, resolveScope, updateAtScope, valueContent, type Scope } from './graph'
 import { isAllocationType } from './library-types'
 import { headCid, type Replica } from './replica'
+import { nodeOccurrence, resolveRefIdentity } from './ref-paths'
 
 export function requirementOutputs(store: FosStore, cid: string) {
   return valueContent(store, cid).children.flatMap(edge => {
@@ -26,13 +27,16 @@ export function destructureRequirement(r: Replica, path: Scope, name: string, am
 }
 
 /** Resolve at use time; no funds or selected values are fabricated while a requirement is unfilled. */
-export function resolveRequirementOutput(store: FosStore, cid: string): { cid?: string; error?: string } | null {
+export function resolveRequirementOutput(store: FosStore, cid: string, at?: Scope): { cid?: string; error?: string } | null {
   const ref = content(store, cid)
-  if (!isRefNode(store, ref) || !ref.data.ref) return null
+  if (!isRefNode(store, ref) || !ref.data.ref || !ref.data.name) return null
   if (ref.data.ref.owner) return { error: 'The source requirement is outside this workspace.' }
-  const source = findRowByAlias(store, rootTargetCid(store), ref.data.ref.id)
-  if (!source) return { error: 'The source requirement is unavailable.' }
-  const sourceCid = resolveScope(store, rootTargetCid(store), [...source.path, source.row.id])!
+  const scope = at ?? nodeOccurrence(store, cid)?.slice(0, -1)
+  if (!scope) return { error: 'The placeholder is no longer part of an unambiguous scope.' }
+  const resolved = resolveRefIdentity({ store }, scope, ref.data.ref.id)
+  const source = resolved.status === 'ready' ? resolved.locations[0] : undefined
+  if (!source || source.store !== store) return { error: 'The source requirement is unavailable in this scope.' }
+  const sourceCid = source.cid
   const currentOutput = requirementOutputs(store, sourceCid).find(output => output.id === ref.data.alias?.id)
   if (!currentOutput) return { error: 'The placeholder is no longer part of the source requirement.' }
   const req = demandOf(valueContent(store, sourceCid))
@@ -52,8 +56,8 @@ export function resolveRequirementOutput(store: FosStore, cid: string): { cid?: 
 /** Bind an output as a typed property; the constructor may keep this as a record field. */
 export function linkRequirementOutput(r: Replica, path: Scope, outputCid: string, now: number): Replica {
   const output = r.store.table.get(outputCid)
-  const source = output?.data.ref && findRowByAlias(r.store, headCid(r), output.data.ref.id)
-  const sourceCid = source && resolveScope(r.store, headCid(r), [...source.path, source.row.id])
+  const resolved = output?.data.ref && resolveRefIdentity(r, path.slice(0, -1), output.data.ref.id)
+  const sourceCid = resolved && resolved.status === 'ready' && resolved.locations[0]?.cid
   const type = sourceCid && requirementOutputs(r.store, sourceCid).find(row => row.cid === outputCid)?.type
   if (!output?.data.ref || !type) throw new Error('Drop a requirement placeholder.')
   if (path.includes(output.data.ref.id)) throw new Error('A requirement cannot be supplied by its own output.')
@@ -82,7 +86,9 @@ export function allocationValue(store: FosStore, cid: string) {
     const seen = new Set<string>()
     while (current && !seen.has(current) && seen.size < 100) {
       seen.add(current)
-      const output = resolveRequirementOutput(store, current)
+      const scope = nodeOccurrence(store, cid)?.slice(0, -1)
+      if (!scope) return undefined
+      const output = resolveRequirementOutput(store, current, scope)
       if (output) return output.cid ? { ...original, ...content(store, output.cid).data.allocation } : undefined
       current = refValueCid(store, content(store, current))
     }

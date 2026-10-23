@@ -2,6 +2,7 @@ import { createHash, createHmac, randomUUID } from 'node:crypto'
 import * as jsonwebtoken from 'jsonwebtoken'
 import type { Request, Response } from 'express'
 import { executionInput, servedTo } from '@fosforescent/shared/sync/index'
+import { findRowByAlias } from '@fosforescent/shared/sync/index'
 import { setRefValueAt, visitorExecution, consume, proposeVisitorValues, nodeAuthorityAt, nodeLinkMaskAt, evaluationSteps, addMemberAt, ensureHomeContext, evaluateNode, evaluationRecord, writeEvaluationRecord, executionInputs, addRow, addSupply, proposeRefAt, applyProposalAt, addTask, instantiateTemplate, ensureSharedLink, sharedLinkAt, sharedProposalCid, writeParticipation, handlerResult, writeHandlerResult, acceptSubmission, approvalsOf, withdrawApproval, argumentRefs, content, createReplica, readNodeValue, headCid, participation, put, resolveRef, resolveScope, sharedProjection, publication, publishedTo, markExecution, mayParticipate, valueContent, view, writeNodeValue, audiencePeer, type Participation, type Replica, type Scope, type SharedInput, type SharedAddress } from '@fosforescent/shared/sync/index'
 import { withUserLock, type AccountStoreDeps } from './accountStore'
 import { ALLOCATION_TYPE, TEMPLATE_TYPE } from '@fosforescent/shared/sync/library-types'
@@ -182,7 +183,8 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
           let value: unknown = submitted?.value
           if (submitted?.source !== undefined) {
             if (!guestReplica || typeof submitted.source !== 'string' || submitted.source.length > 256) throw new Failure(400, 'Linked values must belong to your signed-in context.')
-            const source = resolveRef(guestReplica, submitted.source)?.row
+            // The user explicitly selects a source for this submission's masked value copy.
+            const source = findRowByAlias(guestReplica.store, headCid(guestReplica), submitted.source)?.row
             if (!source) throw new Failure(400, 'The linked value is unavailable.')
             value = field.kind === 'text' ? source.title : source.allocation
             links[key] = submitted.source

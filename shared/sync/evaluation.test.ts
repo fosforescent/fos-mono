@@ -1,5 +1,5 @@
 import { userView } from './test-helpers'
-import { addRow, addSupply, addTask, createReplica, evaluateNode, evaluationRecord, selectExecutor, view, renameTask, setTaskDone, serializeReplica, loadReplica, type EvaluationDriver, type Replica } from './index'
+import { addRow, addSupply, addTask, createReplica, evaluateNode, evaluationRecord, evaluationSteps, allocationProblems, selectExecutor, view, renameTask, setTaskDone, serializeReplica, loadReplica, type EvaluationDriver, type Replica } from './index'
 import { RESOURCE_TYPE, ALLOCATION_TYPE } from './library-types'
 
 function setup() {
@@ -62,6 +62,19 @@ test('checks competing allocations across the whole tree', async () => {
   s.set(addRow(s.get(), [], RESOURCE_TYPE, 'Drill', 1, { id: 'bank', resource: { type: 'inventory', unit: 'drill', capacity: 1 } }))
   for (const [path, start, end] of [[['parent'], 10, 20], [[], 15, 25]] as const) s.set(addRow(s.get(), [...path], ALLOCATION_TYPE, 'Reservation', 2, { allocation: { resource: 'bank', type: 'inventory', unit: 'drill', amount: 1, start, end } }))
   await expect(evaluateNode(['parent'], s.driver)).rejects.toThrow(/overlapping/)
+})
+
+test('allocation validation binds resource references in scope before comparing their CIDs', () => {
+  let r = createReplica('owner')
+  for (const group of ['a', 'b']) {
+    r = addTask(r, [], group, 1, group)
+    r = addRow(r, [group], RESOURCE_TYPE, `${group} bank`, 2, { id: 'bank', resource: { type: 'inventory', unit: 'drill', capacity: group === 'a' ? 2 : 0 } })
+    r = addRow(r, [group], ALLOCATION_TYPE, 'Reserve', 3, { id: 'reservation', allocation: { resource: 'bank', type: 'inventory', unit: 'drill', amount: 1 } })
+  }
+  expect(allocationProblems(r, evaluationSteps(r, ['a', 'reservation']))).toEqual([])
+  expect(allocationProblems(r, evaluationSteps(r, ['b', 'reservation']))).toEqual([expect.stringMatching(/Insufficient b bank/)])
+  r = addRow(r, [], ALLOCATION_TYPE, 'Outside', 4, { id: 'outside', allocation: { resource: 'bank', type: 'inventory', unit: 'drill', amount: 1 } })
+  expect(allocationProblems(r, evaluationSteps(r, ['outside']))).toEqual([expect.stringMatching(/unavailable in this scope/)])
 })
 test('completes task requirements bottom up without publishing partial completion', async () => {
   const s = setup()

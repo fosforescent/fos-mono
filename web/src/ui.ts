@@ -1276,7 +1276,7 @@ function constructorBody(task: TaskView, state: AppState, app: App, path: Scope 
     box.append(span('constructor-label', 'Evaluation'))
     const labels = { idle: 'Ready', opening: 'Starting', running: 'Running', committing: 'Saving', committed: 'Complete', 'rolled-back': 'Rolled back', 'awaiting-review': 'Awaiting review', 'needs-recovery': 'Needs recovery' }
     if (record) box.append(span('muted', labels[record.status] ?? record.status))
-    const run = button('secondary small', 'Run', () => void app.startExecution(parent)); run.disabled = app.evaluating || !app.executionInstructions(parent).complete
+    const run = button('secondary small', 'Run', () => void app.startExecution(parent)); run.disabled = app.evaluating || !app.executionInstructions(parent).canRun
     box.append(run)
     if (record?.error) box.append(span('error', record.error))
     if (record && !['idle', 'committed', 'rolled-back', 'awaiting-review'].includes(record.status)) {
@@ -1598,10 +1598,10 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   const run = toolbar.querySelector<HTMLButtonElement>('.evaluate')!
   run.hidden = false
   const instructions = app.executionInstructions(state.view)
-  run.disabled = app.evaluating || !instructions.complete || (!!shared && !app.sharedGrants(state.view)?.includes('execute'))
+  run.disabled = app.evaluating || !instructions.canRun || (!!shared && !app.sharedGrants(state.view)?.includes('execute'))
   run.title = app.evaluating ? 'Evaluating…' : shared && !app.sharedGrants(state.view)?.includes('execute') ? `@${shared.owner} has not granted “run evaluations” here` : row?.blockedBy?.length ? 'Blocked by unfilled requirements' : 'Evaluate this node'
   run.setAttribute('aria-label', app.evaluating ? 'Evaluating' : 'Run (evaluate this node)')
-  if (!instructions.complete) run.title = `Needs instruction refs: ${instructions.holes.map(hole => hole.id).join(', ')}`
+  if (!instructions.canRun) run.title = `Needs instruction refs: ${instructions.blocking.map(hole => hole.id).join(', ')}`
   const editToggle = header.querySelector<HTMLElement>('.input-toggle')!
   editToggle.hidden = !!preview || !row
   editToggle.setAttribute('aria-pressed', String(prefs.input)); editToggle.setAttribute('aria-controls', 'node-input')

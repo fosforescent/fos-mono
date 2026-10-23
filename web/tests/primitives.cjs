@@ -48,6 +48,7 @@ async function main() {
   assert.equal(row().requirement, undefined, 'not a requirement row')
   assert.equal(document.querySelector(`.task[data-id="${fetchRow.at(-1)}"] input[aria-label="url"]`).value, 'https://example.com/data', 'the left decides the inputs, the right fills them')
   assert.equal(app.deviceHandlerFor(fetchRow, row()), 'Fetch')
+  assert.equal(app.executionInstructions(fetchRow).canRun, true, 'the compiler permits a received output to remain open')
   ;[...document.querySelectorAll(`.task[data-id="${fetchRow.at(-1)}"] button`)].find(b => b.textContent === 'Complete').click()
   await tick(); await tick()
   assert.deepEqual(requests, [['https://example.com/data', 'GET']])

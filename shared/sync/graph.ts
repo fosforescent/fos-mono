@@ -1,4 +1,5 @@
 import { capabilityDeclarations } from './capability-catalog'
+import { nodeOccurrence, resolveRefIdentity } from './ref-paths'
 import { readGraphValue } from './node-values'
 /**
  * Graph helpers for sync, written against the hash-consed FosStore.
@@ -1644,9 +1645,13 @@ export function requirementProgress(store: FosStore, requirementCid: string, roo
     if (allocationEntry(row)) { const allocation = allocationValue(store, row.cid); if (allocationMatches(req, allocation, requiredUser(store, requirementCid, row.cid))) have += allocation?.amount ?? 0; continue }
     const supply = supplyEntry(row)
     if (supply?.capability === 'allocation' && supply.ref) {
-      const found = findRowByAlias(store, root ?? rootTargetCid(store), supply.ref)
-      if (!found) have += req.amount // supplied from outside this replica: trusted in full
-      else if (allocationMatches(req, found.row.allocation, { required: userOf(store, valueContent(store, requirementCid)), given: found.row.user })) have += found.row.allocation?.amount ?? 0
+      const path = nodeOccurrence(store, requirementCid)
+      const resolved = path && resolveRefIdentity({ store }, path, supply.ref)
+      const found = resolved && resolved.status === 'ready' ? resolved.locations[0] : undefined
+      if (found?.pattern) {
+        const row = rowView(found.store, found.cid, [found.pattern, found.cid])
+        if (allocationMatches(req, row.allocation, { required: userOf(store, valueContent(store, requirementCid)), given: row.user })) have += row.allocation?.amount ?? 0
+      }
     }
   }
   return { have, need: req.amount }
@@ -1660,7 +1665,6 @@ export function requirementProgress(store: FosStore, requirementCid: string, roo
 export function requirementSatisfied(store: FosStore, requirementCid: string, root?: string): boolean {
   const node = content(store, requirementCid)
   if (isRefNode(store, node) && !refValueCid(store, node)) return false
-  if (isRefNode(store, node) && node.data.name) return true
   const req = demandOf(valueContent(store, requirementCid))
   if (!req) return true
   // Signed resource rows are a standard-library adapter. A handler input is not a result.
@@ -2524,7 +2528,7 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
       return
     }
     // A row's argument refers to its value; it does not take ownership of it.
-    if (isRefNode(store, identity) && (argumentsToCopy.has(cid) || identity.data.name || !refValueCid(store, identity) || refBranches(store, identity))) { argumentsToCopy.add(cid); return }
+    if (isRefNode(store, identity) && (argumentsToCopy.has(cid) || !refValueCid(store, identity) || refBranches(store, identity))) { argumentsToCopy.add(cid); return }
     for (const edge of childEdges(stripLink(store, identity), definitions.has(cid), cid === nodeCid)) {
       const child = identityCid(store, edge)
       const left = content(store, edge[0])

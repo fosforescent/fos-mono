@@ -61,6 +61,7 @@ test('accepted work becomes an explicit input to another task; missing or unacce
   let { r, path } = setup()
   r = addTask(r, ['home', 'project'], 'Implement reservation', 7, 'dependent')
   r = addRef(r, ['home', 'project', 'dependent'], 'request', 8)
+  path = ['home', 'project', 'request']
   r = addRow(r, ['home', 'project', 'dependent'], ALLOCATION_TYPE, 'Refine implementation steps.', 9, { id: 'next', requirement: { capability: 'llm' } })
   const dependent = ['home', 'project', 'dependent', 'next']
   expect(taskWorkContext(r, dependent).blockers.join()).toMatch(/not accepted/)

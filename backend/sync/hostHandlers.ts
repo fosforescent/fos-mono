@@ -1,4 +1,4 @@
-import { requirementInput } from '@fosforescent/shared/sync/index'
+import { requirementInput, findRowByAlias } from '@fosforescent/shared/sync/index'
 import { QUERY_TYPE } from '@fosforescent/shared/sync/index'
 import { standardHostRef } from './host-runtime'
 import { cronObserver } from '@fosforescent/shared/sync/trigger-primitives'
@@ -162,7 +162,7 @@ export function searchHandler(deps: SearchDeps): HostHandler {
       for (const ref of rowsOfType(r.store, cid, REF_TYPE)) next = deleteTask(next, path, ref.id, ctx.now())
       for (const hit of hits) {
         if (hit.aliasId === path.at(-1) || hit.aliasId === query?.id) continue
-        if (!hit.owner) { if (resolveRef(next, hit.aliasId)) next = addRef(next, path, hit.aliasId, ctx.now()) }
+        if (!hit.owner) { if (findRowByAlias(next.store, headCid(next), hit.aliasId)) next = addRef(next, path, hit.aliasId, ctx.now()) }
         else next = addRow(next, path, REF_TYPE, hit.title, ctx.now(), { refId: hit.aliasId, refOwner: hit.owner })
       }
       next = addSupply(next, path.slice(0, -1), path.at(-1)!, { capability: 'search', by: 'fos', ref: query?.id ?? path.at(-1)! }, ctx.now())

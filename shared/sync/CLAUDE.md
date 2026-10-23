@@ -6,9 +6,15 @@ Record intended behavior and restrictions here. Keep implementation details in c
 
 - Resolve both sides of a row from its parent scope. Declarations inside the row are available to its children, not to the row itself. Do not introduce recursive bindings implicitly.
 - Search direct declarations in each enclosing scope, nearest first. Siblings and descendants must not contribute ambient bindings.
+- Identity links obey the same boundary as named refs. UUIDs are local editor conveniences; typechecking/compilation must resolve graph references to CIDs through scope. Evaluation must not search for a UUID or consult an editor identity map.
+- Keep compiler diagnostics and mappings back to editable rows outside the executable graph. Unfilled parameters must have content-addressed binders too. Renaming editor UUIDs alone must not change compiled meaning; changing a bound value requires recompilation. Mutable access must be mediated by explicit graph refs and handlers.
+- A group must be the shared lexical frame for its participants' live refs. Sharing across subtrees must declare the ref in their lowest common enclosing scope and leave explicit references at the source and destination. Do not silently capture a source's private dependencies when changing its scope.
+- Passing an outside ref must create an ordinary typed declaration. Its recipient supplies a handler, including a node-message transport when needed. Local overrides must not rewrite the group's accepted value or a sibling's handler.
+- An independent copy must close external refs into values or reject unresolved dependencies. Preserve internal reference remapping and the copied constructor; a snapshot must not retain a hidden live UUID link.
 - Every lookup by name or kind goes through `lookupInScope`/`nearestInScope`: the nearest scope that declares anything answers, several there are ambiguous, and an unusable declaration there blocks. Never walk paths by hand or fall through to an outer scope.
 - A nearer name hides an outer one of any type. An unfilled declaration is a hole bound from further out. Only declarations bind (`declares`); text conventions such as `key: value` titles or frontmatter never do.
 - Collecting a type's alternatives (handler discovery) reads every visible declaration; only the same declaration identity shadows, and more than one candidate is a choice.
+- Apply that identity-shadowing rule across both direct refs and member advertisements. An empty nearer declaration must block an outer handler of the same identity. Competing transport handlers require a choice too.
 - Bind the library instance before selecting a field. A nearer instance shadows the whole namespace; a missing field must not fall through to an outer library or the build bundle.
 - Missing, unavailable, or ambiguous bindings must remain visible failures. Never manufacture a capability because code requested an unfamiliar name.
 - Library definitions and instances have different roles: edits change definitions; explicit upgrades change an instance's pinned version.
@@ -41,6 +47,7 @@ Record intended behavior and restrictions here. Keep implementation details in c
 - Exchange only authorized graph content. Do not traverse remote references using cached data as a substitute for access checks.
 - Scope discovery must not bypass member grants or masks. Unavailable or disabled providers must not satisfy dependencies.
 - Hosts list a step's available executors; the evaluator selects exactly one (`selectExecutor`). Several are a choice for the owner, never resolved by ordering on any host.
+- Native graph operations must consume compiled operands. Apply their results to editable rows through the compiler's source mapping; do not resolve node UUIDs inside unification or native argument interpretation.
 - Persist an effect's journal before dispatch. Interrupted or uncertain effects must not be retried automatically; expose recovery work.
 - Do not retain compatibility branches merely to satisfy old tests. Replace shortcut fixtures with explicit graph declarations and test the desired behavior.
 

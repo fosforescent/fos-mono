@@ -212,9 +212,9 @@ export type FosDataContent = {
   nativeDefaults?: { sources: string[] },
   /** Output refs may remain mutable or unfilled when the instruction starts. */
   refRole?: 'input' | 'output',
-  /** A compiled residual: its stable ref identity survives next to the partial CID. */
-  refHole?: { id: string },
-  refCompilation?: { cid: string; holes: import('./sync/ref-compiler').RefHole[] },
+  /** A compiler-local binder. References to it use this node's CID, never an editing alias. */
+  refHole?: { slot: number; role: 'input' | 'output' },
+  refCompilation?: { cid: string },
   /** A type error node ([TYPE_ERROR, error]): the alias ids of the row's children its type does not accept. */
   typeError?: {
     rejected: string[]

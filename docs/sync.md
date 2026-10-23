@@ -1012,6 +1012,40 @@ Sync itself needs no schema change; nodes land in `FosNodeModel` like any other.
 
 ## The standard library (`shared/sync/library.ts`)
 
+### Shared frames and refs
+
+A group should be the common lexical ancestor of its members' participation.
+Peers may keep separate private roots and separate replicas of the group. Shared
+refs should be declared in that group, so its graph exposes the relationships
+between participants. Membership must not make a peer's private tree searchable.
+
+Bindings, links, and peer services must use typed refs and handler assignments.
+Identity lookup must obey the same parent-scope rule as name lookup. An editor may
+locate a source anywhere it can read, but creating a live cross-subtree link must
+put its declaration in the lowest common scope and reference it from both sides.
+Moving that declaration must preserve its dependencies; otherwise require the
+dependencies to be declared and passed explicitly, or offer an independent copy.
+
+UUIDs should serve only local editing and UI identity. Typechecking and compilation
+must turn graph references into CID references before evaluation. Compiler source
+maps and diagnostics may identify editable rows; they must not enter executable
+graph content or act as a runtime lookup service. Open parameters must have
+content-addressed binders, and mutable access must go through graph capabilities
+and their handlers. Changing only editor UUIDs must preserve compiled meaning.
+
+A ref declared outside a group may be passed as an ordinary typed argument.
+The receiving participant must supply its own handler when the value requires
+remote execution or message passing. Cached remote content must not substitute
+for that handler or for permission checks. A nearer handler of the same ref may
+override it locally; it must not mutate the group's accepted value. Multiple
+handlers at the same level remain alternatives requiring a choice.
+
+Copies and published template values must not retain hidden links into a source's
+private scope. External references must become closed values or remain explicit
+inputs requiring a handler. Internal references must retain their relationships
+under fresh copy identities. A missing source must never count as a fulfilled
+requirement merely because its UUID was supplied.
+
 Both instruction and argument lookup must start at the row's parent scope.
 Declarations inside a row belong to its children. Search only direct declarations
 in each ancestor; never siblings or descendants. Multiple library instances in

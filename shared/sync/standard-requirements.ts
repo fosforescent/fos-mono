@@ -3,7 +3,8 @@
  */
 import type { FosStore } from '../dag-implementation/store'
 import type { FosDataContent } from '../types'
-import { allocationMatches, libAt, childRows, findRowByAlias, flowOf, isTaskRow, requirementProgress, rootTargetCid, valueContent, type ChildRow, type TaskView } from './graph'
+import { allocationMatches, libAt, childRows, rowView, flowOf, isTaskRow, requirementProgress, valueContent, type ChildRow, type TaskView } from './graph'
+import { nodeOccurrence, resolveRefIdentity } from './ref-paths'
 import { allocationValue } from './destructure'
 import { isAllocationType, MONEY_TYPE, QUERY_TYPE } from './library-types'
 import { sameUser, userOf, userPeerId } from './users'
@@ -51,8 +52,12 @@ export function standardRequirementSatisfied(store: FosStore, cid: string, req: 
     peer: supply => !!supply.by && (!req.peer || supply.by === req.peer) && (!named || supply.by === userPeerId(named) || supply.by === named.username),
     allocation: supply => {
       if (!supply.ref) return false
-      const found = findRowByAlias(store, root ?? rootTargetCid(store), supply.ref)
-      return !found || fills(found.row.allocation, found.row.user ?? null)
+      const path = nodeOccurrence(store, cid)
+      const resolved = path && resolveRefIdentity({ store }, path, supply.ref)
+      const found = resolved && resolved.status === 'ready' ? resolved.locations[0] : undefined
+      if (!found?.pattern) return false
+      const row = rowView(found.store, found.cid, [found.pattern, found.cid])
+      return fills(row.allocation, row.user ?? null)
     }
   }
   return rows.some(row => {

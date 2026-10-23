@@ -16,19 +16,20 @@ import { refProperties } from './refs'
 import { enclosingScopes, importNodes, reachableNodes } from './graph'
 
 import { inspectRef, scopedRefs, type ScopedRef } from './scoped-refs'
+import { transferRefGraph } from './ref-transfer'
 
 export type HandlerEnvironment = { isPeerActive?: (peerId: string) => boolean }
 export type HandlerOffer = { id: string; cid: string; type: string; peerId: string; label: string; refPath?: string[]; refIds?: string[]; capability?: Capability; enabled: boolean; active: boolean }
 
 /** Read policy in main, including ancestors; never use a preview branch's grants. */
-function contextMemberLayers(r: Replica, path: Scope): Array<{ peer: string; cid: string }> {
+function contextMemberLayers(r: Replica, path: Scope): Array<{ peer: string; cid: string; depth: number }> {
   return withMainBranchPolicy(r.store, () => {
-    const peers: Array<{ peer: string; cid: string }> = []
-    for (const { store, cid } of enclosingScopes(r.store, headCid(r), path).reverse()) {
+    const peers: Array<{ peer: string; cid: string; depth: number }> = []
+    for (const [depth, { store, cid }] of [...enclosingScopes(r.store, headCid(r), path).entries()].reverse()) {
       // resolveScope preserves branch constructors at the final path component.
       for (const ref of withMainBranchPolicy(store, () => refProperties(store, policyIdentity(store, cid), 'members'))) if (ref.peer) {
         if (store !== r.store) importNodes(r.store, reachableNodes(store, [ref.cid]))
-        peers.push({ peer: ref.peer, cid: ref.cid })
+        peers.push({ peer: ref.peer, cid: ref.cid, depth })
       }
     }
     return peers
@@ -62,20 +63,21 @@ export function discoverHandlers(r: Replica, path: Scope, environment: HandlerEn
       for (const child of value.refs) add(child, peer, disabled, !!enabled, active, refPath, refIds)
     }
   }
-  for (const ref of scopedRefs(r, path)) add(ref, r.meta.peerId)
-  const inherited = new Map<string, Map<string, { cid: string; type: string }>>()
-  for (const { peer: peerId, cid: memberCid } of contextMemberLayers(r, path)) {
-    const member = content(s, memberCid), local = new Map<string, { cid: string; type: string }>()
+  const declarations = new Map<string, Array<{ ref: ScopedRef; peer: string; depth: number }>>()
+  const declare = (ref: ScopedRef, peer: string, depth: number) => {
+    const previous = declarations.get(ref.id)
+    if (!previous || depth < previous[0]!.depth) declarations.set(ref.id, [{ ref, peer, depth }])
+    else if (depth === previous[0]!.depth) previous.push({ ref, peer, depth })
+  }
+  for (const ref of scopedRefs(r, path)) declare(ref, r.meta.peerId, ref.depth!)
+  for (const { peer: peerId, cid: memberCid, depth } of contextMemberLayers(r, path)) {
+    const member = content(s, memberCid)
     for (const edge of member.children) {
       const incoming = edge[0] === s.primitive.acceptsNode.getId()
-      if (incoming) for (const [type, cid] of advertisedRows(s, edge[1])) local.set(content(s, cid).data.alias!.id, { cid, type })
+      if (incoming) for (const [type, cid] of advertisedRows(s, edge[1])) declare(inspectRef(s, cid, type, path, peerId), peerId, depth)
     }
-    inherited.set(peerId, new Map([...(inherited.get(peerId) ?? []), ...local]))
   }
-  for (const [peerId, declarations] of inherited) {
-    const disabled = content(s, members.get(peerId)!).data.disabledCapabilities?.content ?? []
-    for (const { cid, type } of declarations.values()) add(inspectRef(s, cid, type, path, peerId), peerId, disabled, true)
-  }
+  for (const alternatives of declarations.values()) for (const { ref, peer } of alternatives) add(ref, peer)
   return result
 }
 
@@ -89,9 +91,10 @@ export function publishTemplate(r: Replica, at: Scope, templatePath: Scope, labe
   const parent = resolveScope(r.store, headCid(r), templatePath.slice(0, -1))
   if (!parent || !valueContent(r.store, parent).children.some(e => identityCid(r.store, e) === cid && isRowOfType(r.store, e, TEMPLATE_TYPE))) throw new Error('Only template rows can be published.')
   const type = r.store.primitive.templateField.getId(), peerId = r.meta.peerId
-  if (!contextMemberRefs(r, at).has(peerId)) r = addMemberAt(r, at, peerId, peerId, [], now)
   const id = publishedTemplateId(peerId, templatePath.at(-1)!)
-  const handler = put(r.store, refNodeContent(r.store, { alias: { id }, name: { content: label.trim() || valueContent(r.store, cid).data.description?.content || 'Template' } }, cid, []))
+  const publishedValue = transferRefGraph(r, cid, templatePath, [...at, id], true)
+  if (!contextMemberRefs(r, at).has(peerId)) r = addMemberAt(r, at, peerId, peerId, [], now)
+  const handler = put(r.store, refNodeContent(r.store, { alias: { id }, name: { content: label.trim() || valueContent(r.store, cid).data.description?.content || 'Template' } }, publishedValue, []))
   const existing = discoverHandlers(r, at).filter(o => o.peerId === peerId && o.type === type && o.id !== id).map(o => o.cid)
   r = setHandlerOffersAt(r, at, peerId, type, [...existing, handler], now)
   if (!market) return r

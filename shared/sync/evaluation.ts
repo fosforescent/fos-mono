@@ -10,10 +10,10 @@ import { formText } from './forms'
 import { TEMPLATE_TYPE } from './library-types'
 import { compileInstructions } from './ref-compiler'
 import { instructionPrimitives } from './primitives'
-import { receivedRef } from './parameters'
 import { readRowValue, rowWithLeft, writeRowValue } from './row-values'
 import { executeLeft, isExecuteLeft, isTriggerLeft } from './capabilities'
-import { findRowByAlias, commitRoot, content, refValueCid, newId, put, refNodeContent, resolveScope, updateAtScope, valueContent, identityCid, scopeBranches, selectBranch, importNodes, reachableNodes, type Scope, type TaskView } from './graph'
+import { rowView, commitRoot, content, refValueCid, newId, put, refNodeContent, resolveScope, updateAtScope, valueContent, identityCid, scopeBranches, selectBranch, importNodes, reachableNodes, type Scope, type TaskView } from './graph'
+import { resolveRefIdentity } from './ref-paths'
 import { addRefAt, addTask, headCid, setTaskDone, view, loadReplica, serializeReplica, type Replica } from './replica'
 
 const EVALUATION_BUDGET_MS = 120000
@@ -197,8 +197,7 @@ function problems(r: Replica, step: EvaluationStep, driver: EvaluationDriver): s
   if (selected.executor === null && selected.problem) issues.push(selected.problem)
   if (instructionPrimitives(r, step).length && !executors.length) issues.push('The instruction primitive has no available executor on this host.')
   // a received ref (a primitive without `negative`) is filled at run time, so it does not hold the step back
-  const left = step.row?.typeCid
-  issues.push(...compileInstructions(r, step.path, { canRead: driver.canRead }).holes.filter(hole => !(left && receivedRef(r.store, left, hole.id))).map(hole => `Unfilled instruction ref: ${hole.id} (${hole.reason})`))
+  issues.push(...compileInstructions(r, step.path, { canRead: driver.canRead }).blocking.map(hole => `Unfilled instruction ref: ${hole.id} (${hole.reason})`))
   const candidates = contextBindings(r, step.path, driver)
   const outputs = new Set(driver.outputs?.(step) ?? [])
   if (!selected.executor?.opensRefs) for (const arg of argumentRefs(r.store, cid).filter(a => !settingOf(r.store, content(r.store, a.cid)) && content(r.store, a.cid).data.refRole !== 'output' && !outputs.has(content(r.store, a.cid).data.alias?.id ?? ''))) {
@@ -208,7 +207,7 @@ function problems(r: Replica, step: EvaluationStep, driver: EvaluationDriver): s
   const req = step.row?.requirement
   if (req?.capability === 'allocation') for (const child of view(r, step.path)?.tasks ?? []) {
     const supplied = child.supply
-    if (supplied?.ref && !findRowByAlias(r.store, headCid(r), supplied.ref)) issues.push('The supplied allocation is unavailable for validation.')
+    if (supplied?.ref && resolveRefIdentity(r, step.path, supplied.ref).status !== 'ready') issues.push('The supplied allocation is unavailable in this scope for validation.')
   }
   if (req && !req.satisfied && !executors.length) {
     const childTasks = view(r, step.path)?.tasks.filter(t => t.checkable) ?? []
@@ -229,7 +228,14 @@ const instruction = (r: Replica, path: Scope, outputs: string[] = [], opens = fa
     !outputs.includes(content(r.store, a.cid).data.alias?.id ?? '') &&
     !a.refIds?.some(id => outputs.includes(id)) &&
     !(opens && !refValueCid(r.store, content(r.store, a.cid)))
-  return JSON.stringify({ data, arguments: args.filter(input), context: contextBindings(r, path).filter(input) })
+  const candidates = contextBindings(r, path)
+  const resolved = args.filter(input).map(arg => {
+    const value = resolveBinding(r.store, arg.type, arg.cid, candidates, undefined, { scope: { replica: r, path } })
+    return { ...arg, status: value.status, value: value.cid }
+  })
+  const text = resolveText(r, path, formText(r.store, valueContent(r.store, cid)))
+  return JSON.stringify({ data, instruction: compileInstructions(r, path, { outputs, openOutputs: true }).cid, arguments: resolved,
+    text: text.text, bindings: text.bindings.map(binding => ({ status: binding.status, cid: binding.cid })) })
 }
 
 export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promise<EvaluationRecord> {
@@ -346,23 +352,37 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
 
 /** Check only resources used by this evaluation, counting competing allocations elsewhere. */
 export function allocationProblems(r: Replica, steps: EvaluationStep[]): string[] {
-  const required = new Set(steps.flatMap(s => s.row?.allocation?.resource ? [s.row.allocation.resource] : []))
-  if (!required.size) return []
+  // Bind resource references during validation. Accounting compares the resulting node CIDs, never UUID names.
+  const source = (path: Scope, id: string) => {
+    const found = resolveRefIdentity(r, path.slice(0, -1), id)
+    return found.status === 'ready' ? found.locations[0] : undefined
+  }
+  const requested = steps.filter(step => step.row?.allocation?.resource)
+  if (!requested.length) return []
+  const errors: string[] = [], required = new Set<string>()
   const banks = new Map<string, TaskView>(), allocations: TaskView[] = [], seen = new Set<string>()
+  for (const step of requested) {
+    const found = source(step.path, step.row!.allocation!.resource)
+    if (!found?.pattern) { errors.push(`Resource bank for ${step.row!.title} is unavailable in this scope.`); continue }
+    required.add(found.cid)
+    const row = rowView(found.store, found.cid, [found.pattern, found.cid])
+    if (row.resource) banks.set(found.cid, row)
+    if (row.requirement?.capability === 'allocation' && row.requirement.satisfied && row.requirement.amount !== undefined)
+      banks.set(found.cid, { ...row, resource: { type: row.requirement.resource ?? 'account', unit: row.requirement.unit ?? 'USD', capacity: row.requirement.amount, allocated: 0, available: row.requirement.amount } })
+  }
   const walk = (path: Scope) => {
     if (path.length > 64 || seen.size > 10000) throw new Error('Too many resource rows to check safely.')
     for (const row of view(r, path)?.tasks ?? []) {
-      if (seen.has(row.id)) continue
-      seen.add(row.id)
+      const at = [...path, row.id], occurrence = JSON.stringify(at)
+      if (seen.has(occurrence)) continue
+      seen.add(occurrence)
       if (row.type === TEMPLATE_TYPE) continue
-      if (row.resource) banks.set(row.id, row)
-      if (row.requirement?.capability === 'allocation' && row.requirement.satisfied && row.requirement.amount !== undefined) banks.set(row.id, { ...row, resource: { type: row.requirement.resource ?? 'account', unit: row.requirement.unit ?? 'USD', capacity: row.requirement.amount, allocated: 0, available: row.requirement.amount } })
-      if (row.allocation && required.has(row.allocation.resource)) allocations.push(row)
-      if (row.childCount) walk([...path, row.id])
+      const bank = row.allocation?.resource ? source(at, row.allocation.resource) : undefined
+      if (row.allocation && bank && required.has(bank.cid)) allocations.push({ ...row, allocation: { ...row.allocation, resource: bank.cid } })
+      if (row.childCount) walk(at)
     }
   }
   walk([])
-  const errors: string[] = []
   for (const id of required) {
     const bank = banks.get(id)
     if (!bank?.resource) { errors.push(`Resource bank ${id} is unavailable.`); continue }

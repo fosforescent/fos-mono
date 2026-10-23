@@ -60,20 +60,22 @@ export function publishNativeRef(replica: Replica, at: Scope, host: string, ref:
 }
 
 /**
- * Offer `peer`'s node transport on its row at the device root: a native ref of the `provideNode` capability, published
+ * Offer `peer`'s node transport in the chosen scope: a native ref of the `provideNode` capability, published
  * once (`publishNativeRef`); later calls only give it its local meaning again.
  */
-export function offerNodeTransport(replica: Replica, peer: string, transport: NodeTransport, now: number): Replica {
-  const ref = nativeRef(replica.store, peer, { id: 'transport', label: peer, type: (store, at) => libAt(store, at).capabilities.provideNode! }, { provideNode: transport })
-  return publishNativeRef(replica, [], peer, ref, now)
+export function offerNodeTransport(replica: Replica, peer: string, transport: NodeTransport, now: number, at: Scope = []): Replica {
+  const ref = nativeRef(replica.store, peer, { id: 'transport', label: peer, type: (store, at) => libAt(store, at).capabilities.provideNode! }, { provideNode: transport }, at)
+  return publishNativeRef(replica, at, peer, ref, now)
 }
 
 /** What reaches `peer` from the node at `at`: the native of its enabled `provideNode` offer in scope, when it can carry a request now. */
 export function nodeTransportAt(replica: Replica, at: Scope, peer: string): (NodeProvider & Pick<NodeTransport, 'attachment'>) | null {
   const type = libAt(replica.store, at).capabilities.provideNode!
   const offers = new Set(discoverHandlers(replica, at).filter(offer => offer.peerId === peer && sameCapabilityType(replica.store, offer.type, type)).map(offer => offer.cid))
-  const found = nativeRefValues(replica, at, peer).find(value => offers.has(value.ref) && value.native.provideNode?.available())
-  return found ? { id: peer, ...found.native.provideNode! } : null
+  const candidates = nativeRefValues(replica, at, peer).filter(value => offers.has(value.ref) && value.native.provideNode?.available())
+  const transports = [...new Set(candidates.map(value => value.native.provideNode!))]
+  if (transports.length > 1) throw new Error('Choose a node transport handler in this scope.')
+  return transports.length ? { id: peer, ...transports[0]! } : null
 }
 
 /** Walk the registered refs, then execute the local meaning of their accepted primitive values. */

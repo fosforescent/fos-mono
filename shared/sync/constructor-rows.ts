@@ -8,8 +8,9 @@ import type { FosPathElem } from '../types'
 import { commitRoot, content, findEdge, identityCid, isRefNode, put, refNodeContent, refValueCid, resolveScope, updateAtScope, valueContent, withRowTemplate, type Scope } from './graph'
 import { headCid, type Replica } from './replica'
 import { isNegative, primitiveOf } from './parameters'
+import { assertCompiledGraph, compileInstructions } from './ref-compiler'
 
-export type OpenRef = { alias: string; name: string; left: string; defaultValue: string | null; sent: boolean; received: boolean }
+export type OpenRef = { cid: string; alias: string; name: string; left: string; defaultValue: string | null; sent: boolean; received: boolean }
 
 /** The refs a row's left declares in its rows (through a ref on the left, such as a pinned handler, to its value). */
 export function openRefs(store: Replica['store'], constructor: string): OpenRef[] {
@@ -19,7 +20,7 @@ export function openRefs(store: Replica['store'], constructor: string): OpenRef[
     const ref = store.table.get(right)
     if (!ref || !isRefNode(store, ref) || !ref.data.alias) return []
     const primitive = primitiveOf(store, left) !== null
-    return [{ alias: ref.data.alias.id, name: ref.data.name?.content ?? ref.data.alias.id, left, defaultValue: refValueCid(store, ref), sent: primitive && isNegative(store, left), received: primitive && !isNegative(store, left) }]
+    return [{ cid: right, alias: ref.data.alias.id, name: ref.data.name?.content ?? ref.data.alias.id, left, defaultValue: refValueCid(store, ref), sent: primitive && isNegative(store, left), received: primitive && !isNegative(store, left) }]
   })
 }
 
@@ -40,6 +41,27 @@ export function assignedValue(r: Replica, row: Scope, alias: string): string | n
   if (assignment) return refValueCid(r.store, content(r.store, identityCid(r.store, assignment)))
   const constructor = rowConstructor(r, row)
   return constructor ? openRefs(r.store, constructor).find(ref => ref.alias === alias)?.defaultValue ?? null : null
+}
+
+/** Bind the editor's assignments once. Native evaluation consumes the CID graph; edits use the separate source map. */
+export function compileConstructorCall(r: Replica, row: Scope) {
+  const constructor = rowConstructor(r, row)
+  if (!constructor) throw new Error('The row has no constructor.')
+  const compiled = compileInstructions(r, row, { openOutputs: true }), edits = new Map<string, string>()
+  const args = openRefs(r.store, constructor).map(ref => {
+    const path = [...row, ref.alias]
+    const location = (source: string) => compiled.locations.find(item => item.source === source && item.path.length === path.length && item.path.every((id, index) => id === path[index]))?.cid
+    const type = location(ref.left), value = location(ref.cid)
+    if (!type || !value) throw new Error('The compiler did not bind this constructor parameter.')
+    // The parameter name belongs to the declaration. Its UUID does not belong to the executable value.
+    const name = content(r.store, ref.cid).data.name?.content
+    const cid = put(r.store, refNodeContent(r.store, name === undefined ? {} : { name: { content: name } }, value))
+    edits.set(cid, ref.alias)
+    return { cid, type, name: name ?? '', sent: ref.sent, received: ref.received }
+  })
+  const cid = put(r.store, { data: {}, children: args.map(arg => [arg.type, arg.cid]) })
+  assertCompiledGraph(r.store, [cid])
+  return { cid, args, edits, holes: compiled.holes, canRun: compiled.canRun }
 }
 
 /** Assign `value` (null: an open slot) to the constructor's ref `alias` in the row's right node. */

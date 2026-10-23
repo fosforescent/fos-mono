@@ -11,15 +11,17 @@ import type { FosPathElem } from '../types'
 import { isLibraryRef, content, identityCid, isBranchChoice, isChoiceEdge, isRefNode, isRowEdge, put, readChoice, refValueCid, resolveScope, valueContent, type Scope } from './graph'
 import { headCid, proposeRefAt, type Replica } from './replica'
 import { matchesGraph } from './structural'
-import { isPlaceholder, patternRows } from './pattern-bindings'
+import { patternRows } from './pattern-bindings'
+import { assertCompiledGraph, compileRefGraph } from './ref-compiler'
 
-/** Placeholder alias id → the value cid it is bound to. */
+/** Compiled placeholder CID → the value CID it is bound to. */
 export type Substitution = ReadonlyMap<string, string>
 
 const sameValue = (store: FosStore, a: string, b: string) => a === b || (matchesGraph(store, a, b) && matchesGraph(store, b, a))
 
 /** The first substitution under which `pattern` matches `value`, or null. Rows match as an unordered product. */
 export function unify(store: FosStore, pattern: string, value: string, start: Substitution = new Map()): Substitution | null {
+  assertCompiledGraph(store, [pattern, value, ...start.keys(), ...start.values()])
   let remaining = 20000
   const alternatives = (edge: FosPathElem): FosPathElem[] =>
     isChoiceEdge(store, edge) && isBranchChoice(store, content(store, edge[1]))
@@ -29,11 +31,11 @@ export function unify(store: FosStore, pattern: string, value: string, start: Su
     const P = store.table.get(p), V = store.table.get(v)
     if (!P || !V) return null
     // a hole on the value side is not a value: nothing binds to it
-    if (isPlaceholder(store, V)) return null
-    if (isPlaceholder(store, P)) {
-      const alias = P.data.alias!.id, bound = s.get(alias)
+    if (V.data.refHole) return null
+    if (P.data.refHole) {
+      const bound = s.get(p)
       if (bound) return sameValue(store, bound, v) ? s : null
-      return new Map(s).set(alias, v)
+      return new Map(s).set(p, v)
     }
     const patternTarget = isRefNode(store, P) ? refValueCid(store, P) : null
     if (patternTarget) return node(patternTarget, v, s, depth + 1)
@@ -72,22 +74,8 @@ export function unify(store: FosStore, pattern: string, value: string, start: Su
 function hasPlaceholder(store: FosStore, cid: string, depth = 0): boolean {
   const node = store.table.get(cid)
   if (!node || depth > 32) return false
-  if (isPlaceholder(store, node)) return true
+  if (node.data.refHole) return true
   return patternRows(store, node).some(edge => hasPlaceholder(store, edge[1], depth + 1))
-}
-
-/** Path (alias ids) from `root` to the row ref `alias` among its rows, depth-first. */
-function refPath(store: FosStore, root: string, alias: string, depth = 0): Scope | null {
-  if (depth > 32) return null
-  for (const edge of valueContent(store, root).children) {
-    if (!isRowEdge(store, edge)) continue
-    const id = content(store, identityCid(store, edge)).data.alias?.id
-    if (!id) continue
-    if (id === alias) return [id]
-    const below = refPath(store, identityCid(store, edge), alias, depth + 1)
-    if (below) return [id, ...below]
-  }
-  return null
 }
 
 export type Solution = { source: Scope; bindings: Substitution }
@@ -107,7 +95,9 @@ export function solveAt(replica: Replica, at: Scope, peerId: string, now: number
     const identity = content(store, identityCid(store, edge))
     return !settingOf(store, identity) && !isHandlerStateLeft(store, edge[0]) && !valueContent(store, identityCid(store, edge)).data.supply
   })
-  const pattern = put(store, { data: {}, children: rows })
+  const compiled = compileRefGraph(replica, put(store, { data: {}, children: rows }), at, { selected: true })
+  if (compiled.holes.some(hole => hole.reason !== 'unbound')) throw new Error('Resolve the pattern references before solving.')
+  const pattern = compiled.cid
   if (!hasPlaceholder(store, pattern)) throw new Error('Add a placeholder (a ref with no value) to solve for.')
   const scope = at.slice(0, -1)
   const solutions: Solution[] = []
@@ -118,9 +108,9 @@ export function solveAt(replica: Replica, at: Scope, peerId: string, now: number
       const child = identityCid(store, edge), node = content(store, child), id = node.data.alias?.id
       // the standard library and named system records (settings, evaluation records) are not data to solve over
       if (!id || id === skip || isLibraryRef(store, node) || settingOf(store, node) || isHandlerStateLeft(store, edge[0])) continue
-      const bindings = unify(store, pattern, child)
+      const candidate = compileRefGraph(replica, child, [...path, id], { selected: true })
+      const bindings = candidate.complete ? unify(store, pattern, candidate.cid) : null
       if (bindings?.size) solutions.push({ source: [...path, id], bindings })
-      visit(child, [...path, id])
     }
   }
   // nearest first, like ref resolution: the parent's rows, then each ancestor's, never the branch already searched
@@ -130,9 +120,12 @@ export function solveAt(replica: Replica, at: Scope, peerId: string, now: number
   }
   let next = replica
   for (const solution of solutions) {
-    for (const [alias, value] of solution.bindings) {
-      const below = refPath(store, rowCid, alias)
-      if (below) next = proposeRefAt(next, [...at, ...below], value, peerId, now, solution.source.join('/')).replica
+    for (const [slot, value] of solution.bindings) {
+      // Only the editing adapter sees UUIDs; the solver returns graph CIDs.
+      for (const hole of compiled.holes.filter(hole => hole.cid === slot)) {
+        if (hole.path.length > at.length && at.every((id, index) => hole.path[index] === id))
+          next = proposeRefAt(next, hole.path, value, peerId, now, solution.source.join('/')).replica
+      }
     }
   }
   return { replica: next, solutions }

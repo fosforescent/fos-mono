@@ -8,7 +8,7 @@ import { headCid, type Replica } from './replica'
 export type RefSubmission = { cid: string; refs: ScopedRef[] }
 export type ScopedRef = {
   id: string; cid: string; type: string; name?: string; peerId?: string
-  scope: Scope; values: RefSubmission[]
+  scope: Scope; values: RefSubmission[]; depth?: number
 }
 
 /** Accepted values include every alternative, without selecting or merging them.
@@ -84,18 +84,18 @@ export function inspectRef(store: FosStore, cid: string, rowType: string, scope:
 
 /** Walk outward from the requested node. Only the same declaration identity shadows an outer declaration. */
 export function scopedRefs(replica: Replica, at: Scope): ScopedRef[] {
-  const store = replica.store, declarations = new Map<string, ScopedRef>()
-  for (const { store: source, cid, path: scope } of enclosingScopes(store, headCid(replica), at)) {
+  const store = replica.store, declarations = new Map<string, ScopedRef[]>()
+  for (const [depth, { store: source, cid, path: scope }] of enclosingScopes(store, headCid(replica), at).entries()) {
     const node = content(source, cid), values = refValueCid(source, node) ? refSubmissions(source, cid) : [cid]
     for (const value of values) for (const { cid: ref, type } of declarationRows(source, value)) {
       const id = content(source, ref).data.alias!.id
-      if (!declarations.has(id)) {
+      if (!declarations.has(id) || declarations.get(id)![0]!.depth === depth) {
         if (source !== store) importNodes(store, reachableNodes(source, [ref, type]))
-        declarations.set(id, inspectRef(store, ref, type, scope))
+        declarations.set(id, [...(declarations.get(id) ?? []), { ...inspectRef(store, ref, type, scope), depth }])
       }
     }
   }
-  return [...declarations.values()]
+  return [...declarations.values()].flat()
 }
 
 export function flattenRefs(refs: ScopedRef[]): ScopedRef[] {
