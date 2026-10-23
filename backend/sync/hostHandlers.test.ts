@@ -186,14 +186,14 @@ test('a payout to @name pays the user object the requirement binds, only when th
   expect(transfer).toHaveBeenCalledTimes(1)
 })
 
-test('the mail effect emails the first address in the row with the task as the body, and records the supply as the server', async () => {
-  expect(mailRequest('team@example.com Trip plans', 'Plan the group trip', ['Book flights', 'Reserve lodging'])).toEqual({ to: 'team@example.com', subject: 'Trip plans', text: 'Plan the group trip\n- Book flights\n- Reserve lodging' })
-  expect(mailRequest('team@example.com', 'Plan the group trip', [])).toMatchObject({ subject: 'Plan the group trip' })
-  expect(mailRequest('no address here', 'x', [])).toBeNull()
+test("the mail effect emails the requirement's recipient input with the task as the body, and records the supply as the server", async () => {
+  expect(mailRequest({ to: 'team@example.com', subject: 'Trip plans' }, 'Plan the group trip', ['Book flights', 'Reserve lodging'])).toEqual({ to: 'team@example.com', subject: 'Trip plans', text: 'Plan the group trip\n- Book flights\n- Reserve lodging' })
+  expect(mailRequest({ to: 'team@example.com', subject: null }, 'Plan the group trip', [])).toMatchObject({ subject: 'Plan the group trip' })
+  expect(mailRequest({ to: null, subject: 'x' }, 'x', [])).toBeNull()
   let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['mail'] })
   r = addTask(r, [HOME_ID], 'Plan the group trip', 2, 'trip')
   r = addTask(r, [HOME_ID, 'trip'], 'Book flights', 2, 'flights')
-  r = addRow(r, [HOME_ID, 'trip'], ALLOCATION_TYPE, 'team@example.com Trip plans', 2, { id: 'notify', requirement: { capability: 'mail' } })
+  r = addRow(r, [HOME_ID, 'trip'], ALLOCATION_TYPE, 'team@example.com Trip plans', 2, { id: 'notify', requirement: { capability: 'mail' }, inputs: { to: 'team@example.com', subject: 'Trip plans' } })
   const sent: unknown[] = []
   const send = jest.fn(async (to: string, subject: string, text: string, onBehalfOf: string) => { sent.push([to, subject, text, onBehalfOf]) })
   const h = host(fresh(r), createHostRuntime([mailHandler({ send })]))

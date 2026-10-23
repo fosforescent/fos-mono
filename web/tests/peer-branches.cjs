@@ -25,6 +25,7 @@ async function main() {
   assert.equal(payout.text, 'thanks')
   assert.equal(parseRowInput('-$ 20 lunch').extras.user, null)
   assert.equal(parseRowInput('-mail bob@example.com hi').extras.user, null)
+  assert.deepEqual(parseRowInput('-mail bob@example.com hi').extras.inputs, { to: 'bob@example.com', subject: 'hi' }, 'the recipient and subject are the mail input fields, filled as typed')
   const a = new App({ baseUrl: 'http://localhost', autoLogin: null, storage: createMemoryStorage(), scopedDocument: true })
   a.scheduleSync = () => {}; a.refreshRequests = async () => {}
   mountUi(document.getElementById('app'), a); await tick()

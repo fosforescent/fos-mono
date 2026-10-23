@@ -200,6 +200,12 @@ export function parseRequirement(text: string, declarations?: CapabilitySyntax[]
     if (capability === 'solve') return { construct: { capability, values: {} }, label: rest }
     // "verify @bob": the user to verify is the row's user field, as typed
     if (capability === 'verify') { const { user, text } = namedUser(rest); return { requirement: { capability }, ...(user ? { user } : {}), label: user ? `@${user.username}${text ? ` ${text}` : ''}` : text } }
+    // "-mail someone@example.com Subject": the recipient and subject are the mail capability's inputs, as typed
+    if (capability === 'mail') {
+      const address = rest.match(/[^\s<>,;]+@[^\s<>,;]+\.[^\s<>,;]+/)?.[0]
+      const subject = address ? rest.replace(address, '').replace(/^[\s:,-]+|[\s:,-]+$/g, '').trim() : rest.trim()
+      return { requirement: { capability }, ...(address ? { inputs: { to: address, ...(subject ? { subject } : {}) } } : {}), label: rest }
+    }
     if (capability === 'choice') {
       const options = rest.split('|').map(option => option.trim()).filter(Boolean)
       return { requirement: { capability, options }, label: `choice: ${options.join(' | ')}` }

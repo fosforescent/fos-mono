@@ -1,6 +1,6 @@
 {
   "nodes": {
-    "v0.0.3-8695378fba57f7edc5356544520d7b20a63a661e279a2e15fa6892f85f850353": {
+    "v0.0.3-23c01810579346c05908d1b906086e278936c2a192c0e6d4f106352cfcacba52": {
       "data": {
         "description": {
           "content": "Standard library"
@@ -161,7 +161,7 @@
         ],
         [
           "v0.0.3-61392b51781c2c9937dc86972e9def09f1364db3ffeb4331bce3cd7d9bdc788d",
-          "v0.0.3-f65f313ac00b7e14d3c5d258b3e69f9d61ac89fe89099cd586909ece24008ace"
+          "v0.0.3-775f6a02cfc2658a0139b0550c848e6f42d125bd2bcc6a2681b03a55b37fd213"
         ],
         [
           "v0.0.3-61392b51781c2c9937dc86972e9def09f1364db3ffeb4331bce3cd7d9bdc788d",
@@ -173,7 +173,7 @@
         ],
         [
           "v0.0.3-db2cb4cec6cb135b44f14f3df25046efe6faea71fc58d24c9632f951227ac8c8",
-          "v0.0.3-39fd04721731c40d77d1071d677e1740e7ed608a182768c3cb1711775b142866"
+          "v0.0.3-d180df90cc3079d9b943942c2e5e6b1048753c863d42883e3454761bce4be0b2"
         ],
         [
           "v0.0.3-bc21b76553196c70e5cf2e4eeff008d1b7bc7f35f85e9c346dd5ea0199c06224",
@@ -194,8 +194,200 @@
         [
           "v0.0.3-61392b51781c2c9937dc86972e9def09f1364db3ffeb4331bce3cd7d9bdc788d",
           "v0.0.3-b3a2fb38c30f258ec305335d719435c4113dada3fd5e557e1627ecf56c8eac89"
+        ],
+        [
+          "v0.0.3-db2cb4cec6cb135b44f14f3df25046efe6faea71fc58d24c9632f951227ac8c8",
+          "v0.0.3-dce9823af7b45c86f359a8d5cf966d59edb44564a12eda1ea02050a015413c28"
         ]
       ]
+    },
+    "v0.0.3-dce9823af7b45c86f359a8d5cf966d59edb44564a12eda1ea02050a015413c28": {
+      "data": {
+        "alias": {
+          "id": "v0.0.3-e156d5aa209af3c5c4910884bf91da505e5fc5bf20aabc076bb19c9bc7d197b2"
+        },
+        "name": {
+          "content": "requires"
+        },
+        "description": {
+          "content": "What the library needs passed in"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-2be6c8243139a2b52f2aca0d00eb8bcdfdffc6b7435f387742ef3389d83e441a",
+          "v0.0.3-eb5c75a6ce0f4699b13f2d6e7943e70efc3a7c3020f0c772c7b57eb5c17572b7"
+        ]
+      ]
+    },
+    "v0.0.3-eb5c75a6ce0f4699b13f2d6e7943e70efc3a7c3020f0c772c7b57eb5c17572b7": {
+      "data": {
+        "alias": {
+          "id": "v0.0.3-d9f883c816f638aa413c79864a50a932ad2e415901df748a4883b3391bb74a67"
+        },
+        "name": {
+          "content": "deviceLocation"
+        },
+        "description": {
+          "content": "Use this device's location"
+        },
+        "allocation": {
+          "amount": 0,
+          "capability": "allocation",
+          "resource": "",
+          "type": "location",
+          "unit": "unit"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ]
+      ]
+    },
+    "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5": {
+      "data": {},
+      "children": []
+    },
+    "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd": {
+      "data": {
+        "description": {
+          "content": "Alias Constructor Node"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-2be6c8243139a2b52f2aca0d00eb8bcdfdffc6b7435f387742ef3389d83e441a": {
+      "data": {
+        "capabilityDefinition": {
+          "label": "allocation",
+          "legacy": "v0.0.1-d3f9d1d6475b09315cbb2e001c80e4009f2aac5977d3e040f42e9eb8857be5e6",
+          "name": "allocation",
+          "syntax": [
+            "allocation"
+          ]
+        },
+        "description": {
+          "content": "allocation"
+        },
+        "name": {
+          "content": "fos:capability:allocation"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-d52462b7c1cb16950a03ede69243cdcae156d4529f7dfb49284862e5dc878d05",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ]
+      ]
+    },
+    "v0.0.3-d52462b7c1cb16950a03ede69243cdcae156d4529f7dfb49284862e5dc878d05": {
+      "data": {},
+      "children": [
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ],
+        [
+          "v0.0.3-5759a41a81d52bb609494ac17d011c076a6e9f7ccdc8dc972308aad0578aa0dc",
+          "v0.0.3-551eb26b49564455fd019c24608574c482c61ddb9873dafa8af01fe002669ad2"
+        ]
+      ]
+    },
+    "v0.0.3-551eb26b49564455fd019c24608574c482c61ddb9873dafa8af01fe002669ad2": {
+      "data": {
+        "scalar": {
+          "type": "text",
+          "value": "allocation"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-5759a41a81d52bb609494ac17d011c076a6e9f7ccdc8dc972308aad0578aa0dc": {
+      "data": {
+        "description": {
+          "content": "title"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-db2cb4cec6cb135b44f14f3df25046efe6faea71fc58d24c9632f951227ac8c8": {
+      "data": {
+        "description": {
+          "content": "Row"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-8e489c1fc33b2772daacec3dab12110295f116838f98387211359a68853b096e"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-8f11d7f4002de31c978bc97bcabbdce10a29c8a574c22b103fb880d33a3c00bf"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-a77aa59e3e9dc15e42779ddfb3316e6f44a00075aa36c7965c00f8f1570a0bc2"
+        ],
+        [
+          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
+          "v0.0.3-8d6764d64e437bf1f2f63872cba59410bea8e9b59964723f1437546c49935d8e"
+        ]
+      ]
+    },
+    "v0.0.3-8d6764d64e437bf1f2f63872cba59410bea8e9b59964723f1437546c49935d8e": {
+      "data": {
+        "description": {
+          "content": "documentRoot"
+        },
+        "pattern": {
+          "type": "documentRoot"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a": {
+      "data": {
+        "description": {
+          "content": "Pattern"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-a77aa59e3e9dc15e42779ddfb3316e6f44a00075aa36c7965c00f8f1570a0bc2": {
+      "data": {
+        "description": {
+          "content": "deviceRoot"
+        },
+        "pattern": {
+          "type": "deviceRoot"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-8f11d7f4002de31c978bc97bcabbdce10a29c8a574c22b103fb880d33a3c00bf": {
+      "data": {
+        "description": {
+          "content": "home"
+        },
+        "pattern": {
+          "type": "home"
+        }
+      },
+      "children": []
+    },
+    "v0.0.3-8e489c1fc33b2772daacec3dab12110295f116838f98387211359a68853b096e": {
+      "data": {
+        "description": {
+          "content": "Any row"
+        },
+        "pattern": {
+          "any": true
+        }
+      },
+      "children": []
     },
     "v0.0.3-b3a2fb38c30f258ec305335d719435c4113dada3fd5e557e1627ecf56c8eac89": {
       "data": {
@@ -304,18 +496,6 @@
           "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
         ]
       ]
-    },
-    "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5": {
-      "data": {},
-      "children": []
-    },
-    "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd": {
-      "data": {
-        "description": {
-          "content": "Alias Constructor Node"
-        }
-      },
-      "children": []
     },
     "v0.0.3-604f4cfd051ff090aba4adb7baa9f75de3708d6610bafd883d6f133fec8ff05a": {
       "data": {
@@ -439,14 +619,6 @@
       },
       "children": []
     },
-    "v0.0.3-5759a41a81d52bb609494ac17d011c076a6e9f7ccdc8dc972308aad0578aa0dc": {
-      "data": {
-        "description": {
-          "content": "title"
-        }
-      },
-      "children": []
-    },
     "v0.0.3-d263f428e196271a7ba718d09f353e221704bb58919dac5055ca9e844484ead5": {
       "data": {
         "alias": {
@@ -538,58 +710,6 @@
           "v0.0.3-8d6764d64e437bf1f2f63872cba59410bea8e9b59964723f1437546c49935d8e"
         ]
       ]
-    },
-    "v0.0.3-8d6764d64e437bf1f2f63872cba59410bea8e9b59964723f1437546c49935d8e": {
-      "data": {
-        "description": {
-          "content": "documentRoot"
-        },
-        "pattern": {
-          "type": "documentRoot"
-        }
-      },
-      "children": []
-    },
-    "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a": {
-      "data": {
-        "description": {
-          "content": "Pattern"
-        }
-      },
-      "children": []
-    },
-    "v0.0.3-a77aa59e3e9dc15e42779ddfb3316e6f44a00075aa36c7965c00f8f1570a0bc2": {
-      "data": {
-        "description": {
-          "content": "deviceRoot"
-        },
-        "pattern": {
-          "type": "deviceRoot"
-        }
-      },
-      "children": []
-    },
-    "v0.0.3-8f11d7f4002de31c978bc97bcabbdce10a29c8a574c22b103fb880d33a3c00bf": {
-      "data": {
-        "description": {
-          "content": "home"
-        },
-        "pattern": {
-          "type": "home"
-        }
-      },
-      "children": []
-    },
-    "v0.0.3-8e489c1fc33b2772daacec3dab12110295f116838f98387211359a68853b096e": {
-      "data": {
-        "description": {
-          "content": "Any row"
-        },
-        "pattern": {
-          "any": true
-        }
-      },
-      "children": []
     },
     "v0.0.3-72cbd0830cccfb19e9def4f34499bbe5a1c68a673b5d40e2ef33d6ee08619466": {
       "data": {
@@ -1125,7 +1245,7 @@
       },
       "children": []
     },
-    "v0.0.3-39fd04721731c40d77d1071d677e1740e7ed608a182768c3cb1711775b142866": {
+    "v0.0.3-d180df90cc3079d9b943942c2e5e6b1048753c863d42883e3454761bce4be0b2": {
       "data": {
         "alias": {
           "id": "v0.0.3-ec197f1a611608a42937fc55172ba69879bc8b1bc2dc60b57479abb801d1c97c"
@@ -1183,7 +1303,7 @@
           "v0.0.3-cf0144d3ed3d37fb7b565c16ee939235ba1fc21abc1f65be72e575d163ca2149"
         ],
         [
-          "v0.0.3-f9906278272d00d5b5e768bf344de1e439e84485c981394b38da72b51ae62719",
+          "v0.0.3-ada2cc9187bf532f2848dafbb7dd8c54ebfd3031f888bc7921ce1007588f6a1c",
           "v0.0.3-f6edb4878ace449fb3e44a1176cc98119f42cc293c6810abd183f7346e889118"
         ],
         [
@@ -1695,52 +1815,6 @@
           "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
         ]
       ]
-    },
-    "v0.0.3-2be6c8243139a2b52f2aca0d00eb8bcdfdffc6b7435f387742ef3389d83e441a": {
-      "data": {
-        "capabilityDefinition": {
-          "label": "allocation",
-          "legacy": "v0.0.1-d3f9d1d6475b09315cbb2e001c80e4009f2aac5977d3e040f42e9eb8857be5e6",
-          "name": "allocation",
-          "syntax": [
-            "allocation"
-          ]
-        },
-        "description": {
-          "content": "allocation"
-        },
-        "name": {
-          "content": "fos:capability:allocation"
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-d52462b7c1cb16950a03ede69243cdcae156d4529f7dfb49284862e5dc878d05",
-          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ]
-      ]
-    },
-    "v0.0.3-d52462b7c1cb16950a03ede69243cdcae156d4529f7dfb49284862e5dc878d05": {
-      "data": {},
-      "children": [
-        [
-          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
-          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ],
-        [
-          "v0.0.3-5759a41a81d52bb609494ac17d011c076a6e9f7ccdc8dc972308aad0578aa0dc",
-          "v0.0.3-551eb26b49564455fd019c24608574c482c61ddb9873dafa8af01fe002669ad2"
-        ]
-      ]
-    },
-    "v0.0.3-551eb26b49564455fd019c24608574c482c61ddb9873dafa8af01fe002669ad2": {
-      "data": {
-        "scalar": {
-          "type": "text",
-          "value": "allocation"
-        }
-      },
-      "children": []
     },
     "v0.0.3-8d353373e83b23f7ca924f8ae8007b9d0672333388c8f06ef7e2b77f218332f8": {
       "data": {
@@ -3446,7 +3520,7 @@
         ]
       ]
     },
-    "v0.0.3-f9906278272d00d5b5e768bf344de1e439e84485c981394b38da72b51ae62719": {
+    "v0.0.3-ada2cc9187bf532f2848dafbb7dd8c54ebfd3031f888bc7921ce1007588f6a1c": {
       "data": {
         "capabilityDefinition": {
           "label": "mail",
@@ -3466,6 +3540,46 @@
       "children": [
         [
           "v0.0.3-e3bfcae8576be6d8bc88c8018984ff01c631c028a1d3b12806cdf64e0f76bf94",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ],
+        [
+          "v0.0.3-bef8c173b8550c06b8a9fd9b593d6cdc8274e2d3b713d0acae85fa651412bc9d",
+          "v0.0.3-4e27bff1013beda116db676d37c272e9f3561cc5d597baad49af9966b0350b32"
+        ],
+        [
+          "v0.0.3-bef8c173b8550c06b8a9fd9b593d6cdc8274e2d3b713d0acae85fa651412bc9d",
+          "v0.0.3-1c2f2d473f28d6c0e6c46043862f08b2bf26da7cf395bb4db9d140012b1a56d1"
+        ]
+      ]
+    },
+    "v0.0.3-1c2f2d473f28d6c0e6c46043862f08b2bf26da7cf395bb4db9d140012b1a56d1": {
+      "data": {
+        "alias": {
+          "id": "v0.0.3-57b6dace546210e3c0365915ddd27dc26012d9ec98767b76f019780319c8fe2e"
+        },
+        "name": {
+          "content": "subject"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
+          "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ]
+      ]
+    },
+    "v0.0.3-4e27bff1013beda116db676d37c272e9f3561cc5d597baad49af9966b0350b32": {
+      "data": {
+        "alias": {
+          "id": "v0.0.3-10c0a2bf0ee1f444d984e0cd231a89a0bbd3f2721dbf13aacef608e4322b1ab8"
+        },
+        "name": {
+          "content": "to"
+        }
+      },
+      "children": [
+        [
+          "v0.0.3-505c1a5a5c0cc22db8c1985ac8d7850ba11bdca57fc3bf957febbe6a5c3d82cd",
           "v0.0.3-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
         ]
       ]
@@ -4174,31 +4288,6 @@
         }
       },
       "children": []
-    },
-    "v0.0.3-db2cb4cec6cb135b44f14f3df25046efe6faea71fc58d24c9632f951227ac8c8": {
-      "data": {
-        "description": {
-          "content": "Row"
-        }
-      },
-      "children": [
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-8e489c1fc33b2772daacec3dab12110295f116838f98387211359a68853b096e"
-        ],
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-8f11d7f4002de31c978bc97bcabbdce10a29c8a574c22b103fb880d33a3c00bf"
-        ],
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-a77aa59e3e9dc15e42779ddfb3316e6f44a00075aa36c7965c00f8f1570a0bc2"
-        ],
-        [
-          "v0.0.3-6ba1a76cf91dd145a45c66aa994ac4aca30385f8027348101ec3b2dc1ac4dc6a",
-          "v0.0.3-8d6764d64e437bf1f2f63872cba59410bea8e9b59964723f1437546c49935d8e"
-        ]
-      ]
     },
     "v0.0.3-713332d12dc049c8818c379e3092483e7267b97932fd56cac81cde53c80f8af6": {
       "data": {
@@ -5539,7 +5628,7 @@
       },
       "children": []
     },
-    "v0.0.3-f65f313ac00b7e14d3c5d258b3e69f9d61ac89fe89099cd586909ece24008ace": {
+    "v0.0.3-775f6a02cfc2658a0139b0550c848e6f42d125bd2bcc6a2681b03a55b37fd213": {
       "data": {
         "alias": {
           "id": "v0.0.3-004f94bb9f4a3f0bb7c40c86d2d2fbfde99c195333bc85f968400e1b1673305c"
@@ -5594,10 +5683,6 @@
         [
           "v0.0.3-186993e28318df83cea832c3567ac6e2f765bb87acf477a31ffc681d572e490d",
           "v0.0.3-48cd8f3d945be3fde431c22f33c19a2e7daa3a4c06856a7d0a50630f4c27ca7a"
-        ],
-        [
-          "v0.0.3-186993e28318df83cea832c3567ac6e2f765bb87acf477a31ffc681d572e490d",
-          "v0.0.3-a2c77f91b46237a354e3aa00504cece39ee1aca0732ee90edd4f503c58824ccc"
         ],
         [
           "v0.0.3-186993e28318df83cea832c3567ac6e2f765bb87acf477a31ffc681d572e490d",
@@ -5765,30 +5850,6 @@
         },
         "name": {
           "content": "mail"
-        }
-      },
-      "children": []
-    },
-    "v0.0.3-a2c77f91b46237a354e3aa00504cece39ee1aca0732ee90edd4f503c58824ccc": {
-      "data": {
-        "alias": {
-          "id": "v0.0.3-022ba07411da2da3388be76244be61a744bb510de41ba40f040899492830e5f6"
-        },
-        "allocation": {
-          "amount": 0,
-          "capability": "allocation",
-          "resource": "",
-          "type": "location",
-          "unit": "unit"
-        },
-        "description": {
-          "content": "Use this device's location"
-        },
-        "updated": {
-          "time": 1792453618404
-        },
-        "name": {
-          "content": "deviceLocation"
         }
       },
       "children": []
@@ -8301,6 +8362,6 @@
       ]
     }
   },
-  "rootNodeId": "v0.0.3-8695378fba57f7edc5356544520d7b20a63a661e279a2e15fa6892f85f850353",
+  "rootNodeId": "v0.0.3-23c01810579346c05908d1b906086e278936c2a192c0e6d4f106352cfcacba52",
   "version": "0.0.3"
 }

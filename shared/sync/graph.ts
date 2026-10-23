@@ -741,6 +741,8 @@ export type RowExtras = {
   allocation?: NonNullable<FosNodeContent['data']['allocation']>
   /** The user `@name` names: bound as the row's `user` field (a user object); null removes it. */
   user?: UserRecord | null
+  /** Values for the inputs the requirement's capability declares (its refs, by name): named fields on the row's value. */
+  inputs?: Record<string, string>
 }
 
 const DEFAULT_ALLOCATION = { resource: '', type: 'inventory' as const, amount: 0, unit: 'unit' }
@@ -1808,6 +1810,32 @@ export function settingOf(store: FosStore, node: FosNodeContent): { key: string;
   const target = refValueCid(store, node)
   const peer = target && store.table.has(target) ? content(store, target).data.peerId?.content : undefined
   return peer ? { key: node.data.name.content, peer } : null
+}
+
+/** The inputs a capability declares: its refs (rows `[what the input is, ref]`), by name. */
+export function capabilityInputs(store: FosStore, capability: string): Array<{ name: string; left: string }> {
+  return content(store, capabilityTarget(store, capability)).children.flatMap(([left, right]) => {
+    const ref = store.table.get(right)
+    return ref && isRefNode(store, ref) && ref.data.name ? [{ name: ref.data.name.content, left }] : []
+  })
+}
+/** A requirement row's value with `inputs` (text by input name) as its named input fields, each replacing an earlier one. */
+export function withRequirementInputs(store: FosStore, node: FosNodeContent, capability: string, inputs: Record<string, string>): FosNodeContent {
+  const declared = capabilityInputs(store, capability)
+  let children = node.children
+  for (const [name, text] of Object.entries(inputs)) {
+    const input = declared.find(d => d.name === name)
+    if (!input) throw new Error(`The ${capability} capability has no ${name} input.`)
+    const id = hashContent({ data: { name: { content: name }, ref: { id: node.data.alias?.id ?? '' } }, children: [] })
+    const field: FosPathElem = [input.left, put(store, refNodeContent(store, { alias: { id }, name: { content: name } }, put(store, { data: { description: { content: text } }, children: [] })))]
+    children = [...children.filter(edge => !(edge[0] === input.left && content(store, edge[1]).data.name?.content === name)), field]
+  }
+  return { ...node, children }
+}
+/** The text of the requirement row value's input `name` (a named field its capability declares), or null. */
+export function requirementInput(store: FosStore, node: FosNodeContent, name: string): string | null {
+  const edge = node.children.find(([, right]) => store.table.get(right)?.data.name?.content === name && isRefNode(store, content(store, right)))
+  return edge ? valueContent(store, identityCid(store, edge)).data.description?.content ?? null : null
 }
 
 /** Where a peer is attached: the scope of the first node (depth-first) carrying a [PEER, ref] edge for `peerId`. */

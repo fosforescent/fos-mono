@@ -1,3 +1,4 @@
+import { requirementInput } from '@fosforescent/shared/sync/index'
 import { QUERY_TYPE } from '@fosforescent/shared/sync/index'
 import { standardHostRef } from './host-runtime'
 import { cronObserver } from '@fosforescent/shared/sync/trigger-primitives'
@@ -279,13 +280,15 @@ export function paymentHandler(deps: PaymentDeps, identity: VerifyHandler): Host
 
 export type MailDeps = { send(to: string, subject: string, text: string, onBehalfOf: string): Promise<void> }
 
-/** `-mail someone@example.com Subject…` under a task: the recipient is the first address in the row, the subject the rest of it (else the task's title), the body the task and its rows. */
-export function mailRequest(rowTitle: string, taskTitle: string, rows: string[]): { to: string; subject: string; text: string } | null {
-  const match = rowTitle.match(/[^\s<>,;]+@[^\s<>,;]+\.[^\s<>,;]+/)
-  if (!match) return null
-  const subject = rowTitle.replace(match[0], '').replace(/^[\s:,-]+|[\s:,-]+$/g, '').trim() || taskTitle || 'From Fosforescent'
+/**
+ * A `-mail` requirement under a task: its inputs are the recipient (`to`) and the subject (else the task's title), the
+ * mail capability's declared refs, filled when the row was made; the body is the task and its rows.
+ */
+export function mailRequest(inputs: { to: string | null; subject: string | null }, taskTitle: string, rows: string[]): { to: string; subject: string; text: string } | null {
+  if (!inputs.to) return null
+  const subject = inputs.subject?.trim() || taskTitle || 'From Fosforescent'
   const text = [taskTitle, ...rows.filter(Boolean).map(r => `- ${r}`)].filter(Boolean).join('\n').slice(0, 20_000)
-  return { to: match[0], subject: subject.slice(0, 200), text }
+  return { to: inputs.to, subject: subject.slice(0, 200), text }
 }
 
 /** `-mail` requirements: the account server sends the email (Postmark) on the user's behalf and records the supply as `fos`. */
@@ -296,7 +299,8 @@ export function mailHandler(deps: MailDeps): HostHandler {
       const r = ctx.replica(), path = ctx.step.path, taskPath = path.slice(0, -1)
       const task = taskPath.length ? view(r, taskPath.slice(0, -1))?.tasks.find(t => t.id === taskPath.at(-1)) : null
       const rows = (view(r, taskPath)?.tasks ?? []).filter(t => t.id !== path.at(-1) && !t.supply).map(t => t.title)
-      const request = mailRequest(ctx.step.row!.title, task?.title ?? '', rows)
+      const cid = resolveScope(r.store, headCid(r), path), value = cid ? valueContent(r.store, cid) : null
+      const request = mailRequest({ to: value && requirementInput(r.store, value, 'to'), subject: value && requirementInput(r.store, value, 'subject') }, task?.title ?? '', rows)
       if (!request) throw new Error('Name the recipient: "-mail someone@example.com Subject".')
       await deps.send(request.to, request.subject, request.text, ctx.username)
       let next = addRow(ctx.replica(), path, PLAIN_TYPE, `Sent to ${request.to}: ${request.subject}`, ctx.now())
