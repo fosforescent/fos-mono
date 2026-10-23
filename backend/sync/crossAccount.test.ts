@@ -1,3 +1,4 @@
+import { membershipPathAt } from '@fosforescent/shared/sync/index'
 import type { Request, Response } from 'express'
 import { addMemberAt, addTask, createReplica, ensureHomeContext, HOME_ID, headCid, put, resolveScope, valueContent, view, type Replica } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
@@ -42,7 +43,7 @@ test('a user locates and pulls a node another account shared with them, inside t
   const pulled = await s.call(s.provide, 'bob', request)
   expect(pulled.status).toBe(200)
   // bob's own member entry comes with the node (his masked view of its members); no one else's
-  expect(pulled.body.children.map((c: any) => c.id)).toEqual(['flights', 'fos:peer:user:bob'])
+  expect(pulled.body.children.map((c: any) => c.peer ?? c.id)).toEqual(['flights', 'user:bob'])
   expect(pulled.body.grants).toEqual(['read', 'edit'])
   expect(pulled.body.address).toEqual({ peerId: 'user:alice', scope: [HOME_ID, 'trip'] })
   expect((await s.call(s.provide, 'carol', { ...request, peerId: 'user:carol' })).status).toBe(403)
@@ -53,7 +54,7 @@ test('a user locates and pulls a node another account shared with them, inside t
   expect(pushed.status).toBe(200)
   const trip = view(s.replicas.alice!, [HOME_ID, 'trip'])!
   expect(view(s.replicas.alice!, [HOME_ID])!.tasks.find(t => t.id === 'trip')!.title).toBe('Plan the group trip')
-  expect(trip.proposals.map(p => [p.peerId, p.name, p.status])).toEqual([['user:bob', 'node-sync', 'open']])
+  expect(trip.proposals.map(p => [p.peerId, p.name, p.status])).toEqual([['user:bob', '', 'open']])
 })
 
 test('events on another account\'s node run as user:<me>: read and submit with edit, complete only with execute', async () => {

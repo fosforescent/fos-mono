@@ -2,8 +2,19 @@ import { nodeAuthorityAt } from './node-context'
 import { nodeLinkMaskAt, type NodeAuthority } from './node-provider'
 /** Owner-authorized execution interactions. Transport must bind identity and scope. */
 import { executionInputs } from './sharing'
-import { evaluationRecord, evaluationSteps, writeNodeValue } from './evaluation'
-import { proposeRefAt, applyProposalAt, addRow, addSupply, headCid, type Replica } from './replica'
+import { evaluationRecord, evaluationSteps, handlerResult, writeHandlerResult } from './evaluation'
+
+/** An allocation an execution used: who consumed how much of it, when (the allocation row's handler result). */
+export type Consumption = { peer: string; value: unknown; time: number }
+export function consumption(r: Replica, path: Scope): Consumption | null {
+  const value = handlerResult<Consumption>(r, path)
+  return value && typeof value === 'object' && typeof value.peer === 'string' && typeof value.time === 'number' ? value : null
+}
+export function consume(r: Replica, path: Scope, record: Consumption, now: number): Replica {
+  return writeHandlerResult(r, path, record, now)
+}
+import { proposeRefAt, addRow, addSupply, headCid, type Replica } from './replica'
+import { acceptSubmission } from './approvals'
 import { put, type ResourceType, type Scope } from './graph'
 import { ALLOCATION_TYPE, MONEY_TYPE } from './library-types'
 import { compileRow } from './ref-compiler'
@@ -30,13 +41,14 @@ export function executionInput(r: Replica, path: Scope, body: any, peer: string,
     const resolved = resolveRefExpression(r, target.slice(0, -1), value, access)
     const location = resolved.locations[0]
     if (resolved.status !== 'ready' || !location || location.store !== r.store) throw new Error('The supplied ref is unavailable in this graph.')
+    // the visitor's value is its submission; the host accepts it (its approval, under the node's rule)
     const proposal = proposeRefAt(r, target, location.cid, peer, now)
-    return applyProposalAt(proposal.replica, target, proposal.proposalCid, r.meta.peerId, now)
+    return acceptSubmission(proposal.replica, target, proposal.proposalCid, r.meta.peerId, now).replica
   }
   if (field.kind === 'text') {
     if (typeof value !== 'string' || value.length > 8000) throw new Error('Text must be at most 8000 characters.')
     const proposal = proposeRefAt(r, target, put(r.store, { data: { description: { content: value } }, children: [] }), peer, now)
-    return applyProposalAt(proposal.replica, target, proposal.proposalCid, r.meta.peerId, now)
+    return acceptSubmission(proposal.replica, target, proposal.proposalCid, r.meta.peerId, now).replica
   }
   if (field.kind === 'confirmation' || field.kind === 'choice') {
     if (field.kind === 'confirmation' ? value !== true : !Number.isInteger(value) || value < 0 || value >= (field.options?.length ?? 0)) throw new Error('Invalid requirement response.')
@@ -44,7 +56,7 @@ export function executionInput(r: Replica, path: Scope, body: any, peer: string,
   }
   if (!value || !Number.isFinite(value.amount) || value.amount < 0 || value.type !== field.type || value.unit !== field.unit || field.direction === 'consume' && value.amount > (field.amount ?? 0) || field.direction !== 'consume' && value.amount < (field.amount ?? 0) || field.start !== undefined && (!Number.isFinite(value.start) || value.start > field.start) || field.end !== undefined && (!Number.isFinite(value.end) || value.end < field.end)) throw new Error('Allocation does not match the declared bounds.')
   const allocation = { resource: '', type: field.type as ResourceType, amount: value.amount, unit: field.unit!, ...(field.start !== undefined ? { start: field.start } : {}), ...(field.end !== undefined ? { end: field.end } : {}) }
-  if (field.direction === 'consume') return writeNodeValue(r, target, 'fos:consumed', { peer, value: allocation, time: now }, now)
+  if (field.direction === 'consume') return consume(r, target, { peer, value: allocation, time: now }, now)
   const id = crypto.randomUUID()
   // money is a payment: the positive money row under the request is what fills it
   if (field.type === 'account') return addRow(r, target, MONEY_TYPE, field.name, now, { id, allocation: { ...allocation, by: peer } })

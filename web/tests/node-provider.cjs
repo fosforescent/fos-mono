@@ -2,7 +2,7 @@ const assert = require('node:assert/strict')
 const { buildSync } = require('esbuild')
 const { mkdtempSync, rmSync } = require('node:fs')
 const path = require('node:path')
-const PLAIN_TYPE = 'lib:type:plain'
+const PLAIN_TYPE = 'plain'
 const dir = mkdtempSync(path.join(require('node:os').tmpdir(), 'fos-node-provider-'))
 
 async function main() {
@@ -18,7 +18,7 @@ async function main() {
   const authority = { peerId: 'client', scope: [], capabilities: ['provideNode', 'sync'] }
   let result = c.provideNode(source, request, authority, 6); source = result.replica
   // the rows it may read, and of the node's members only its own entry
-  assert.deepEqual(result.node.children.map(child => child.id), ['parent', 'fos:peer:client'])
+  assert.deepEqual(result.node.children.map(child => child.peer ?? child.id), ['parent', 'client'])
   assert(!JSON.stringify(result.node).includes('Secret grandchild body'))
   assert(!JSON.stringify(result.node).includes('Hidden sibling'))
   assert.throws(() => c.provideNode(source, { ...request, path: ['hidden'] }, authority, 7), /denied/)

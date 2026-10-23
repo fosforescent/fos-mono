@@ -10,7 +10,7 @@
  *               -[ ] subtask · -$ 50 money · -: 1h time · -# 2 widgets things · -@bob a person
  *               -? search · -market · -mail · -choice: a | b · - confirmation
  *   $ : # @     allocation of money / time / things / a person, taken from the parent context (money is the type
- *               lib:type:allocation:money: "$ 50" a payment, "-$ 50" a request for one, told apart by sign)
+ *               lib.money: "$ 50" a payment, "-$ 50" a request for one, told apart by sign)
  *               (the bank above it, the bank the requirement names, or the default pool of that
  *               type: the first bank of that type at the top level). An optional window follows the
  *               amount: "2026-10-13", "2026-10-13T09:00..2026-10-13T11:00", "..2026-12-31";
@@ -29,7 +29,7 @@ import { parseCapabilityName, type CapabilitySyntax } from '../../shared/sync/ca
 import { ALLOCATION_TYPE, MONEY_TYPE, NOTE_TYPE, COMMENT_TYPE, PLAIN_TYPE, QUERY_TYPE, RESOURCE_TYPE, TASK_TYPE, TEMPLATE_TYPE, isAllocationType, unverifiedUser, type ResourceType, type RowExtras, type TaskView, type UserRecord } from '../../shared/sync/index'
 
 export type ParsedInput = {
-  /** The standard library row type the line makes (`lib:type:…`). */
+  /** The standard library row type the line makes (`lib.<type>`). */
   type: string
   text: string
   done: boolean
@@ -38,6 +38,8 @@ export type ParsedInput = {
   templateName?: string
   children?: ParsedInput[]
   peer?: string
+  /** The row is [the library's `capability` node, right]: `values` assign its refs on the right, by ref name. */
+  construct?: { capability: string; values: Record<string, string> }
 }
 
 /** Words after "@" that open a resource bank rather than allocate a person. */
@@ -159,7 +161,7 @@ function markerType(text: string): { type: ResourceType; length: number } | null
  *   "@calendar 1h", "@money 50", "@inventory 2" the same by bank word · "@name text" the person `name` (they allocate themself)
  *   "? text" or "search: text" search · "market text" · "mail text" · "choice: a | b" · anything else is a confirmation
  */
-export function parseRequirement(text: string, declarations?: CapabilitySyntax[]): Omit<RowExtras, 'store'> & { label: string; templateName?: string } {
+export function parseRequirement(text: string, declarations?: CapabilitySyntax[]): Omit<RowExtras, 'store'> & { label: string; templateName?: string; construct?: ParsedInput['construct'] } {
   const t = text.trim()
   let m: RegExpMatchArray | null
   if ((m = t.match(/^\[\s?[xX]?\]\s*(.*)$/s))) {
@@ -189,6 +191,20 @@ export function parseRequirement(text: string, declarations?: CapabilitySyntax[]
     if (capability === 'tool') {
       const args = /^(?:([\w.-]+)\s*)?(.*)$/s.exec(rest)!
       return { requirement: { capability, ...(args[1] ? { tool: args[1] } : {}) }, label: args[2] ?? '' }
+    }
+    if (capability === 'fetch') {
+      const args = /^(?:(GET|POST|PUT|PATCH|DELETE|HEAD)\s+)?(?:(https?:\/\/\S+)\s*)?(.*)$/is.exec(rest)!
+      // a fetch row is [fetch, right]: the url (and a method other than its default) are assignments on the right
+      return { construct: { capability, values: { ...(args[2] ? { url: args[2] } : {}), ...(args[1] ? { method: args[1].toUpperCase() } : {}) } }, label: args[3] ?? '' }
+    }
+    if (capability === 'solve') return { construct: { capability, values: {} }, label: rest }
+    // "verify @bob": the user to verify is the row's user field, as typed
+    if (capability === 'verify') { const { user, text } = namedUser(rest); return { requirement: { capability }, ...(user ? { user } : {}), label: user ? `@${user.username}${text ? ` ${text}` : ''}` : text } }
+    // "-mail someone@example.com Subject": the recipient and subject are the mail capability's inputs, as typed
+    if (capability === 'mail') {
+      const address = rest.match(/[^\s<>,;]+@[^\s<>,;]+\.[^\s<>,;]+/)?.[0]
+      const subject = address ? rest.replace(address, '').replace(/^[\s:,-]+|[\s:,-]+$/g, '').trim() : rest.trim()
+      return { requirement: { capability }, ...(address ? { inputs: { to: address, ...(subject ? { subject } : {}) } } : {}), label: rest }
     }
     if (capability === 'choice') {
       const options = rest.split('|').map(option => option.trim()).filter(Boolean)
@@ -231,7 +247,7 @@ export function parseRowInput(raw: string, declarations?: CapabilitySyntax[]): P
   }
   if ((m = text.match(/^>\s?(.*)$/s))) return { type: NOTE_TYPE, text: m[1] ?? '', done: false }
   if ((m = text.match(/^\/\/\s*(.*)$/s))) return { type: COMMENT_TYPE, text: m[1] ?? '', done: false }
-  if ((m = text.match(/^-\s*(.*)$/s))) { const { label, templateName, ...extras } = parseRequirement(m[1] ?? '', declarations); return { type: flowType(extras.requirement?.capability === 'allocation' ? extras.requirement.resource : undefined), text: label, done: false, extras: { ...extras, user: extras.user ?? null }, ...(templateName ? { templateName } : {}) } }
+  if ((m = text.match(/^-\s*(.*)$/s))) { const { label, templateName, construct, ...extras } = parseRequirement(m[1] ?? '', declarations); if (construct) return { type: PLAIN_TYPE, text: label, done: false, construct }; return { type: flowType(extras.requirement?.capability === 'allocation' ? extras.requirement.resource : undefined), text: label, done: false, extras: { ...extras, user: extras.user ?? null }, ...(templateName ? { templateName } : {}) } }
   if ((m = text.match(/^\?\s*(.*)$/s))) return { type: QUERY_TYPE, text: (m[1] ?? '').trim(), done: false, extras: { query: {} } }
   if ((m = text.match(/^@(calendar|account|money|inventory|person|points|ff)\b\s*:?\s*(.*)$/is))) {
     const type = BANK_WORDS[(m[1] as string).toLowerCase()] as ResourceType
@@ -367,6 +383,8 @@ export const SYNTAX_HELP: Array<[string, string]> = [
   ['-repo owner/name title', 'a requirement handled by GitHub: an issue is opened in that repository'],
   ['-tool name input', 'a requirement run by an MCP peer attached to this node or above (its `name` tool, the text as input)'],
   ['-choice: a | b', 'a requirement for a decision between options'],
+  ['-fetch [POST] https://… text', 'a network request (this device makes it); the response is submitted to the row’s response ref'],
+  ['-solve text', 'unify the rows under it, with their placeholders, against the nodes around it; each solution is submitted to the placeholders as an option'],
   ['$ 50 text', 'an allocation of money, taken from the parent context: the bank above, the bank the requirement needs, or the default pool of that type'],
   [': 1h text', 'an allocation of time; # 2 widgets things; @bob 2h the person bob'],
   ['ff 20 text', 'an allocation of fos points (your account balance is the default pool; -ff 20 requires them)'],

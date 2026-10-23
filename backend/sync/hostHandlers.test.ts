@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express'
 import { createHash } from 'node:crypto'
-import { TITLE_SYSTEM, TITLED_VALUE, readNodeValue, requestTitle } from '@fosforescent/shared/sync/index'
+import { TITLE_SYSTEM, handlerResult, requestTitle } from '@fosforescent/shared/sync/index'
 import { MARKET_PEER, addMemberAt, addRow, addSupply, addTask, content, createReplica, decideTaskResult, ensureHomeContext, evaluationRecord, headCid, HOME_ID, loadReplica, readMembers, resolveScope, serializeReplica, setMemberCapabilitiesAt, sharedProjection, view, workAttempts, writeParticipation, type Replica } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
@@ -186,14 +186,14 @@ test('a payout to @name pays the user object the requirement binds, only when th
   expect(transfer).toHaveBeenCalledTimes(1)
 })
 
-test('the mail effect emails the first address in the row with the task as the body, and records the supply as the server', async () => {
-  expect(mailRequest('team@example.com Trip plans', 'Plan the group trip', ['Book flights', 'Reserve lodging'])).toEqual({ to: 'team@example.com', subject: 'Trip plans', text: 'Plan the group trip\n- Book flights\n- Reserve lodging' })
-  expect(mailRequest('team@example.com', 'Plan the group trip', [])).toMatchObject({ subject: 'Plan the group trip' })
-  expect(mailRequest('no address here', 'x', [])).toBeNull()
+test("the mail effect emails the requirement's recipient input with the task as the body, and records the supply as the server", async () => {
+  expect(mailRequest({ to: 'team@example.com', subject: 'Trip plans' }, 'Plan the group trip', ['Book flights', 'Reserve lodging'])).toEqual({ to: 'team@example.com', subject: 'Trip plans', text: 'Plan the group trip\n- Book flights\n- Reserve lodging' })
+  expect(mailRequest({ to: 'team@example.com', subject: null }, 'Plan the group trip', [])).toMatchObject({ subject: 'Plan the group trip' })
+  expect(mailRequest({ to: null, subject: 'x' }, 'x', [])).toBeNull()
   let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['mail'] })
   r = addTask(r, [HOME_ID], 'Plan the group trip', 2, 'trip')
   r = addTask(r, [HOME_ID, 'trip'], 'Book flights', 2, 'flights')
-  r = addRow(r, [HOME_ID, 'trip'], ALLOCATION_TYPE, 'team@example.com Trip plans', 2, { id: 'notify', requirement: { capability: 'mail' } })
+  r = addRow(r, [HOME_ID, 'trip'], ALLOCATION_TYPE, 'team@example.com Trip plans', 2, { id: 'notify', requirement: { capability: 'mail' }, inputs: { to: 'team@example.com', subject: 'Trip plans' } })
   const sent: unknown[] = []
   const send = jest.fn(async (to: string, subject: string, text: string, onBehalfOf: string) => { sent.push([to, subject, text, onBehalfOf]) })
   const h = host(fresh(r), createHostRuntime([mailHandler({ send })]))
@@ -218,9 +218,9 @@ test('the title effect summarizes the text of the row it is in and records the t
   const asked = requestTitle(r, [HOME_ID, 'note'], 3, () => 'one')
   const complete = jest.fn(async () => '"Garden check: dry soil, tomato stakes."\nmore')
   const h = host(asked.replica, createHostRuntime([titleHandler({ complete })]))
-  const done = await h.complete([HOME_ID, 'note'], ['fos:title:one'])
+  const done = await h.complete([HOME_ID, 'note'], ['one'])
   expect(done.body.evaluation.status).toBe('committed')
   expect(complete).toHaveBeenCalledWith(TITLE_SYSTEM, 'We walked the beds this morning\nand the soil is dry; the tomatoes need stakes.')
-  expect(readNodeValue(h.get(), asked.path, TITLED_VALUE)).toBe('Garden check: dry soil, tomato stakes')
-  expect(view(h.get(), [HOME_ID, 'note'])!.tasks.find(t => t.id === 'fos:title:one')!.requirement!.satisfied).toBe(true)
+  expect(handlerResult(h.get(), asked.path)).toBe('Garden check: dry soil, tomato stakes')
+  expect(view(h.get(), [HOME_ID, 'note'])!.tasks.find(t => t.id === 'one')!.requirement!.satisfied).toBe(true)
 })

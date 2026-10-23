@@ -1,19 +1,19 @@
 import { installTestObservers } from './test-helpers'
-import { createReplica as bareReplica, addTask, bindRepository, configureProjectWorkflow, createBranch, enqueueWorkflowJob, projectWorkflows, workflowPath, readNodeValue, WORKFLOW_JOB, loadReplica as bareLoadReplica, serializeReplica, selectBranch, renameTask, addRow, TEMPLATE_TYPE, setNodeTrigger, watchedRefValue, triggerOccurrence, nodeTrigger, runNodeTriggers, triggerState, view, type ProjectWorkflow } from './index'
+import { createReplica as bareReplica, addTask, bindRepository, configureProjectWorkflow, createBranch, enqueueWorkflowJob, projectWorkflows, workflowAt, workflowJob, writeWorkflowJob, writeExecutionRequest, loadReplica as bareLoadReplica, serializeReplica, selectBranch, renameTask, addRow, TEMPLATE_TYPE, setNodeTrigger, watchedRefValue, triggerOccurrence, nodeTrigger, runNodeTriggers, triggerState, view, type ProjectWorkflow } from './index'
 import { ensureHomeContext, shareHome, HOME_ID, withBranches, writeNodeValue, repositoryAt, workflowTriggerPath, mergeBranch, workflowText } from './index'
 import { syncWith } from './test-helpers'
-import { AGENT_REQUEST, agentRequest, validateAgentRequest } from './index'
+import { agentRequest, validateAgentRequest } from './index'
 
 test('agent requests are bound graph data; adapter constraints are checked before dispatch', () => {
   let { r, config } = fixture()
   // A different graph-authored request needs no new workflow kind or native handler.
   r = addTask(r, config.project, 'Explain this project', 4, 'explain')
-  r = writeNodeValue(r, [...config.project, 'explain'], AGENT_REQUEST, { provider: '{{coding-agent}}', prompt: '{{verification-instructions}}', readOnly: true, branch: '{{main-branch}}' }, 5)
+  r = writeExecutionRequest(r, [...config.project, 'explain'], { provider: '{{coding-agent}}', prompt: '{{verification-instructions}}', readOnly: true, branch: '{{main-branch}}' }, 5)
   const request = agentRequest(r, config, [...config.project, 'explain'])
   expect(request.provider).toBe('codex')
   expect(request.prompt).toContain(config.url)
   const queued = enqueueWorkflowJob(r, config, { request, scope: config.project }, 6)
-  expect(readNodeValue(queued.replica, queued.path, WORKFLOW_JOB)).toMatchObject({ request, branch: 'main', status: 'queued' })
+  expect(workflowJob(queued.replica, queued.path)).toMatchObject({ request, branch: 'main', status: 'queued' })
   expect(() => validateAgentRequest(config, { ...request, readOnly: false }, 'main')).toThrow(/worktree/)
   expect(() => validateAgentRequest(config, { ...request, worktree: true }, 'main')).toThrow(/branch/)
   expect(() => validateAgentRequest(config, { ...request, deployment: { environment: 'other' } }, 'main')).toThrow(/environment/)
@@ -39,19 +39,19 @@ test('phone edits and execution requests travel through the account to desktop a
   const queued = enqueueWorkflowJob(phone, config, { request: { provider: 'codex', prompt: 'Implement the notes', worktree: true }, scope: project, id: 'phone-request' }, 8)
   phone = syncWith(queued.replica, account, { now: 9 })
   desktop = syncWith(desktop, account, { now: 10 })
-  expect(readNodeValue(desktop, queued.path, WORKFLOW_JOB)).toMatchObject({ branch: 'phone-feature', status: 'queued' })
+  expect(workflowJob(desktop, queued.path)).toMatchObject({ branch: 'phone-feature', status: 'queued' })
   expect(withBranches(desktop.store, { project: 'phone-feature' }, () => view(desktop, [...project, 'phone-note'])?.name)).toBe('Instructions just added on the phone')
-  desktop = writeNodeValue(desktop, queued.path, WORKFLOW_JOB, { ...readNodeValue<object>(desktop, queued.path, WORKFLOW_JOB), status: 'starting' }, 11)
+  desktop = writeWorkflowJob(desktop, queued.path, { ...workflowJob(desktop, queued.path)!, status: 'starting' }, 11)
   desktop = syncWith(desktop, account, { now: 12 })
   phone = syncWith(phone, account, { now: 13 })
-  expect(readNodeValue(phone, queued.path, WORKFLOW_JOB)).toMatchObject({ status: 'starting' })
+  expect(workflowJob(phone, queued.path)).toMatchObject({ status: 'starting' })
 })
 
 test('library data observes Fos merges, independently of GitHub or direct edits', async () => {
   let { r, config } = fixture()
   const path = workflowTriggerPath(r, config.project)!, signal = config.project
   expect(path).not.toBeNull()
-  expect(nodeTrigger(r, path)?.watch).toMatchObject({ path: signal, branch: 'main', argument: 'fos:branch-merge' })
+  expect(nodeTrigger(r, path)?.watch).toMatchObject({ path: signal, branch: 'main', merges: true })
   r = addTask(r, config.project, 'Direct main edit', 4, 'main-note')
   let runs = 0
   const driver = { get: () => r, save: (next: typeof r) => { r = next }, now: () => 10, available: () => true, evaluate: async (target: string[]) => {
@@ -84,15 +84,15 @@ test('phone request remains discoverable on desktop main after a durable reload'
   const queued = enqueueWorkflowJob(r, config, { request: { provider: 'codex', prompt: 'Implement the notes', worktree: true }, scope: ['project'], id: 'request-1' }, 6)
   r = loadReplica(serializeReplica(queued.replica))
   selectBranch(r.store, 'project', 'main')
-  expect(projectWorkflows(r)).toEqual([{ path: workflowPath(['project']), config }])
-  expect(readNodeValue(r, queued.path, WORKFLOW_JOB)).toMatchObject({ status: 'queued', branch: 'phone-feature', scope: ['project'] })
+  expect(projectWorkflows(r)).toEqual([{ path: workflowAt(r, ['project']), config }])
+  expect(workflowJob(r, queued.path)).toMatchObject({ status: 'queued', branch: 'phone-feature', scope: ['project'] })
   expect(enqueueWorkflowJob(r, config, { request: { provider: 'claude-desktop', prompt: 'Verify', readOnly: true, branch: 'main', deployment: { environment: 'production' } }, scope: ['project'], id: 'request-1' }, 7).replica).toBe(r)
   expect(() => enqueueWorkflowJob(r, config, { request: { provider: 'codex', prompt: 'Implement the notes', worktree: true }, scope: ['private'] }, 7)).toThrow(/inside/)
 })
 test('ref-change watches main independently of the displayed branch and cannot trigger itself', async () => {
   let { r } = fixture()
   r = createBranch(r, ['project'], 'phone-feature', 4)
-  const path = [...workflowPath(['project']), 'watch']
+  const path = [...workflowAt(r, ['project'])!, 'watch']
   r = addRow(r, path.slice(0, -1), TEMPLATE_TYPE, 'Watch', 5, { id: 'watch' })
   r = setNodeTrigger(r, path, { kind: 'ref-change', peer: 'desktop', enabled: true, created: 6, watch: { path: ['project'], branch: 'main', baseline: watchedRefValue(r, ['project'], 'main')! } }, 6)
   expect(triggerOccurrence(r, path, nodeTrigger(r, path)!, 7)).toBeNull()

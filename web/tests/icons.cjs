@@ -28,7 +28,8 @@ try {
     for (const button of document.querySelectorAll('.constructor-grid [data-constructor-id]')) {
       const id = button.dataset.constructorId
       if (id.startsWith('mask:') || id.startsWith('peer:')) continue // permissions and sub-peer navigation, not capabilities
-      if (id.startsWith('handler:')) {
+      // ref declarations (handlers, and the library's names) share the handler icon and carry a label
+      if (id.startsWith('handler:') || id.startsWith('name:')) {
         assert(button.querySelector('svg'), `${id} has a handler icon`)
         assert(button.getAttribute('aria-label')?.trim(), `${id} has an accessible declaration label`)
         refs.add(id)

@@ -1,14 +1,14 @@
 import { standardHostRef } from './host-runtime'
 /**
  * The fos server attests users. `@name` in a row is shorthand for a user object (shared/sync/users.ts, the standard
- * library type `lib:type:user`): account id, username, display name, public key and a verification. Resolving a
+ * library type `lib.user`): account id, username, display name, public key and a verification. Resolving a
  * username to that object is the effect of this server's `verify` handler, reached like every other effect: a
  * `verify` requirement (`requestVerification`, its text `@name`) evaluated through a `complete`
  * event. The handler binds the attested object as the requirement's `user` field, signed with the server's ed25519
  * identity key, and records the supply. There is no route:
  *
  * - the public key is graph data: the handler's `publicKey` is in the runtime's `hostOffers().keys`, which
- *   `ensureHomeContext` writes onto the fos member entry of every account's root as the `fos:key:fos` row
+ *   `ensureHomeContext` writes onto the fos member entry of every account's root as its key row (a user-type row whose username is the entry's peer)
  *   (`publishPeerKey`); member entries travel by node exchange, and the owner's devices take that entry above their
  *   Home (`accountContextAbove`), so their own verify handler checks `verification.attestation` over
  *   `userAttestationPayload` against it (`verifyPublished`; WebCrypto Ed25519 in the app);
@@ -21,7 +21,7 @@ import { standardHostRef } from './host-runtime'
  * object (read from the account's profile when it has one) and `ed25519-self` verifications are signed by it.
  */
 import { createPrivateKey, createPublicKey, hkdfSync, randomBytes, sign, verify, type KeyObject } from 'node:crypto'
-import { USER_SERVER_ATTESTATION, addSupply, bindUserAt, userAttestationPayload, verifyUser, headCid, resolveScope, valueContent, type UserRecord } from '@fosforescent/shared/sync/index'
+import { USER_SERVER_ATTESTATION, userFieldEdge, content, identityCid, plainEdge, addSupply, bindUserAt, userAttestationPayload, verifyUser, headCid, resolveScope, valueContent, type UserRecord } from '@fosforescent/shared/sync/index'
 import type { EffectContext, HostHandler } from './host-runtime'
 
 export type IdentityKey = { privateKey: KeyObject; publicKey: string }
@@ -67,10 +67,9 @@ export type VerifyHandler = HostHandler & {
   verify(user: UserRecord): boolean
 }
 
-/** The username a verify requirement asks about: the `@name` in its text (else a user field it already has). */
+/** The username a verify requirement asks about: its user field (the user as typed, `requestVerification`). */
 function wanted(ctx: EffectContext): string {
-  const row = ctx.step.row!
-  const name = (row.title.match(/@([\w.-]{1,64})/)?.[1] ?? row.user?.username ?? '').trim()
+  const name = (ctx.step.row?.user?.username ?? '').trim()
   if (!name) throw new Error('Name the user to verify: "@name".')
   return name
 }
@@ -96,8 +95,11 @@ export function verifyHandler(deps: VerifyDeps, key: IdentityKey, peer = 'fos'):
       // an unknown name fails before the evaluation opens, so nothing is journaled for it
       const name = wanted(ctx)
       if (!await deps.findUser(name)) throw new Error(`No Fos user is named @${name}.`)
+      // the handler fills the request's user field (the user as typed becomes the attested object): that field is its output
       const r = ctx.replica(), cid = resolveScope(r.store, headCid(r), ctx.step.path)!
-      return { outputs: [`${valueContent(r.store, cid).data.alias?.id ?? 'row'}/field/user`] }
+      const field = userFieldEdge(r.store, valueContent(r.store, cid))
+      const id = field && content(r.store, identityCid(r.store, plainEdge(r.store, field))).data.alias?.id
+      return { outputs: id ? [id] : [] }
     },
     async effect(ctx) {
       const name = wanted(ctx), path = ctx.step.path

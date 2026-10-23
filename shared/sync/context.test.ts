@@ -1,3 +1,4 @@
+import { memberEdgesOf } from './graph'
 import { syncWith, userView } from './test-helpers'
 import { contextMembers, createBranch, selectBranch, addSupply, addMemberAt, addRow, addTask, content, createReplica, moveNode, ensureHomeContext, findChild, headCid, HOME_ID, homePath, resetHomeContent, isRowOfType, rowTypeAt, valueContent, view } from './index'
 import { ALLOCATION_TYPE, TEMPLATE_TYPE } from './library-types'
@@ -11,8 +12,8 @@ test('legacy rows move into Home, constructors and peers remain at root, and mig
   r = ensureHomeContext(r, 4)
   expect(homePath(r)).toEqual([HOME_ID])
   expect(userView(r)!.tasks.find(row => row.id === HOME_ID)!.type).toBe(HOME_TYPE)
-  const rootMembers = content(r.store, headCid(r)).children.filter(edge => edge[0] === r.store.primitive.memberField.getId())
-  const homeMembers = content(r.store, findChild(r.store, headCid(r), HOME_ID)!).children.filter(edge => edge[0] === r.store.primitive.memberField.getId())
+  const rootMembers = memberEdgesOf(r.store, headCid(r))
+  const homeMembers = memberEdgesOf(r.store, findChild(r.store, headCid(r), HOME_ID)!)
   expect(homeMembers.some(edge => rootMembers.some(root => root[1] === edge[1]))).toBe(false)
   expect(contextMembers(r, [HOME_ID]).some(peer => peer.peerId === 'fos')).toBe(true)
   expect(userView(r)!.tasks.map(row => row.id)).toEqual(['workflow', HOME_ID])
@@ -87,16 +88,6 @@ test('handler demands and their supplied values share the same flow primitive', 
   expect(valueContent(r.store, answer).data.supply).toBeUndefined()
   expect(view(r, ['task'])!.tasks[0]!.requirement?.satisfied).toBe(true)
   expect(view(r, ['task', 'need'])!.tasks[0]!.supply?.by).toBe('user')
-})
-
-
-test('legacy Home template becomes an ordinary container without losing children', () => {
-  let r = addRow(createReplica(), [], TEMPLATE_TYPE, 'Home', 1, { id: HOME_ID })
-  r = addTask(r, [HOME_ID], 'Keep this', 2, 'child')
-  r = ensureHomeContext(r, 3)
-  expect(userView(r)!.tasks.find(row => row.id === HOME_ID)!.type).toBe(HOME_TYPE)
-  expect(view(r, [HOME_ID])!.tasks[0]!.id).toBe('child')
-  expect(ensureHomeContext(r, 4)).toBe(r)
 })
 
 

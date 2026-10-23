@@ -1,6 +1,7 @@
 import { localGitControls, canVerifySpecifications, openSpecificationVerification } from './local-git'
 import { configureWorkflowDialog, requestProjectCoding, workflowStatus } from './project-workflow'
-import { projectWorkflow, workflowPath } from '../../shared/sync/project-workflow'
+import { projectWorkflow, workflowAt } from '../../shared/sync/project-workflow'
+import { SPECIFICATION_TYPE } from '../../shared/sync/library-types'
 import { openAnalysis } from './analysis'
 import { connectNodeAgent, hostedMcpConnection, localMcpEndpoint, mcpConfig } from './node-agent'
 import { linkFilesystem, filesystemRows, renderFilesystemNode, filesystemNavigation, filesystemBack, renderFileReference } from './filesystem'
@@ -11,7 +12,7 @@ import { parsePastedRows, isLongProse } from './paste'
 import { recordingUnsupported } from './recording'
 import { missingSchedule, nodeTrigger } from '../../shared/sync/triggers'
 import { AUDIENCE_LABEL, audiencePeer } from '../../shared/sync/sharing'
-import { SETTING_LABELS, settingKeyFromName } from './settings'
+import { SETTING_LABELS, settingKeyOf } from './settings'
 import { combobox } from './combobox'
 import { iconSvg } from './icons'
 import { openTimeBlockPicker, type TimeBank } from './timeblocks'
@@ -24,12 +25,13 @@ import { alternativePicker, proposalPreview, clearProposal } from './alternative
 
 import QRCode from 'qrcode'
 import { sharingControls } from './sharing'
-import { readNodeValue, nodeShape, NODE_PERMISSION_DEFAULT, requirementOutputs, resolveRequirementOutput, resolveScope, resolveText, put, content, headCid, viewNode, findChild, WORK_SYSTEM, isDirty, view as viewAt, type ChoiceView, HOME_ID, type MovePosition, type NodeView, type Scope, type TaskView } from '../../shared/sync/index'
+import { readNodeValue, nodeShape, NODE_PERMISSION_DEFAULT, requirementOutputs, resolveRequirementOutput, resolveScope, resolveText, put, content, headCid, viewNode, findChild, WORK_SYSTEM, isDirty, view as viewAt, type ChoiceView, homePath, type MovePosition, type NodeView, type Scope, type TaskView } from '../../shared/sync/index'
 import type { App, AppState, ContextPeer } from './app'
 import { exportNote, noteContext, noteFilename, type NoteChild } from './notes'
 import { hydrateDiagrams, renderMarkdown } from './markdown'
 import { RESOURCE_NAME, SYNTAX_HELP, allocationTag, describeParsed, downloadText, formatAmount, rawRowText, renderInlineText } from './rows'
-import { CAPABILITY_LABEL, LIBRARY_ID, libraryLink, manualHandlersFor, paymentRecord, type Capability, type PeerPolicy, type RowExtras } from '../../shared/sync/index'
+import { consumption } from '../../shared/sync/execution-access'
+import { CAPABILITY_LABEL, manualHandlersFor, paymentRecord, type Capability, type PeerPolicy, type RowExtras } from '../../shared/sync/index'
 import { TASK_TYPE, PLAIN_TYPE, NOTE_TYPE, COMMENT_TYPE, QUERY_TYPE, RESOURCE_TYPE, ALLOCATION_TYPE, MONEY_TYPE, TEMPLATE_TYPE, HOME_TYPE, isAllocationType } from '../../shared/sync/library-types'
 
 type Regions = {
@@ -259,7 +261,7 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
     fullscreen.setAttribute('aria-pressed', String(!!document.fullscreenElement))
     toolbar.append(fullscreen)
   }
-  if (current?.allocation && !readNodeValue(state.replica, root, 'fos:consumed')) {
+  if (current?.allocation && !consumption(state.replica, root)) {
     const amount = document.createElement('input'); amount.type = 'number'; amount.min = '0'; amount.max = String(current.allocation.amount); amount.value = String(current.allocation.amount); amount.setAttribute('aria-label', 'Amount to consume'); amount.disabled = locked
     const consume = button('secondary', 'Use allocation', () => app.consumeExecutionAllocation(root, Number(amount.value))); consume.disabled = locked
     regions.node.append(amount, consume)
@@ -301,7 +303,7 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
         : span('title', resolveText(state.replica, [...path, row.id], row.title).text)
       body.title = ''
       li.append(span('constructor-label', row.typeName ?? 'Row'), body)
-      if (row.allocation && !readNodeValue(state.replica, [...path, row.id], 'fos:consumed') && !viewAt(state.replica, path)?.tasks.some(t => t.supply?.ref === row.id)) {
+      if (row.allocation && !consumption(state.replica, [...path, row.id]) && !viewAt(state.replica, path)?.tasks.some(t => t.supply?.ref === row.id)) {
         const amount = document.createElement('input'); amount.type = 'number'; amount.min = '0'; amount.max = String(row.allocation.amount); amount.step = 'any'; amount.value = String(row.allocation.amount); amount.setAttribute('aria-label', `Use ${row.title}`); amount.disabled = locked
         li.append(amount, button('secondary small', 'Use allocation', () => app.consumeExecutionAllocation([...path, row.id], Number(amount.value))))
       }
@@ -389,7 +391,6 @@ function renderMenu(el: HTMLElement, state: AppState, app: App): void {
   if (!session) item('Connect…', () => app.goToAccountPeer(), 'primary-text')
   item('⚙ Device root', () => app.goToRoot())
   if (session?.kind === 'user') {
-    item('Invite a device here', () => void app.startInvite())
     item(`Connection requests${state.requests.length ? ` (${state.requests.length})` : ''}`, () => app.openModal('requests'))
   }
   if (state.replica.meta.scope.length > 0 && session?.kind === 'user') {
@@ -455,7 +456,8 @@ function renderCrumbs(el: HTMLElement, state: AppState, app: App): void {
   const labels = app.labels()
   const crumbs = document.createElement('div')
   crumbs.className = 'crumb-path'
-  const settingsContext = view.length > 0 && view[0] !== HOME_ID && !state.replica.meta.scope.length && !!viewAt(state.replica, [])?.tasks.some(row => row.id === HOME_ID)
+  const home = homePath(state.replica)
+  const settingsContext = view.length > 0 && view[0] !== home[0] && !state.replica.meta.scope.length && !!home.length
   const homeCrumb = button('crumb', settingsContext || !labels.scope.length ? '' : shortCrumb(pathLabel(labels.scope)), () => settingsContext ? app.goToRoot() : app.goTo([]))
   if (settingsContext) glyphCrumb(homeCrumb, '⚙', 'Device root')
   else if (!labels.scope.length) glyphCrumb(homeCrumb, '⌂', 'Home')
@@ -467,11 +469,11 @@ function renderCrumbs(el: HTMLElement, state: AppState, app: App): void {
   } else {
     crumbs.append(homeCrumb)
     view.forEach((_id, index) => {
-      if (_id === HOME_ID) return
+      if (app.isHome(view.slice(0, index + 1))) return
       const row = viewAt(state.replica, view.slice(0, index), true)?.tasks.find(row => row.id === _id)
       const crumb = button('crumb', shortCrumb(labels.view[index] ?? '…'), () => app.goTo(view.slice(0, index + 1)))
       crumb.title = labels.view[index] ?? ''
-      const symbol = ({ task: '☑', note: 'note', comment: 'comment', template: '✦', allocation: 'money', 'allocation-money': 'money', requirement: '⑂' } as Record<string, string>)[row ? typeClass(row) : '']
+      const symbol = ({ task: '☑', note: 'note', comment: 'comment', template: '✦', allocation: 'money', money: 'money', requirement: '⑂' } as Record<string, string>)[row ? typeClass(row) : '']
       if (symbol) { const icon = span('crumb-icon', ''); icon.innerHTML = iconSvg(symbol) ?? ''; crumb.prepend(icon) }
       crumbs.append(span('sep', '›'), crumb)
     })
@@ -497,7 +499,7 @@ function renderRepository(el: HTMLElement, state: AppState, app: App): void {
     const row = div('row', '')
     row.append(span('', `GitHub · ${info.repo}`), button('secondary small', 'Refresh branches and PRs', () => void app.refreshRepositories(true)))
     row.append(button('secondary small', 'Configure agent workflow', () => configureWorkflowDialog(app, [...path])))
-    if (projectWorkflow(state.replica, path)) row.append(button('primary small', 'Request coding agent', () => void requestProjectCoding(app, [...path])), button('secondary small', 'Workflow status', () => app.goTo(workflowPath(path))))
+    if (projectWorkflow(state.replica, path)) row.append(button('primary small', 'Request coding agent', () => void requestProjectCoding(app, [...path])), button('secondary small', 'Workflow status', () => { const at = workflowAt(state.replica, path); if (at) app.goTo(at) }))
     if (!state.integrations.some(i => i.id === 'github' && i.connected)) row.append(button('secondary small', 'Connect GitHub', () => void app.connectIntegration('github')))
     if (id && !app.contextPeers(path).some(p => p.repository?.repo === info.repo.toLowerCase())) row.append(button('secondary small', 'Attach repository peer', () => app.bindNodeRepository(path.slice(0, -1), id, info.repo, true)))
     if (info.snapshot && !info.snapshot.canPush) row.append(span('muted', 'Read-only on GitHub · diffs are available below'))
@@ -575,13 +577,14 @@ let editingSpecial: string | null = null
 const hasControls = (task: TaskView) => isAllocationType(task.type) || task.type === QUERY_TYPE || task.type === RESOURCE_TYPE
 /**
  * A row's type as a short style name (classes `type-…`, glyphs, `type:` search terms): its library type's id without
- * `lib:type:`; what a row does on top of its type (a task made from a template, a requirement, a reference) wins.
+ * a library field; what a row does on top of its type (a task made from a template, a requirement, a reference) wins.
  */
 function typeClass(task: TaskView): string {
   if (task.refId !== undefined) return 'ref'
   if (task.requirement) return 'requirement'
   if (task.checkable) return 'task'
-  return task.type.startsWith('lib:type:') ? task.type.slice('lib:type:'.length).replace(/:/g, '-') : 'plain'
+  // a library type's field name (`money` → `type-money`); a row of a template is a task, handled above
+  return task.type && !task.template ? task.type.replace(/[A-Z]/g, c => '-' + c.toLowerCase()) : 'plain'
 }
 type DragMode = 'move' | 'ref' | 'copy'
 let drag: { id: string; at: Scope; mode: DragMode } | null = null
@@ -709,9 +712,9 @@ const PEER_ROWS: Array<{ id: string; label: string; icon: string; server?: true;
 const PEER_ROW_LABEL: Record<string, string> = { ...Object.fromEntries(PEER_ROWS.map(r => [r.id, r.label])), 'public-endpoint': 'Public template endpoint', 'users-endpoint': 'Fos template endpoint', repository: 'Repository' }
 /** Row kinds this device makes by typing a marker; clicking seeds the blank row (or a row inside the selected one) with it. */
 const ROW_SEEDS: Array<[string, string, string]> = [
-  ['Task', '[ ] ', '☑'], ['Note', '> ', 'note'], ['Comment', '// ', 'comment'], ['Query', '? ', 'query'],
+  // task, note, comment, query and template come from the library's names (`name:` constructors)
   ['Money requirement', '-$ ', 'money'], ['Time requirement', '-: ', 'clock'], ['Things requirement', '-# ', 'things'], ['Person requirement', '-@', 'person'],
-  ['Decision', '-choice: ', 'decision'], ['Confirmation', '- ', 'confirm'], ['Template', '` ', 'template']
+  ['Decision', '-choice: ', 'decision'], ['Confirmation', '- ', 'confirm']
 ]
 function constructorOptions(app: App): ConstructorItem[] {
   const peers = app.contextPeers()
@@ -721,6 +724,8 @@ function constructorOptions(app: App): ConstructorItem[] {
   const offerGroup = (peerId: string) => peerId === me ? 'device' : peerId === 'fos' || peerId.startsWith('user:') ? account : peerId
   return [
     ...app.libraryConstructors().map(c => ({ id: `library:${c.id}`, label: c.label, icon: c.icon, output: 'task', group: 'library' })),
+    // the library's names, dereferenced: each is the node a row made from it has on its left (ref declarations share the handler icon)
+    ...app.libraryNames().map(n => ({ id: `name:${n.name}`, label: n.label, icon: 'handler', output: 'row', group: 'library' })),
     ...PEER_ROWS.filter(r => !r.desktop || inTauri()).map(r => ({ id: `peer-row:${r.id}`, label: r.label, icon: r.icon, output: 'peer', group: r.server ? account : 'device' })),
     // a sub-peer's own row on this node: MCP servers and integrations (agents have their launch constructors)
     ...peers.filter(p => p.mcpServer || p.integration).map(p => ({ id: `peer-row:${p.integration ? p.id.slice(12) : p.id}`, label: p.integration ? `Connect ${p.name}` : p.name, icon: peerIcon(p), output: 'peer', group: p.id })),
@@ -842,6 +847,7 @@ function insertConstructor(app: App, id: string, path = app.constructorContext()
   const item = constructorOptions(app).find(c => c.id === id)
   if (item && !constructorState(app, item).enabled) return
   if (id.startsWith('library:')) { try { app.insertLibraryConstructor(id.slice(8), path, replace) } catch (error) { app.notify('error', String(error)) }; return }
+  if (id.startsWith('name:')) { try { app.insertNamed(id.slice(5), path) } catch (error) { app.notify('error', String(error)) }; return }
   if (id === 'trigger:public' || id === 'trigger:users') {
     // a template endpoint: a template whose row publishes it
     const audience = id === 'trigger:public' ? 'public' : 'users'
@@ -1010,7 +1016,7 @@ function dropTrigger(event: DragEvent, app: App, path: Scope, replace = false): 
     try { app.applyConstructor(path, { type: PLAIN_TYPE, text: peer?.name ?? constructor.slice(5), done: false, peer: constructor.slice(5) }, replace) } catch (error) { app.notify('error', String(error)) }
     return true
   }
-  if (constructor && (CONSTRUCTORS.some(c => c.id === constructor) || constructor === 'feature-specification' || constructor === 'verify-specifications' || constructor === 'pull' || constructor === 'publish:public' || constructor === 'publish:users' || constructor.startsWith('seed:') || constructor.startsWith('trigger:') || constructor.startsWith('action:') || constructor.startsWith('handler:') || constructor.startsWith('library:'))) { event.preventDefault(); event.stopPropagation(); activeConstructorDrags.get(app)?.clear(); insertConstructor(app, constructor, path, replace); return true }
+  if (constructor && (CONSTRUCTORS.some(c => c.id === constructor) || constructor === 'feature-specification' || constructor === 'verify-specifications' || constructor === 'pull' || constructor === 'publish:public' || constructor === 'publish:users' || constructor.startsWith('seed:') || constructor.startsWith('trigger:') || constructor.startsWith('action:') || constructor.startsWith('handler:') || constructor.startsWith('library:') || constructor.startsWith('name:'))) { event.preventDefault(); event.stopPropagation(); activeConstructorDrags.get(app)?.clear(); insertConstructor(app, constructor, path, replace); return true }
   const type = event.dataTransfer?.types.includes('application/x-fos-placeholder') ? event.dataTransfer.getData('application/x-fos-placeholder') : ''
   if (type) { event.preventDefault(); event.stopPropagation(); app.addPlaceholder('value_' + Math.random().toString(36).slice(2, 8), type, path); return true }
   const kind = (event.dataTransfer?.types.includes('application/x-fos-trigger') ? event.dataTransfer.getData('application/x-fos-trigger') : '') as import('../../shared/sync/triggers').TriggerKind | undefined
@@ -1022,6 +1028,36 @@ function dropTrigger(event: DragEvent, app: App, path: Scope, replace = false): 
   return true
 }
 /** A row's handler is run by its Complete button; the title says what completing does. */
+/**
+ * A row made by a constructor node ([fetch, right], …): the constructor's refs are its inputs (the left decides which
+ * show), the right's assignments are what is in them. A received ref lists what was submitted to it, to choose from.
+ */
+function constructedRowBody(task: TaskView, inputs: NonNullable<ReturnType<App['rowInputs']>>, path: Scope, app: App): HTMLElement {
+  const box = div('title constructor-body constructed-row', '')
+  box.append(span('constructor-label', task.title || 'Constructor'))
+  for (const ref of inputs) {
+    const line = div('row-input', '')
+    line.append(span('muted', ref.name))
+    if (ref.received) {
+      if (ref.text !== null) line.append(span('row-input-value', ref.text.length > 200 ? ref.text.slice(0, 200) + '…' : ref.text))
+      if (ref.options.length) {
+        const pick = document.createElement('select'); pick.setAttribute('aria-label', `Choose ${ref.name}`)
+        pick.append(new Option(`${ref.options.length} received…`, ''))
+        for (const option of ref.options) pick.append(new Option(option.text.slice(0, 80), option.proposal))
+        pick.addEventListener('change', () => { if (pick.value) app.chooseRowInput(path, ref.alias, pick.value) }); line.append(pick)
+      } else if (ref.text === null) line.append(span('muted', 'received when it runs'))
+    } else {
+      const input = document.createElement('input'); input.setAttribute('aria-label', ref.name); input.value = ref.text ?? ''
+      input.addEventListener('change', () => app.assignRowInput(path, ref.alias, input.value)); line.append(input)
+    }
+    box.append(line)
+  }
+  const run = app.deviceHandlerFor(path, task)
+  if (run) box.append(completeButton(run, () => void app.evaluateAt(path)))
+  box.addEventListener('click', event => { if ((event.target as HTMLElement).closest('input, button, select')) event.stopPropagation() })
+  box.addEventListener('keydown', event => { if ((event.target as HTMLElement).closest('input, select')) event.stopPropagation() })
+  return box
+}
 function completeButton(title: string, run: () => void): HTMLButtonElement {
   const b = button('secondary small handler-complete', 'Complete', run); b.title = title; return b
 }
@@ -1212,8 +1248,6 @@ function settingControl(key: string, state: AppState, app: App): HTMLElement {
   } else if (key === 'server' || key === 'direct' || key === 'virtual') {
     const control = button('secondary small', SETTING_LABELS[key], () => key === 'server' ? app.goToAccountPeer() : app.openModal(key as 'direct' | 'virtual'))
     control.disabled = key === 'virtual' && !app.canSpawnVirtualPeer(); box.append(control)
-  } else if (key === 'peer') {
-    box.append(span('muted', 'Type @{ in a new row to choose a peer handler.'))
   } else if (key === 'invite') {
     const control = button('secondary small', SETTING_LABELS[key], () => void app.startInvite()); control.disabled = state.session?.kind !== 'user'; box.append(control)
   } else if (key === 'phone') {
@@ -1237,8 +1271,8 @@ function settingControl(key: string, state: AppState, app: App): HTMLElement {
   return box
 }
 function constructorBody(task: TaskView, state: AppState, app: App, path: Scope = state.view): HTMLElement {
-  const box = div('title constructor-body', ''), key = settingKeyFromName(task.construction?.name)
-  if (task.construction?.name === 'fos:evaluation') {
+  const box = div('title constructor-body', ''), key = settingKeyOf(task)
+  if (task.construction?.evaluation) {
     const parent = path.slice(0, -1), record = app.evaluationStatus(parent)
     box.append(span('constructor-label', 'Evaluation'))
     const labels = { idle: 'Ready', opening: 'Starting', running: 'Running', committing: 'Saving', committed: 'Complete', 'rolled-back': 'Rolled back', 'awaiting-review': 'Awaiting review', 'needs-recovery': 'Needs recovery' }
@@ -1252,7 +1286,7 @@ function constructorBody(task: TaskView, state: AppState, app: App, path: Scope 
   }
   else if (key) {
     box.classList.add('setting-row'); box.append(span('constructor-label', SETTING_LABELS[key] ?? key))
-    if (task.construction?.name === app.settingKey(key)) box.append(settingControl(key, state, app))
+    if (task.construction?.holder === state.replica.meta.peerId) box.append(settingControl(key, state, app))
     else box.append(span('muted', 'Owned by another device'))
   }
   else if (task.construction?.handler) {
@@ -1284,7 +1318,20 @@ function peerRowBody(handler: string, state: AppState, app: App, path: Scope): H
     return parts
   }
   switch (handler) {
-    case 'peer': parts.push(span('muted', 'Edit @{…} to choose a handler')); break
+    case 'peer': {
+      // the handler is this row's input: choosing one turns the row into that peer row (the device root's declared
+      // constructor stays, and a new row is made beside it)
+      const select = document.createElement('select'); select.setAttribute('aria-label', 'Peer handler')
+      select.append(new Option('Choose how to connect…', ''))
+      for (const r of PEER_ROWS) if (r.id !== 'peer' && (!r.desktop || inTauri())) select.append(new Option(r.label, r.id))
+      select.onchange = () => {
+        if (!select.value) return
+        if (path.at(-1) === app.peerConstructorId()) addPeerRow(app, select.value, node)
+        else app.setPeerRow(path, select.value)
+      }
+      parts.push(select)
+      break
+    }
     case 'invite': {
       parts.push(complete('Create an invite code for this node', () => { if (!here) app.goTo(node); void app.startInvite() }, state.session?.kind !== 'user'))
       if (state.invite && JSON.stringify(state.invite.scope) === JSON.stringify([...state.replica.meta.scope, ...node])) parts.push(codeBox(state.invite.token))
@@ -1430,7 +1477,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     const raw = preview || !row ? title : titleText(row)
     const input = document.createElement('textarea'); input.className = 'edit node-title-input'; input.rows = 1
     input.setAttribute('aria-label', 'Current node text'); input.placeholder = 'Row text…'; input.value = raw
-    input.readOnly = !!preview || !row || row.id === HOME_ID || !!row.refPeer
+    input.readOnly = !!preview || !row || row.type === HOME_TYPE || !!row.refPeer
     const titleRow = div('node-title-row task', ''), check = span('node-title-check', ''), after = span('node-title-after', '')
     const editing = span('title editing', ''); editing.append(input, kindPreview(input, app), peerAutocomplete(input, app))
     titleRow.append(check, editing, after)
@@ -1468,7 +1515,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     const header = div('node-header', '')
     const heading = document.createElement('h1'); heading.className = 'node-title'
     const toolbar = div('node-toolbar', '')
-    const run = button('evaluate', '', () => { input.dispatchEvent(new window.Event('commit-edit')); void app.startExecution(app.currentRow()?.construction?.name === 'fos:evaluation' ? app.state.view.slice(0, -1) : [...app.state.view]) })
+    const run = button('evaluate', '', () => { input.dispatchEvent(new window.Event('commit-edit')); void app.startExecution(app.currentRow()?.construction?.evaluation ? app.state.view.slice(0, -1) : [...app.state.view]) })
     run.innerHTML = `${iconSvg('▶') ?? ''}<span>Run</span>`
     const editToggle = iconButton('✎', 'Input / edit', () => { workspace(app).input = !workspace(app).input; app.refresh() })
     editToggle.classList.add('input-toggle')
@@ -1591,13 +1638,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     }))
     if (app.canApprove(app.currentView()!) && preview.proposal.status === 'open') controls.append(button('primary small', 'Approve and merge', () => void app.decideProposal(preview.proposal.id, 'approve')), button('danger small', 'Reject', () => void app.decideProposal(preview.proposal.id, 'reject')))
   }
-  if (!preview && row?.type === TEMPLATE_TYPE && !row.id.startsWith('lib:type:')) controls.append(button('secondary small', 'Publish capability here', () => app.publishCurrentTemplate()))
-  // the library this device ships with: people who want to propose changes and vote link the shared one into Home
-  if (!preview && row?.id === LIBRARY_ID && state.view.length === 1 && !libraryLink(state.replica)) {
-    const contribute = button('secondary small', 'Contribute to the standard library', () => void app.contributeToLibrary())
-    contribute.title = 'Adds the shared standard library to Home, with the fos server as its peer: propose changes and vote on them. Under Home it is used instead of this one.'
-    controls.append(contribute)
-  }
+  if (!preview && row?.type === TEMPLATE_TYPE && !app.isLibrary(state.view.slice(0, -1))) controls.append(button('secondary small', 'Publish capability here', () => app.publishCurrentTemplate()))
   const git = !preview && localGitControls(app); if (git) controls.append(git)
   if (row?.construction) controls.append(constructorBody(row, state, app))
   // the account form is its own block under the peer's row, never a column beside it
@@ -1618,6 +1659,17 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     for (const candidate of arg.candidates) pick.append(new Option(candidate.label, candidate.cid))
     if (arg.type !== 'text') { const branches = argumentBranchPicker(app, [], arg.id); if (branches) line.append(branches) }
     pick.disabled = !arg.candidates.length; pick.addEventListener('change', () => app.bindPlaceholder(arg.id, pick.value)); line.append(pick); dynamicValues.append(line)
+  }
+  // the pattern this node is used with: what its rows submitted to each ref, as options to bind
+  for (const binding of app.patternBindingsAt()) {
+    const line = div('placeholder-row pattern-binding', '')
+    line.append(span('', `${binding.name} · pattern`), span('muted', binding.value ? app.valueLabel(binding.value) : binding.options.length > 1 ? 'choose one' : 'unbound'))
+    if (binding.options.length) {
+      const pick = document.createElement('select'); pick.setAttribute('aria-label', `Bind ${binding.name}`); pick.append(new Option('Choose a submitted value…', ''))
+      for (const option of binding.options) pick.append(new Option(`${app.valueLabel(option.value)} (${option.source})`, option.proposal))
+      pick.addEventListener('change', () => { if (pick.value) app.choosePatternBinding(binding.alias, pick.value) }); line.append(pick)
+    }
+    dynamicValues.append(line)
   }
   const trigger = app.currentTrigger(), triggerState = app.currentTriggerState()
   if (trigger) dynamicValues.append(span('muted', `${trigger.kind}: ${trigger.enabled ? 'enabled' : 'paused'}${triggerState ? ' · ' + triggerState.status : ''}${triggerState?.error ? ' — ' + triggerState.error : ''}`), button('secondary small', trigger.enabled ? 'Pause trigger' : 'Enable trigger', () => app.toggleTrigger()))
@@ -1703,21 +1755,21 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
   el.className = `list tree layout-${prefs.layout}`
   const textMatches = (row: TaskView, path: Scope): boolean => matchesSearch(row, prefs.search) || (path.length < 64 && !!viewAt(state.replica, path)?.tasks.some(child => textMatches(child, [...path, child.id])))
   const matches = (row: TaskView): boolean => textMatches(row, [...state.view, row.id])
-  node = { ...node, tasks: node.tasks.filter(row => settingKeyFromName(row.construction?.name) !== 'history') }
+  node = { ...node, tasks: node.tasks.filter(row => settingKeyOf(row) !== 'history') }
   // Home lists one of its bookkeeping rows, where this device left off; the other constructors stay in Settings.
-  if (state.view.length === 1 && state.view[0] === HOME_ID && !state.atRoot) {
-    const remembered = viewAt(state.replica, [HOME_ID], true)?.tasks.find(row => row.construction?.name === app.settingKey('view'))
+  if (state.view.length === 1 && app.isHome(state.view) && !state.atRoot) {
+    const remembered = viewAt(state.replica, state.view, true)?.tasks.find(row => settingKeyOf(row) === 'view' && row.construction?.holder === state.replica.meta.peerId)
     if (remembered && !node.tasks.some(row => row.id === remembered.id)) node = { ...node, tasks: [...node.tasks, remembered] }
   }
   const filtered = prefs.search ? { ...node, tasks: node.tasks.filter(matches) } : node
   let rows = renderRows(filtered, [], 0, state, app)
   const preview = proposalPreview(app)
   // Home shows what relays delivered to this device
-  const inbox = !preview && state.view.length === 1 && state.view[0] === HOME_ID && !state.atRoot ? renderRelayInbox(app) : null
+  const inbox = !preview && state.view.length === 1 && app.isHome(state.view) && !state.atRoot ? renderRelayInbox(app) : null
   if (inbox) rows = [inbox, ...rows]
   if (!preview && prefs.layout === 'tree') { const files = filesystemRows(app, prefs.search); if (files) rows.push(files) }
   // a node with nothing of the user's own yet (the seeded standard library does not count) shows the first-run help
-  if (!preview && !state.atRoot && prefs.layout === 'tree' && !prefs.search && node.tasks.every(row => row.id === LIBRARY_ID)) {
+  if (!preview && !state.atRoot && prefs.layout === 'tree' && !prefs.search && node.tasks.every(row => app.isLibrary([...state.view, row.id]))) {
     const hint = document.createElement('li'); hint.className = 'first-run'
     const keys = div('first-run-keys', '')
     if (window.matchMedia?.('(pointer: coarse)').matches) keys.append('Tap ', Object.assign(document.createElement('kbd'), { textContent: '?' }), ' for row syntax and tips')
@@ -1938,11 +1990,12 @@ function renderRows(node: NodeView, at: Scope, depth: number, state: AppState, a
   // the device root is a settings page: its rows stay rows, shown in groups
   if (state.atRoot && !at.length && !query) {
     const groupOf = (task: TaskView): string => {
-      const key = settingKeyFromName(task.construction?.name)
+      const key = settingKeyOf(task)
       if (task.construction?.peerId || key === 'sessions') return 'Account'
+      if (task.construction?.handler) return 'Connections'
       if (!key) return task.type === HOME_TYPE ? '' : 'Other'
       if (['name', 'theme', 'microphone', 'camera', 'geolocation', 'history'].includes(key)) return 'Device'
-      if (['server', 'direct', 'peer', 'invite', 'virtual', 'phone', 'share'].includes(key)) return 'Connections'
+      if (['server', 'direct', 'invite', 'virtual', 'phone', 'share'].includes(key)) return 'Connections'
       return 'Data'
     }
     const order = ['', 'Account', 'Device', 'Connections', 'Data', 'Other']
@@ -2096,7 +2149,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   checkbox.tabIndex = -1
   checkbox.addEventListener('change', () => app.toggleTaskAt(at, task))
 
-  let body: HTMLElement
+  let body: HTMLElement, inputs: ReturnType<App['rowInputs']> = null
   // a row of the file-reference type: the file name and, on this device, whether the file still matches (its fields are not edited by hand)
   const fileReference = app.fileReference([...state.view, ...at, task.id])
   if (argument) {
@@ -2107,6 +2160,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   else if (fileReference) { body = span('title', fileReference.path.split('/').at(-1)!); body.append(renderFileReference(app, [...state.view, ...at, task.id], fileReference)) }
   else if (task.type === HOME_TYPE) { body = span('title home-node', ''); body.innerHTML = iconSvg('⌂')!; body.setAttribute('aria-label', 'Home'); body.title = 'Home' }
   else if (task.construction && !(task.construction.handler && selected)) { body = constructorBody(task, state, app, [...state.view, ...at, task.id]) }
+  else if (!selected && (inputs = app.rowInputs([...state.view, ...at, task.id]))) { body = constructedRowBody(task, inputs, [...state.view, ...at, task.id], app) }
   else if (task.form && !task.text && !task.headline) { body = renderForm(task, at, state, app) }
   else if (selected && task.refId === undefined && (!hasControls(task) || editingSpecial === task.id)) {
     body = renderEditor(task, at, state, app)
@@ -2139,7 +2193,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   if (templateIcon) body.prepend(span('template-icon', templateIcon))
 
   const meta = span('row-meta', '')
-  if (readNodeValue(state.replica,[...state.view,...path],'fos:specification')) { const badge=span('kind-badge','Feature specification'); badge.title='Versioned with the local Git peer'; meta.append(badge) }
+  if (task.type === SPECIFICATION_TYPE) { const badge=span('kind-badge','Feature specification'); badge.title='Versioned with the local Git peer'; meta.append(badge) }
   const opRef = span('op-icon op-ref', '🔗'); opRef.title = 'Alt + drag: place a reference to this row'
   const opCopy = span('op-icon op-copy', '⧉'); opCopy.title = 'Ctrl + drag: place a copy of this row'
   meta.append(opRef, opCopy)
@@ -2372,14 +2426,6 @@ function renderRefBody(task: TaskView, app: App, path: Scope): HTMLElement {
     watchPeerNode(body, app, [...app.state.view, ...path])
     return body
   }
-  if (task.id === LIBRARY_ID && task.refOwner) {
-    // the standard library: opens as a live projection (its templates then work offline here); Updates is the vote on proposals
-    const open = button('link ref-link', `📚 ${firstLine(task.title) || 'Standard library'}`, () => void app.openSharedNode([...app.state.view, ...path]))
-    open.title = `Shared by @${task.refOwner}: templates every account can use; edits become proposals the members vote on`
-    body.append(arrow, open)
-    if (app.sharedLink(task.id)) { const updates = button('link small library-updates', 'Updates', () => app.openSharedLink(task.id)); updates.title = 'Proposed changes to the library: approve the ones you want merged'; body.append(updates) }
-    return body
-  }
   if (app.sharedLink(task.id)) {
     body.append(arrow, button('link ref-link', firstLine(task.title) || 'Shared node', () => app.openSharedLink(task.id)))
     return body
@@ -2536,7 +2582,7 @@ function manualControls(app: App, state: AppState, at: Scope, task: TaskView, ab
       controls.push(place, record)
       continue
     }
-    if (handler.device && typeof navigator !== 'undefined' && !navigator.geolocation) continue
+    if (handler.device && !app.deviceNative(handler)) continue
     const record = button('secondary small manual-handler', handler.label, () => void app.applyManualHandler(at, task, handler, undefined, absolute)); record.dataset.handler = handler.id
     record.title = handler.device ? 'Records this device\'s position as the place' : 'Records that you did this by hand; no peer is involved'
     controls.push(record)
@@ -2587,6 +2633,8 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
       for (const control of manualControls(app, state, at, task)) body.append(stop(control))
       if (r.capability === 'choice') (r.options ?? []).forEach((opt, i) => body.append(stop(choiceButton(app, at, task.id, i, opt))))
       if (r.capability === 'task') hint('add a [ ] task inside and check it off')
+      const onDevice = !r.satisfied && app.deviceHandlerFor([...state.view, ...at, task.id], task)
+      if (onDevice) body.append(stop(completeButton(onDevice, () => void app.askPeerAt(at, task))))
       if (r.capability === 'search') {
         const fos = handler('search')
         if (fos) body.append(stop(completeButton(`Ask ${fos.name} to search`, () => void app.askPeerAt(at, task))))
@@ -3063,7 +3111,11 @@ function renderTemplatePicker(body: HTMLElement, state: AppState, app: App): voi
   for (const [type, icon, label, extras] of types) {
     common.append(iconButton(icon, label, () => app.changeTemplate(type, undefined, extras)))
   }
-  body.append(common, combobox('Choose template', 'Find a template…', query => app.searchLocalNodes(query, TEMPLATE_TYPE).filter(found => JSON.stringify(found.path) !== JSON.stringify(state.templatePicker?.path)).map(found => ({ label: found.row.title, group: 'Templates', run: () => app.changeTemplate('plain', found.row.id) })), () => [], 'Search templates…'))
+  body.append(common, combobox('Choose template', 'Find a template…', query => app.searchLocalNodes(query, TEMPLATE_TYPE).filter(found => JSON.stringify(found.path) !== JSON.stringify(state.templatePicker?.path)).flatMap(found => [
+    { label: found.row.title, group: 'Templates', run: () => app.changeTemplate('plain', found.row.id) },
+    // the same template as a pattern: this row's values are submitted to its refs instead of copying its rows in
+    { label: found.row.title, group: 'Use as pattern', run: () => app.usePattern(found.row.id) }
+  ]), () => [], 'Search templates…'))
   const form = document.createElement('form'); form.className = 'new-template-form'
   const name = document.createElement('input'); name.placeholder = 'Name (optional)'; name.setAttribute('aria-label', 'New template name')
   const icon = document.createElement('input'); icon.placeholder = 'Icon (optional)'; icon.setAttribute('aria-label', 'New template icon'); icon.maxLength = 16

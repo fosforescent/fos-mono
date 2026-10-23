@@ -36,10 +36,13 @@ import {
   type Replica,
   type Scope
 } from './index'
+import { acceptSubmission } from './approvals'
+import { sharedAddressAt } from './sharing'
 import { dispatchEvent, type FosEvent } from './events'
 import { readNodeValue } from './evaluation'
-import { LIBRARY_VERSION, ensureDeviceLibrary, exportLocalLibrary, exportProvidedLibrary, libraryLink, type PulledLibrary } from './library'
-import { capabilityTarget, LIBRARY_ID, content, importNodes, resolveScope, valueContent, valueCidOf } from './graph'
+import { membershipPathAt } from './replica'
+import { LIBRARY_VERSION, ensureDeviceLibrary, exportLocalLibrary } from './library'
+import { capabilityTarget, libraryInstanceOf, libraryRowOf, content, importNodes, put, resolveScope, valueContent, valueCidOf } from './graph'
 import { nativeRef, publishNativeRef } from './native-refs'
 import { discoverHandlers } from './handlers'
 import { writeGraphNode, nativeDefaultsApplied, markNativeDefaultsApplied } from './replica'
@@ -76,7 +79,7 @@ export const api = {
    */
   open(handle: string, serialized: string | null, peerId: string, home = true): void {
     let loaded = serialized ? loadReplica(JSON.parse(serialized)) : createReplica(peerId)
-    loaded = ensureDeviceLibrary(loaded, { address: null, version: LIBRARY_VERSION, rows: [] }, Date.now())
+    loaded = ensureDeviceLibrary(loaded, undefined, Date.now())
     const seeded = nativeDefaultsApplied(loaded, [], `desktop:${peerId}`)
     for (const name of ['provideNode', 'sync']) {
       const ref = nativeRef(loaded.store, peerId, { id: `desktop:${name}`, label: name, type: store => capabilityTarget(store, name) })
@@ -94,12 +97,14 @@ export const api = {
    * what it shares is its Home); returns whether it changed.
    */
   linkStore(handle: string, peerId: string, name: string, home: boolean, now: number): boolean {
-    const before = get(handle), after = linkLocalStore(before, peerId, name, now, home ? [HOME_ID] : [])
+    const before = get(handle), after = linkLocalStore(before, peerId, name, now, home ? homePath(before) : [])
     set(handle, after)
     return after !== before
   },
   /** The stores `handle` is linked with on this machine: [{ peerId, name }]. */
   localStores(handle: string): string { return JSON.stringify(localStores(get(handle))) },
+  /** The path of `peer`'s membership row at the node `atJson`, or null. */
+  membershipPath(handle: string, atJson: string, peer: string): string { return JSON.stringify(membershipPathAt(get(handle), parse<Scope>(atJson, []), peer)) },
   /**
    * The tree of the linked store loaded under `peerHandle`, as `peerId` (this store) may see it: pulled node by node
    * through node exchange (what its grants allow), never by reading its graph directly. Text lines like `tree`.
@@ -129,11 +134,11 @@ export const api = {
   setScope(handle: string, scopeJson: string, namesJson: string): void {
     const r = get(handle)
     const requested = parse<Scope>(scopeJson, [])
-    const home = requested.length === 1 && requested[0] === HOME_ID && homePath(r).length
+    const home = requested.length === 1 && homePath(r).length && requested[0] === homePath(r)[0]
     set(handle, shareHome({ store: r.store, meta: { ...r.meta, localScope: undefined, scope: home ? [] : requested, scopeNames: home ? [] : parse<string[]>(namesJson, []) } }))
   },
   view(handle: string, atJson: string): string { return JSON.stringify(view(get(handle), parse<Scope>(atJson, []))) },
-  /** Add a row of the library row type `type` (`lib:type:task`, `lib:type:plain`, `lib:type:note`, …) under `at`; returns its view. */
+  /** Add a row of the library row type `type` (`lib.task`, `lib.plain`, `lib.note`, …) under `at`; returns its view. */
   addRow(handle: string, atJson: string, type: string, text: string, now: number, optionsJson: string | null): string {
     const r = get(handle)
     const at = parse<Scope>(atJson, [])
@@ -152,11 +157,12 @@ export const api = {
   tree(handle: string, atJson: string): string {
     const r = get(handle)
     const lines: string[] = []
+    const library = [libraryRowOf(r.store, headCid(r))?.id, libraryInstanceOf(r.store, headCid(r))?.id]
     const walk = (at: Scope, depth: number) => {
       const node = view(r, at)
       if (!node) return
       for (const t of node.tasks) {
-        if (!at.length && t.id === LIBRARY_ID) continue // the library the store ships (not its own rows)
+        if (!at.length && library.includes(t.id)) continue // the library the store ships and its instance (not its own rows)
         lines.push(`${'  '.repeat(depth)}${t.checkable ? (t.done ? '[x]' : '[ ]') : t.type === NOTE_TYPE ? ' ≡ ' : t.type === COMMENT_TYPE ? ' " ' : t.refId !== undefined ? ' → ' : ' · '} ${t.id.includes(':') ? t.id : t.id.slice(0, 8)} ${t.refPeer ? `${t.title} (held by ${t.refPeer.slice(0, 8)})` : t.refId !== undefined ? `ref ${t.refId.slice(0, 8)}` : t.title.split('\n')[0]}${t.childCount ? ` (${t.subtreeDone}/${t.subtreeTasks})` : ''}${t.isLink ? ' ⛓' : ''}`)
         if (t.childCount) walk([...at, t.id], depth + 1)
       }
@@ -200,7 +206,7 @@ export const api = {
     set(handle, moveNode(get(handle), parse<Scope>(fromJson, []), id, parse<Scope>(toJson, []), JSON.parse(positionJson), now))
   },
   resolveChoice(handle: string, atJson: string, choiceId: string, pick: number, now: number): void { set(handle, resolve(get(handle), parse<Scope>(atJson, []), choiceId, pick < 0 ? null : pick, now)) },
-  applyProposal(handle: string, atJson: string, proposalId: string, approver: string, now: number): void { set(handle, applyProposalAt(get(handle), parse<Scope>(atJson, []), proposalId, approver, now)) },
+  applyProposal(handle: string, atJson: string, proposalId: string, approver: string, now: number): void { set(handle, acceptSubmission(get(handle), parse<Scope>(atJson, []), proposalId, approver, now).replica) },
   rejectProposal(handle: string, atJson: string, proposalId: string, now: number): void { set(handle, rejectProposalAt(get(handle), parse<Scope>(atJson, []), proposalId, now)) },
   reattach(handle: string, scopeJson: string): void {
     set(handle, reattach(get(handle), parse<Scope>(scopeJson, [])))
@@ -242,33 +248,29 @@ export const api = {
   },
   /** Drop a node sync that failed in transport (what it installed so far stays). */
   nodeSyncAbort(handle: string): void { runs.delete(handle) },
-  /** Where this account references the standard library, with its shared address, or null (`fos library export`). */
-  libraryLink(handle: string): string {
-    const r = get(handle), path = libraryLink(r)
-    if (!path) return 'null'
-    const row = view(r, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1))
-    const address = readNodeValue<{ owner: string; path: Scope }>(r, path, 'fos:shared-link')
-    return JSON.stringify({ path, owner: row?.refOwner ?? address?.owner ?? null, refId: row?.refId ?? null, title: row?.title ?? 'Standard library', address })
-  },
-  /** The nodes `fos library export` pulled, as the bundle a client build carries (web/src/library.json). */
-  libraryExport(pulledJson: string, now: number): string {
-    return JSON.stringify(exportProvidedLibrary(JSON.parse(pulledJson) as PulledLibrary, now))
-  },
   libraryExportLocal(handle: string): string { return JSON.stringify(exportLocalLibrary(get(handle))) },
   graphNode(handle: string, atJson: string): string {
     const r = get(handle), cid = resolveScope(r.store, headCid(r), JSON.parse(atJson))
     if (!cid) throw new Error('Node not found.')
     return JSON.stringify({ cid: valueCidOf(r.store, cid), ...valueContent(r.store, cid) })
   },
+  /** `fos node --write`: rows name existing cids, or give a node inline ({data, children}, nested to any depth). */
   writeGraphNode(handle: string, atJson: string, inputJson: string, instructionPathJson: string | null, now: number): void {
     const r = get(handle), input = JSON.parse(inputJson) as FosNodeContent & { nodes?: FosNodesData }
     if (input.nodes) {
       importNodes(r.store, input.nodes)
       if (Object.keys(input.nodes).some(cid => !r.store.table.has(cid))) throw new Error('Invalid graph dependencies.')
     }
+    const inline = (side: unknown): string => {
+      if (typeof side === 'string') return side
+      const node = side as FosNodeContent
+      if (!node || typeof node !== 'object' || !node.data || !Array.isArray(node.children)) throw new Error('A row side is a cid or a node {data, children}.')
+      return put(r.store, { data: node.data, children: node.children.map(([left, right]) => [inline(left), inline(right)] as [string, string]) })
+    }
     const cid = instructionPathJson ? resolveScope(r.store, headCid(r), JSON.parse(instructionPathJson)) : null
     if (instructionPathJson && !cid) throw new Error('Instruction node not found.')
-    set(handle, writeGraphNode(r, JSON.parse(atJson), { data: input.data, children: input.children }, now, cid ? valueCidOf(r.store, cid) : undefined))
+    const children = (input.children as unknown[][]).map(([left, right]) => [inline(left), inline(right)] as [string, string])
+    set(handle, writeGraphNode(r, JSON.parse(atJson), { data: input.data, children }, now, cid ? valueCidOf(r.store, cid) : undefined))
   },
   /** One MCP message (JSON-RPC) through the event grammar as this directory's owner. Returns {response, changed}. */
   mcp(handle: string, messageJson: string, peerId: string, now: number, sessionId?: string): string {

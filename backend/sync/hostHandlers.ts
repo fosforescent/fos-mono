@@ -1,3 +1,5 @@
+import { requirementInput } from '@fosforescent/shared/sync/index'
+import { QUERY_TYPE } from '@fosforescent/shared/sync/index'
 import { standardHostRef } from './host-runtime'
 import { cronObserver } from '@fosforescent/shared/sync/trigger-primitives'
 /**
@@ -8,7 +10,7 @@ import { cronObserver } from '@fosforescent/shared/sync/trigger-primitives'
 import { createHash } from 'node:crypto'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
 import { addRef, addRow, addSupply, beginTaskWork, deleteTask, headCid, resolveRef, resolveScope, rowsOfType, valueContent, paymentRecord, settlePaymentRecord, writePaymentRecord, proposeTaskResult, readNodeValue, relayAfterSubmission, setMarketAt, sharedProjection, publication, taskWorkContext, view, type EvaluationStep, type Replica, type ResourceType, type UserRecord } from '@fosforescent/shared/sync/index'
-import { TITLE_SYSTEM, TITLED_VALUE, syncPublishedUrls, titleRequestAt, truncateTitle, writeNodeValue } from '@fosforescent/shared/sync/index'
+import { TITLE_SYSTEM, writePageBase, membershipPath, SERVER_MEMBER, titleRequestAt, truncateTitle, writeHandlerResult } from '@fosforescent/shared/sync/index'
 import type { EffectContext, HostHandler } from './host-runtime'
 import { formTitle } from '@fosforescent/shared/sync/forms'
 import type { VerifyHandler } from './verify'
@@ -93,7 +95,7 @@ export function llmHandler(deps: LlmDeps): HostHandler {
 /**
  * `title` requirements (shared/sync/title-request.ts): a short title for the text of the row the requirement is in,
  * from the server's model. The device's own handler truncates; this one summarizes. The title is the requirement's
- * `TITLED_VALUE`; the asker sets it as the row's title and removes the request.
+ * its handler result; the asker sets it as the row's title and removes the request.
  */
 export function titleHandler(deps: LlmDeps): HostHandler {
   return {
@@ -103,7 +105,7 @@ export function titleHandler(deps: LlmDeps): HostHandler {
       if (!request) throw new Error('There is no text to title here.')
       const answer = (await deps.complete(TITLE_SYSTEM, request.text.slice(0, 8000))).trim().split(/\r?\n/)[0]!.replace(/^["'\s]+|["'.\s]+$/g, '')
       const title = truncateTitle(answer, 120) || truncateTitle(request.text)
-      let next = writeNodeValue(ctx.replica(), path, TITLED_VALUE, title, ctx.now())
+      let next = writeHandlerResult(ctx.replica(), path, title, ctx.now())
       next = addSupply(next, path.slice(0, -1), path.at(-1)!, { capability: 'title', by: 'fos' }, ctx.now())
       await ctx.update(next)
     }
@@ -151,13 +153,13 @@ export function searchHandler(deps: SearchDeps): HostHandler {
     async effect(ctx) {
       const path = ctx.step.path, r = ctx.replica(), cid = resolveScope(r.store, headCid(r), path)!
       // which rows inside are what is decided by their row types: a query row says what to look for, refs are earlier hits
-      const queryRow = rowsOfType(r.store, cid, 'lib:type:query')[0]
+      const queryRow = rowsOfType(r.store, cid, QUERY_TYPE)[0]
       const query = queryRow ? { id: queryRow.id, title: formTitle(r.store, valueContent(r.store, queryRow.cid)), market: !!valueContent(r.store, queryRow.cid).data.query?.market } : null
       const text = (query?.title || ctx.step.row!.title).trim().slice(0, 1000)
       if (!text) throw new Error('Say what to search for: "-? text".')
       const hits = await deps.search({ id: ctx.userId, username: ctx.username }, text, !!query?.market)
       let next = ctx.replica()
-      for (const ref of rowsOfType(r.store, cid, 'lib:type:ref')) next = deleteTask(next, path, ref.id, ctx.now())
+      for (const ref of rowsOfType(r.store, cid, REF_TYPE)) next = deleteTask(next, path, ref.id, ctx.now())
       for (const hit of hits) {
         if (hit.aliasId === path.at(-1) || hit.aliasId === query?.id) continue
         if (!hit.owner) { if (resolveRef(next, hit.aliasId)) next = addRef(next, path, hit.aliasId, ctx.now()) }
@@ -242,7 +244,7 @@ export type PaymentDeps = {
 }
 
 /**
- * A request for money (`-$ 20 reward`: a negative row of the money type, `lib:type:allocation:money`) under a task is a payment: when the task runs, the server opens one with the
+ * A request for money (`-$ 20 reward`: a negative row of the money type, `lib.money`) under a task is a payment: when the task runs, the server opens one with the
  * payment provider from the owner to the respondent and leaves the evaluation awaiting review. The provider's
  * confirmation (its webhook, `sync/payments.ts`) settles the requirement and continues the evaluation, whether or
  * not the owner's devices are online. Running again while the payment is open does not open a second one.
@@ -278,13 +280,15 @@ export function paymentHandler(deps: PaymentDeps, identity: VerifyHandler): Host
 
 export type MailDeps = { send(to: string, subject: string, text: string, onBehalfOf: string): Promise<void> }
 
-/** `-mail someone@example.com Subject…` under a task: the recipient is the first address in the row, the subject the rest of it (else the task's title), the body the task and its rows. */
-export function mailRequest(rowTitle: string, taskTitle: string, rows: string[]): { to: string; subject: string; text: string } | null {
-  const match = rowTitle.match(/[^\s<>,;]+@[^\s<>,;]+\.[^\s<>,;]+/)
-  if (!match) return null
-  const subject = rowTitle.replace(match[0], '').replace(/^[\s:,-]+|[\s:,-]+$/g, '').trim() || taskTitle || 'From Fosforescent'
+/**
+ * A `-mail` requirement under a task: its inputs are the recipient (`to`) and the subject (else the task's title), the
+ * mail capability's declared refs, filled when the row was made; the body is the task and its rows.
+ */
+export function mailRequest(inputs: { to: string | null; subject: string | null }, taskTitle: string, rows: string[]): { to: string; subject: string; text: string } | null {
+  if (!inputs.to) return null
+  const subject = inputs.subject?.trim() || taskTitle || 'From Fosforescent'
   const text = [taskTitle, ...rows.filter(Boolean).map(r => `- ${r}`)].filter(Boolean).join('\n').slice(0, 20_000)
-  return { to: match[0], subject: subject.slice(0, 200), text }
+  return { to: inputs.to, subject: subject.slice(0, 200), text }
 }
 
 /** `-mail` requirements: the account server sends the email (Postmark) on the user's behalf and records the supply as `fos`. */
@@ -295,7 +299,8 @@ export function mailHandler(deps: MailDeps): HostHandler {
       const r = ctx.replica(), path = ctx.step.path, taskPath = path.slice(0, -1)
       const task = taskPath.length ? view(r, taskPath.slice(0, -1))?.tasks.find(t => t.id === taskPath.at(-1)) : null
       const rows = (view(r, taskPath)?.tasks ?? []).filter(t => t.id !== path.at(-1) && !t.supply).map(t => t.title)
-      const request = mailRequest(ctx.step.row!.title, task?.title ?? '', rows)
+      const cid = resolveScope(r.store, headCid(r), path), value = cid ? valueContent(r.store, cid) : null
+      const request = mailRequest({ to: value && requirementInput(r.store, value, 'to'), subject: value && requirementInput(r.store, value, 'subject') }, task?.title ?? '', rows)
       if (!request) throw new Error('Name the recipient: "-mail someone@example.com Subject".')
       await deps.send(request.to, request.subject, request.text, ctx.username)
       let next = addRow(ctx.replica(), path, PLAIN_TYPE, `Sent to ${request.to}: ${request.subject}`, ctx.now())
@@ -329,6 +334,8 @@ export type HostHandlerDeps = {
   webUrl: string
   /** The server's user attestation (sync/verify.ts): fills `verify` requirements with attested user objects; payees are checked against it. */
   verify: VerifyHandler
+  /** Approvals of pull requests, signed with the same identity key, and the group's merge rule (sync/approve.ts). */
+  approve?: HostHandler
 }
 
 /**
@@ -337,12 +344,17 @@ export type HostHandlerDeps = {
  * handler any device can run; here it runs as `fos` after every submission a node exchange brings in.
  */
 /**
- * The fos `url` handler: a node an audience may run (or read) gets its share page's URL as a row in the server's
- * member entry above it (`syncPublishedUrls`), after every write that reaches it; a node no longer published loses
- * it. Visiting that URL serves the node's execute view to whoever may run it, and 404 to anyone else.
+ * The fos `url` handler: it records where this account's share pages are (the web app and the account's name) on
+ * its member entry, after every write that reaches the account; devices make a published node's link from it and
+ * the node's place (`publishedUrl`). Visiting a link serves the node's execute view to whoever may run it, and 404
+ * to anyone else.
  */
 export function publicUrlHandler(webUrl: string): HostHandler {
-  return { peerId: 'fos', ref: standardHostRef('fos', 'url'), submission: (replica, path, now) => syncPublishedUrls(replica, path, webUrl, now) }
+  return { peerId: 'fos', ref: standardHostRef('fos', 'url'), submission: (replica, _path, now) => {
+    const owner = replica.meta.peerId.startsWith('user:') ? replica.meta.peerId.slice('user:'.length) : null
+    const entry = membershipPath(replica.store, headCid(replica), [], SERVER_MEMBER)
+    return owner && entry ? writePageBase(replica, entry, { base: webUrl.replace(/\/$/, ''), owner }, now) : replica
+  } }
 }
 
 export function relayHandler(): HostHandler {
@@ -357,6 +369,7 @@ export function createHostHandlers(deps: HostHandlerDeps): HostHandler[] {
     publicUrlHandler(deps.webUrl),
     marketHandler(deps.market),
     deps.verify,
+    ...(deps.approve ? [deps.approve] : []),
     pointsHandler(deps.points, deps.verify),
     ...(deps.payments ? [paymentHandler(deps.payments, deps.verify)] : []),
     mailHandler(deps.mail),

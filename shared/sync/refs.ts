@@ -1,5 +1,6 @@
 /** Common ref-property view over existing storage. No new on-disk representation. */
 import type { FosStore } from '../dag-implementation/store'
+import { memberPeerOf } from './graph'
 import { advertisedRows, content, identityCid, isMemberEdge, isGrantEdge, isRowEdge, memberEdgesOf, refValueCid, valueContent } from './graph'
 
 export type RefProperty = {
@@ -17,13 +18,13 @@ export function refProperties(store: FosStore, cid: string, select: 'all' | 'arg
     const member = isMemberEdge(store, edge), grant = isGrantEdge(store, edge)
     if (grant && advertisedRows(store, edge[1]).length) return refProperties(store, edge[1], 'arguments').map(property => ({ ...property, direction: edge[0] === store.primitive.acceptsNode.getId() ? 'from' as const : 'to' as const }))
     const id = member || grant ? edge[1] : identityCid(store, edge), node = content(store, id)
-    const argument = isRowEdge(store, edge)
+    const argument = isRowEdge(store, edge) && !member
     const type = edge[0]
     if (select === 'arguments' && !argument) return []
     if (!node.data.alias?.id || (!member && !grant && !argument && !isRowEdge(store, edge))) return []
     return [{ id: node.data.alias.id, cid: id, name: node.data.name?.content ?? valueContent(store, id).data.name?.content ?? node.data.alias.id,
       type, value: refValueCid(store, node), member, argument,
-      ...(node.data.peerId?.content || node.data.ref?.peer ? { peer: node.data.peerId?.content ?? node.data.ref!.peer } : {}),
+      ...(member ? { peer: memberPeerOf(store, edge) } : node.data.peerId?.content || node.data.ref?.peer ? { peer: node.data.peerId?.content ?? node.data.ref!.peer } : {}),
       ...(grant ? { direction: edge[0] === store.primitive.acceptsNode.getId() ? 'from' as const : 'to' as const } : {}) }]
   })
 }

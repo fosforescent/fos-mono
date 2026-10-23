@@ -14,7 +14,7 @@ buildSync({ entryPoints: [path.join(web, 'src/embed.ts')], bundle: true, platfor
 const { siteTree, renderSitePage, markdownToSafeHtml, parseShareAddress, publicReadUrl } = require(path.join(dir, 'site.cjs'))
 const tick = () => new Promise(resolve => setTimeout(resolve, 20))
 
-const md = 'lib:type:markdown' // rows whose text is Markdown (a note's body row)
+const md = 'markdown' // rows whose text is Markdown (a note's body row)
 const node = {
   title: 'My post', type: md, body: '# My post\n\nHello **world** <script>alert(1)</script> [site](https://example.com) <img src=x onerror=alert(1)>',
   rows: [
@@ -66,7 +66,7 @@ async function main() {
   assert.deepEqual(trail, [])
 
   // each row by its type: empty fields become inputs of that type, a filled field reads as its value
-  const form = { ...node, type: undefined, body: undefined, title: 'Form', rows: [{ id: 'name', title: 'Name', depth: 0, type: 'lib:type:text', body: '' }, { id: 'age', title: 'Age', depth: 0, type: 'lib:type:number', body: '' }, { id: 'city', title: 'City', depth: 0, type: 'lib:type:text', body: 'Paris' }], inputs: [{ key: 'n', path: ['name'], name: 'Name', kind: 'text' }, { key: 'a', path: ['age'], name: 'Age', kind: 'text' }, { key: 'binding', name: 'Missing value', kind: 'text' }] }
+  const form = { ...node, type: undefined, body: undefined, title: 'Form', rows: [{ id: 'name', title: 'Name', depth: 0, type: 'text', body: '' }, { id: 'age', title: 'Age', depth: 0, type: 'number', body: '' }, { id: 'city', title: 'City', depth: 0, type: 'text', body: 'Paris' }], inputs: [{ key: 'n', path: ['name'], name: 'Name', kind: 'text' }, { key: 'a', path: ['age'], name: 'Age', kind: 'text' }, { key: 'binding', name: 'Missing value', kind: 'text' }] }
   let submitted = null
   await renderSitePage(target, form, { ...options, interact: { signedIn: false, submit: async (answers, revision) => { submitted = { fields: { ...answers.fields }, revision } } } })
   const formSections = [...target.querySelectorAll('section')]
@@ -96,7 +96,7 @@ async function main() {
   // the embed script: a script tag renders after itself, a div renders inside, both in a shadow root, read-only fetch
   const page2 = new JSDOM(`<p>Before</p><script data-fos-share="${link.replace(/"/g, '&quot;')}"></script><div id="div" data-fos-share='${JSON.stringify({ ...at, path: ['other'] })}' data-fos-api="https://other-api.example"></div><div id="bad" data-fos-share="nope"></div><style>p { color: red }</style>`, { url: 'https://blog.example/post', runScripts: 'outside-only' })
   const requests = []
-  const signup = { ...node, title: 'Sign up', type: undefined, body: undefined, rows: [{ id: 'email', title: 'Email', depth: 0, type: 'lib:type:text', body: '' }], inputs: [{ key: '["email"]', path: ['email'], name: 'Email', kind: 'text' }] }
+  const signup = { ...node, title: 'Sign up', type: undefined, body: undefined, rows: [{ id: 'email', title: 'Email', depth: 0, type: 'text', body: '' }], inputs: [{ key: '["email"]', path: ['email'], name: 'Email', kind: 'text' }] }
   page2.window.fetch = async (url, init) => {
     requests.push({ url, init })
     if (init.method === 'POST') return { ok: true, json: async () => url.endsWith('/visit') ? { node: { ...signup, revision: 'joined' }, visitorToken: 'guest-token' } : { node: { ...signup, revision: 'joined', mine: { peer: 'visitor:1', revision: 'joined', approvals: [], ranking: [], fields: JSON.parse(init.body).fields } } } }

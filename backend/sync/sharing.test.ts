@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express'
 import { verify } from 'jsonwebtoken'
-import { addMemberAt, addRow, addTask, addRefAt, createReplica, publish, unpublish, sharedProjection, writeNodeValue, participation, headCid, argumentRefs, content, refValueCid, removeMemberAt, setMemberCapabilitiesAt, renameTask, ensureSharedLink, ensureHomeContext, view, readNodeValue, resolveScope, valueContent, put, withProposal, proposalContent, commitRoot, updateAtScope, putStripped, readProposals, type Replica } from '@fosforescent/shared/sync/index'
+import { HOME_ID, approvalsOf, handlerResult, sharedLinkAt, addMemberAt, addRow, addTask, addRefAt, createReplica, publish, unpublish, sharedProjection, writeNodeValue, participation, headCid, argumentRefs, content, refValueCid, removeMemberAt, setMemberCapabilitiesAt, renameTask, ensureSharedLink, sharedAddressAt, ensureHomeContext, view, readNodeValue, resolveScope, valueContent, put, withProposal, proposalContent, commitRoot, updateAtScope, putStripped, readProposals, type Replica } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
@@ -58,9 +58,10 @@ test('authenticated state lives in guest account, with only declared projection 
   expect(JSON.stringify(record)).not.toContain('private-child-secret')
   expect(JSON.stringify(record)).not.toContain('guest-secret')
   expect(JSON.stringify(saved.body)).not.toContain('private-child-secret')
-  const arg = argumentRefs(s.replicas.guest.store, headCid(s.replicas.guest)).find(a => a.name?.startsWith('fos:participation:'))!
-  expect(content(s.replicas.guest.store, arg.cid).data.alias?.id).toBe(record.account?.ref)
-  expect(readNodeValue(s.replicas.guest, [], arg.name!)).toMatchObject({ links: { 'comment-slot': 'source' } })
+  // the guest's copy is on its link row to the node, which the host's record names
+  const link = sharedLinkAt(s.replicas.guest, at)!
+  expect(link.at(-1)).toBe(record.account?.ref)
+  expect(handlerResult(s.replicas.guest, link)).toMatchObject({ host: at, links: { 'comment-slot': 'source' } })
 })
 test('unpublishing, removed visitors, stale versions, and unexpected fields reject input', async () => {
   const s = setup(), visit = await s.call('visit', at)
@@ -82,17 +83,17 @@ test('received links reuse the host peer under Home and do not grant access to t
   let r = ensureHomeContext(createReplica('guest-device'), 1)
   const first = ensureSharedLink(r, at, 'Lunch?', 2)
   r = first.replica
-  expect(first.path[0]).toBe('fos:home')
-  expect(view(r, ['fos:home'])!.tasks).toHaveLength(1)
+  expect(first.path[0]).toBe(HOME_ID)
+  expect(view(r, [HOME_ID])!.tasks).toHaveLength(1)
   expect(view(r, first.path.slice(0, -1))!.members[0].capabilities).toEqual([])
-  expect(readNodeValue(r, first.path, 'fos:shared-link')).toEqual(at)
+  expect(sharedAddressAt(r, first.path)).toEqual(at)
   const repeated = ensureSharedLink(r, at, 'Lunch?', 3)
   expect(repeated.replica).toBe(r)
   r = ensureSharedLink(r, { ...at, path: ['dinner'] }, 'Dinner?', 4).replica
-  expect(view(r, ['fos:home'])!.tasks).toHaveLength(1)
+  expect(view(r, [HOME_ID])!.tasks).toHaveLength(1)
   expect(view(r, first.path.slice(0, -1))!.tasks).toHaveLength(2)
   const anonymous = ensureSharedLink(ensureHomeContext(createReplica('anon'), 1), at, 'Lunch?', 2, true)
-  expect(view(anonymous.replica, ['fos:home'])!.tasks[0].title).toBe('Host')
+  expect(view(anonymous.replica, [HOME_ID])!.tasks[0].title).toBe('Host')
 })
 test('there is no configure route: publishing is a member edge the owner writes and syncs', () => {
   const s = setup() as any
@@ -100,7 +101,7 @@ test('there is no configure route: publishing is a member edge the owner writes 
   expect(Object.keys(createSharingHandlers({ loadStore: async () => null, saveStore: async () => {} }, 'x')).sort()).toEqual(['read', 'submit', 'visit'])
 })
 
-test('approving a proposed edit is input the owner decides with (the tally never merges or removes the proposal)', async () => {
+test("a visitor's approval is an approval row of the submission; it merges only under the node's rule, and unchecking withdraws it", async () => {
   const s = setup(), r = s.replicas.host, store = r.store
   const cid = resolveScope(store, headCid(r), ['poll'])!
   const base = putStripped(store, content(store, cid))
@@ -109,11 +110,21 @@ test('approving a proposed edit is input the owner decides with (the tally never
   commitRoot(store, updateAtScope(store, headCid(r), ['poll'], value => withProposal(store, value, 'editor', proposal, 'Editor proposal'), 'node'), 6)
   const visit = await s.call('visit', at)
   expect(visit.body.node.proposals).toHaveLength(1)
-  const saved = await s.call('submit', input(visit.body, { approvals: [`proposal:${proposal}`], ranking: [`proposal:${proposal}`] }))
+  const id = visit.body.node.proposals[0].id
+  const saved = await s.call('submit', input(visit.body, { approvals: [id], ranking: [id] }))
   expect(saved.status).toBe(200)
-  expect(saved.body.node.counts[`proposal:${proposal}`]).toBe(1)
+  // the id stays while approvals arrive; the count is the submission's approval rows
+  expect(saved.body.node.proposals.map((p: { id: string }) => p.id)).toEqual([id])
+  expect(saved.body.node.counts[id]).toBe(1)
+  expect(saved.body.node.mine.approvals).toEqual([id])
+  const open = () => readProposals(s.replicas.host.store, content(s.replicas.host.store, resolveScope(s.replicas.host.store, headCid(s.replicas.host), ['poll'])!)).filter(p => p.status === 'open')
+  expect(approvalsOf(s.replicas.host.store, open()[0]!.cid).map(a => a.approver)).toEqual([saved.body.node.mine.peer])
+  // a visitor is no approver under the default rule (the owner and the members that may edit are): nothing merged
   expect(view(s.replicas.host, [])!.tasks.find(t => t.id === 'poll')!.title).toBe('Lunch?')
-  expect(view(s.replicas.host, ['poll'])!.proposals[0].status).toBe('open')
+  expect(open()).toHaveLength(1)
+  const withdrawn = await s.call('submit', input(saved.body, { visitorToken: visit.body.visitorToken, approvals: [], ranking: [id] }))
+  expect(withdrawn.body.node.counts[id]).toBe(0)
+  expect(approvalsOf(s.replicas.host.store, open()[0]!.cid)).toEqual([])
 })
 test('allocation links expose only requested fields and reject mismatching sources', async () => {
   const s = setup('users')
@@ -125,7 +136,7 @@ test('allocation links expose only requested fields and reject mismatching sourc
   expect(saved.body.node.mine.fields.need).toEqual({ amount: 1, type: 'inventory', unit: 'dress' })
   expect(JSON.stringify(saved.body.node.mine)).not.toContain('private-bank')
   expect((await s.call('submit', input(visit.body, { fields: { need: { source: 'source' } } }), 'guest')).status).toBe(400)
-  expect(view(s.replicas.guest, ['fos:home'])!.tasks.some(t => view(s.replicas.guest, ['fos:home', t.id])?.members.some(m => m.peerId === 'user:host'))).toBe(true)
+  expect(view(s.replicas.guest, [HOME_ID])!.tasks.some(t => view(s.replicas.guest, [HOME_ID, t.id])?.members.some(m => m.peerId === 'user:host'))).toBe(true)
 })
 test('the public read endpoint serves the projection for embeds without recording a visitor', async () => {
   let host = addRow(createReplica('user:host'), [], NOTE_TYPE, '# A post\n\nWith a **body**.', 1, { id: 'post' })
@@ -145,11 +156,11 @@ test('the public read endpoint serves the projection for embeds without recordin
   const ok = await read({ owner: 'host', path: JSON.stringify(['post']) })
   expect(ok.status).toBe(200)
   // a note publishes its title line, and its body as a Markdown row of its own
-  expect(ok.body.node).toMatchObject({ title: 'A post', type: 'lib:type:note' })
+  expect(ok.body.node).toMatchObject({ title: 'A post', type: 'note' })
   expect(ok.body.node.rows).toEqual([
-    { id: 'post/field/body', title: '', depth: 0, type: 'lib:type:markdown', body: '# A post\n\nWith a **body**.' },
-    { id: 'part', title: 'Part', depth: 0, type: 'lib:type:note' },
-    { id: 'part/field/body', title: '', depth: 1, type: 'lib:type:markdown', body: '## Part\n\nMore.' }
+    { id: 'post/field/body', title: '', depth: 0, type: 'markdown', body: '# A post\n\nWith a **body**.' },
+    { id: 'part', title: 'Part', depth: 0, type: 'note' },
+    { id: 'part/field/body', title: '', depth: 1, type: 'markdown', body: '## Part\n\nMore.' }
   ])
   expect(ok.body.node.mine).toBeUndefined()
   expect(ok.headers['Cache-Control']).toBe('public, max-age=60')

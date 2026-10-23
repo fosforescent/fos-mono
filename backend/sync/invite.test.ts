@@ -39,12 +39,13 @@ test('inviting a Fos user records the member grant and delivers the node into th
   // Bob's Home: alice is a sub-peer of his fos server with nothing granted, and the node is a pending request on her row
   const bobHome = view(s.replicas.bob!, [HOME_ID])!
   expect(bobHome.members.find(m => m.peerId === 'user:alice')!.capabilities).toEqual([])
-  const host = bobHome.tasks.find(t => t.id === 'shared-host:alice')!
+  // the host row is the one alice is a member of
+  const host = bobHome.tasks.find(t => view(s.replicas.bob!, [HOME_ID, t.id])?.members.some(m => m.peerId === 'user:alice'))!
   expect(host.title).toBe('alice')
   const hostView = view(s.replicas.bob!, [HOME_ID, host.id])!
   expect(hostView.members.map(m => [m.peerId, m.capabilities])).toEqual([['user:alice', []]])
   expect(hostView.tasks).toHaveLength(0)
-  expect(hostView.proposals.map(p => [p.peerId, p.name, p.status])).toEqual([['user:alice', 'invite: Plan the group trip', 'open']])
+  expect(hostView.proposals.map(p => [p.peerId, p.name, p.status])).toEqual([['user:alice', 'Plan the group trip', 'open']])
   expect(s.notified).toEqual([1, 2])
   // inviting again is idempotent on both sides
   const again = await s.send([HOME_ID, 'trip'], { kind: 'invite', path: [], user: 'bob' })
@@ -68,5 +69,5 @@ test('invites need an existing user, an owner, and a host that relays', async ()
   expect(peer.body.error).toMatch(/Only the account owner/)
   const offline = setup(false)
   expect((await offline.send([HOME_ID, 'trip'], { kind: 'invite', path: [], user: 'bob' })).body.error).toMatch(/does not relay/)
-  expect(view(offline.replicas.bob!, [HOME_ID])!.tasks.some(t => t.id === 'shared-host:alice')).toBe(false)
+  expect(view(offline.replicas.bob!, [HOME_ID])!.tasks.some(t => view(offline.replicas.bob!, [HOME_ID, t.id])?.members.some(m => m.peerId === 'user:alice'))).toBe(false)
 })

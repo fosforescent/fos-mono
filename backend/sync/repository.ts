@@ -1,15 +1,27 @@
 import { standardHostRef } from './host-runtime'
+import { handlerOfferId } from '@fosforescent/shared/sync/index'
 /** GitHub mediates repository state into ordinary Fos branches and merge requests.
  * No template, agent, deployment or continuation is selected here. */
 import {
   branchSelection, content, createBranch, headCid, isBranchChoice, mergeBranch,
-  readChoice, readNodeValue, repositoryAt, repositoryPeerAllows, resolveScope,
-  selectBranch, setBranchMergeRequest, withBranches, writeNodeValue,
-  loadReplica, serializeReplica, type RepositorySnapshot
+  readChoice, handlerResult, writeHandlerResult, membershipIdOf, repositoryPeerId, withMainBranchPolicy, repositoryAt, repositoryPeerAllows, resolveScope,
+  selectBranch, setBranchMergeRequest, withBranches,
+  loadReplica, serializeReplica, readMembers, type RepositorySnapshot, type Replica, type Scope
 } from '@fosforescent/shared/sync/index'
 import type { HostHandler } from './host-runtime'
 
 type State = { repo: string; checked: number; branch?: string; snapshot: RepositorySnapshot; merged: string[] }
+/** The repository peer's member entry nearest the node (it is a member there or above), read on main. */
+function repositoryEntry(r: Replica, path: Scope, peer: string): Scope | null {
+  return withMainBranchPolicy(r.store, () => {
+    for (let i = path.length; i >= 0; i--) {
+      const cid = resolveScope(r.store, headCid(r), path.slice(0, i))
+      const id = cid && membershipIdOf(r.store, cid, peer)
+      if (id) return [...path.slice(0, i), id]
+    }
+    return null
+  })
+}
 export type RepositoryLoadDeps = {
   connected(userId: number): Promise<boolean>
   snapshot(userId: number, repo: string, tracked: number[], branch?: string): Promise<RepositorySnapshot>
@@ -18,7 +30,7 @@ export type RepositoryLoadDeps = {
 export function repositoryLoadHandler(deps: RepositoryLoadDeps): HostHandler {
   const checked = new Map<string, number>()
   return {
-    peerId: 'integration:github', ref: standardHostRef('integration:github', 'repo', 'fos:handler:integration:github:repo:load'), available: user => deps.connected(user),
+    peerId: 'integration:github', ref: standardHostRef('integration:github', 'repo', handlerOfferId('integration:github', 'repo', 'load')), available: user => deps.connected(user),
     async load(ctx) {
       const { path, now, userId } = ctx
       if (!path.length) return ctx.replica
@@ -29,13 +41,15 @@ export function repositoryLoadHandler(deps: RepositoryLoadDeps): HostHandler {
         return repo && repositoryPeerAllows(ctx.replica, path, repo, 'pull') ? repo : null
       })
       if (!binding || !await deps.connected(userId)) return ctx.replica
-      // Adapter state lives outside the project value: checking a PR must not change its main reference.
+      // Adapter state lives outside the project value (checking a PR must not change its main reference): it is
+      // the GitHub peer's, on its member entry of the project, one record per branch context
       const ancestorBranches = ctx.branches.filter(b => b.scope.length < path.length)
-      const key = `fos:repository:${JSON.stringify([path, ancestorBranches])}`
-      const stored = readNodeValue<State>(ctx.replica, [], key)
+      const key = JSON.stringify([path, ancestorBranches]), entry = repositoryEntry(ctx.replica, path, repositoryPeerId(binding))
+      const states = (entry && withMainBranchPolicy(ctx.replica.store, () => handlerResult<Record<string, State>>(ctx.replica, entry))) || {}
+      const stored = states[key] ?? null
       const previous = stored?.repo === binding ? stored : null
       const selected = ctx.branches.find(b => JSON.stringify(b.scope) === JSON.stringify(path))?.name
-      const cacheKey = JSON.stringify([userId, key, binding, selected])
+      const cacheKey = JSON.stringify([userId, path, key, binding, selected])
       const lastCheck = checked.get(cacheKey) ?? (previous && previous.branch === selected ? previous.checked : undefined)
       if (lastCheck !== undefined && now >= lastCheck && now - lastCheck < 30_000) return ctx.replica
       const snapshot = await deps.snapshot(userId, binding, previous?.snapshot.pulls.filter(p => p.state === 'open').map(p => p.number) ?? [], selected)
@@ -78,7 +92,8 @@ export function repositoryLoadHandler(deps: RepositoryLoadDeps): HostHandler {
         const nextSnapshot = { ...snapshot, pulls }
         // Polling unchanged external data must not create endless graph history.
         if (previous && JSON.stringify(previous.snapshot) === JSON.stringify(nextSnapshot) && JSON.stringify(previous.merged) === JSON.stringify([...merged]) && headCid(r) === headCid(ctx.replica)) return ctx.replica
-        return writeNodeValue(r, [], key, { repo: binding, checked: now, branch: selected, snapshot: nextSnapshot, merged: [...merged] } satisfies State, now)
+        if (!entry) return r
+        return withMainBranchPolicy(r.store, () => writeHandlerResult(r, entry, { ...states, [key]: { repo: binding, checked: now, branch: selected, snapshot: nextSnapshot, merged: [...merged] } satisfies State }, now))
       })
     }
   }

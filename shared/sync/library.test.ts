@@ -1,78 +1,81 @@
-/** The standard library: seeding, opt-in Home references, audience membership as a group, and voted merges. */
+/** The standard library: a mutable ref like any other, found by what it holds, changed by accepted submissions. */
+import { nativeRef } from './native-refs'
+import { primitiveImplementation } from './primitives'
+import { capabilityTarget, handlerOfferId } from './graph'
 import { FosStore } from '../dag-implementation/store'
-import { HOME_ID, SERVER_TRANSPORT_CAPABILITIES, commitRoot, content, hasCapability, importNodes, makeLink, memberFor, proposalContent, put, reachableNodes, resolveScope, updateAtScope, valueContent, withProposal, type Scope } from './graph'
-import { exchangeNode } from './node-sync'
-import { addMemberAt, addRow, createReplica, ensureHomeContext, headCid, setMemberCapabilitiesAt, view, type Replica } from './replica'
+import { HOME_ID, LIBRARY_ID, content, hasCapability, isLibraryRef, libraryRowOf, memberFor, namesInLibrary, put, refNodeContent, resolveScope, rowTypeAt, valueCidOf, valueContent } from './graph'
+import { addMemberAt, addRefAt, makeLinkAt, addRow, addTask, createReplica, ensureHomeContext, headCid, proposeRefAt, view, type Replica } from './replica'
 import { nodeAuthorityAt } from './node-context'
-import { sharedProjection, writeParticipation } from './sharing'
-import { DEFAULT_MERGE_POLICY, LIBRARY_VERSION, STANDARD_LIBRARY, applyMergePolicy, ensureLibraryLink, ensureDeviceLibrary, exportLibraryRows, exportProvidedLibrary, libraryPath, manualHandlers, manualHandlersFor, libraryInfo, libraryLink, mergePolicy, seedStandardLibrary, setMergePolicy } from './library'
-import { LIBRARY_ID, nestScope } from './graph'
-import { PLAIN_TYPE, TEMPLATE_TYPE, PATTERN_TYPE } from './library-types'
-import { REF_TYPE } from './library-types'
+import { acceptSubmission, missingApprovals } from './approvals'
+import { BUNDLED_LIBRARY, setLibraryArg, upgradeLibrary, useLibrary, ensureDeviceLibrary, exportLibrary, exportLocalLibrary, libraryPath, manualHandlers, manualHandlersFor } from './library'
+import { LIBRARY_TYPE, PLAIN_TYPE, TASK_TYPE } from './library-types'
 
-const share = 'audience:users', address = { owner: 'fos-library', path: [HOME_ID, LIBRARY_ID], title: 'Standard library' }
-const revision = (value: unknown) => JSON.stringify(value).length.toString(36)
-
-function library(): { r: Replica; path: Scope } {
-  let r = ensureHomeContext(createReplica('user:fos-library'), 1)
-  r = addRow(r, [HOME_ID], PLAIN_TYPE, 'Standard library', 1, { id: LIBRARY_ID })
-  const path = [HOME_ID, LIBRARY_ID]
-  // published to every Fos user, who read, propose, approve and rank
-  r = addMemberAt(r, path, 'audience:users', 'Fos users', ['read', 'edit', 'rank'], 2)
-  r = setMergePolicy(r, path, DEFAULT_MERGE_POLICY, 2)
-  return { r: seedStandardLibrary(r, path, 3), path }
+const TEAM = 'team-library'
+/** The device root's library value with its task type titled `title`: a library its members changed. */
+function changedLibrary(r: Replica, title: string): string {
+  const store = r.store, value = valueCidOf(store, resolveScope(store, headCid(r), [LIBRARY_ID])!)
+  return put(store, { ...content(store, value), children: content(store, value).children.map(edge => {
+    const ref = content(store, edge[1])
+    if (ref.data.name?.content !== TASK_TYPE) return edge
+    const node = put(store, { ...valueContent(store, edge[1]), data: { ...valueContent(store, edge[1]).data, description: { content: title } } })
+    return [edge[0], put(store, refNodeContent(store, ref.data, node))] as [string, string]
+  }) })
 }
+const taskTitle = (r: Replica, at: string[]) => content(r.store, rowTypeAt(r.store, TASK_TYPE, at)).data.description?.content
 
-/** A member's proposal adding a row, built the way the node-sync path records one. */
-function proposeRow(r: Replica, path: Scope, peer: string, title: string, id: string, now: number): { replica: Replica; cid: string } {
-  const store = r.store, root = headCid(r), hostCid = resolveScope(store, root, path)!
-  const base = put(store, valueContent(store, hostCid)), draftStore = new FosStore()
-  importNodes(draftStore, reachableNodes(store, [base]))
-  commitRoot(draftStore, base, now)
-  nestScope(draftStore, { store, root, at: path })
-  const draft = addRow(createReplica(peer, draftStore), [], TEMPLATE_TYPE, title, now, { id })
-  importNodes(store, reachableNodes(draftStore, [headCid(draft)]))
-  const cid = put(store, proposalContent(store, peer, 'node-sync', headCid(draft), base, now))
-  commitRoot(store, updateAtScope(store, root, path, current => withProposal(store, makeLink(store, current, now), peer, cid, 'node-sync'), 'node'), now)
-  return { replica: { ...r }, cid }
-}
-
-test('seeding adds the standard templates once and records the version', () => {
-  const { r, path } = library()
-  const rows = view(r, path)!.tasks
-  expect(rows.filter(t => t.type === TEMPLATE_TYPE).map(t => t.title)).toEqual(STANDARD_LIBRARY.filter(s => s.type === TEMPLATE_TYPE).map(s => s.text))
-  // a template's own pattern rows (what tasks made from it accept) are rows too; its requirements are the rest
-  expect(view(r, [...path, 'lib:meet'])!.tasks.filter(t => t.requirement)).toHaveLength(2)
-  expect(view(r, [...path, 'lib:meet'])!.tasks.some(t => t.id === 'fos:icon:lib:meet')).toBe(true)
-  expect(rows.some(t => t.id === 'lib:trip')).toBe(false)
-  expect(libraryInfo(r, path)).toMatchObject({ version: LIBRARY_VERSION })
-  expect(libraryInfo(r, path)!.seeded).toContain('lib:meet:when')
-  const again = seedStandardLibrary(r, path, 9)
-  expect(headCid(again)).toBe(headCid(r))
-  // a row the group removed is not reseeded: the seed list remembers what it already added
-  const trimmed = seedStandardLibrary(addRow(r, path, PLAIN_TYPE, 'keep', 10), path, 11)
-  expect(view(trimmed, path)!.tasks.filter(t => t.type === TEMPLATE_TYPE)).toHaveLength(10)
+test('a device root has its library ref, a row of the Library type, found by what it holds', () => {
+  const r = ensureHomeContext(createReplica('user:alice'), 1)
+  expect(view(r, [])!.tasks.map(t => t.id)).toEqual([LIBRARY_ID, HOME_ID])
+  expect(libraryRowOf(r.store, headCid(r))).toEqual({ id: LIBRARY_ID, cid: resolveScope(r.store, headCid(r), [LIBRARY_ID]) })
+  const edge = valueContent(r.store, headCid(r)).children.find(e => content(r.store, e[1]).data.alias?.id === LIBRARY_ID)!
+  expect(edge[0]).toBe(rowTypeAt(r.store, LIBRARY_TYPE))
+  expect(libraryPath(r)).toEqual([LIBRARY_ID])
+  // a ref holding anything else is no library, whatever it is called
+  const other = addRefAt(r, [HOME_ID], 'notes', rowTypeAt(r.store, PLAIN_TYPE), 2, put(r.store, { data: { description: { content: 'Standard library' } }, children: [] }))
+  expect(isLibraryRef(other.store, content(other.store, resolveScope(other.store, headCid(other), [HOME_ID, 'notes'])!))).toBe(false)
+  // loading a device root again keeps the library it has: the build's is already its value
+  expect(headCid(ensureDeviceLibrary(r, BUNDLED_LIBRARY, 3))).toBe(headCid(r))
 })
 
-test('people who contribute link the shared library into Home, carrying its address; nobody gets one by default', () => {
+test('a library shared by a group is an ordinary ref: members submit, the ref\'s rule accepts, rows under it use it', () => {
   let r = ensureHomeContext(createReplica('user:alice'), 1)
-  expect(libraryLink(r)).toBeNull()
-  const linked = ensureLibraryLink(r, address, 2)
-  expect(linked.added).toBe(true)
-  expect(linked.path).toEqual([HOME_ID, LIBRARY_ID])
-  r = linked.replica
-  const row = view(r, [HOME_ID])!.tasks.find(t => t.id === LIBRARY_ID)!
-  expect(row).toMatchObject({ type: REF_TYPE, title: 'Standard library', refOwner: 'fos-library', refId: LIBRARY_ID })
-  expect(libraryLink(r)).toEqual([HOME_ID, LIBRARY_ID])
-  const second = ensureLibraryLink(r, address, 3)
-  expect(second.added).toBe(false)
-  expect(headCid(second.replica)).toBe(headCid(r))
-  expect(libraryLink(ensureHomeContext(createReplica('user:nobody'), 1))).toBeNull()
+  r = addRefAt(r, [HOME_ID], TEAM, rowTypeAt(r.store, LIBRARY_TYPE), 2, changedLibrary(r, 'Chore'), 'Team library')
+  // Home uses it: its own instance, pinned to the definition's value
+  r = useLibrary(r, [HOME_ID], [HOME_ID, TEAM], 2)
+  // nearest ancestor: under Home the team's library, at the root the device's
+  expect(libraryPath(r)).toEqual([HOME_ID, TEAM])
+  expect(libraryPath(r, [])).toEqual([LIBRARY_ID])
+  expect(taskTitle(r, [HOME_ID])).toBe('Chore')
+  r = makeLinkAt(r, [HOME_ID, TEAM], 3)
+  r = addMemberAt(r, [HOME_ID, TEAM], 'user:bob', 'Bob', ['edit'], 3)
+  r = addMemberAt(r, [HOME_ID, TEAM], 'user:carol', 'Carol', ['edit'], 3)
+  // bob's submission: a value for the ref, accepted the way every submission is
+  const proposed = proposeRefAt(r, [HOME_ID, TEAM], changedLibrary(r, 'Errand'), 'user:bob', 4)
+  r = proposed.replica
+  expect(missingApprovals(r, [HOME_ID, TEAM], proposed.proposalCid)).toEqual(['user:alice', 'user:carol'])
+  const accepted = acceptSubmission(r, [HOME_ID, TEAM], proposed.proposalCid, 'user:carol', 5)
+  expect(accepted.merged).toBe(true)
+  r = accepted.replica
+  // Home still uses the version it pinned until it upgrades
+  expect(taskTitle(r, [HOME_ID])).toBe('Chore')
+  r = upgradeLibrary(r, [HOME_ID], [HOME_ID, TEAM], 5)
+  expect(taskTitle(r, [HOME_ID])).toBe('Errand')
+  r = addTask(r, [HOME_ID], 'Shopping', 6, 'shop')
+  expect(view(r, [HOME_ID])!.tasks.find(t => t.id === 'shop')!.type).toBe(TASK_TYPE)
+  // exported, it is the content a new device's library takes, and the build source Home sees
+  const bundle = exportLibrary(r, [HOME_ID, TEAM])
+  const device = ensureDeviceLibrary(createReplica('user:dave', new FosStore()), bundle, 7)
+  expect(taskTitle(device, [])).toBe('Errand')
+  const source = exportLocalLibrary(r)
+  expect(content(r.store, rowTypeAt(r.store, TASK_TYPE, [HOME_ID])).data).toEqual(source.nodes[namesInLibrary(r.store, source.rootNodeId).byName.get(TASK_TYPE)!]!.data)
 })
 
 test('the users audience is a group every account belongs to; explicit entries still win', () => {
-  const { r, path } = library()
-  const cid = resolveScope(r.store, headCid(r), path)!, value = content(r.store, cid)
+  let r = ensureHomeContext(createReplica('user:alice'), 1)
+  r = addRow(r, [HOME_ID], PLAIN_TYPE, 'Shared', 2, { id: 'shared' })
+  const path = [HOME_ID, 'shared']
+  r = addMemberAt(r, path, 'audience:users', 'Fos users', ['read', 'edit', 'rank'], 2)
+  const value = content(r.store, resolveScope(r.store, headCid(r), path)!)
   expect(memberFor(r.store, value, 'user:bob')?.peerId).toBe('audience:users')
   expect(hasCapability(r.store, value, 'user:bob', 'edit')).toBe(true)
   expect(hasCapability(r.store, value, 'user:bob', 'execute')).toBe(false)
@@ -86,89 +89,28 @@ test('the users audience is a group every account belongs to; explicit entries s
   expect(nodeAuthorityAt(restricted, path, { peerId: 'user:carol', scope: path, capabilities: [] })).toEqual(['read'])
 })
 
-test('a proposal merges once enough members approved it; a lone approval waits', () => {
-  const { r: seeded, path } = library()
-  expect(mergePolicy(seeded, path)).toEqual({ approvals: 2 })
-  const proposed = proposeRow(seeded, path, 'user:bob', 'Weekly review', 'lib:weekly', 10)
-  let r = proposed.replica
-  const projection = sharedProjection(r, path, revision)
-  expect(projection.proposals.map(p => p.id)).toEqual([`proposal:${proposed.cid}`])
-  const vote = (peer: string, at: number) => writeParticipation(r, path, { peer, audience: share, revision: sharedProjection(r, path, revision).revision, updated: at, approvals: [`proposal:${proposed.cid}`], ranking: [], fields: {} }, at)
-  r = vote('user:bob', 11)
-  expect(applyMergePolicy(r, path, revision, 12).merged).toEqual([])
-  r = vote('user:carol', 13)
-  const merged = applyMergePolicy(r, path, revision, 14)
-  expect(merged.merged).toEqual([proposed.cid])
-  expect(view(merged.replica, path)!.tasks.some(t => t.id === 'lib:weekly' && t.type === TEMPLATE_TYPE)).toBe(true)
-  expect(view(merged.replica, path)!.proposals.filter(p => p.status === 'open')).toHaveLength(0)
-  expect(applyMergePolicy(merged.replica, path, revision, 15).merged).toEqual([])
-  // without a policy the owner decides by hand, however many approve
-  const fresh = library(), second = proposeRow(fresh.r, fresh.path, 'user:bob', 'Retro', 'lib:retro', 30)
-  let manual = setMergePolicy(second.replica, fresh.path, null, 31)
-  for (const [peer, at] of [['user:bob', 32], ['user:carol', 33]] as const) manual = writeParticipation(manual, fresh.path, { peer, audience: share, revision: sharedProjection(manual, fresh.path, revision).revision, updated: at, approvals: [`proposal:${second.cid}`], ranking: [], fields: {} }, at)
-  expect(mergePolicy(manual, fresh.path)).toBeNull()
-  expect(applyMergePolicy(manual, fresh.path, revision, 34).merged).toEqual([])
-  expect(view(manual, fresh.path)!.proposals.filter(p => p.status === 'open')).toHaveLength(1)
-})
-
-test('the library exports as rows that seed an identical copy: every root ships it from its build, and a library linked in Home overrides it there', () => {
-  const { r: lib, path } = library()
-  const rows = exportLibraryRows(lib, path)
-  expect(rows.map(row => [row.id, row.type])).toEqual(STANDARD_LIBRARY.map(row => [row.id, row.type]))
-  expect(rows.find(row => row.id === 'lib:meet')!.children!).toHaveLength(2)
-  // the readme is a note: its title line, and its body as a row of its own
-  expect(rows.find(row => row.id === 'lib:readme')!.text).toBe('Standard library')
-  // a new root ships the library: its row is there from the start, filled from the build's bundle
-  let device = ensureHomeContext(createReplica('user:device'), 1)
-  expect(view(device, [])!.tasks.map(t => t.id)).toEqual([LIBRARY_ID, HOME_ID])
-  device = ensureDeviceLibrary(device, { address, version: '0.0.7', rows }, 2)
-  expect(view(device, [LIBRARY_ID])!.tasks.filter(t => t.type === TEMPLATE_TYPE).map(t => t.title)).toEqual(rows.filter(row => row.type === TEMPLATE_TYPE).map(row => row.text))
-  expect(libraryInfo(device, [LIBRARY_ID])).toMatchObject({ version: '0.0.7', source: 'bundle' })
-  expect(headCid(ensureDeviceLibrary(device, { address, version: '0.0.7', rows }, 3))).toBe(headCid(device))
-  expect(libraryLink(device)).toBeNull()
-  expect(view(device, [HOME_ID])!.tasks.some(row => row.id === LIBRARY_ID)).toBe(false)
-  expect(libraryPath(device)).toEqual([LIBRARY_ID])
-  // a build made without a server ships the compiled .fos graph
-  const bare = ensureDeviceLibrary(ensureHomeContext(createReplica('user:bare'), 1), { address: null, version: LIBRARY_VERSION, rows: [] }, 2)
-  expect(view(bare, [LIBRARY_ID])!.tasks.filter(t => t.type === TEMPLATE_TYPE)).toHaveLength(10)
-  // contributing links the shared library into Home: under Home it is the one rows see; the shipped one stays in the root
-  const linked = ensureLibraryLink(device, address, 10).replica
-  expect(libraryLink(linked)).toEqual([HOME_ID, LIBRARY_ID])
-  expect(view(linked, [])!.tasks.map(t => t.id)).toEqual([LIBRARY_ID, HOME_ID])
-})
-
-test('the nodes the fos CLI pulls through the account export as the same bundle the server seeded', () => {
-  const { r: lib, path } = library()
-  const scope = path, pulled: Array<{ request: any; node: any }> = []
-  // breadth first, as `fos library export` walks the shared tree (shared/sync/node-provider.ts protocol)
-  const queue: Scope[] = [[]]
-  while (queue.length) {
-    const relative = queue.shift()!
-    const request = { peerId: 'user:dev', scope, path: relative, linkId: `fos-cli:${pulled.length}` }
-    const served = exchangeNode(lib, request, { peerId: 'user:dev', scope, owner: false, proposeOnly: true, capabilities: SERVER_TRANSPORT_CAPABILITIES }, 50 + pulled.length)
-    pulled.push({ request, node: served.node })
-    for (const child of served.node.children) if (!child.held) queue.push([...relative, child.id])
-  }
-  const bundle = exportProvidedLibrary({ address, nodes: pulled }, 99)
-  expect(bundle.address).toEqual(address)
-  expect(bundle.rows).toEqual(exportLibraryRows(lib, path))
-  expect(bundle.rows.filter(row => row.type === TEMPLATE_TYPE)).toHaveLength(10)
-  expect(exportProvidedLibrary({ address, nodes: [] }, 1)).toEqual({ address, version: LIBRARY_VERSION, rows: [] })
-})
-
 test('the library carries manual fallback handlers for every kind of requirement, matched by capability and resource', () => {
-  const { r } = library()
+  const r = ensureHomeContext(createReplica('user:device'), 1)
   const handlers = manualHandlers(r)
   expect(handlers.map(h => h.capability === 'allocation' ? `${h.capability}:${h.resource}` : h.capability).sort()).toEqual([
-    'allocation:account', 'allocation:calendar', 'allocation:inventory', 'allocation:location', 'allocation:location', 'allocation:points', 'llm', 'mail', 'market', 'repo', 'search', 'tool'
+    'allocation:account', 'allocation:calendar', 'allocation:inventory', 'allocation:location', 'allocation:points', 'llm', 'mail', 'market', 'repo', 'search', 'tool'
   ])
   expect(manualHandlersFor(r, { capability: 'allocation', resource: 'account' }).map(h => h.label)).toEqual(['Paid outside Fos'])
-  expect(manualHandlersFor(r, { capability: 'allocation', resource: 'location' }).map(h => [h.id, h.device])).toEqual([['lib:manual:location', false], ['lib:device:location', true]])
+  // a place is entered by hand; the device's position only once the device passed the library its native
+  expect(manualHandlersFor(r, { capability: 'allocation', resource: 'location' }).map(h => h.device)).toEqual([false])
   expect(manualHandlersFor(r, { capability: 'mail' }).map(h => h.label)).toEqual(['Sent it myself'])
   expect(manualHandlersFor(r, { capability: 'confirmation' })).toEqual([])
-  // a device that only ships the library from its build offers the same fallbacks
-  const device = ensureDeviceLibrary(ensureHomeContext(createReplica('user:device'), 1), { address, version: LIBRARY_VERSION, rows: exportLibraryRows(r, [HOME_ID, LIBRARY_ID]) }, 2)
-  expect(manualHandlers(device)).toEqual(handlers)
-  // a root whose shipped library was never filled has its row types but no fallbacks
-  expect(manualHandlers(createReplica('user:none'))).toEqual([])
+})
+
+test('the library requires natives the device passes in: its lib instance carries them, and they fill what they are declared for', () => {
+  let r = ensureHomeContext(createReplica('user:device'), 1)
+  const locate = { locate: async () => ({ lat: 1, lng: 2 }) }
+  const native = nativeRef(r.store, r.meta.peerId, { id: handlerOfferId(r.meta.peerId, 'allocation', 'location'), label: 'This device', type: store => capabilityTarget(store, 'allocation') }, locate as never)
+  expect(() => setLibraryArg(r, [], 'nothingDeclared', native, 2)).toThrow(/requires no/)
+  r = setLibraryArg(r, [], 'deviceLocation', native, 2)
+  expect(headCid(setLibraryArg(r, [], 'deviceLocation', native, 3))).toBe(headCid(r))
+  const device = manualHandlersFor(r, { capability: 'allocation', resource: 'location' }).find(h => h.device)!
+  expect(device).toMatchObject({ label: "Use this device's location", native })
+  // the native is what the device registered: the library holds no code, only what it was passed
+  expect(primitiveImplementation(r.store, valueCidOf(r.store, device.native!))?.value).toBe(locate)
 })

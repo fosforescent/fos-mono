@@ -1,5 +1,6 @@
+import { settingOf } from '@fosforescent/shared/sync/index'
 import { standardHostRef } from '../sync/host-runtime'
-import { sameCapabilityType, primitiveRef, instructionPrimitives } from '@fosforescent/shared/sync/index'
+import { sameCapabilityType, primitiveRef, instructionPrimitives, setRefValueAt, acceptSubmission } from '@fosforescent/shared/sync/index'
 /**
  * MCP peers: an MCP server the account has access to attaches to a node as a member (`mcp:<server id>`),
  * advertises `tool` (and read/edit) there, and runs its tools for "-tool <name> …" requirements under that
@@ -21,6 +22,9 @@ import {
   setHandlerOffersAt, valueContent, view, type Replica, type Scope, type TaskView
 } from '@fosforescent/shared/sync/index'
 import type { FosStore } from '@fosforescent/shared/dag-implementation/store'
+
+/** The handler every attached MCP server's tools run on; a tool's primitive names it as its implementation. */
+const MCP_TOOL_REF = standardHostRef('mcp:*', 'tool')
 import { editTree, walkRows, type StoreDeps } from './store'
 import type { AccountUser } from '../sync/accountStore'
 import type { HostHandler } from '../sync/host-runtime'
@@ -48,7 +52,7 @@ function handlersAbove(replica: Replica, at: Scope, peerId: string): string[] {
 /** Create the native handler as a value behind the same ref that can hold a template. */
 function toolHandler(replica: Replica, server: McpServerInfo, tool: string): string {
   const store = replica.store
-  return primitiveRef(store, { id: `${MCP_PEER_PREFIX}${server.id}/${tool}`, implementation: 'fos:handler:mcp:*:tool',
+  return primitiveRef(store, { id: `${MCP_PEER_PREFIX}${server.id}/${tool}`, implementation: MCP_TOOL_REF.id,
     host: `${MCP_PEER_PREFIX}${server.id}`, label: tool, type: capabilityTarget(store, 'tool') })
 }
 
@@ -58,7 +62,7 @@ type BoundTool = { replica: Replica; server: McpServerInfo; tool: string; peerId
 function bindTool(replica: Replica, at: Scope, req: TaskView, servers: McpServerInfo[], now: number): BoundTool | { error: string } {
   const store = replica.store
   const scope = [...at, req.id]
-  const pinned = instructionPrimitives(replica, { path: scope, row: req }).some(value => value.implementation === 'fos:handler:mcp:*:tool' && value.host.startsWith(MCP_PEER_PREFIX)) ? req.typeCid : null
+  const pinned = instructionPrimitives(replica, { path: scope, row: req }).some(value => value.implementation === MCP_TOOL_REF.id && value.host.startsWith(MCP_PEER_PREFIX)) ? req.typeCid : null
   const r = req.requirement ?? (pinned ? {} as { tool?: string; capability?: string; satisfied?: boolean } : null)
   if (!r || (!pinned && r.capability !== 'tool') || r.satisfied) return { error: 'not an open tool instruction' }
   const requestView = view(replica, scope)
@@ -91,8 +95,7 @@ function bindTool(replica: Replica, at: Scope, req: TaskView, servers: McpServer
     // Pin the advertised ref, not only its terminal value.
     handlerCid = candidates[0]!.cid
     replica = addRefAt(replica, scope, bindingId, capabilityTarget(store, 'tool'), now)
-    const proposed = proposeRefAt(replica, bindingPath, handlerCid, replica.meta.peerId, now)
-    replica = applyProposalAt(proposed.replica, bindingPath, proposed.proposalCid, replica.meta.peerId, now)
+    replica = setRefValueAt(replica, bindingPath, handlerCid, now)
   }
   if (!matchesGraph(store, capabilityTarget(store, 'tool'), handlerCid)) return { error: 'bound handler is not a tool handler' }
   const resolved = resolveBinding(store, capabilityTarget(store, 'tool'), handlerCid, contextBindings(replica, scope))
@@ -103,7 +106,7 @@ function bindTool(replica: Replica, at: Scope, req: TaskView, servers: McpServer
   const server = servers.find((s) => `${MCP_PEER_PREFIX}${s.id}` === peerId)
   if (!server || !peerId || !attached.some((a) => a.peerId === peerId) || !tool || !server.tools.some((t) => t.name === tool) || (r.tool && tool !== r.tool)) return { error: 'bound MCP handler is unavailable or does not match the requirement' }
   if (!stillAdvertised(replica, scope, peerId, tool)) return { error: 'bound MCP handler is disabled or no longer advertised' }
-  const returns = refArguments(store, request, store.primitive.documentField.getId()).filter(a => !content(store, a.cid).data.name?.content.startsWith('fos:'))
+  const returns = refArguments(store, request, store.primitive.documentField.getId()).filter(a => !settingOf(store, content(store, a.cid)))
   if (returns.length > 1) return { error: 'tool requirement has ambiguous return arguments' }
   const returnId = returns[0]?.id ?? newId()
   if (!returns.length) replica = addRefAt(replica, scope, returnId, store.primitive.documentField.getId(), now)
@@ -122,8 +125,9 @@ async function executeTool(deps: McpPeerDeps, replica: Replica, bound: BoundTool
   const store = replica.store, scope = [...at, req.id], resultId = newId()
   replica = addRow(replica, scope, NOTE_TYPE, text.slice(0, 20_000) || '(empty result)', now, { id: resultId })
   const resultCid = resolveScope(store, headCid(replica), [...scope, resultId])!
+  // the tool's answer is its peer's submission to the return ref; the host accepts it
   const returned = proposeRefAt(replica, [...scope, bound.returnId], resultCid, bound.peerId, now)
-  replica = applyProposalAt(returned.replica, [...scope, bound.returnId], returned.proposalCid, replica.meta.peerId, now)
+  replica = acceptSubmission(returned.replica, [...scope, bound.returnId], returned.proposalCid, replica.meta.peerId, now).replica
   replica = addSupply(replica, at, req.id, { capability: 'tool', by: bound.peerId, ref: resultId }, now)
   return { replica, text }
 }
@@ -131,7 +135,7 @@ async function executeTool(deps: McpPeerDeps, replica: Replica, bound: BoundTool
 /** `-tool` requirements as a runtime effect: the attached MCP server (`mcp:<id>`) that is bound, or the single candidate, runs the tool. */
 export function mcpToolHandler(deps: McpPeerDeps): HostHandler {
   return {
-    peerId: 'mcp:*', ref: standardHostRef('mcp:*', 'tool'),
+    peerId: 'mcp:*', ref: MCP_TOOL_REF,
     matches: id => id.startsWith(MCP_PEER_PREFIX),
     handles: step => step.row?.requirement?.capability === 'tool' && step.row.requirement.tool !== 'fos.pull',
     available: async (userId, peerId) => (await deps.servers(userId)).some(s => `${MCP_PEER_PREFIX}${s.id}` === peerId),

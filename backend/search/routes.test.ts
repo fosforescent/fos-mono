@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express'
+import { publishedTemplateId } from '@fosforescent/shared/sync/index'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
 import { MARKET_PEER, addMemberAt, addRow, addTask, content, copyBidRow, createReplica, draftBid, readProposals, removeMemberAt, setMarketAt, setMemberCapabilitiesAt, viewNode, resolveScope, rootTargetCid, type Replica } from '@fosforescent/shared/sync/index'
 import { createMarketHandlers } from './routes'
@@ -141,7 +142,7 @@ test('published handler snapshots are readable globally, and switching off the m
   alice = addTask(alice, [], 'Private calendar', 3, 'private')
   alice = publishTemplate(alice, [], ['template'], 'Design service', 4, true)
   const d = deps({ alice, bob: createReplica('bob') })
-  const query = { owner: 'alice', id: 'fos:published:template' }
+  const query = { owner: 'alice', id: publishedTemplateId(alice.meta.peerId, 'template') }
   const opened = await call(d.handlers.marketNode, 'bob', { query })
   expect(opened.status).toBe(200)
   expect(opened.json.capability).toBe(true)

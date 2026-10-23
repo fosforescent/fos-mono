@@ -17,7 +17,7 @@ export function primitiveConstructor(store: FosStore): string {
 export function primitiveRef(store: FosStore, input: { id: string; implementation?: string; type: string; host: string; label?: string; native?: unknown }): string {
   const primitive = put(store, { data: { primitive: { implementation: input.implementation ?? input.id, host: input.host, access: 'execute' } }, children: [] })
   if (input.native) store.getNodeByAddress(primitive)!.nativeImplementation = { value: input.native, type: input.type }
-  const { alias: _alias, capabilityDefinition: _capability, triggerDefinition: _trigger, ...properties } = content(store, input.type).data
+  const { alias: _alias, capabilityDefinition: _capability, ...properties } = content(store, input.type).data
   if (_capability || properties.form) { delete properties.name; delete properties.description }
   const value = put(store, { data: { ...properties, peerId: { content: input.host }, description: properties.description ?? { content: input.label ?? input.id } }, children: [...content(store, input.type).children, [primitiveConstructor(store), primitive]] })
   return put(store, refNodeContent(store, { alias: { id: input.id }, name: { content: input.label ?? input.id } }, value, []))

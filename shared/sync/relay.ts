@@ -2,11 +2,11 @@
  * Relay: the durable queue for peers that are offline, as a standard-library handler any peer can run.
  *
  * Everything is a row of a library type (`.fos/library.json`), recognised by the row edge's left node only:
- *   message (`lib:type:relay-message`)  a row a peer leaves at a relay node: its value is the addressee (a peer id),
+ *   message (`lib.relayMessage`)  a row a peer leaves at a relay node: its value is the addressee (a peer id),
  *                                       its child rows are what is sent (a task, a note, ...)
- *   queue   (`lib:type:relay-queue`)    the row under a recipient's member entry (`fos:peer:<id>`) holding what was
+ *   queue   (`lib.relayQueue`)    the row under a recipient's membership (the row whose left is it) holding what was
  *                                       delivered to it; that subtree is the recipient's queue
- *   ack     (`lib:type:relay-ack`)      a row the recipient leaves (in its queue, or as its submission at the relay
+ *   ack     (`lib.relayAck`)      a row the recipient leaves (in its queue, or as its submission at the relay
  *                                       node) naming a message it took; the message and the ack leave the queue
  *
  * The handler is three generic primitives: read the rows peers left at a node (`rowsLeftAt`: rows of main and the
@@ -20,25 +20,36 @@
  */
 import type { FosPathElem } from '../types'
 import type { FosStore } from '../dag-implementation/store'
+import { hashContent } from '../dag-implementation/cid'
 import {
-  commitRoot, content, findChild, identityCid, isMemberEdge, isPeerReference, isRowOfType, libraryTypeAt, memberEntryId, MEMBER_ENTRY_PREFIX, moveChild, aliasIdOf,
+  commitRoot, content, findChild, identityCid, isMemberEdge, isPeerReference, isRowOfType, libraryTypeAt, membershipIdOf, memberPeerOf, inMemberEntry, moveChild, aliasIdOf,
   capabilityTarget, put, proposalContent, readProposals, refNodeContent, resolveScope, updateAtScope, valueContent, withMainBranchPolicy, withProposal,
-  LIBRARY_ID, importNodes, findNearestRow, memberEdgesOf, isRowEdge, type ProposalRecord, type Scope, type TaskView,
+  isLibraryRef, handlerOfferId, shippedLibrary, findNearestRow, memberEdgesOf, isRowEdge, type ProposalRecord, type Scope, type TaskView,
 } from './graph'
 import { constructForm } from './forms'
 import { addMemberAt, headCid, setHandlerOffersAt, view, type Replica } from './replica'
 import { contextMemberRefs, discoverHandlers } from './handlers'
-import { STANDARD_LIBRARY } from './library'
-import type { FosNodesData } from '../types'
-import * as COMPILED_LIBRARY from './library.generated.json'
 
-export const RELAY_MESSAGE = 'lib:type:relay-message'
-export const RELAY_QUEUE = 'lib:type:relay-queue'
-export const RELAY_ACK = 'lib:type:relay-ack'
+export const RELAY_MESSAGE = 'relayMessage'
+export const RELAY_QUEUE = 'relayQueue'
+export const RELAY_ACK = 'relayAck'
 /** The library's Relay template: what a relay node accepts (messages, acknowledgements); a peer offers it as its relay. */
-export const RELAY_TEMPLATE = 'lib:relay'
-/** The queue row's identity under a member entry. */
-export const RELAY_QUEUE_ID = 'relay:queue'
+export const RELAY_TEMPLATE = 'relay'
+/** What a new queue row under a member entry is called: a content address (code finds a queue by its type, `queueIn`). */
+export const RELAY_QUEUE_ID = hashContent({ data: { description: { content: 'Relay queue' } }, children: [] })
+/** What the acknowledgement of the message `messageId` is called: a content address of what it acknowledges. */
+export const relayAckId = (messageId: string): string => hashContent({ data: { ref: { id: messageId }, description: { content: 'Relay acknowledgement' } }, children: [] })
+
+/** The queue under the member entry node `entry`: its row of the library's queue type, if it has one. */
+function queueIn(store: FosStore, entry: string): string | null {
+  const edge = content(store, entry).children.find(e => isRowOfType(store, e, RELAY_QUEUE))
+  return edge ? aliasIdOf(content(store, identityCid(store, edge))) : null
+}
+/** The path of the queue under the member entry at `entry`, if it has one. */
+function queuePath(r: Replica, entry: Scope): Scope | null {
+  const cid = resolveScope(r.store, headCid(r), entry), id = cid && queueIn(r.store, cid)
+  return id ? [...entry, id] : null
+}
 
 const LIMIT = 5000
 const sameEdge = (a: FosPathElem, b: FosPathElem) => a[0] === b[0] && a[1] === b[1]
@@ -87,7 +98,8 @@ export function memberEntryPath(r: Replica, at: Scope, peerId: string): Scope | 
   return withMainBranchPolicy(r.store, () => {
     for (let i = at.length; i >= 0; i--) {
       const cid = resolveScope(r.store, headCid(r), at.slice(0, i))
-      if (cid && content(r.store, cid).children.some(e => isMemberEdge(r.store, e) && content(r.store, e[1]).data.peerId?.content === peerId)) return [...at.slice(0, i), memberEntryId(peerId)]
+      const id = cid && membershipIdOf(r.store, cid, peerId)
+      if (id) return [...at.slice(0, i), id]
     }
     return null
   })
@@ -116,7 +128,8 @@ function takeAway(r: Replica, at: Scope, row: LeftRow, now: number): Replica {
 
 /** The queue under the member entry `entry`, created for `peerId` from the library's queue type when missing. */
 function ensureQueue(r: Replica, entry: Scope, peerId: string, now: number): Replica {
-  if (resolveScope(r.store, headCid(r), [...entry, RELAY_QUEUE_ID])) return r
+  const cid = resolveScope(r.store, headCid(r), entry)
+  if (cid && queueIn(r.store, cid)) return r
   const type = libraryTypeAt(r.store, RELAY_QUEUE, entry)
   if (!type) throw new Error('No library above this node has a relay queue type.')
   const queue = put(r.store, constructForm(r.store, type, RELAY_QUEUE_ID, peerId, now))
@@ -126,9 +139,9 @@ function ensureQueue(r: Replica, entry: Scope, peerId: string, now: number): Rep
 /** Deliver a message into the recipient's queue: moved there from main, or taken out of its submission. */
 function deliver(r: Replica, at: Scope, row: LeftRow, to: string, entry: Scope, now: number): Replica {
   r = ensureQueue(r, entry, to, now)
-  const queue = [...entry, RELAY_QUEUE_ID]
+  const id = queueIn(r.store, resolveScope(r.store, headCid(r), entry)!)!, queue = [...entry, id]
   const queued = findChild(r.store, resolveScope(r.store, headCid(r), queue)!, row.id)
-  if (!row.submission && !queued) return commit(r, moveChild(r.store, headCid(r), at, row.id, entry, { into: RELAY_QUEUE_ID }), now)
+  if (!row.submission && !queued) return commit(r, moveChild(r.store, headCid(r), at, row.id, entry, { into: id }), now)
   // a submission's row (or one queued already) is added once and taken away from where it was left
   if (!queued) r = commit(r, updateAtScope(r.store, headCid(r), queue, value => ({ ...value, children: [...value.children, row.edge] })), now)
   return takeAway(r, at, row, now)
@@ -150,7 +163,7 @@ function dequeue(r: Replica, queue: Scope, id: string, now: number): { replica: 
  */
 export function relayAt(r: Replica, at: Scope, handlerPeer: string, now: number): Replica {
   // a queue (inside a member entry) is not a relay node: its node's run handles it
-  if (at.some(id => id.startsWith(MEMBER_ENTRY_PREFIX)) || !relayOffered(r, at, handlerPeer)) return r
+  if (inMemberEntry(r.store, headCid(r), at) || !relayOffered(r, at, handlerPeer)) return r
   const s = r.store
   const node = () => resolveScope(s, headCid(r), at)
   let cid = node()
@@ -164,7 +177,9 @@ export function relayAt(r: Replica, at: Scope, handlerPeer: string, now: number)
       if (!id) continue
       const queues = row.from ? [memberEntryPath(r, at, row.from)].filter((q): q is Scope => !!q) : queuesAbove(r, at)
       for (const entry of queues) {
-        const done = dequeue(r, [...entry, RELAY_QUEUE_ID], id, now)
+        const queue = queuePath(r, entry)
+        if (!queue) continue
+        const done = dequeue(r, queue, id, now)
         r = done.replica
         if (done.removed) { r = takeAway(r, at, row, now); break }
       }
@@ -173,7 +188,8 @@ export function relayAt(r: Replica, at: Scope, handlerPeer: string, now: number)
   // acks the recipients left in their own queues here
   cid = node()
   for (const entry of cid ? queuesAt(r, at) : []) {
-    const queue = [...entry, RELAY_QUEUE_ID], queueCid = resolveScope(s, headCid(r), queue)
+    const queue = queuePath(r, entry), queueCid = queue && resolveScope(s, headCid(r), queue)
+    if (!queue) continue
     if (!queueCid) continue
     for (const row of rowsLeftAt(s, queueCid)) {
       if (row.submission || !isRowOfType(s, row.edge, RELAY_ACK)) continue
@@ -191,10 +207,9 @@ export function relayAt(r: Replica, at: Scope, handlerPeer: string, now: number)
 function queuesAt(r: Replica, at: Scope): Scope[] {
   const cid = resolveScope(r.store, headCid(r), at)
   if (!cid) return []
-  return content(r.store, cid).children.flatMap(e => {
-    if (!isMemberEdge(r.store, e)) return []
+  return memberEdgesOf(r.store, cid).flatMap(e => {
     const id = content(r.store, e[1]).data.alias?.id
-    return id && findChild(r.store, e[1], RELAY_QUEUE_ID) ? [[...at, id]] : []
+    return id && queueIn(r.store, e[1]) ? [[...at, id]] : []
   })
 }
 function queuesAbove(r: Replica, at: Scope): Scope[] {
@@ -214,13 +229,9 @@ export function relayAfterSubmission(r: Replica, path: Scope, handlerPeer: strin
 
 /** The library's Relay template as `at` sees it: the nearest library's, else this build's. */
 export function relayTemplate(r: Replica, at: Scope = []): string {
-  const library = findNearestRow(r.store, headCid(r), at, row => row.id === LIBRARY_ID && !!findChild(r.store, row.cid, RELAY_TEMPLATE))
-  const local = library && findChild(r.store, library.cid, RELAY_TEMPLATE)
-  if (local && !isPeerReference(content(r.store, local))) return local
-  const shipped = STANDARD_LIBRARY.find(row => row.id === RELAY_TEMPLATE)
-  if (!shipped?.graph) throw new Error('This build has no Relay template.')
-  importNodes(r.store, COMPILED_LIBRARY.nodes as unknown as FosNodesData)
-  return shipped.graph.cid
+  const template = libraryTypeAt(r.store, RELAY_TEMPLATE, at)
+  if (!template) throw new Error('This build has no Relay template.')
+  return template
 }
 
 /** This device offers relay at `at`: a typed offer of the library's Relay template on its own member entry. */
@@ -230,7 +241,7 @@ export function offerRelay(r: Replica, at: Scope, now: number): Replica {
   const type = capabilityTarget(r.store, 'relay')
   const template = valueContent(r.store, relayTemplate(r, at))
   const value = put(r.store, { ...template, children: [...template.children, ...content(r.store, type).children] })
-  const handler = put(r.store, refNodeContent(r.store, { alias: { id: `fos:relay:${peerId}` }, name: { content: 'Relay' } }, value, []))
+  const handler = put(r.store, refNodeContent(r.store, { alias: { id: handlerOfferId(peerId, 'relay') }, name: { content: 'Relay' } }, value, []))
   return setHandlerOffersAt(r, at, peerId, type, [handler], now)
 }
 
@@ -243,7 +254,7 @@ export function addRelayMessage(r: Replica, at: Scope, to: string, now: number, 
 }
 
 /** Acknowledge the message `messageId`: an ack row at `at` (the recipient's copy of its queue, or the relay node). */
-export function addRelayAck(r: Replica, at: Scope, messageId: string, now: number, id = `relay:ack:${messageId}`): Replica {
+export function addRelayAck(r: Replica, at: Scope, messageId: string, now: number, id = relayAckId(messageId)): Replica {
   const type = libraryTypeAt(r.store, RELAY_ACK, at)
   if (!type) throw new Error('No library above this node has a relay acknowledgement type.')
   const node = put(r.store, constructForm(r.store, type, id, messageId, now))
@@ -256,13 +267,14 @@ export function addRelayAck(r: Replica, at: Scope, messageId: string, now: numbe
  * entry being what it receives of the node's members). Only what is loaded is visited; bounded.
  */
 export function relayQueues(r: Replica, peerId: string, at: Scope = [], limit = 2000): Scope[] {
-  const s = r.store, out: Scope[] = [], stack: Scope[] = [at], entry = memberEntryId(peerId)
+  const s = r.store, out: Scope[] = [], stack: Scope[] = [at]
   let seen = 0
   while (stack.length && seen++ < limit) {
     const path = stack.pop()!, cid = resolveScope(s, headCid(r), path)
     if (!cid || isPeerReference(content(s, cid))) continue
-    const member = memberEdgesOf(s, cid).find(e => content(s, e[1]).data.alias?.id === entry)
-    if (member && findChild(s, member[1], RELAY_QUEUE_ID)) out.push([...path, entry, RELAY_QUEUE_ID])
+    const member = memberEdgesOf(s, cid).find(e => memberPeerOf(s, e) === peerId)
+    const entry = member && content(s, member[1]).data.alias?.id, queue = member && queueIn(s, member[1])
+    if (entry && queue) out.push([...path, entry, queue])
     for (const edge of valueContent(s, cid).children) {
       const id = isRowEdge(s, edge) ? aliasIdOf(content(s, identityCid(s, edge))) : null
       if (id) stack.push([...path, id])

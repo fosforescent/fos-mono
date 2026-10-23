@@ -4,13 +4,12 @@ import { createEvaluationService } from './sync/evaluation'
 import { createPaymentSettlement } from './sync/payments'
 import { setPaymentSettler, stripePayments } from './payments/stripe'
 import Stripe from 'stripe'
-import { ensureStandardLibrary } from './sync/library'
-import { createSystemAccount, libraryOwner } from './library'
 import { sendPlainEmail } from './email/email'
 import { createHostRuntime } from './sync/host-runtime'
 import { createHostHandlers } from './sync/hostHandlers'
 import { repositoryLoadHandler } from './sync/repository'
 import { identityKeyFromEnv, verifyHandler } from './sync/verify'
+import { approveHandler } from './sync/approve'
 import { startCronRunner } from './sync/cron'
 import express, { application } from 'express'
 import http from 'http'
@@ -369,6 +368,7 @@ const mcpPeerDeps = prismaMcpPeerDeps(prisma, storeDeps, getUserId, async (serve
 const searchEmbed = vertexEmbed()
 // `@name` is shorthand for a user object this server attests (sync/verify.ts): the `verify` handler fills verify
 // requirements with it; its public key is published in every account's Home, where devices check attestations
+const identityKey = identityKeyFromEnv()
 const verify = verifyHandler({
   async findUser(username) {
     const user = await prisma.userModel.findUnique({ where: { user_name: username }, select: { id: true, user_name: true, user_profile: true } })
@@ -377,9 +377,10 @@ const verify = verifyHandler({
     const text = (value: unknown) => typeof value === 'string' ? value : null
     return { id: user.id, username: user.user_name, name: text(profile.displayName) ?? text(profile.name), publicKey: text(profile.publicKey) }
   }
-}, identityKeyFromEnv())
+}, identityKey)
 const runtime = createHostRuntime([...createHostHandlers({
   verify,
+  approve: approveHandler(identityKey),
   webUrl: (process.env.WEB_URL ?? process.env.FRONTEND_URL ?? 'https://fosforescent.com').replace(/\/$/, ''),
   // captures organized into a node: one provider instance per capture, metered under the voice budget
   organize: organizeHandler(() => voiceDepsFromEnv(), voiceUsage),
@@ -504,10 +505,6 @@ const PORT = parseInt(process.env.PORT || '4000', 10);
 
 server.listen(PORT, '0.0.0.0', async () => {
   void startChannels()
-  // The standard library: its system account, node, sharing and seed templates; then every owner sync references it.
-  ensureStandardLibrary({ ...prismaAccountStoreDeps, createAccount: createSystemAccount }, libraryOwner(), runtime)
-    .then(address => { runtime.library = address; console.log(`[library] @${address.owner} shares ${address.title}`) })
-    .catch(error => console.error('[library] unavailable:', error instanceof Error ? error.message : error))
   console.log(`Server running on port ${PORT}`);
   console.log(`WebSocket endpoint: ws://localhost:${PORT}/{jwt}`);
 });

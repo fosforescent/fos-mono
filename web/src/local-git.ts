@@ -1,4 +1,4 @@
-import { readGraphValue } from '../../shared/sync/node-values'
+import { localRepositoryHere } from '../../shared/sync/repository'
 import type { App } from './app'
 import { launchAgent } from './agents'
 import { inTauri, tauriInvoke } from './project'
@@ -9,12 +9,9 @@ type Binding = { path: string; scope: Scope; peer: string }
 function binding(app: App, path = app.state.view): Binding | null {
   const r = app.state.replica
   for (let depth = path.length; depth >= 0; depth--) {
-    const scope = path.slice(0,depth), cid = resolveScope(r.store, headCid(r), scope)
-    if (!cid) continue
-    const arg = argumentRefs(r.store,cid).find(a => a.name === 'local-repository' && a.type === capabilityTarget(r.store,'repo'))
-    if (!arg) continue
-    const value = refValueCid(r.store,content(r.store,arg.cid))
-    try { const data = (value ? readGraphValue(r.store, value) : null) as { device?: string; path?: string; peer?: string }; if (data?.device === r.meta.peerId && typeof data.path === 'string') return { path: data.path, scope, peer: data.peer ?? `git:${r.meta.peerId}:${encodeURIComponent(data.path)}` } } catch { return null }
+    const scope = path.slice(0,depth), data = localRepositoryHere(r, scope)
+    if (!data) continue
+    if (data.device === r.meta.peerId) return { path: data.path, scope, peer: data.peer }
   }
   return null
 }

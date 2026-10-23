@@ -6,12 +6,12 @@ import { formText, formTitle } from './forms'
 import type { FosStore } from '../dag-implementation/store'
 import {
   isBranchChoice, selectedBranchValue, capabilityTarget, type Capability, put, childRows, flowOf, requirementSatisfied, content, identityCid, isChoiceEdge, isRefNode, refValueCid,
-  resolveScope, valueContent, importNodes, reachableNodes, typeIdOf, type Scope
+  resolveScope, valueContent, importNodes, reachableNodes, typeIdOf, isLibraryRef, type Scope
 } from './graph'
 import { PLAIN_TYPE, isAllocationType } from './library-types'
 import { headCid, type Replica } from './replica'
 import { refProperties } from './refs'
-import { sameCapabilityType } from './capabilities'
+import { sameCapabilityType, isHandlerStateLeft } from './capabilities'
 import { matchesGraph } from './structural'
 import { parseRefExpression, resolveRefExpression, textRefExpressions, type RefAccess } from './ref-paths'
 
@@ -30,6 +30,9 @@ export function argumentRefs(store: FosStore, cid: string): BindingCandidate[] {
   // rows still have a right-hand argument, but do not declare an implicit name.
   return refProperties(store, cid, 'arguments').filter(ref => {
     const node = content(store, ref.cid)
+    if (isLibraryRef(store, node)) return false
+    // an execute row holds the evaluator's journal of this node: its state, never an argument
+    if (isHandlerStateLeft(store, ref.type)) return false
     const pattern = ref.type && content(store, ref.type)
     return node.data.name || valueContent(store, ref.cid).data.name || isRefNode(store, node) &&
       (!typeIdOf(store, ref.type) || !!pattern && (pattern.data.capabilityDefinition || pattern.data.form?.primitive))

@@ -1,312 +1,243 @@
 /**
- * The standard library: one node, owned by a system account on the server, that every account reads and can
- * propose changes to. Its rows are templates (derived capabilities built from the basic row grammar: tasks,
- * requirements, allocations, choices) that work offline on every device once the node is pulled, because
- * instantiating a template is a local copy. It is shared with the `users` audience, which is an implicit group of
- * all signed-in accounts (`memberFor` in graph.ts), with read, edit (proposals), approve and rank; a merge policy on
- * the node lets the server merge a proposal once enough members approved it (`applyMergePolicy`).
+ * The standard library: a mutable ref in the graph, a row of the Library type in every device root. Its value is the
+ * library's content (its rows: named refs such as `lib.task`, templates, groups), and it changes like any ref's
+ * value: by a submission being accepted (approvals.ts). The first one is the build's: `.fos/library.json`, compiled by
+ * scripts/compile-library.cjs, is the content a fresh device root's library ref holds (`ensureDeviceLibrary`), offline
+ * from the first run; a later build's is the fos peer's submission. A library shared across devices and accounts is a
+ * ref like any other: published to its members, referenced in theirs, changed by their submissions under its merge
+ * rule. `fos . library export` writes the value a store sees back as the build source.
  *
- * The library is a row in two places. Every device root ships one (`[device root, fos:library]`): a client carries the library in
- * its build from `.fos/library.json`, compiled by scripts/compile-library.cjs. `fos . library export --local`
- * writes that portable graph from the editable local tree; `ensureDeviceLibrary` installs its exact rows
- * offline from the first run; it stays on the device. People who contribute and vote add the shared node to their
- * Home (`ensureLibraryLink`), with the fos server as its peer. Like every mutable ref the library resolves by nearest
- * ancestor, so under Home the linked library overrides the shipped one (`libraryPath`, `rowTemplate` in graph.ts).
+ * Like every mutable ref the library resolves by nearest ancestor, so a library referenced in Home overrides the device
+ * root's for everything under Home (`libraryPath`, `rowTypeAt` in graph.ts).
  */
-import { addRow, applyProposalAt, createReplica, homePath, view, type Replica } from './replica'
-import { readNodeValue, writeNodeValue } from './evaluation'
-import { sharedProjection, type SharedAddress } from './sharing'
-import { acceptProvidedNode, type NodeRequest, type ProvidedNode } from './node-provider'
-import { LIBRARY_ID, ROW_TYPES_ID, commitRoot, content, ensureLibraryRow, importNodes, reachableNodes, seedTypes, findChild, findNearestRow, isHandle, isPeerReference, put, resolveScope, rowEdgeAt, rowTypeContents, rowTypesContent, updateAtScope, valueContent, type Scope, type TaskView } from './graph'
-import type { FosNodeContent, FosNodesData, FosPathElem } from '../types'
+import { homePath, proposeRefAt, view, type Replica } from './replica'
+import { commitRoot, content, ensureLibraryRow, importNodes, reachableNodes, findNearestRow, isLibraryDefinition, isPeerReference, libraryInstanceEdge, libraryInstanceOf, libraryRowOf, updateAtScope, put, refValueCid, resolveScope, valueContent, SERVER_MEMBER, type Scope } from './graph'
+import type { FosNodeContent, FosNodesData } from '../types'
 import { headCid } from './replica'
 import { FOS_DATA_VERSION } from '../version'
 import * as COMPILED_LIBRARY from './library.generated.json'
 import { compileLibrary, type LibrarySource } from '../library-compiler'
-import { isBookkeepingEdge, valueCidOf } from './graph'
-import { ALLOCATION_TYPE, COMMENT_TYPE, MONEY_TYPE, NOTE_TYPE, PLAIN_TYPE, REF_TYPE, RESOURCE_TYPE, TASK_TYPE, TEMPLATE_TYPE } from './library-types'
+import { fieldNode } from '../library-names'
+import { plainEdge } from './patterns'
+import { bookkeepingOf, isBookkeepingEdge, namesInLibrary, refNodeContent, valueCidOf } from './graph'
+import { hashContent } from '../dag-implementation/cid'
 
-/** The library row holding the manual fallback handlers (`manualHandlers`). */
-export const MANUAL_HANDLERS_ID = 'lib:manual'
-/** Node value on the library: which seed version it carries, so later versions add what is missing. */
-export const LIBRARY_ARGUMENT = 'fos:library'
+/** The library's field holding the manual fallback handlers (`manualHandlers`). */
+export const MANUAL_HANDLERS = 'manual'
 /** The library's version is the data version (shared/version.ts); the compiler refuses a library graph in another. */
 export const LIBRARY_VERSION: string = FOS_DATA_VERSION
 if (COMPILED_LIBRARY.version !== LIBRARY_VERSION) throw new Error(`shared/sync/library.generated.json is in version ${COMPILED_LIBRARY.version}, this build is ${LIBRARY_VERSION}: run node scripts/compile-library.cjs.`)
-export const MERGE_POLICY_ARGUMENT = 'fos:merge-policy'
-
-export type LibraryAddress = SharedAddress & { title: string }
-export type LibraryInfo = { version: string; seeded: string[]; source?: 'server' | 'bundle' }
-/** Proposals on the node merge on their own once this many distinct members approved them. */
-export type MergePolicy = { approvals: number }
-export const DEFAULT_MERGE_POLICY: MergePolicy = { approvals: 2 }
-
 type Requirement = NonNullable<import('../types').FosDataContent['requirement']>
-type Allocation = NonNullable<import('../types').FosDataContent['allocation']>
-type Resource = NonNullable<import('../types').FosDataContent['resource']>
-/**
- * A row of the library as data: what the seed list, the server's export and the client's bundle all share. `type` is
- * the library row type it is made from (`lib:type:…`); the Row types group (`lib:types`) carries `types` instead.
- */
-export type SeedRow = { id: string; type: string; text: string; done?: boolean; requirement?: Requirement; allocation?: Allocation; resource?: Resource; children?: SeedRow[]
-  /** Exact compiled row edge (local builds); imported without reconstructing domain payloads. */
-  graph?: { template: string; cid: string }
-  /** Legacy server bundle: exact row type contents and dependencies. */
-  types?: FosNodeContent[]
-  /** The nodes the types point at (their patterns), so a build's copy makes the same nodes. */
-  nodes?: FosNodesData }
-/** What a client build carries: the library's address on the server (null when built without one) and its rows. */
-export type LibraryBundle = { address: LibraryAddress | null; version: string; rows: SeedRow[] }
+/** A library as a submission's content: its root (null for none) and the nodes it needs. */
+export type LibraryBundle = { version: string; root: string | null; nodes: FosNodesData }
 
-/** The templates every account starts with. Ids are stable so reseeding adds only what is missing. */
-export const STANDARD_LIBRARY = COMPILED_LIBRARY.rows as SeedRow[]
-export const BUNDLED_LIBRARY: LibraryBundle = { address: null, version: LIBRARY_VERSION, rows: STANDARD_LIBRARY }
+/** What this build ships: the compiled `.fos/library.json`. */
+export const BUNDLED_LIBRARY: LibraryBundle = { version: LIBRARY_VERSION, root: COMPILED_LIBRARY.rootNodeId, nodes: COMPILED_LIBRARY.nodes as unknown as FosNodesData }
 
-/** Export the editable local library as a build source, excluding history and access bookkeeping. */
-export function exportLocalLibrary(r: Replica, at: Scope = [LIBRARY_ID]): LibrarySource {
-  const cid = resolveScope(r.store, headCid(r), at)
+/** Export the value of the library ref at `at` (the one Home sees, by default) as a build source, without history and access bookkeeping. */
+export function exportLocalLibrary(r: Replica, at: Scope | null = libraryPath(r)): LibrarySource {
+  const cid = at && resolveScope(r.store, headCid(r), at)
   if (!cid) throw new Error('Local library not found.')
-  const aliases = new Map<string, string>()
-  const group = resolveScope(r.store, headCid(r), [...at, ROW_TYPES_ID])
-  if (group) for (const [, target] of valueContent(r.store, group).children) {
-    const id = content(r.store, target).data.alias?.id
-    if (id) aliases.set(valueCidOf(r.store, target), id)
-  }
   const memo = new Map<string, string>()
   const copy = (cid: string): string => {
     if (memo.has(cid)) return memo.get(cid)!
     const node = content(r.store, cid)
-    // a library seeded by an older build carries retired markers on its types; the export leaves them out
-    const { instanceKind: _instanceKind, behavior, ...rest } = node.data, alias = aliases.get(cid)
-    const data = { ...rest, ...(behavior && !behavior.content.startsWith('builtin:') ? { behavior } : {}), ...(alias ? { alias: { id: alias } } : {}) }
-    const clean = put(r.store, { data, children: node.children.filter(edge => !isBookkeepingEdge(r.store, edge)).map(([i, t]) => [copy(i), copy(t)]) })
+    const clean = put(r.store, { data: node.data, children: node.children.filter(edge => !isBookkeepingEdge(r.store, edge)).map(([i, t]) => [copy(i), copy(t)]) })
     memo.set(cid, clean); return clean
   }
   const rootNodeId = copy(put(r.store, valueContent(r.store, cid)))
   const source = { version: LIBRARY_VERSION, rootNodeId, nodes: reachableNodes(r.store, [rootNodeId]) }
   const checked = compileLibrary(source)
-  return { ...source, nodes: checked.nodes }
+  return { version: checked.version, rootNodeId: checked.rootNodeId, nodes: checked.nodes }
 }
 
-
-/** A fallback the library offers for a kind of requirement: the row's text is the button, its requirement the kind it fills. */
-export type ManualHandler = { id: string; label: string; capability: Requirement['capability']; resource?: Requirement['resource']; device: boolean }
+/**
+ * A fallback the library offers for a kind of requirement: the row's text is the button, its requirement the kind it
+ * fills. `native`: a native the device passed the library (`setLibraryArg`), which does it; else the person does it.
+ */
+export type ManualHandler = { id: string; label: string; capability: Requirement['capability']; resource?: Requirement['resource']; device: boolean; native?: string }
 
 /**
- * The library a row at `at` sees, by nearest ancestor: the one linked in Home (once its content is here) under Home,
- * the root's shipped library elsewhere.
+ * The library definition a row at `at` sees, by nearest ancestor: one referenced in Home (once its content is here)
+ * under Home, the device root's elsewhere. Rows are made from the version its instance pins (`lib`, graph.ts).
  */
 export function libraryPath(r: Replica, at: Scope = homePath(r)): Scope | null {
-  const found = findNearestRow(r.store, headCid(r), at, row => row.id === LIBRARY_ID && !isHandle(content(r.store, row.cid)) && !isPeerReference(content(r.store, row.cid)))
+  const found = findNearestRow(r.store, headCid(r), at, row => isLibraryDefinition(r.store, content(r.store, row.cid)))
   return found ? [...found.path, found.id] : null
 }
 
-/** The manual (and device) fallback handlers the library at `at` carries, from its "Manual handlers" group. */
+/** Use the library defined at `definition` under the node at `at`: its instance there, pinned to the definition's current value. */
+export function useLibrary(r: Replica, at: Scope, definition: Scope, now: number): Replica {
+  const def = resolveScope(r.store, headCid(r), definition), node = resolveScope(r.store, headCid(r), at)
+  if (!def || !node || !isLibraryDefinition(r.store, content(r.store, def))) throw new Error('That is no library.')
+  if (libraryInstanceOf(r.store, node)) return upgradeLibrary(r, at, definition, now)
+  const edge = libraryInstanceEdge(r.store, valueCidOf(r.store, def))
+  commitRoot(r.store, updateAtScope(r.store, headCid(r), at, value => ({ ...value, children: [...value.children, edge] })), now)
+  return { ...r }
+}
+
+/**
+ * Upgrade the library instance of the node at `at` to the current value of the definition at `definition`: its left
+ * moves to that version, what it passes in stays. Rows made before keep the version they were made from.
+ */
+export function upgradeLibrary(r: Replica, at: Scope, definition: Scope, now: number): Replica {
+  const def = resolveScope(r.store, headCid(r), definition), node = resolveScope(r.store, headCid(r), at)
+  const instance = node && libraryInstanceOf(r.store, node)
+  if (!def || !instance) throw new Error('There is no library here to upgrade.')
+  const next = valueCidOf(r.store, def)
+  if (next === instance.library) return r
+  commitRoot(r.store, updateAtScope(r.store, headCid(r), at, value => ({ ...value, children: value.children.map(edge => plainEdge(r.store, edge)[1] === instance.cid ? [next, instance.cid] : edge) })), now)
+  return { ...r }
+}
+
+/** The library's field declaring what it needs passed in by the device that uses it (its natives). */
+export const LIBRARY_REQUIRES = 'requires'
+
+/** The nearest library instance a row at `at` sees: the node it is on and the instance. */
+function nearestInstance(r: Replica, at: Scope): { at: Scope; instance: NonNullable<ReturnType<typeof libraryInstanceOf>> } | null {
+  for (let i = at.length; i >= 0; i--) {
+    const path = at.slice(0, i), cid = resolveScope(r.store, headCid(r), path)
+    const instance = cid && libraryInstanceOf(r.store, cid)
+    if (instance) return { at: path, instance }
+  }
+  return null
+}
+
+/**
+ * Pass `value` (a native this device registered, `nativeRef`) into the library instance of the node at `at` as its
+ * argument `name`: what the library's `requires.<name>` declares. The library never calls a native itself; it uses
+ * what it was passed.
+ */
+export function setLibraryArg(r: Replica, at: Scope, name: string, value: string, now: number): Replica {
+  const store = r.store, node = resolveScope(store, headCid(r), at), instance = node && libraryInstanceOf(store, node)
+  if (!instance) throw new Error('There is no library here.')
+  const left = namesInLibrary(store, instance.library).byName.get(`${LIBRARY_REQUIRES}.${name}`)
+  if (!left) throw new Error(`The library requires no ${name}.`)
+  const ref = content(store, instance.cid), args = content(store, refValueCid(store, ref) ?? put(store, { data: {}, children: [] }))
+  const existing = args.children.find(([, right]) => store.table.get(right)?.data.name?.content === name)
+  if (existing && refValueCid(store, content(store, existing[1])) === value) return r
+  const arg = put(store, refNodeContent(store, { alias: { id: hashContent({ data: { name: { content: name } }, children: [] }) }, name: { content: name } }, value))
+  const nextArgs = put(store, { ...args, children: [...args.children.filter(edge => edge !== existing), [left, arg]] })
+  const nextRef = put(store, refNodeContent(store, ref.data, nextArgs, bookkeepingOf(store, ref)))
+  commitRoot(store, updateAtScope(store, headCid(r), at, value => ({ ...value, children: value.children.map(edge => plainEdge(store, edge)[1] === instance.cid ? [instance.library, nextRef] : edge) })), now)
+  return { ...r }
+}
+
+/**
+ * What the nearest library instance at `at` was passed for its `requires` declarations: each declaration (its name
+ * and node) with the native the device passed, when it passed one.
+ */
+export function libraryArgs(r: Replica, at: Scope): Array<{ name: string; declaration: FosNodeContent; value: string }> {
+  const near = nearestInstance(r, at)
+  if (!near) return []
+  const store = r.store, { instance } = near
+  const target = store.primitive.targetPointerConstructor.getId(), alias = store.primitive.aliasConstructor.getId(), get = (id: string) => store.table.get(id)
+  const group = namesInLibrary(store, instance.library).byName.get(LIBRARY_REQUIRES)
+  const args = refValueCid(store, content(store, instance.cid))
+  if (!group || !args) return []
+  return content(store, group).children.flatMap(edge => {
+    const declared = fieldNode(get, edge as [string, string], target, alias)
+    if (!declared) return []
+    const passed = content(store, args).children.find(([, right]) => get(right)?.data.name?.content === declared.name)
+    const value = passed && refValueCid(store, content(store, passed[1]))
+    return value ? [{ name: declared.name, declaration: content(store, edge[1]), value }] : []
+  })
+}
+
+/** The path of the row that is the field `field` of the library at `at` (a template, a group), if it has one. */
+export function libraryFieldPath(r: Replica, field: string, at?: Scope): Scope | null {
+  const path = libraryPath(r, at), cid = path && resolveScope(r.store, headCid(r), path)
+  if (!path || !cid) return null
+  const target = r.store.primitive.targetPointerConstructor.getId(), alias = r.store.primitive.aliasConstructor.getId()
+  const edge = valueContent(r.store, cid).children.find(e => fieldNode(id => r.store.table.get(id), e as [string, string], target, alias)?.name === field)
+  const id = edge && content(r.store, edge[1]).data.alias?.id
+  return id ? [...path, id] : null
+}
+
+/** The manual (and device) fallback handlers the library at `at` carries: the rows of its `manual` field. */
 export function manualHandlers(r: Replica, at?: Scope): ManualHandler[] {
-  const path = libraryPath(r, at)
+  const path = libraryFieldPath(r, MANUAL_HANDLERS, at)
   if (!path) return []
-  return (view(r, [...path, MANUAL_HANDLERS_ID])?.tasks ?? []).flatMap(row => {
+  return (view(r, path)?.tasks ?? []).flatMap(row => {
     const req = row.requirement
     if (!req || !row.title.trim()) return []
-    return [{ id: row.id, label: row.title.trim(), capability: req.capability, ...(req.resource ? { resource: req.resource } : {}), device: row.id.startsWith('lib:device:') }]
+    return [{ id: row.id, label: row.title.trim(), capability: req.capability, ...(req.resource ? { resource: req.resource } : {}), device: false }]
+  })
+}
+
+/** The device's fallbacks: the natives it passed the library for what the library requires, each filling the requirement it declares. */
+export function deviceHandlers(r: Replica, at?: Scope): ManualHandler[] {
+  return libraryArgs(r, at ?? homePath(r)).flatMap(({ name, declaration, value }) => {
+    const allocation = declaration.data.allocation
+    if (!allocation) return []
+    return [{ id: name, label: declaration.data.description?.content ?? name, capability: 'allocation' as const, resource: allocation.type, device: true, native: value }]
   })
 }
 
 /** The library's fallbacks that fit one requirement: same capability and, for allocations, the same resource. */
 export function manualHandlersFor(r: Replica, requirement: { capability: Requirement['capability']; resource?: Requirement['resource'] }, at?: Scope): ManualHandler[] {
-  return manualHandlers(r, at).filter(h => h.capability === requirement.capability && (requirement.capability !== 'allocation' || h.resource === requirement.resource))
+  return [...manualHandlers(r, at), ...deviceHandlers(r, at)].filter(h => h.capability === requirement.capability && (requirement.capability !== 'allocation' || h.resource === requirement.resource))
 }
 
-export function libraryInfo(r: Replica, path: Scope): LibraryInfo | null {
-  const value = readNodeValue<LibraryInfo>(r, path, LIBRARY_ARGUMENT)
-  return value && typeof value.version === 'string' && Array.isArray(value.seeded) ? value : null
+/**
+ * Submit `bundle` to the library ref at `path` as `peerId`: an open submission of that content (accepted like any,
+ * `acceptSubmission`), unless the ref already holds it.
+ */
+export function submitLibrary(r: Replica, path: Scope, bundle: LibraryBundle, peerId: string, now: number): Replica {
+  if (!bundle.root) return r
+  importNodes(r.store, bundle.nodes)
+  const ref = resolveScope(r.store, headCid(r), path)
+  if (!ref) throw new Error('The library ref is not here.')
+  if (refValueCid(r.store, content(r.store, ref)) && valueCidOf(r.store, ref) === bundle.root) return r
+  return proposeRefAt(r, path, bundle.root, peerId, now).replica
 }
 
-/** Add the given rows below `path` where they are missing (by id); rows the node once had and lost are not re-added. */
-export function seedLibraryRows(r: Replica, path: Scope, rows: SeedRow[], now: number, version = LIBRARY_VERSION, source?: LibraryInfo['source']): Replica {
-  const before = r
-  const info = libraryInfo(r, path), seeded = new Set(info?.seeded ?? [])
-  const add = (at: Scope, list: SeedRow[]) => {
-    for (const row of list) {
-      if (!view(r, at)?.tasks.some(t => t.id === row.id) && !seeded.has(row.id)) {
-        r = row.graph ? addGraphRow(r, at, row, now) : row.types ? addRowTypesRow(r, at, row, now)
-          : addRow(r, at, row.type, row.text, now, { id: row.id, ...(row.requirement ? { requirement: row.requirement } : {}), ...(row.allocation ? { allocation: row.allocation } : {}), ...(row.resource ? { resource: row.resource } : {}) })
-        seeded.add(row.id)
-      }
-      if (row.graph && row.children) {
-        const mark = (rows: SeedRow[]) => { for (const child of rows) { seeded.add(child.id); if (child.children) mark(child.children) } }; mark(row.children)
-      }
-      if (row.children?.length && view(r, at)?.tasks.some(t => t.id === row.id)) add([...at, row.id], row.children)
+/** The library ref's value as a submission's content: what members exchange. */
+export function exportLibrary(r: Replica, path: Scope): LibraryBundle {
+  const cid = resolveScope(r.store, headCid(r), path)
+  const value = cid ? (refValueCid(r.store, content(r.store, cid)) ? valueCidOf(r.store, cid) : isPeerReference(content(r.store, cid)) ? null : cid) : null
+  if (!value) return { version: LIBRARY_VERSION, root: null, nodes: {} }
+  const root = canonical(r)(value)
+  return { version: LIBRARY_VERSION, root, nodes: reachableNodes(r.store, [root]) }
+}
+
+/**
+ * Canonical copies of library nodes, memoized for one export: without bookkeeping (history, members, proposals) or
+ * timestamps, and with row envelopes (a nameless ref around a row's value, as node exchange delivers rows) unwrapped,
+ * so the library exports the same content however it arrived.
+ */
+function canonical(r: Replica): (cid: string) => string {
+  const memo = new Map<string, string>()
+  const target = r.store.primitive.targetPointerConstructor.getId(), alias = r.store.primitive.aliasConstructor.getId()
+  const copy = (cid: string): string => {
+    if (memo.has(cid)) return memo.get(cid)!
+    let node = content(r.store, cid)
+    const pointer = node.children.find(([key]) => key === target)
+    if (pointer && node.data.alias && !node.data.name) {
+      const value = content(r.store, pointer[1])
+      node = { data: { alias: node.data.alias, ...value.data }, children: value.children.filter(([key]) => key !== alias) }
+    } else if (pointer && node.data.alias) {
+      const { alias: own, ...valueData } = content(r.store, pointer[1]).data
+      const value = put(r.store, { data: own?.id === node.data.alias.id ? valueData : content(r.store, pointer[1]).data, children: content(r.store, pointer[1]).children })
+      node = refNodeContent(r.store, node.data, value, node.children.filter(([key]) => key !== target && key !== alias))
     }
+    const { updated: _updated, created: _created, alias: id, ...rest } = node.data
+    const data = id ? { alias: id, ...rest } : rest
+    const clean = put(r.store, { data, children: node.children.filter(edge => !isBookkeepingEdge(r.store, edge)).map(([i, t]) => [copy(i), copy(t)]) })
+    memo.set(cid, clean); return clean
   }
-  add(path, rows)
-  if (r === before && info?.version === version && seeded.size === (info?.seeded.length ?? -1) && (source === undefined || info?.source === source)) return before
-  return writeNodeValue(r, path, LIBRARY_ARGUMENT, { version, seeded: [...seeded], ...(source ? { source } : info?.source ? { source: info.source } : {}) }, now)
-}
-
-/** Copy the compiled graph verbatim: constructors and their fields stay graph data. */
-function addGraphRow(r: Replica, at: Scope, row: SeedRow, now: number): Replica {
-  importNodes(r.store, row.nodes ?? COMPILED_LIBRARY.nodes as unknown as FosNodesData)
-  const edge: FosPathElem = [row.graph!.template, row.graph!.cid]
-  commitRoot(r.store, updateAtScope(r.store, headCid(r), at, node => ({ ...node, children: [...node.children, edge] })), now)
-  return { ...r }
-}
-
-/** The Row types group as a library row, built from the exact contents of its types (which rows pin by cid). */
-function addRowTypesRow(r: Replica, at: Scope, row: SeedRow, now: number): Replica {
-  if (row.nodes) importNodes(r.store, row.nodes)
-  const group = put(r.store, rowTypesContent(r.store, row.types ?? seedTypes(r.store)))
-  commitRoot(r.store, updateAtScope(r.store, headCid(r), at, node => ({ ...node, children: [...node.children, rowEdgeAt(r.store, PLAIN_TYPE, group, at)] })), now)
-  return { ...r }
-}
-
-/** Add the rows of the standard library that `path` does not have yet; a no-op when it is complete. */
-export function seedStandardLibrary(r: Replica, path: Scope, now: number): Replica {
-  return seedLibraryRows(r, path, STANDARD_LIBRARY, now, LIBRARY_VERSION, 'server')
-}
-
-/** The row types whose rows the library exports as data. */
-const EXPORTED_TYPES = [TEMPLATE_TYPE, NOTE_TYPE, PLAIN_TYPE, TASK_TYPE, ALLOCATION_TYPE, MONEY_TYPE, RESOURCE_TYPE, COMMENT_TYPE]
-
-/** The library's rows as data (what `fos library export` writes for client builds): titles, types and typed fields, no bookkeeping. */
-export function exportLibraryRows(r: Replica, path: Scope, depth = 0): SeedRow[] {
-  if (depth > 16) return []
-  const rows: SeedRow[] = []
-  for (const row of view(r, path)?.tasks ?? []) {
-    // a task made from a template is exported as a task (the template is a row of its own)
-    const type = row.checkable ? TASK_TYPE : row.type
-    if (!EXPORTED_TYPES.includes(type) || row.id.startsWith('fos:')) continue
-    const data = row as TaskView
-    if (row.id === ROW_TYPES_ID) {
-      // the exact contents: rows pin row types by cid, so a build's copy must make the same nodes
-      const types = rowTypeContents(r.store, resolveScope(r.store, headCid(r), [...path, row.id])!)
-      const nodes = reachableNodes(r.store, types.flatMap(type => type.children.flatMap(([instruction, target]) => [instruction, target])))
-      rows.push({ id: row.id, type: row.type, text: row.title, types: types.map(type => ({ data: type.data, children: type.children })), ...(Object.keys(nodes).length ? { nodes } : {}) })
-      continue
-    }
-    const seed: SeedRow = { id: row.id, type, text: row.title }
-    if (row.checkable && row.done) seed.done = true
-    if (data.requirement) { const { satisfied, summary, have, need, ...requirement } = data.requirement; void satisfied; void summary; void have; void need; seed.requirement = requirement }
-    if (data.allocation) seed.allocation = data.allocation
-    if (data.resource) { const { allocated, available, ...resource } = data.resource; void allocated; void available; seed.resource = resource }
-    const children = exportLibraryRows(r, [...path, row.id], depth + 1)
-    if (children.length) seed.children = children
-    rows.push(seed)
-  }
-  return rows
-}
-
-/** Where this account's Home links the shared library (people who contribute and vote add it), if it does. */
-export function libraryLink(r: Replica): Scope | null {
-  const home = homePath(r), cid = resolveScope(r.store, headCid(r), home)
-  const link = cid && findChild(r.store, cid, LIBRARY_ID)
-  return link && (content(r.store, link).data.ref?.owner || r.meta.sharedNodes?.[JSON.stringify([...home, LIBRARY_ID])]) ? [...home, LIBRARY_ID] : null
+  return copy
 }
 
 /**
- * The library a device root ships: its library row (`ensureLibraryRow`; a device root loaded from older data gets
- * it here) filled with the build's bundle, or the compiled local graph when the caller carries none. Seeds what is missing,
- * once. Only device roots ship it; other roots are nested in a device root (`nestScope`).
+ * The library a device root has: its library ref (`ensureLibraryRow`), which takes `bundle` (the build's, by default)
+ * as its first value; a later build's library is the fos peer's submission to it. Only device roots have one; other
+ * roots are nested in a device root (`nestScope`).
  */
-export function ensureDeviceLibrary(r: Replica, bundle: LibraryBundle, now: number): Replica {
-  const path = [LIBRARY_ID]
-  if (!resolveScope(r.store, headCid(r), path)) { ensureLibraryRow(r.store); r = { ...r } }
-  if (libraryInfo(r, path)) return r
-  const rows = bundle.rows.length ? bundle.rows : STANDARD_LIBRARY
-  // the build's Row types are the ones this root ships (the root started with the seed's)
-  const typesRow = rows.find(row => row.types), types = typesRow?.types
-  if (types?.length) {
-    if (typesRow?.nodes) importNodes(r.store, typesRow.nodes)
-    const group = put(r.store, rowTypesContent(r.store, types))
-    commitRoot(r.store, updateAtScope(r.store, headCid(r), path, node => ({ ...node, children: node.children.map(edge => content(r.store, edge[1]).data.alias?.id === ROW_TYPES_ID ? [edge[0], group] as [string, string] : edge) })), now)
-    r = { ...r }
-  }
-  return seedLibraryRows(r, path, rows, now, bundle.rows.length ? bundle.version : LIBRARY_VERSION, 'bundle')
-}
-
-/**
- * Add the shared library to this account's Home, to contribute and vote on it: a reference with the fos server as its
- * peer (the app keeps it current). Under Home it overrides the root's shipped library.
- */
-export function ensureLibraryLink(r: Replica, address: LibraryAddress, now: number): { replica: Replica; path: Scope; added: boolean } {
-  const existing = libraryLink(r)
-  if (existing) return { replica: r, path: existing, added: false }
-  const home = homePath(r)
-  if (!view(r, home)) return { replica: r, path: home, added: false }
-  r = addRow(r, home, REF_TYPE, address.title, now, { id: LIBRARY_ID, refOwner: address.owner, refId: address.path.at(-1) ?? LIBRARY_ID })
-  const path = [...home, LIBRARY_ID]
-  r = writeNodeValue(r, path, 'fos:shared-link', { owner: address.owner, path: address.path }, now)
-  return { replica: r, path, added: true }
-}
-
-/** What the `fos` CLI pulled: the library's nodes, root first, each with the request that fetched it (node-provider protocol). */
-export type PulledLibrary = { address: LibraryAddress; nodes: Array<{ request: NodeRequest; node: ProvidedNode }> }
-
-/**
- * The bundle a client build carries, assembled from the nodes the `fos` CLI pulled through the account
- * (`fos library export`): the nodes are accepted into a scratch replica exactly as the app would accept them, then
- * exported as rows, so the build's copy is the live library at build time.
- */
-export function exportProvidedLibrary(pulled: PulledLibrary, now: number): LibraryBundle {
-  const root = pulled.nodes[0]
-  if (!root) return { address: pulled.address, version: LIBRARY_VERSION, rows: [] }
-  // a scratch row beside the scratch root's own shipped library
-  const PULLED = 'fos:pulled-library'
-  let r = addRow(createReplica('fos:cli'), [], REF_TYPE, pulled.address.title, now, { id: PULLED, refOwner: pulled.address.owner, refId: pulled.address.path.at(-1) ?? LIBRARY_ID })
-  for (const { request, node } of pulled.nodes) r = acceptProvidedNode(r, [PULLED, ...request.path.slice(root.request.path.length)], request, node, now)
-  const rows = exportLibraryRows(r, [PULLED]), types = exactPulledTypes(r, pulled)
-  return { address: pulled.address, version: libraryInfo(r, [PULLED])?.version ?? LIBRARY_VERSION, rows: types ? rows.map(row => row.id === ROW_TYPES_ID ? { ...row, ...types } : row) : rows }
-}
-
-/**
- * The Row types as they were served: rows pin types by cid, so the bundle needs their exact content, which a pulled
- * projection does not keep (it holds received rows as links of the peer). A type is its data and its pattern rows,
- * which are plain rows; both come straight from the pulled shapes.
- */
-function exactPulledTypes(r: Replica, pulled: PulledLibrary): Pick<SeedRow, 'types' | 'nodes'> | null {
-  const base = pulled.nodes[0]!.request.path.length
-  const shapes = new Map(pulled.nodes.map(({ request, node }) => [JSON.stringify(request.path.slice(base)), node]))
-  const group = shapes.get(JSON.stringify([ROW_TYPES_ID]))
-  if (!group) return null
-  const types: FosNodeContent[] = []
-  for (const row of group.children) {
-    const type = shapes.get(JSON.stringify([ROW_TYPES_ID, row.id]))
-    if (!type) return null
-    const children = type.children.map((pattern): FosPathElem => {
-      const shape = shapes.get(JSON.stringify([ROW_TYPES_ID, row.id, pattern.id]))
-      if (!shape) throw new Error(`The pulled library lacks pattern ${pattern.id} of ${row.id}.`)
-      return [pattern.template, put(r.store, { data: { alias: { id: pattern.id }, ...shape.data }, children: [] })]
-    })
-    types.push({ data: { alias: { id: row.id }, ...type.data }, children })
-  }
-  return { types, nodes: reachableNodes(r.store, types.flatMap(type => type.children.flatMap(([instruction, target]) => [instruction, target]))) }
-}
-
-export function mergePolicy(r: Replica, path: Scope): MergePolicy | null {
-  const value = readNodeValue<MergePolicy>(r, path, MERGE_POLICY_ARGUMENT)
-  return value && Number.isInteger(value.approvals) && value.approvals > 0 ? value : null
-}
-export function setMergePolicy(r: Replica, path: Scope, policy: MergePolicy | null, now: number): Replica {
-  return writeNodeValue(r, path, MERGE_POLICY_ARGUMENT, policy, now)
-}
-
-/**
- * The owner's standing decision: every open proposal on the node that enough members approved (the shared
- * projection's approval counts, which honour the audience's and each member's `approve` grant) is merged as the
- * owner. Votes are tied to the node's revision, so after a merge the remaining proposals wait for fresh approvals.
- */
-export function applyMergePolicy(r: Replica, path: Scope, revision: (value: unknown) => string, now: number): { replica: Replica; merged: string[] } {
-  const policy = mergePolicy(r, path)
-  if (!policy) return { replica: r, merged: [] }
-  const merged: string[] = []
-  // one at a time: each merge changes the revision the remaining votes were cast against
-  for (let round = 0; round < 100; round++) {
-    const projection = sharedProjection(r, path, revision)
-    const ready = projection.proposals.find(p => (projection.counts[p.id] ?? 0) >= policy.approvals)
-    if (!ready) break
-    const cid = ready.id.slice('proposal:'.length)
-    r = applyProposalAt(r, path, cid, r.meta.peerId, now)
-    merged.push(cid)
-  }
-  return { replica: r, merged }
+export function ensureDeviceLibrary(r: Replica, bundle: LibraryBundle = BUNDLED_LIBRARY, now: number): Replica {
+  const library = bundle.root ? bundle : BUNDLED_LIBRARY
+  importNodes(r.store, library.nodes)
+  let row = libraryRowOf(r.store, headCid(r))
+  if (!row) { ensureLibraryRow(r.store, library.root!); r = { ...r }; row = libraryRowOf(r.store, headCid(r))! }
+  return submitLibrary(r, [row.id], library, SERVER_MEMBER, now)
 }

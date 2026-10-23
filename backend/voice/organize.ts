@@ -18,7 +18,7 @@ import { standardHostRef } from '../sync/host-runtime'
  * usage; a non-paying account over the budget is refused before the evaluation opens. Texted messages use the same
  * handler (`createAccountOrganizer`, for channels/textCommands.ts); their submission waits in Home.
  */
-import { ORGANIZED_VALUE, proposeOrganizePlan, captureOutline, deleteTask, headCid, HOME_ID, organizeRequestAt, organizePrompt, parseOrganizePlan, ORGANIZE_SYSTEM, put, readNodeValue, requestOrganize, resolveScope, valueContent, view, writeNodeValue, addSupply, createReplica, type OrganizedResult, type OrganizePlan, type OutlineEntry, type Scope } from '@fosforescent/shared/sync/index'
+import { handlerResult, writeHandlerResult, proposeOrganizePlan, captureOutline, deleteTask, headCid, homePath, organizeRequestAt, organizePrompt, parseOrganizePlan, ORGANIZE_SYSTEM, put, readNodeValue, requestOrganize, resolveScope, valueContent, view, writeNodeValue, addSupply, createReplica, type OrganizedResult, type OrganizePlan, type OutlineEntry, type Scope } from '@fosforescent/shared/sync/index'
 import { withUserLock, type AccountStoreDeps } from '../sync/accountStore'
 import type { HostHandler } from '../sync/host-runtime'
 import { budgetRefusal, recordSafely, type VoiceDeps, type VoiceUsage } from './voiceNotes'
@@ -73,7 +73,7 @@ export function organizeHandler(model: () => VoiceDeps, usage?: VoiceUsage): Hos
       const titles = new Map(outline.map(entry => [entry.id, entry.title]))
       const result: OrganizedResult = { rows: submitted.rows.length, captureId: submitted.captureId, title: plan.title, under: [...new Set(plan.items.flatMap(item => item.parent && titles.has(item.parent) ? [titles.get(item.parent)!] : []))],
         proposal: submitted.proposalCid, name: submitted.name, additions: submitted.additions }
-      let next = writeNodeValue(submitted.replica, path, ORGANIZED_VALUE, result, ctx.now())
+      let next = writeHandlerResult(submitted.replica, path, result, ctx.now())
       next = addSupply(next, target, path.at(-1)!, { capability: 'organize', by: 'fos', ref: submitted.captureId }, ctx.now())
       await ctx.update(next)
     }
@@ -100,7 +100,7 @@ export function createAccountOrganizer(deps: AccountStoreDeps, runNode: RunNode)
   })
   return async (username: string, text: string, label: string): Promise<OrganizedResult | null> => {
     const placed = await edit(username, r => {
-      const at = resolveScope(r.store, headCid(r), [HOME_ID]) ? [HOME_ID] : []
+      const at = homePath(r)
       const request = requestOrganize(r, at, text, label, deps.now?.() ?? Date.now())
       const cid = resolveScope(request.replica.store, headCid(request.replica), request.path)!
       return { replica: request.replica, value: { path: request.path, expected: put(request.replica.store, valueContent(request.replica.store, cid)) } }
@@ -108,7 +108,7 @@ export function createAccountOrganizer(deps: AccountStoreDeps, runNode: RunNode)
     let failure: unknown = null
     try { await runNode(username, { path: placed.path, branches: {}, expected: placed.expected }) } catch (error) { failure = error }
     return edit(username, r => {
-      const result = failure ? null : readNodeValue<OrganizedResult>(r, placed.path, ORGANIZED_VALUE)
+      const result = failure ? null : handlerResult<OrganizedResult>(r, placed.path)
       if (failure) console.error('organizing failed:', failure instanceof Error ? failure.message : failure)
       const exists = !!resolveScope(r.store, headCid(r), placed.path)
       return { replica: exists ? deleteTask(r, placed.path.slice(0, -1), placed.path.at(-1)!, deps.now?.() ?? Date.now()) : r, value: result }

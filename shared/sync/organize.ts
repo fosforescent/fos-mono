@@ -7,7 +7,7 @@
  * the outline (or no longer under the target when the plan is applied) falls back to the target itself. Plans only
  * add rows; the raw capture is always kept as a note beside them, so nothing said is lost when the model drops it.
  *
- * Every row a plan adds names its row type: a type of the standard library (`ORGANIZE_TYPES`, e.g. `lib:type:note`),
+ * Every row a plan adds names its row type: a type of the standard library (`ORGANIZE_TYPES`, e.g. `lib.note`),
  * resolved at the target like any row type (`libraryTypeAt`, nearest library); the row's edge is `[that type, row]`.
  * The raw capture is a row of the note type.
  *
@@ -70,11 +70,11 @@ export const ORGANIZE_LIMITS = {
   captureChars: 100_000,
 }
 
-type Rows = Pick<TaskView, 'id' | 'title' | 'childCount'> & Partial<Pick<TaskView, 'refId' | 'refOwner' | 'refPeer' | 'missingTemplate' | 'rejected' | 'scalar'>>
+type Rows = Pick<TaskView, 'id' | 'title' | 'childCount'> & Partial<Pick<TaskView, 'refId' | 'refOwner' | 'refPeer' | 'missingTemplate' | 'rejected' | 'scalar' | 'construction' | 'requirement'>>
 
-/** Rows a capture may be placed into: content the owner edits here, not system rows, a row's own fields (scalar leaves), reference rows standing for other nodes or rows not received yet. A row that is a mutable ref of its own (every row node sync brought to the account is one) is content like any other. */
+/** Rows a capture may be placed into: content the owner edits here, not requirements (they ask for something) or a handler's state rows, a row's own fields (scalar leaves), reference rows standing for other nodes or rows not received yet. A row that is a mutable ref of its own (every row node sync brought to the account is one) is content like any other. */
 export function organizableRow(row: Rows): boolean {
-  return !row.id.startsWith('fos:') && !row.scalar && !row.refId && !row.refOwner && !row.refPeer && !row.missingTemplate && !row.rejected
+  return !row.requirement && !row.construction?.evaluation && !row.scalar && !row.refId && !row.refOwner && !row.refPeer && !row.missingTemplate && !row.rejected
 }
 
 /** A row's title as one short line (notes project their whole Markdown body). */
@@ -247,12 +247,9 @@ export async function proposeOrganizePlan(replica: Replica, at: Scope, plan: Org
 // ---------------------------------------------------------------------------
 // Organize requirements: how a capture reaches the host's organizer
 
-/** Identity prefix of an organize requirement (a `fos:` row: never part of an outline, never organized into). */
-export const ORGANIZE_REQUEST_PREFIX = 'fos:organize:'
-/** The named value the organizer leaves on the requirement it filled: what it placed and where the capture went. */
-export const ORGANIZED_VALUE = 'fos:organized'
 /**
- * What the organizer submitted: `rows` added (titles of existing rows they went `under`), the kept capture's id, the
+ * What the organizer leaves on the requirement it filled (its handler result): what it placed and where the capture
+ * went. What it submitted: `rows` added (titles of existing rows they went `under`), the kept capture's id, the
  * plan's title, and the submission itself: its proposal cid on the target, its name and the rows it adds by node
  * (`additions`, relative to the target), so a device can accept it without loading the rows.
  */
@@ -262,15 +259,15 @@ export type OrganizedResult = { rows: number; under: string[]; captureId: string
  * Ask the host to organize a capture into the node at `at`: an `organize` requirement placed in that node (its text
  * says what the capture is, e.g. "Voice note"), holding the captured text as a child note. Evaluating it (a
  * `complete` event, the account server's `organize` handler) submits the plan, with the capture kept as a note, as one
- * submission by `fos` on `at` (`proposeOrganizePlan`), records the supply and leaves an `OrganizedResult` on the
- * requirement. Answers the requirement's path.
+ * submission by `fos` on `at` (`proposeOrganizePlan`), records the supply and leaves an `OrganizedResult` as the
+ * requirement's handler result. Answers the requirement's path.
  */
 export function requestOrganize(replica: Replica, at: Scope, text: string, label: string, now: number, makeId: () => string = newId): { replica: Replica; path: Scope } {
   if (!view(replica, at)) throw new Error('The capture location was removed.')
   const capture = text.trim()
   if (!capture) throw new Error('Nothing to organize.')
   if (capture.length > ORGANIZE_LIMITS.captureChars) throw new Error(`Organize at most ${ORGANIZE_LIMITS.captureChars.toLocaleString('en-US')} characters at a time.`)
-  const id = `${ORGANIZE_REQUEST_PREFIX}${makeId()}`
+  const id = makeId()
   let r = addRow(replica, at, ALLOCATION_TYPE, label.trim() || 'Capture', now, { id, requirement: { capability: 'organize' } })
   r = addTypedRow(r, [...at, id], typeAt(r, NOTE_TYPE, [...at, id]), capture, now, makeId())
   return { replica: r, path: [...at, id] }

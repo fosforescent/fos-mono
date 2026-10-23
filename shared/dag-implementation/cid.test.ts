@@ -29,7 +29,7 @@ describe('versioned content ids', () => {
 
   it('tells cids of other data versions apart, and never verifies them', () => {
     const digest = parseCid(hashContent(leaf))!.digest
-    for (const version of ['5', '0.0.2', '1.0.0', '0.0.10']) {
+    for (const version of ['5', '0.0.1', '1.0.0', '0.0.10']) {
       const other = formatCid(digest, version)
       expect(isCid(other)).toBe(true)
       expect(cidVersion(other)).toBe(version)

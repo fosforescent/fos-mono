@@ -5,20 +5,23 @@
  * execute view (`sharedProjection`), and their inputs are stored in typed refs on it. A published template is an
  * endpoint: each visitor who starts it gets a private execution, a node of which only that visitor is a member.
  */
+import { settingOf } from './graph'
 import { nodeLinkMaskAt } from './node-provider'
+import { consumption } from './execution-access'
 import { argumentRefs, capabilityPeers } from './bindings'
-import { readNodeValue, writeNodeValue, writeLinkedNodeValue } from './evaluation'
+import { evaluationRecord, executionOrigin, handlerResult, readNodeValue, writeExecutionOrigin, writeHandlerResult } from './evaluation'
+import { approvalsOf, submissionKey } from './approvals'
+import { readRowValue, writeRowValue } from './row-values'
 import { addMemberAt, createReplica, deleteTask, homePath, addRow, proposeRefAt, renameTask, resolveRef, headCid, removeMemberAt, setMemberCapabilitiesAt, view, type Replica } from './replica'
 import { FosStore } from '../dag-implementation/store'
+import { isCid } from '../dag-implementation/cid'
 import type { FosPathElem } from '../types'
 import { plainEdge } from './patterns'
 import { FIELD_TYPES, MARKDOWN_TYPE, PEER_TYPE, VISITOR_SUBMISSION } from './published-types'
 export * from './published-types'
 import { PLAIN_TYPE, REF_TYPE, TEMPLATE_TYPE } from './library-types'
-import { aliasIdOf, identityCid, capabilityTarget, nestScope, commitRoot, content, hasCapability, importNodes, makeLink, memberFor, proposalContent, put, reachableNodes, readMembers, readProposals, resolveScope, isRefNode, refValueCid, rootTargetCid, updateAtScope, valueContent, withProposal, type Capability, type Scope } from './graph'
+import { isRowEdge, membershipPath, newId, SERVER_MEMBER, aliasIdOf, identityCid, capabilityTarget, nestScope, commitRoot, content, hasCapability, importNodes, makeLink, memberFor, proposalContent, put, reachableNodes, readMembers, readProposals, resolveScope, isRefNode, refValueCid, rootTargetCid, updateAtScope, valueContent, withProposal, type Capability, type Scope } from './graph'
 
-/** A visitor's private execution of a published template: the visitor, the endpoint it came from, its audience. */
-export const EXECUTION_ARGUMENT = 'fos:execution'
 export type Audience = 'public' | 'users'
 export const AUDIENCES: readonly Audience[] = ['public', 'users']
 export const audiencePeer = (audience: Audience) => `audience:${audience}`
@@ -33,8 +36,8 @@ const holds = (m: { capabilities: Capability[]; disabled?: Capability[] } | unde
 export function publication(r: Replica, path: Scope): Publication | null {
   const cid = resolveScope(r.store, headCid(r), path)
   if (!cid) return null
-  const execution = readNodeValue<Execution>(r, path, EXECUTION_ARGUMENT)
-  if (execution && typeof execution.peer === 'string' && AUDIENCES.includes(execution.audience)) return { audience: execution.audience, template: false, execution }
+  const execution = executionAt(r, path)
+  if (execution) return { audience: execution.audience, template: false, execution }
   const members = readMembers(r.store, content(r.store, cid))
   const audience = AUDIENCES.find(a => holds(members.find(m => m.peerId === audiencePeer(a)), SERVED))
   if (!audience) return null
@@ -46,50 +49,42 @@ export function publishedTo(r: Replica, path: Scope, audience: Audience): boolea
   const cid = resolveScope(r.store, headCid(r), path)
   return !!cid && holds(readMembers(r.store, content(r.store, cid)).find(m => m.peerId === audiencePeer(audience)), SERVED)
 }
-/** The row the account server keeps for a published node in its member entry above it (`fos:peer:fos`): the node's URL. */
-export const publishedUrlId = (aliasId: string) => `fos:url:${aliasId}`
+/** A visitor's private execution of a published template, as the run records its origin (the visitor, the endpoint, the audience); null when the node is no execution. */
+function executionAt(r: Replica, path: Scope): Execution | null {
+  const execution = executionOrigin<Execution>(r, path)
+  return execution && typeof execution.peer === 'string' && AUDIENCES.includes(execution.audience) && Array.isArray(execution.entry?.path) ? execution : null
+}
+/** The private execution `peer` started of the template endpoint at `template` (instances sit beside it), if any. */
+export function visitorExecution(r: Replica, template: Scope, peer: string): Scope | null {
+  const parent = template.slice(0, -1)
+  for (const row of view(r, parent)?.tasks ?? []) {
+    const execution = executionAt(r, [...parent, row.id])
+    if (execution?.peer === peer && JSON.stringify(execution.entry.path) === JSON.stringify(template)) return [...parent, row.id]
+  }
+  return null
+}
+/** What the account server's `url` handler records on its member entry: where share pages are, and whose account it is. */
+export type PageBase = { base: string; owner: string }
+const urlLeft = (r: Replica) => capabilityTarget(r.store, 'url')
+/** Record where this account's share pages are (the `url` handler, on the server's member entry at `entry`). */
+export function writePageBase(r: Replica, entry: Scope, base: PageBase, now: number): Replica {
+  const current = readRowValue<PageBase>(r, entry, urlLeft(r))
+  return current?.base === base.base && current.owner === base.owner ? r : writeRowValue(r, entry, urlLeft(r), base, now)
+}
 /** The share page's address for a node: the web app with the owner and the node's path. */
 export function nodeUrl(webUrl: string, address: SharedAddress): string {
   return `${webUrl.replace(/\/$/, '')}/#share=${encodeURIComponent(JSON.stringify(address))}`
 }
-/** The server's member entry nearest above `path` (where its rows for the node live), or null. */
-function serverEntry(r: Replica, path: Scope): Scope | null {
+/** The share page of the published node at `path`: its account server's page base (nearest above) with the node's place in the account. */
+export function publishedUrl(r: Replica, path: Scope): string | null {
+  const policy = path.length ? publication(r, path) : null
+  if (!policy || policy.execution) return null
   for (let i = path.length; i >= 0; i--) {
     const at = path.slice(0, i), cid = resolveScope(r.store, headCid(r), at)
-    if (cid && readMembers(r.store, content(r.store, cid)).some(m => m.peerId === 'fos')) return [...at, `fos:peer:fos`]
-  }
-  return null
-}
-/**
- * The account server's `url` handler: for the node at `path` and each node above it, a published node (an audience
- * may run or read it) gets its URL as a row in the server's member entry above it, and a node no longer published
- * loses it. The owner's devices receive that entry like any member entry, so the link is graph data, not a route.
- */
-export function syncPublishedUrls(r: Replica, path: Scope, webUrl: string, now: number): Replica {
-  const owner = r.meta.peerId.startsWith('user:') ? r.meta.peerId.slice(5) : null
-  if (!owner) return r
-  for (let i = path.length; i >= 1; i--) {
-    const at = path.slice(0, i)
-    if (at.some(id => id.startsWith('fos:peer:'))) continue
-    const entry = serverEntry(r, at)
-    if (!entry || !resolveScope(r.store, headCid(r), entry)) continue
-    const id = publishedUrlId(at.at(-1)!), url = nodeUrl(webUrl, { owner, path: at })
-    const row = view(r, entry)?.tasks.find(t => t.id === id)
-    if (publication(r, at) && !readNodeValue(r, at, EXECUTION_ARGUMENT)) {
-      if (!row) r = addRow(r, entry, PLAIN_TYPE, url, now, { id })
-      else if (row.title !== url) r = renameTask(r, entry, id, url, now)
-    } else if (row) r = deleteTask(r, entry, id, now)
-  }
-  return r
-}
-/** The URL the account server made for the published node at `path` (its row in the server's entry above), or null. */
-export function publishedUrl(r: Replica, path: Scope): string | null {
-  if (!path.length) return null
-  const id = publishedUrlId(path.at(-1)!)
-  for (let i = path.length; i >= 0; i--) {
-    const entry = [...path.slice(0, i), 'fos:peer:fos']
-    const row = resolveScope(r.store, headCid(r), entry) ? view(r, entry)?.tasks.find(t => t.id === id) : undefined
-    if (row?.title) return row.title
+    if (!cid || !readMembers(r.store, content(r.store, cid)).some(m => m.peerId === SERVER_MEMBER)) continue
+    const fos = membershipPath(r.store, headCid(r), at, SERVER_MEMBER)
+    const base = fos && readRowValue<PageBase>(r, fos, urlLeft(r))
+    if (base) return nodeUrl(base.base, { owner: base.owner, path: [...r.meta.scope, ...path] })
   }
   return null
 }
@@ -106,7 +101,7 @@ export function unpublish(r: Replica, path: Scope, audience: Audience, now: numb
 /** Make the node at `path` a visitor's private execution: the visitor is its member (execute), and it remembers where it came from. */
 export function markExecution(r: Replica, path: Scope, execution: Execution, name: string, now: number): Replica {
   r = addMemberAt(r, path, execution.peer, name, ['execute'], now)
-  return writeNodeValue(r, path, EXECUTION_ARGUMENT, execution, now)
+  return writeExecutionOrigin(r, path, execution, now)
 }
 /**
  * May `peer` see the node at `at` of a publication rooted at `root`? It is served what members it falls under (itself,
@@ -137,6 +132,11 @@ export function mayParticipate(r: Replica, path: Scope, peer: string, capability
   return may(peer) && (!!policy.execution || may(audiencePeer(policy.audience)))
 }
 export type SharedInput = { key: string; name: string; kind: 'text' | 'ref' | 'allocation' | 'confirmation' | 'choice'; path?: Scope; options?: string[]; direction?: 'provide' | 'consume'; type?: string; unit?: string; amount?: number; start?: number; end?: number; role?: 'input' | 'output' }
+/**
+ * A visitor's taking part: what it answered and how it ranked, with where its own copy is (`account`: its link row to
+ * the node in its account). `approvals` are the submissions it approved, read from their approval rows (approvals.ts),
+ * never stored with the rest.
+ */
 export type Participation = {
   peer: string; name?: string; labels?: Record<string, string>; audience: string; revision: string; updated: number
   approvals: string[]; ranking: string[]; fields: Record<string, string | boolean | number | { amount: number; type: string; unit: string; start?: number; end?: number }>
@@ -161,7 +161,7 @@ export type SharedNode = {
 export function sharedInputs(r: Replica, path: Scope): SharedInput[] {
   const cid = resolveScope(r.store, headCid(r), path)
   if (!cid) return []
-  const text = argumentRefs(r.store, cid).filter(a => a.type === r.store.primitive.documentField.getId() && !refValueCid(r.store, content(r.store, a.cid)) && a.name && !a.name.startsWith('fos:')).map(a => ({ key: content(r.store, a.cid).data.alias!.id, name: a.name!, kind: 'text' as const }))
+  const text = argumentRefs(r.store, cid).filter(a => a.type === r.store.primitive.documentField.getId() && !refValueCid(r.store, content(r.store, a.cid)) && a.name && !settingOf(r.store, content(r.store, a.cid))).map(a => ({ key: content(r.store, a.cid).data.alias!.id, name: a.name!, kind: 'text' as const }))
   // a choice requirement asks the visitor to choose; an allocation requirement asks for an amount
   const choices = (view(r, path)?.tasks ?? []).flatMap(row => row.requirement?.capability === 'choice' && !row.requirement.satisfied && row.requirement.options?.length ? [{ key: row.id, path: [row.id], name: row.title, kind: 'choice' as const, options: row.requirement.options.slice(0, 100) }] : [])
   const allocations = (view(r, path)?.tasks ?? []).flatMap(row => row.requirement?.capability === 'allocation' ? [{ key: row.id, name: row.title, kind: 'allocation' as const, type: row.requirement.resource ?? 'inventory', unit: row.requirement.unit ?? 'unit', amount: row.requirement.amount, ...(row.requirement.start !== undefined ? { start: row.requirement.start } : {}), ...(row.requirement.end !== undefined ? { end: row.requirement.end } : {}) }] : [])
@@ -178,7 +178,7 @@ export function executionInputs(r: Replica, root: Scope): SharedInput[] {
     const cid = resolveScope(r.store, headCid(r), path)
     for (const arg of cid ? argumentRefs(r.store, cid) : []) {
       const ref = content(r.store, arg.cid), id = ref.data.alias?.id
-      if (!id || arg.name?.startsWith('fos:') || ref.data.refExpression) continue
+      if (!id || settingOf(r.store, ref) || ref.data.refExpression) continue
       const relative = [...path.slice(root.length), id]
       if (!refValueCid(r.store, ref)) result.push({ key: JSON.stringify(relative), path: relative, name: arg.name ?? id,
         kind: arg.type === r.store.primitive.documentField.getId() ? 'text' : 'ref', type: arg.type, role: ref.data.refRole ?? 'input' })
@@ -187,7 +187,7 @@ export function executionInputs(r: Replica, root: Scope): SharedInput[] {
     for (const row of view(r, path)?.tasks ?? []) {
       if (result.length >= 32) break
       const req = row.requirement, relative = [...path.slice(root.length), row.id]
-      if (row.allocation && !view(r, path)?.tasks.some(t => t.supply?.ref === row.id) && !readNodeValue(r, [...path, row.id], 'fos:consumed')) result.push({ key: JSON.stringify(relative), path: relative, name: row.title, kind: 'allocation', direction: 'consume', type: row.allocation.type, unit: row.allocation.unit, amount: row.allocation.amount, start: row.allocation.start, end: row.allocation.end })
+      if (row.allocation && !view(r, path)?.tasks.some(t => t.supply?.ref === row.id) && !consumption(r, [...path, row.id])) result.push({ key: JSON.stringify(relative), path: relative, name: row.title, kind: 'allocation', direction: 'consume', type: row.allocation.type, unit: row.allocation.unit, amount: row.allocation.amount, start: row.allocation.start, end: row.allocation.end })
       if (req && !req.satisfied && ['allocation', 'confirmation', 'choice'].includes(req.capability)) result.push({ key: JSON.stringify(relative), path: relative, name: row.title, kind: req.capability as 'allocation' | 'confirmation' | 'choice', ...(req.capability === 'choice' ? { options: req.options } : {}), ...(req.capability === 'allocation' ? { type: req.resource ?? 'inventory', unit: req.unit ?? 'unit', amount: req.amount, start: req.start, end: req.end } : {}) })
       if (row.refId === undefined && row.type !== TEMPLATE_TYPE) walk([...path, row.id], depth + 1)
     }
@@ -195,7 +195,7 @@ export function executionInputs(r: Replica, root: Scope): SharedInput[] {
   const current = root.length ? view(r, root.slice(0, -1))?.tasks.find(row => row.id === root.at(-1)) : null
   const req = current?.requirement
   if (req && !req.satisfied && ['allocation', 'confirmation', 'choice'].includes(req.capability)) result.push({ key: '[]', path: [], name: current!.title, kind: req.capability as 'allocation' | 'confirmation' | 'choice', ...(req.capability === 'choice' ? { options: req.options } : {}), ...(req.capability === 'allocation' ? { type: req.resource ?? 'inventory', unit: req.unit ?? 'unit', amount: req.amount, start: req.start, end: req.end } : {}) })
-  if (current?.allocation && !readNodeValue(r, root, 'fos:consumed')) result.push({ key: '[]', path: [], name: current.title, kind: 'allocation', direction: 'consume', ...current.allocation })
+  if (current?.allocation && !consumption(r, root)) result.push({ key: '[]', path: [], name: current.title, kind: 'allocation', direction: 'consume', ...current.allocation })
   walk(root, 0); return result.slice(0, 32)
 }
 
@@ -230,21 +230,42 @@ export function proposeVisitorValues(r: Replica, path: Scope, peer: string, valu
   return { ...r }
 }
 
-/** Keep the foreign identity on the ordinary ref; its target contains only the permitted projection. */
+/**
+ * The visitor's record on the node at `path`: the sharing handler's result on the visitor's member entry (a visit
+ * makes it a member), holding only the permitted projection.
+ */
 export function writeParticipation(r: Replica, path: Scope, record: Participation, now: number): Replica {
-  return writeLinkedNodeValue(r, path, `fos:guest:${record.peer}`, record, now, record.account ? { state: { owner: record.account.owner, id: record.account.ref } } : {})
+  const { approvals: _approvals, ...kept } = record
+  const entry = membershipPath(r.store, headCid(r), path, record.peer)
+  if (!entry) throw new Error('Only a member of the node takes part in it.')
+  return writeHandlerResult(r, entry, kept, now)
 }
 
 export function participation(r: Replica, path: Scope, peer: string): Participation | null {
-  const value = readNodeValue<Participation>(r, path, `fos:guest:${peer}`)
-  return value && value.peer === peer && Array.isArray(value.approvals) && value.approvals.every(v => typeof v === 'string') && Array.isArray(value.ranking) && value.ranking.every(v => typeof v === 'string') && value.fields && typeof value.fields === 'object' ? value : null
+  const entry = membershipPath(r.store, headCid(r), path, peer)
+  const value = entry && handlerResult<Omit<Participation, 'approvals'>>(r, entry)
+  if (!(value && value.peer === peer && Array.isArray(value.ranking) && value.ranking.every(v => typeof v === 'string') && value.fields && typeof value.fields === 'object')) return null
+  return { ...value, approvals: approvedBy(r, path, peer) }
 }
-/** Everyone who took part: members with a record, and audience members (implicit, see `memberFor`) whose record is on the node. */
+/** Everyone who took part: the members of the node with a record. */
 export function participants(r: Replica, path: Scope): Participation[] {
   const cid = resolveScope(r.store, headCid(r), path)
   if (!cid) return []
-  const peers = new Set([...(view(r, path)?.members ?? []).map(m => m.peerId), ...argumentRefs(r.store, cid).flatMap(a => a.name?.startsWith('fos:guest:') ? [a.name.slice('fos:guest:'.length)] : [])])
-  return [...peers].flatMap(peer => { const record = participation(r, path, peer); return record ? [record] : [] })
+  return readMembers(r.store, content(r.store, cid)).flatMap(member => { const record = participation(r, path, member.peerId); return record ? [record] : [] })
+}
+/** A submission's id in the shared projection: it stays the same while approvals are added to it. */
+export function sharedProposalId(store: FosStore, proposalCid: string): string {
+  return `proposal:${submissionKey(store, proposalCid)}`
+}
+/** The open submission at `path` the shared projection calls `id`. */
+export function sharedProposalCid(r: Replica, path: Scope, id: string): string | null {
+  const cid = resolveScope(r.store, headCid(r), path)
+  return (cid && readProposals(r.store, content(r.store, cid)).find(p => p.status === 'open' && sharedProposalId(r.store, p.cid) === id)?.cid) || null
+}
+/** The shared projection's ids of the open submissions at `path` that `peer` approved. */
+function approvedBy(r: Replica, path: Scope, peer: string): string[] {
+  const cid = resolveScope(r.store, headCid(r), path)
+  return cid ? readProposals(r.store, content(r.store, cid)).filter(p => p.status === 'open' && approvalsOf(r.store, p.cid).some(a => a.approver === peer)).map(p => sharedProposalId(r.store, p.cid)) : []
 }
 /** The row edge with alias `id` among the rows of the node at `parent`. */
 export function childRowEdge(store: FosStore, parent: string | null, id: string): FosPathElem | null {
@@ -254,7 +275,7 @@ export function childRowEdge(store: FosStore, parent: string | null, id: string)
   }) ?? null
 }
 /** The library row type a row is made from (its view's `type`, the left node's id), when it is one: what a published page renders by. */
-const libraryType = (row: { type: string } | null | undefined): string | undefined => row?.type.startsWith('lib:type:') ? row.type : undefined
+const libraryType = (row: { type: string } | null | undefined): string | undefined => row && !isCid(row.type) ? row.type : undefined
 /** Bounds on published markdown, in characters: one body, and every body of one projection together. */
 export const SHARED_BODY_LIMIT = 100_000
 export const SHARED_TOTAL_BODY = 1_000_000
@@ -312,37 +333,44 @@ export function sharedProjection(r: Replica, path: Scope, revision: (value: unkn
   }
   const own = edgeAt(path)
   walk(path, 0, own && store.table.has(plainEdge(store, own)[0]) ? content(store, plainEdge(store, own)[0]).data.form?.title : undefined)
-  // visitors' own submissions are the owner's to review, not options other visitors vote on
-  const proposals = node.proposals.filter(p => p.status === 'open' && p.name !== VISITOR_SUBMISSION).slice(0, 100).map(p => ({ id: `proposal:${p.id}`, label: `${p.name ?? 'Peer'}: ${[...p.summary.added.map(t => `adds ${t}`), ...p.summary.changed.map(t => `changes ${t}`), ...p.summary.removed.map(t => `removes ${t}`)].join('; ') || 'proposed changes'}` }))
+  // what a visitor submits (a member who may run the node but not edit it) is the owner's to review, not an option other visitors vote on
+  const identity = content(r.store, resolveScope(r.store, headCid(r), path)!)
+  // visitors are explicit members (a visit adds them); a peer the audience covers implicitly is no visitor
+  const visitorInput = (peer: string) => readMembers(r.store, identity).some(m => m.peerId === peer) && !hasCapability(r.store, identity, peer, 'edit')
+  const open = node.proposals.filter(p => p.status === 'open' && !visitorInput(p.peerId)).slice(0, 100)
+  const proposals = open.map(p => ({ id: sharedProposalId(store, p.id), label: `${p.name ?? 'Peer'}: ${[...p.summary.added.map(t => `adds ${t}`), ...p.summary.changed.map(t => `changes ${t}`), ...p.summary.removed.map(t => `removes ${t}`)].join('; ') || 'proposed changes'}` }))
   const inputs = ((policy.execution || interactive) ? executionInputs(r, path) : [...sharedInputs(r, path), ...fields].slice(0, 32)).filter(field => { const at = [...path, ...(field.path ?? [field.key])]; return visible(at) && textVisible(at) })
   const key = revision({ audience: policy.audience, title: current?.title ?? node.name, rows: hashed, inputs, proposals })
-  const counts: Record<string, number> = {}, rankings: Record<string, number> = {}
-  const cid = resolveScope(r.store, headCid(r), path)!
-  void cid
+  // approvals are the submissions' own approval rows; rankings what each visitor answered for this revision
+  const counts: Record<string, number> = Object.fromEntries(open.map(p => [sharedProposalId(store, p.id), approvalsOf(store, p.id).length]))
+  const rankings: Record<string, number> = {}
   const active = participants(r, path).filter(p => p.audience === audiencePeer(policy.audience) && p.revision === key && mayParticipate(r, path, p.peer, 'read'))
-  for (const p of active) {
-    if (mayParticipate(r, path, p.peer, 'edit')) for (const id of p.approvals) counts[id] = (counts[id] ?? 0) + 1
-    if (mayParticipate(r, path, p.peer, 'rank')) p.ranking.forEach((id, i) => { rankings[id] = (rankings[id] ?? 0) + p.ranking.length - i })
-  }
-  return { ...((policy.execution || interactive) ? { execution: readNodeValue<{ status: string; error?: string }>(r, path, 'fos:evaluation') ?? { status: 'idle' } } : {}), ...page, title: page.title || 'Shared node', ...(policy.template ? { template: true as const } : {}), rows, inputs, proposals, revision: key, audience: policy.audience, counts, rankings, participants: active.length }
+  for (const p of active) if (mayParticipate(r, path, p.peer, 'rank')) p.ranking.forEach((id, i) => { rankings[id] = (rankings[id] ?? 0) + p.ranking.length - i })
+  return { ...((policy.execution || interactive) ? { execution: evaluationRecord(r, path) ?? { status: 'idle' } } : {}), ...page, title: page.title || 'Shared node', ...(policy.template ? { template: true as const } : {}), rows, inputs, proposals, revision: key, audience: policy.audience, counts, rankings, participants: active.length }
 }
 
+/** The row below Home standing for another account (their peer is its member), if there is one. */
+function hostRowOf(r: Replica, owner: string): Scope | null {
+  const home = homePath(r), peer = `user:${owner}`
+  const host = (view(r, home)?.tasks ?? []).find(row => view(r, [...home, row.id])?.members.some(m => m.peerId === peer) || (row.requirement?.capability === 'peer' && row.requirement.peer === peer))
+  return host ? [...home, host.id] : null
+}
+/** The reference row below a host row standing for `owner`'s node `refId`. */
+function linkRowOf(r: Replica, hostPath: Scope, owner: string, refId: string): Scope | null {
+  const row = (view(r, hostPath)?.tasks ?? []).find(t => t.refOwner === owner && t.refId === refId)
+  return row ? [...hostPath, row.id] : null
+}
 /** The sub-peer row for another account below this one's Home (their peer id is its member), created on demand. */
 export function subPeerRowAt(r: Replica, owner: string, now: number): { replica: Replica; path: Scope } {
-  const home = homePath(r), peer = `user:${owner}`, hostId = `shared-host:${owner}`
-  let host = (view(r, home)?.tasks ?? []).find(row => row.id === hostId || (row.requirement?.capability === 'peer' && row.requirement.peer === peer))
-  if (!host) {
-    r = addRow(r, home, PLAIN_TYPE, owner, now, { id: hostId })
-    host = view(r, home)!.tasks.find(row => row.id === hostId)!
-  }
-  const hostPath = [...home, host.id]
+  const home = homePath(r), peer = `user:${owner}`
+  let hostPath = hostRowOf(r, owner)
+  if (!hostPath) { const id = newId(); r = addRow(r, home, PLAIN_TYPE, owner, now, { id }); hostPath = [...home, id] }
   // the sub-peer: a member of this node (so the fos server tab lists them) and of its row, with nothing granted
   if (!view(r, home)?.members.some(member => member.peerId === peer)) r = addMemberAt(r, home, peer, owner, [], now)
   if (!view(r, hostPath)?.members.some(member => member.peerId === peer)) r = addMemberAt(r, hostPath, peer, owner, [], now)
   return { replica: r, path: hostPath }
 }
 
-export const inviteRequestName = (title: string) => `invite: ${title}`
 
 /**
  * Another account made this one a member of a node: the request lands as a *proposal* by that account on its sub-peer
@@ -351,21 +379,25 @@ export const inviteRequestName = (title: string) => `invite: ${title}`
  * submission like any other.
  */
 export function ensureInviteRequest(r: Replica, owner: string, aliasId: string, title: string, now: number): { replica: Replica; path: Scope; proposalCid: string | null } {
-  const peer = `user:${owner}`, linkId = `member:${aliasId}`, name = inviteRequestName(title || owner)
+  const peer = `user:${owner}`, name = title || owner
   const sub = subPeerRowAt(r, owner, now)
   r = sub.replica
   const hostPath = sub.path
-  if (resolveRef(r, linkId)) return { replica: r, path: hostPath, proposalCid: null }
+  if (linkRowOf(r, hostPath, owner, aliasId)) return { replica: r, path: hostPath, proposalCid: null }
   const store = r.store, root = headCid(r), hostCid = resolveScope(store, root, hostPath)!
   const identity = content(store, hostCid)
-  const pending = readProposals(store, identity).find(p => p.peerId === peer && p.name === name && p.status === 'open')
+  // the open request from that account that adds a reference to this node of theirs
+  const pending = readProposals(store, identity).find(p => p.peerId === peer && p.status === 'open' && valueContent(store, p.contentCid).children.some(edge => {
+    const ref = content(store, identityCid(store, edge)).data.ref
+    return isRowEdge(store, edge) && ref?.owner === owner && ref.id === aliasId
+  }))
   if (pending) return { replica: r, path: hostPath, proposalCid: pending.cid }
   // the proposal's content: the row's current value plus the ref, built in a scratch store rooted at that value
   const base = put(store, valueContent(store, hostCid)), draftStore = new FosStore()
   importNodes(draftStore, reachableNodes(store, [base]))
   commitRoot(draftStore, base, now)
   nestScope(draftStore, { store, root, at: hostPath })
-  const draft = addRow(createReplica(peer, draftStore), [], REF_TYPE, title, now, { id: linkId, refOwner: owner, refId: aliasId })
+  const draft = addRow(createReplica(peer, draftStore), [], REF_TYPE, title, now, { id: newId(), refOwner: owner, refId: aliasId })
   importNodes(store, reachableNodes(draftStore, [headCid(draft)]))
   const proposalCid = put(store, proposalContent(store, peer, name, headCid(draft), base, now))
   commitRoot(store, updateAtScope(store, root, hostPath, current => withProposal(store, makeLink(store, current, now), peer, proposalCid, name), 'node'), now)
@@ -377,18 +409,25 @@ export function ensureInviteRequest(r: Replica, owner: string, aliasId: string, 
 export type SharedAddress = { owner: string; path: Scope }
 /** A received link is an ordinary foreign ref below its host peer in Home. No guest context is granted to the host. */
 export function ensureSharedLink(r: Replica, address: SharedAddress, title: string, now: number, anonymous = false): { replica: Replica; path: Scope } {
-  const home = homePath(r), peer = `user:${address.owner}`, hostId = `shared-host:${address.owner}`, linkId = `shared:${address.owner}:${address.path.at(-1) ?? 'root'}`
-  const existing = resolveRef(r, linkId)
-  if (existing) return { replica: r, path: [...existing.path, existing.row.id] }
-  let host = (view(r, home)?.tasks ?? []).find(row => row.id === hostId || (row.requirement?.capability === 'peer' && row.requirement.peer === peer))
-  if (!host) {
-    r = addRow(r, home, PLAIN_TYPE, anonymous ? 'Host' : address.owner, now, { id: hostId })
-    host = view(r, home)!.tasks.find(row => row.id === hostId)!
-  }
-  const hostPath = [...home, host.id]
+  const home = homePath(r), peer = `user:${address.owner}`, refId = address.path.at(-1) ?? 'root'
+  let hostPath = hostRowOf(r, address.owner)
+  const existing = hostPath && linkRowOf(r, hostPath, address.owner, refId)
+  if (existing) return { replica: r, path: existing }
+  if (!hostPath) { const id = newId(); r = addRow(r, home, PLAIN_TYPE, anonymous ? 'Host' : address.owner, now, { id }); hostPath = [...home, id] }
   if (!view(r, hostPath)?.members.some(member => member.peerId === peer)) r = addMemberAt(r, hostPath, peer, anonymous ? 'Host' : address.owner, [], now)
-  r = addRow(r, hostPath, REF_TYPE, title, now, { id: linkId, refOwner: address.owner, refId: address.path.at(-1) ?? 'root' })
-  const path = [...hostPath, linkId]
-  r = writeNodeValue(r, path, 'fos:shared-link', address, now)
-  return { replica: r, path }
+  // the reference row says whose node it is and where it is in their account
+  const id = newId()
+  r = addRow(r, hostPath, REF_TYPE, title, now, { id, refOwner: address.owner, refId, refScope: address.path })
+  return { replica: r, path: [...hostPath, id] }
+}
+/** This account's link row to the shared node at `address`, if it has one (`ensureSharedLink` makes it). */
+export function sharedLinkAt(r: Replica, address: SharedAddress): Scope | null {
+  const hostPath = hostRowOf(r, address.owner)
+  return hostPath && linkRowOf(r, hostPath, address.owner, address.path.at(-1) ?? 'root')
+}
+/** Where the node a received link at `path` stands for is: its owner and its place in their account. */
+export function sharedAddressAt(r: Replica, path: Scope): SharedAddress | null {
+  const cid = resolveScope(r.store, headCid(r), path)
+  const ref = cid ? content(r.store, cid).data.ref : undefined
+  return ref?.owner && Array.isArray(ref.scope) ? { owner: ref.owner, path: ref.scope } : null
 }

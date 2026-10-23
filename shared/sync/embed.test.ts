@@ -1,5 +1,6 @@
+import { membershipPathAt } from './index'
 import { api } from './embed'
-import { addTask, createReplica, ensureHomeContext, HOME_ID, view } from './index'
+import { localStoreRowId, addTask, createReplica, ensureHomeContext, HOME_ID, LIBRARY_ID, view } from './index'
 import { exchangeNode } from './node-sync'
 import { SERVER_TRANSPORT_CAPABILITIES } from './graph'
 import type { NodeRequest } from './node-provider'
@@ -61,7 +62,7 @@ test('a project syncs from its own directory: a device root of its own, with no 
   cliSync('project', server)
   expect(view(server, [HOME_ID])!.tasks.map(t => t.id)).toEqual(['row'])
   // it ships the standard library like any device root; its own rows are at its root
-  expect(JSON.parse(api.view('project', '[]')).tasks.map((t: { id: string }) => t.id)).toEqual(['fos:library', 'row'])
+  expect(JSON.parse(api.view('project', '[]')).tasks.map((t: { id: string }) => t.id)).toEqual([LIBRARY_ID, 'row'])
   expect(JSON.parse(api.meta('project')).localScope).toBeUndefined()
   api.close('project')
 })
@@ -78,7 +79,7 @@ test('two stores on one machine link each other and read each other by node exch
   expect(api.linkStore('project', 'home-store', 'Home', true, 4)).toBe(false)
   expect(JSON.parse(api.localStores('project'))).toEqual([{ peerId: 'home-store', name: 'Home' }])
   // the linked store appears like any other peer: under its entry in Settings, a row held by it standing for its Home
-  const held = JSON.parse(api.view('project', JSON.stringify(['fos:peer:home-store']))).tasks.find((t: { id: string }) => t.id === 'store:home-store')
+  const held = JSON.parse(api.view('project', api.membershipPath('project', '[]', 'home-store'))).tasks.find((t: { id: string }) => t.id === localStoreRowId('home-store'))
   expect(held).toMatchObject({ refId: expect.any(String), refPeer: 'home-store', title: 'Home' })
   // each reads the other's tree through node exchange
   expect(JSON.parse(api.browseStore('project', 'home-store', 5)).join(' | ')).toContain('Project row')

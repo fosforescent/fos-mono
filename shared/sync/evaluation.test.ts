@@ -123,7 +123,10 @@ test.each([false, true])('output rows are tracked by declaration identity, not a
   s.set(writeNodeValue(s.get(), path, 'result', {}, 3))
   s.set(writeNodeValue(s.get(), path, 'result.other', { count: 1 }, 3))
   s.driver.handles = () => true
-  s.driver.outputs = () => ['result:child']
+  const { argumentRefs, content, resolveScope, headCid } = await import('./index')
+  const declared = argumentRefs(s.get().store, resolveScope(s.get().store, headCid(s.get()), path)!).find(a => a.name === 'result')!
+  const output = content(s.get().store, declared.cid).data.alias!.id
+  s.driver.outputs = () => [output]
   s.driver.effect = async () => {
     s.set(writeNodeValue(s.get(), path, 'result', { nested: { count: 2 } }, 4))
     if (changeInput) s.set(writeNodeValue(s.get(), path, 'result.other', { count: 9 }, 4))

@@ -8,11 +8,11 @@ const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTextAreaElement','Node','Option','navigator','localStorage','sessionStorage','location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export * from './src/analysis'; export {createMemoryStorage} from './src/storage'; export {createProjectStorage} from './src/project'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), external: ['mermaid','katex','katex/*'] })
 const { addRow, addConstructedRow, content, put, rowTypeAt, analysisRows, queryAnalysis, analysisTotals, App, mountUi, createMemoryStorage, createProjectStorage, loadReplica, evaluationRecord, SERVER_TRANSPORT_CAPABILITIES } = require(path.join(dir, 'test.cjs'))
-const TASK_TYPE = 'lib:type:task'
-const PLAIN_TYPE = 'lib:type:plain'
-const NOTE_TYPE = 'lib:type:note'
-const ALLOCATION_TYPE = 'lib:type:allocation'
-const TEMPLATE_TYPE = 'lib:type:template'
+const TASK_TYPE = 'task'
+const PLAIN_TYPE = 'plain'
+const NOTE_TYPE = 'note'
+const ALLOCATION_TYPE = 'allocation'
+const TEMPLATE_TYPE = 'template'
 async function main() {
   const storage = createMemoryStorage()
   let release, first = true

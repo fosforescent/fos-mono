@@ -51,7 +51,7 @@ export function exchangeNodeContext(r: Replica, input: NodeRequest, authority: N
       if (branch.scope.length) fork = createBranch(fork, branch.scope, branch.name, now)
       else {
         const edge = rowEdgeAt(fork.store, PLAIN_TYPE, cid, [])
-        const choice = putBranches(fork.store, content(fork.store, cid).data.alias?.id ?? 'fos:root-branch', edge, [{ peerId: 'main', edge }, { peerId: branch.name, edge, base: edge }])
+        const choice = putBranches(fork.store, content(fork.store, cid).data.alias?.id ?? cid, edge, [{ peerId: 'main', edge }, { peerId: branch.name, edge, base: edge }])
         commitRoot(fork.store, choice, now)
       }
       cid = resolveScope(fork.store, headCid(fork), branch.scope)!

@@ -1,8 +1,9 @@
 /** What types accept (their pattern rows), and the type errors a row in the wrong place makes. */
+import { upgradeLibrary } from './library'
 import { FosStore } from '../dag-implementation/store'
-import { HOME_ID, content, nestScope, put, resolveScope, rootStoredTarget, rowTypeAt, valueContent } from './graph'
+import { HOME_ID, LIBRARY_ID, content, nestScope, put, refNodeContent, refValueCid, resolveScope, rootStoredTarget, rowTypeAt, typeIdOf, valueContent } from './graph'
 import { HOME_TYPE, NOTE_TYPE, PATTERN_TYPE, TASK_TYPE } from './library-types'
-import { addRow, addTask, copyNode, createReplica, deleteTask, ensureHomeContext, headCid, loadReplica, serializeReplica, view, type Replica } from './replica'
+import { addRow, addTask, applyProposalAt, copyNode, createReplica, deleteTask, ensureHomeContext, headCid, loadReplica, proposeRefAt, serializeReplica, view, type Replica } from './replica'
 import { installNodeShape } from './node-sync'
 import { acceptsChild, isTypeErrorEdge, rootTypeOf, typeErrorInner } from './patterns'
 import { userView } from './test-helpers'
@@ -30,14 +31,14 @@ function receiveHome(r: Replica, at: string[]): Replica {
 
 test('only a device root accepts Home; nothing accepts a store root', () => {
   const r = device()
-  expect(content(r.store, rootTypeOf(r.store)).data.alias).toEqual({ id: 'lib:type:device-root' })
+  expect(typeIdOf(r.store, rootTypeOf(r.store))).toBe('deviceRoot')
   expect(userView(r)!.tasks.map(t => [t.id, t.type])).toEqual([[HOME_ID, HOME_TYPE]])
   // a device root also holds its own rows; Home and ordinary rows hold no Home
   expect(() => addTask(r, [], 'Device setting', 3, 'setting')).not.toThrow()
   expect(() => addRow(r, [HOME_ID], HOME_TYPE, 'Another Home', 3)).toThrow(/does not accept/)
   expect(() => addRow(r, [HOME_ID, 't'], HOME_TYPE, 'Home in a task', 3)).toThrow(/does not accept/)
   const doc = documentRoot()
-  expect(content(doc.store, rootTypeOf(doc.store)).data.alias).toEqual({ id: 'lib:type:document-root' })
+  expect(typeIdOf(doc.store, rootTypeOf(doc.store))).toBe('documentRoot')
   expect(() => addRow(doc, [], HOME_TYPE, 'Home in a project', 3)).toThrow(/does not accept/)
   expect(() => addTask(doc, [], 'Project task', 3)).not.toThrow()
 })
@@ -80,11 +81,25 @@ test('a store root holding what its type rejects is a type error too', () => {
   expect(view(doc, [])!.tasks.find(t => t.id === 'stray')!.rejected).toBe(true)
 })
 
+/** The library's next value, with its task ref pointing at `version`, accepted as a submission to the library ref. */
+function nextTaskVersion(r: Replica, version: string): Replica {
+  const store = r.store, ref = resolveScope(store, headCid(r), [LIBRARY_ID])!, value = refValueCid(store, content(store, ref))!
+  const next = put(store, { ...content(store, value), children: content(store, value).children.map(edge => content(store, edge[1]).data.name?.content === TASK_TYPE ? [edge[0], put(store, refNodeContent(store, content(store, edge[1]).data, version))] as [string, string] : edge) })
+  const submitted = proposeRefAt(r, [LIBRARY_ID], next, 'member', 3, 'binding:member')
+  // and the device root's instance upgraded to it
+  return upgradeLibrary(applyProposalAt(submitted.replica, [LIBRARY_ID], submitted.proposalCid, r.meta.peerId, 4), [], [LIBRARY_ID], 4)
+}
+
 test('a pattern matches a row type, and can pin the versions of it that match', () => {
-  const r = device(), store = r.store
-  const task = rowTypeAt(store, TASK_TYPE, [HOME_ID]), patternType = rowTypeAt(store, PATTERN_TYPE, [HOME_ID])
-  const node = put(store, { data: { alias: { id: 'x' }, description: { content: 'x' }, todo: { completed: false, time: 1 } }, children: [] })
-  const otherVersion = put(store, { ...content(store, task), data: { ...content(store, task).data, description: { content: 'To-do' } } })
+  let r = device()
+  const task = rowTypeAt(r.store, TASK_TYPE, [HOME_ID]), patternType = rowTypeAt(r.store, PATTERN_TYPE, [HOME_ID])
+  const node = put(r.store, { data: { alias: { id: 'x' }, description: { content: 'x' }, todo: { completed: false, time: 1 } }, children: [] })
+  // a later library names a new version of task; the one it replaced is still task (the library ref's history)
+  const otherVersion = put(r.store, { ...content(r.store, task), data: { ...content(r.store, task).data, description: { content: 'To-do' } } })
+  r = nextTaskVersion(r, otherVersion)
+  const store = r.store
+  expect(rowTypeAt(store, TASK_TYPE, [HOME_ID])).toBe(otherVersion)
+  expect(typeIdOf(store, task)).toBe(TASK_TYPE)
   const typeWith = (patterns: Parameters<typeof patternRowContent>[1][]) => put(store, { data: { alias: { id: 'strict' }, description: { content: 'Strict' } }, children: patterns.map(p => [patternType, put(store, patternRowContent('strict', p))]) })
   // only tasks of one version
   const pinned = typeWith([{ type: TASK_TYPE, versions: [task] }])
@@ -105,7 +120,7 @@ test('a bare root (as the seed and registration write it) commits as a document 
   nestScope(store, { store: host.store, root: headCid(host), at: [] })
   store.rootNodeId = put(store, { data: { alias: { id: 'ws' }, description: { content: 'workspace' } }, children: [] })
   const r = addTask(createReplica('server', store), [], 'first', 1, 'a')
-  expect(content(store, rootTypeOf(store)).data.alias).toEqual({ id: 'lib:type:document-root' })
+  expect(typeIdOf(store, rootTypeOf(store))).toBe('documentRoot')
   expect(view(r, [])!.typeError).toBeUndefined()
   expect(view(r, [])!.tasks.map(t => t.title)).toEqual(['first'])
 })

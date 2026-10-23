@@ -1,3 +1,5 @@
+import { handlerOfferId } from '@fosforescent/shared/sync/index'
+import { membershipPathAt } from '@fosforescent/shared/sync/index'
 import { standardHostRef } from './host-runtime'
 import { CAPABILITIES, SERVER_TRANSPORT_CAPABILITIES, RELAY_QUEUE_ID, addMemberAt, addRelayMessage, addTask, createReplica, ensureHomeContext, view, HOME_ID } from '@fosforescent/shared/sync/index'
 import { createHostRuntime } from './host-runtime'
@@ -31,7 +33,7 @@ test('advertised capabilities are exactly transport facts plus registered handle
   expect(runtime.serverCapabilities()).toEqual([...new Set([...SERVER_TRANSPORT_CAPABILITIES, 'search', 'llm'])].sort())
   for (const unbacked of ['mail', 'send-payment', 'receive-payment', 'allocate', 'request-payment', 'cron']) expect(runtime.serverCapabilities()).not.toContain(unbacked)
   expect(runtime.integrationOffers()).toEqual({ github: ['repo'], phone: ['notify'] })
-  const step = (capability: string) => ({ path: ['t', 'r'], row: { id: 'r', type: 'lib:type:allocation', requirement: { capability } } } as any)
+  const step = (capability: string) => ({ path: ['t', 'r'], row: { id: 'r', type: 'allocation', requirement: { capability } } } as any)
   const r = createReplica('owner')
   expect(runtime.executors(step('repo'), r)).toHaveLength(0) // no ref row means no registration
   expect(runtime.executors(step('search'), r)).toHaveLength(0)
@@ -71,7 +73,7 @@ test('availability follows the handler, and every advertised capability is a kno
 test('reloading and applying host defaults never resurrects a withdrawn declaration', () => {
   const runtime = createHostRuntime([{ peerId: 'fos', ref: standardHostRef('fos', 'search'), effect: async () => {} }])
   let r = ensureHomeContext(createReplica('owner'), 1, runtime.hostOffers())
-  const offer = discoverHandlers(r, []).find(value => value.id === 'fos:handler:fos:search')!
+  const offer = discoverHandlers(r, []).find(value => value.id === handlerOfferId('fos', 'search'))!
   expect(offer).toBeDefined()
   r = addRefCall(r, [], offer.cid, 2, 'call')
   expect(runtime.executors(evaluationSteps(r, ['call'])[0]!, r)).toHaveLength(1)
@@ -101,6 +103,6 @@ test('the server runs the relay on submissions: a message to a peer the account 
   r = addRelayMessage(r, [HOME_ID, 'hub'], 'desktop', 4, 'm1')
   r = addRelayMessage(r, [HOME_ID, 'hub'], 'stranger', 4, 'm2')
   r = runtime.afterSubmission(r, [HOME_ID, 'hub', 'm1'], 5)
-  expect(view(r, [HOME_ID, 'hub', 'fos:peer:desktop', RELAY_QUEUE_ID])!.tasks.map(t => t.id)).toEqual(['m1'])
+  expect(view(r, [...membershipPathAt(r, [HOME_ID, 'hub'], 'desktop')!, RELAY_QUEUE_ID])!.tasks.map(t => t.id)).toEqual(['m1'])
   expect(view(r, [HOME_ID, 'hub'])!.tasks.map(t => t.id)).toEqual(['m2'])
 })

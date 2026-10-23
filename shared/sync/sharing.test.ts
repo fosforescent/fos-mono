@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto'
-import { ensureHomeContext, setMemberCapabilitiesAt, addConstructedRow, addRow, applyProposalAt, createReplica, headCid, view } from './replica'
+import { addMemberAt, ensureHomeContext, setMemberCapabilitiesAt, addConstructedRow, addRow, applyProposalAt, createReplica, headCid, view } from './replica'
 import { content, put, readProposals, resolveScope, rowTypeAt, valueContent } from './graph'
 import { formValueAt } from './forms'
-import { markdownTitle, proposeVisitorValues, publish, publication, publishedUrl, syncPublishedUrls, unpublish, sharedProjection, SHARED_BODY_LIMIT, VISITOR_SUBMISSION } from './sharing'
-import { HOME_ID } from './graph'
+import { markdownTitle, proposeVisitorValues, publish, publication, publishedUrl, writePageBase, unpublish, sharedProjection, SHARED_BODY_LIMIT, VISITOR_SUBMISSION } from './sharing'
+import { HOME_ID, SERVER_MEMBER } from './graph'
+import { membershipPathAt } from './replica'
 import { MARKDOWN_TYPE, PLAIN_TYPE, NOTE_TYPE, TEXT_TYPE } from './library-types'
 
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
@@ -27,7 +28,7 @@ test('a published note is its title line and its whole markdown body row, keyed 
   // bodies are not cut at 8000 characters
   expect(rows.long).toEqual({ id: 'long', title: 'Section', depth: 0, type: NOTE_TYPE })
   expect(rows['long/field/body']!.body).toHaveLength('## Section\n\n'.length + 9000)
-  expect(rows.plain).toEqual({ id: 'plain', title: 'A plain row', depth: 0, type: 'lib:type:plain' })
+  expect(rows.plain).toEqual({ id: 'plain', title: 'A plain row', depth: 0, type: 'plain' })
   expect(rows.nested).toMatchObject({ title: 'Nested note', depth: 1 })
   expect(rows['huge/field/body']!.body).toHaveLength(SHARED_BODY_LIMIT)
   expect(rows['huge/field/body']!.truncated).toBe(true)
@@ -55,10 +56,12 @@ test('empty fields of a published row are inputs of their type; each visitor sub
   const node = sharedProjection(r, ['page'], value => JSON.stringify(value).length.toString())
   expect(node.rows).toEqual([
     { id: 'details', title: 'Your details', depth: 0 },
-    { id: 'details/field/email', title: 'email', depth: 1, type: 'lib:type:text', body: '' }
+    { id: 'details/field/email', title: 'email', depth: 1, type: 'text', body: '' }
   ])
   expect(node.inputs).toEqual([{ key: JSON.stringify(['details', 'details/field/email']), path: ['details', 'details/field/email'], name: 'email', kind: 'text' }])
-  // two visitors: two submissions; a resubmission replaces only its own
+  // two visitors (a visit admits each as a member that may run the node): two submissions; a resubmission replaces only its own
+  r = addMemberAt(r, ['page'], 'visitor:a', 'A', ['execute'], 4)
+  r = addMemberAt(r, ['page'], 'visitor:b', 'B', ['execute'], 4)
   r = proposeVisitorValues(r, ['page'], 'visitor:a', [{ path: ['details', 'details/field/email'], value: 'a@example.test' }], 4)
   r = proposeVisitorValues(r, ['page'], 'visitor:b', [{ path: ['details', 'details/field/email'], value: 'b@example.test' }], 5)
   r = proposeVisitorValues(r, ['page'], 'visitor:a', [{ path: ['details', 'details/field/email'], value: 'a2@example.test' }], 6)
@@ -88,17 +91,18 @@ test('publishing is membership: the audience peer may run the node (execute only
   expect(() => sharedProjection(r, ['page'], () => 'x')).toThrow()
 })
 
-test('the url handler keeps a published node\'s link as a row in the server\'s member entry above it', () => {
+test('a published node\'s link is made from the page base the url handler records on the server\'s member entry', () => {
   let r = ensureHomeContext(createReplica('user:host'), 1)
   r = addRow(r, [HOME_ID], PLAIN_TYPE, 'Page', 2, { id: 'page' })
-  expect(syncPublishedUrls(r, [HOME_ID, 'page'], 'https://app.example', 3)).toBe(r)
-  r = publish(r, [HOME_ID, 'page'], 'public', 4)
-  r = syncPublishedUrls(r, [HOME_ID, 'page'], 'https://app.example/', 5)
+  const entry = membershipPathAt(r, [], SERVER_MEMBER)!
+  r = writePageBase(r, entry, { base: 'https://app.example', owner: 'host' }, 3)
+  expect(writePageBase(r, entry, { base: 'https://app.example', owner: 'host' }, 4)).toBe(r)
+  expect(publishedUrl(r, [HOME_ID, 'page'])).toBeNull()
+  r = publish(r, [HOME_ID, 'page'], 'public', 5)
   const url = publishedUrl(r, [HOME_ID, 'page'])!
   expect(url.startsWith('https://app.example/#share=')).toBe(true)
   expect(JSON.parse(decodeURIComponent(url.slice(url.indexOf('#share=') + 7)))).toEqual({ owner: 'host', path: [HOME_ID, 'page'] })
-  expect(syncPublishedUrls(r, [HOME_ID, 'page'], 'https://app.example', 6)).toBe(r)
-  r = syncPublishedUrls(unpublish(r, [HOME_ID, 'page'], 'public', 7), [HOME_ID, 'page'], 'https://app.example', 8)
+  r = unpublish(r, [HOME_ID, 'page'], 'public', 6)
   expect(publishedUrl(r, [HOME_ID, 'page'])).toBeNull()
 })
 

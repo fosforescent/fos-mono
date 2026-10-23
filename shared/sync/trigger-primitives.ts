@@ -116,13 +116,11 @@ export const refChangeObserver: TriggerObserver = {
     const parent = path.slice(0, -1)
     if (w.path.length <= parent.length && w.path.every((id, i) => parent[i] === id))
       throw new Error('Place the trigger outside the watched node.')
-    if (w.argument !== undefined && (typeof w.argument !== 'string' || !w.argument))
-      throw new Error('The watched argument must have a name.')
-    if (!watchedRefValue(r, w.path, w.branch, w.argument)) throw new Error('The watched node is unavailable.')
+    if (!watchedRefValue(r, w.path, w.branch, w.merges)) throw new Error('The watched node is unavailable.')
   },
   observe: ({ replica: r, config: t, previous }) => {
     if (!t.watch) return null
-    const value = watchedRefValue(r, t.watch.path, t.watch.branch, t.watch.argument)
+    const value = watchedRefValue(r, t.watch.path, t.watch.branch, t.watch.merges)
     return value && (value !== t.watch.baseline || previous?.occurrence.startsWith('ref-change:' + t.created + ':'))
       ? { id: 'ref-change:' + t.created + ':' + value }
       : null

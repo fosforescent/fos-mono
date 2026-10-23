@@ -1,6 +1,6 @@
 import { iconSvg } from './icons'
 
-export type ComboOption = { label: string; group: string; selected?: boolean; accessory?: { label: string; pressed: boolean; disabled?: boolean; run: () => void }; disabled?: boolean; drag?: { type: string; value: string }; run: () => void }
+export type ComboOption = { label: string; group: string; selected?: boolean; accessory?: { label: string; pressed: boolean; disabled?: boolean; tone?: 'pending'; run: () => void }; disabled?: boolean; drag?: { type: string; value: string }; run: () => void }
 let sequence = 0
 let closeActive: (() => void) | undefined
 /** Searchable row popover. The caller supplies existing graph operations. */
@@ -55,6 +55,7 @@ export function combobox(label: string, caption: string, options: (query: string
         const action = document.createElement('button'); action.type = 'button'; action.className = 'icon branch-request'
         action.innerHTML = iconSvg('pull-request') ?? 'PR'; action.setAttribute('aria-label', option.accessory.label); action.title = option.accessory.label
         action.setAttribute('aria-pressed', String(option.accessory.pressed)); action.disabled = !!option.accessory.disabled
+        if (option.accessory.tone) action.dataset.tone = option.accessory.tone
         action.onclick = event => { event.stopPropagation(); close(); option.accessory!.run() }
         row.append(action)
       }

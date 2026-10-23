@@ -3,7 +3,7 @@
  * Input definitions reconstruct this host's primitives after loading; only refs
  * present in the graph make values available to execution and lifecycle hooks.
  */
-import { SERVER_TRANSPORT_CAPABILITIES, capabilityTarget, capabilityName, content, refSubmissions, contextMemberRefs, nativeRef, publishNativeRef, primitiveExecutors, nativeRefValues, discoverHandlers, sameCapabilityType, reachableNodes, type PrimitiveDefinition, type Capability, type EvaluationStep, type HostOffers, type LibraryAddress, type Replica, type Scope } from '@fosforescent/shared/sync/index'
+import { SERVER_TRANSPORT_CAPABILITIES, handlerOfferId, capabilityTarget, capabilityName, content, refSubmissions, contextMemberRefs, nativeRef, publishNativeRef, primitiveExecutors, nativeRefValues, discoverHandlers, sameCapabilityType, reachableNodes, type PrimitiveDefinition, type Capability, type EvaluationStep, type HostOffers, type Replica, type Scope } from '@fosforescent/shared/sync/index'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
 
 export type EffectContext = {
@@ -40,6 +40,8 @@ export type HostHandler = {
    * the replica after it: graph-only handlers such as the relay, which moves messages into their recipients' queues.
    */
   submission?(replica: Replica, path: Scope, now: number): Replica
+  /** The `approve` capability's handler: who attests the approvals this host records for the accounts it serves, in `replica`. */
+  attester?(replica: Replica): import('@fosforescent/shared/sync/approvals').Attester | null
   /** Refresh a loaded node from a connected service. Called after access checks, under the account lock. */
   load?(ctx: { userId: number; replica: Replica; path: Scope; branches: Array<{ scope: Scope; name: string }>; now: number }): Promise<Replica>
   /**
@@ -52,7 +54,7 @@ export type HostHandler = {
 export type HostRuntime = ReturnType<typeof createHostRuntime>
 
 /** Standard-library adapter used by native implementations, not by discovery or dispatch. */
-export function standardHostRef(peer: string, name: string, id = `fos:handler:${peer}:${name}`): PrimitiveDefinition<EffectContext> {
+export function standardHostRef(peer: string, name: string, id = handlerOfferId(peer, name)): PrimitiveDefinition<EffectContext> {
   return { id, label: name, type: store => capabilityTarget(store, name) }
 }
 
@@ -96,8 +98,6 @@ export function createHostRuntime(input: HostHandler[]) {
       materialize(replica, step.path)
       return [...new Set(primitiveExecutors<EffectContext, HostHandler>(replica, step).filter(value => value.native === handler).map(value => value.host))]
     },
-    /** The standard library this host seeds into every account's Home (sync/library.ts), once it exists at startup. */
-    library: null as LibraryAddress | null,
     /** Capabilities `peerId` provides on this host. */
     offers,
     /** What the fos server advertises: its transport facts plus every registered fos service. */

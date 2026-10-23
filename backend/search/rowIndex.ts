@@ -10,6 +10,7 @@
  * The embedding function is injected so tests run without Vertex.
  */
 
+import { REF_TYPE } from '@fosforescent/shared/sync/index'
 import { createHash } from 'node:crypto'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
 import { formTitle } from '@fosforescent/shared/sync/forms'
@@ -20,7 +21,7 @@ export type Embed = (texts: string[]) => Promise<number[][]>
 export const EMBEDDING_DIM = 768
 
 /**
- * `type`: the row's type (its edge's left node's graph identity, `lib:type:…` or a template row's id; '' for a type
+ * `type`: the row's type (its edge's left node's graph identity, `lib.<type>` or a template row's id; '' for a type
  * without one), or `capability` for a published handler. Stored in the table's `kind` column.
  */
 export type IndexedRow = { aliasId: string; type: string; title: string; path: Scope; market: boolean; text: string }
@@ -46,7 +47,7 @@ export function collectRows(store: FosStore, limit = 5000): IndexedRow[] {
       const market = grants ? grants.includes('read') : inherited
       const title = formTitle(store, value).trim()
       // a reference (its row type) stands for a row indexed where it lives
-      if (title && !isRowOfType(store, edge, 'lib:type:ref')) out.push({ aliasId, type, title: title.split('\n')[0]!.slice(0, 200), path, market, text: title.slice(0, 600) })
+      if (title && !isRowOfType(store, edge, REF_TYPE)) out.push({ aliasId, type, title: title.split('\n')[0]!.slice(0, 200), path, market, text: title.slice(0, 600) })
       walk(id, [...path, aliasId], market)
     }
   }

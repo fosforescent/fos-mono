@@ -1,5 +1,6 @@
-/* The standard library: a node another account (the server's library account) shares with every user; it opens as a
-   live projection in Home, is pulled whole so its templates work offline, and offers the vote on proposed changes. */
+/* The standard library: a mutable ref like any other. A library another account shares (a ref of the Library type it
+   published to its members) opens as a live projection in Home, is pulled whole so its templates work offline, and
+   is the library rows under Home use. */
 const assert = require('node:assert/strict')
 const { buildSync } = require('esbuild')
 const { mkdtempSync } = require('node:fs')
@@ -10,24 +11,24 @@ const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTextAreaElement','Node','Option','navigator','localStorage','sessionStorage','location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export {parseRowInput} from './src/rows'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), external: ['mermaid','katex','katex/*'] })
 const c = require(path.join(dir, 'test.cjs'))
-const MONEY_TYPE = 'lib:type:allocation:money'
-const TASK_TYPE = 'lib:type:task'
-const PLAIN_TYPE = 'lib:type:plain'
-const NOTE_TYPE = 'lib:type:note'
-const ALLOCATION_TYPE = 'lib:type:allocation'
-const TEMPLATE_TYPE = 'lib:type:template'
-const PATTERN_TYPE = 'lib:type:pattern'
+const MONEY_TYPE = 'money'
+const TASK_TYPE = 'task'
+const PLAIN_TYPE = 'plain'
+const NOTE_TYPE = 'note'
+const ALLOCATION_TYPE = 'allocation'
+const TEMPLATE_TYPE = 'template'
+const PATTERN_TYPE = 'pattern'
 const { parseRowInput } = c
 const tick = () => new Promise(resolve => setTimeout(resolve, 20))
 
 async function main() {
   const HOME = c.HOME_ID, LIB = c.LIBRARY_ID
-  // the library account on the server: the node, shared with every user, seeded
-  let lib = c.ensureHomeContext(c.createReplica('user:fos-library'), 1)
-  lib = c.addRow(lib, [HOME], PLAIN_TYPE, 'Standard library', 1, { id: LIB })
-  lib = c.addMemberAt(lib, [HOME, LIB], 'audience:users', 'Fos users', ['read', 'edit', 'rank'], 2)
-  lib = c.seedStandardLibrary(lib, [HOME, LIB], 3)
-  const address = { owner: 'fos-library', path: [HOME, LIB], title: 'Standard library' }
+  // alice's team library: a ref of the Library type in her Home, holding a library, shared with me
+  const TEAM = 'team-library'
+  let lib = c.ensureHomeContext(c.createReplica('user:alice'), 1)
+  lib = c.addRefAt(lib, [HOME], TEAM, c.rowTypeAt(lib.store, 'library'), 1, c.valueCidOf(lib.store, c.resolveScope(lib.store, c.headCid(lib), [LIB])), 'Team library')
+  lib = c.makeLinkAt(lib, [HOME, TEAM], 2)
+  lib = c.addMemberAt(lib, [HOME, TEAM], 'user:me', 'me', ['read', 'edit'], 2)
   let now = 100, offline = false
   const calls = []
   globalThis.fetch = async (url, init) => {
@@ -35,11 +36,11 @@ async function main() {
     const u = new URL(url), body = init?.body ? JSON.parse(init.body) : null
     calls.push(u.pathname)
     const json = (status, value) => ({ ok: status < 400, status, statusText: 'x', json: async () => value })
-    if (u.pathname === '/user/data/peer-sync/locate') return json(200, { owner: 'fos-library', aliasId: LIB, path: [HOME, LIB], title: 'Standard library', grants: ['read', 'edit', 'approve', 'rank'] })
+    if (u.pathname === '/user/data/peer-sync/locate') return json(200, { owner: 'alice', aliasId: TEAM, path: [HOME, TEAM], title: 'Team library', grants: ['read', 'edit'] })
     if (u.pathname === '/user/data/peer-sync/provide-node') {
-      assert.equal(body.owner, 'fos-library'); assert.equal(body.peerId, 'user:me')
+      assert.equal(body.owner, 'alice'); assert.equal(body.peerId, 'user:me')
       const { owner, ...request } = body
-      // the server answers as the library account; `user:me` holds its grants only through the users audience
+      // the server answers as alice's account; `user:me` holds its grants as her library's member
       const served = c.exchangeNode(lib, request, { peerId: 'user:me', scope: request.scope, owner: false, proposeOnly: true, capabilities: c.SERVER_TRANSPORT_CAPABILITIES }, ++now)
       lib = served.replica
       return json(200, served.node)
@@ -47,76 +48,78 @@ async function main() {
     return json(404, { error: `unexpected ${u.pathname}` })
   }
 
-  // my device: signed in; the person explicitly links the shared library into Home
+  // my device: signed in; my Home references alice's library (the row her invite placed)
   const app = new c.App({ baseUrl: 'http://localhost', autoLogin: null, storage: c.createMemoryStorage() })
   app.scheduleSync = () => {}; app.syncNow = async () => {}
   c.mountUi(document.getElementById('app'), app)
   let me = c.ensureHomeContext(c.createReplica('user:me'), 1)
   me = { ...me, meta: { ...me.meta, peerId: 'user:me', serverPeerId: 'user:me' } }
-  me = c.ensureLibraryLink(me, address, 2).replica
+  me = c.addRow(me, [HOME], c.REF_TYPE, 'Team library', 2, { id: TEAM, refOwner: 'alice', refId: TEAM, refScope: [HOME, TEAM] })
   app.set({ replica: me, session: { kind: 'user', username: 'me', jwt: 't', baseUrl: 'http://localhost' }, connection: 'online' })
   app.recordServerOffers(c.SERVER_TRANSPORT_CAPABILITIES) // what the account server advertises: it provides nodes
   app.goTo([HOME]); await tick()
-  const row = document.querySelector(`.tree .task[data-id="${LIB}"]`)
-  assert(row, 'Home lists the standard library')
-  assert(row.textContent.includes('📚') && row.textContent.includes('Standard library'))
-  assert(row.querySelector('.library-updates'), 'the row offers the vote on updates')
-  assert.deepEqual(c.libraryLink(app.state.replica), [HOME, LIB])
+  assert(!app.isLibrary([HOME, TEAM]), 'a reference is no library until its content is here')
 
-  // opening pulls the projection through the users audience (no explicit membership) and the whole tree follows
-  row.querySelector('.ref-link').click()
-  for (let i = 0; i < 40 && !c.findTemplateByName(app.state.replica, 'Meet up'); i++) await tick()
-  assert(app.isPeerNode([HOME, LIB]), 'the reference became a live projection')
-  assert.deepEqual(app.state.view, [HOME, LIB])
-  const trip = c.findTemplateByName(app.state.replica, 'Meet up')
+  // opening pulls the projection as her library's member, and the whole tree follows: it is a library
+  await app.openSharedNode([HOME, TEAM])
+  // under Home, the team library's template (the device root's library has one of that name too)
+  const teamTemplate = () => { const t = c.findTemplateByName(app.state.replica, 'Paid task', [HOME]); return t && t.path[1] === TEAM ? t : null }
+  for (let i = 0; i < 80 && !teamTemplate(); i++) await tick()
+  assert(app.isPeerNode([HOME, TEAM]), 'the reference became a live projection')
+  assert.deepEqual(app.state.view, [HOME, TEAM])
+  assert(app.isLibrary([HOME, TEAM]), 'its content is a library')
+  assert.deepEqual(c.libraryPath(app.state.replica), [HOME, TEAM], 'under Home it is the library rows see')
+  const trip = teamTemplate()
   assert(trip, 'the library\'s templates are in the local replica')
   // the template's requirements, beside its pattern rows (what tasks made from it accept)
   const tripRows = () => (c.view(app.state.replica, trip.path.concat(trip.row.id))?.tasks ?? []).filter(t => !!t.requirement)
   for (let i = 0; i < 40 && tripRows().length < 2; i++) await tick()
   assert.equal(tripRows().length, 2, 'template children were pulled too: ' + JSON.stringify([trip.path, trip.row.id, app.isPeerNode([...trip.path, trip.row.id]), c.view(app.state.replica, [...trip.path, trip.row.id]).tasks.map(t => t.id), calls.length]))
-  assert(calls.filter(p => p.endsWith('provide-node')).length >= 7, `the tree was materialized node by node: ${calls.length} requests`)
+  assert(calls.filter(p => p.endsWith('provide-node')).length > 3, `the tree was materialized node by node: ${calls.length} requests`)
 
   // offline: a task made from a library template gets the template's requirements, with no request to the server
   offline = true
   const before = calls.length
   app.goTo([HOME])
-  const task = [HOME, app.addRowAt([], TASK_TYPE, 'Meeting', { templateName: 'Meet up' })]
+  const task = [HOME, app.addRowAt([], TASK_TYPE, 'Paid job', { templateName: 'Paid task' })]
   const requirements = c.view(app.state.replica, task).tasks.filter(t => !!t.requirement)
   assert.equal(requirements.length, 2, 'the template instantiated offline')
   assert.deepEqual(requirements.map(t => t.requirement.capability), tripRows().map(t => t.requirement.capability))
   assert.equal(calls.length, before, 'nothing was requested while offline')
-  assert(app.libraryConstructors().some(item => item.id === 'lib:meet'), 'the menu reads the live library projection')
+  assert(app.libraryConstructors().some(item => item.label === 'Paid task'), 'the menu reads the live library projection')
 
   // The library's manual fallbacks: a device that never synced has them from its build. Doing a thing by hand
   // records the supply (and a receipt for money or a place) as the person; no peer is involved.
   const fresh = new c.App({ baseUrl: 'http://localhost', autoLogin: null, storage: c.createMemoryStorage() }); fresh.scheduleSync = () => {}
   assert.deepEqual(c.libraryPath(fresh.state.replica), [c.LIBRARY_ID], 'a never-synced device ships the library in its root')
-  assert(!c.view(fresh.state.replica, [HOME]).tasks.some(row => row.id === LIB), 'Home has no library row unless explicitly linked')
-  assert(c.manualHandlers(fresh.state.replica).length >= 12, 'the shipped copy carries the manual handlers')
+  assert(!c.view(fresh.state.replica, [HOME]).tasks.some(row => fresh.isLibrary([HOME, row.id])), 'Home references no library of its own')
+  assert(c.manualHandlers(fresh.state.replica).length >= 11, 'the shipped copy carries the manual handlers')
+  assert.deepEqual(c.deviceHandlers(fresh.state.replica).map(h => h.label), ["Use this device's location"], 'the device passed its library its location reader')
   document.getElementById('app').replaceChildren()
   c.mountUi(document.getElementById('app'), fresh)
   const libraryTab = () => document.querySelector('.peer-tabs [aria-label="Standard library"]')
   const constructor = label => document.querySelector(`.constructor-palette [aria-label="${label}"]`)
   libraryTab().click()
   assert(!constructor('Plan a trip'), 'Plan a trip is not in the library')
-  assert(constructor('Meet up') && constructor('Invoice'), 'the menu discovers bundled library templates offline')
+  assert(constructor('Paid task') && constructor('Invoice'), 'the menu discovers bundled library templates offline')
   assert(!constructor('Manual handlers'), 'the fallback-handler group is not an executable workflow')
   const initialHead = c.headCid(fresh.state.replica)
-  constructor('Meet up').click()
-  const fromMenu = c.view(fresh.state.replica, [HOME]).tasks.find(row => row.template?.id === 'lib:meet')
+  constructor('Paid task').click()
+  const paid = fresh.libraryConstructors().find(item => item.label === 'Paid task').id
+  const fromMenu = c.view(fresh.state.replica, [HOME]).tasks.find(row => row.template?.id === paid)
   assert(fromMenu, 'click instantiates the selected library definition by identity')
   assert.equal(c.view(fresh.state.replica, [HOME, fromMenu.id]).tasks.filter(row => row.requirement).length, 2)
   fresh.undo()
   assert.equal(c.headCid(fresh.state.replica), initialHead, 'one undo removes the whole instantiation')
 
   const bundlePath = c.libraryPath(fresh.state.replica)
-  let edited = c.renameTask(fresh.state.replica, bundlePath, 'lib:meet', 'Get together', Date.now())
-  edited = c.addRow(edited, bundlePath, TEMPLATE_TYPE, 'Custom workflow', Date.now(), { id: 'lib:custom' })
-  edited = c.addRow(edited, [...bundlePath, 'lib:custom'], ALLOCATION_TYPE, 'Check the result', Date.now(), { id: 'lib:custom:check', requirement: { capability: 'confirmation' } })
-  edited = c.writeNodeValue(edited, [...bundlePath, 'lib:custom'], 'fos:icon', 'confirm', Date.now())
+  let edited = c.renameTask(fresh.state.replica, bundlePath, paid, 'Get together', Date.now())
+  edited = c.addRow(edited, bundlePath, TEMPLATE_TYPE, 'Custom workflow', Date.now(), { id: 'custom' })
+  edited = c.addRow(edited, [...bundlePath, 'custom'], ALLOCATION_TYPE, 'Check the result', Date.now(), { id: 'custom-check', requirement: { capability: 'confirmation' } })
+  edited = c.setTemplateIcon(edited, [...bundlePath, 'custom'], 'confirm', Date.now())
   fresh.set({ replica: edited })
-  assert(!constructor('Meet up') && constructor('Get together') && constructor('Custom workflow'), 'renames and additions appear without a UI catalog change')
-  assert.equal(fresh.libraryConstructors().find(item => item.id === 'lib:custom').icon, 'confirm')
+  assert(!constructor('Paid task') && constructor('Get together') && constructor('Custom workflow'), 'renames and additions appear without a UI catalog change')
+  assert.equal(fresh.libraryConstructors().find(item => item.id === 'custom').icon, 'confirm')
   // A local template with the same name must not shadow the library definition.
   fresh.applyConstructor([HOME], { type: TEMPLATE_TYPE, text: 'Custom workflow', done: false })
   fresh.select(null)
@@ -125,24 +128,24 @@ async function main() {
   await tick()
   assert([...document.querySelectorAll('.node-search [role="option"]')].some(option => option.textContent.includes('Custom workflow')), 'library constructors participate in menu search')
   search.value = ''; search.dispatchEvent(new window.Event('input', { bubbles: true }))
-  fresh.setConstructorEnabled(fresh.state.replica.meta.peerId, 'library:lib:custom', false)
+  fresh.setConstructorEnabled(fresh.state.replica.meta.peerId, 'library:custom', false)
   assert.equal(constructor('Custom workflow').getAttribute('aria-disabled'), 'true')
   const disabledHead = c.headCid(fresh.state.replica)
   constructor('Custom workflow').click()
   assert.equal(c.headCid(fresh.state.replica), disabledHead, 'disabled library constructors cannot be inserted')
-  fresh.setConstructorEnabled(fresh.state.replica.meta.peerId, 'library:lib:custom', true)
+  fresh.setConstructorEnabled(fresh.state.replica.meta.peerId, 'library:custom', true)
 
   const destination = fresh.applyConstructor([HOME], { type: PLAIN_TYPE, text: 'Keep this title', done: false })
   const retained = fresh.applyConstructor(destination, { type: NOTE_TYPE, text: 'Keep this child', done: false })
   fresh.select(null)
   const drop = target => {
     const event = new window.Event('drop', { bubbles: true, cancelable: true })
-    Object.defineProperty(event, 'dataTransfer', { value: { types: ['application/x-fos-constructor'], getData: type => type === 'application/x-fos-constructor' ? 'library:lib:custom' : '' } })
+    Object.defineProperty(event, 'dataTransfer', { value: { types: ['application/x-fos-constructor'], getData: type => type === 'application/x-fos-constructor' ? 'library:custom' : '' } })
     target.dispatchEvent(event)
   }
   drop(document.querySelector(`.tree .task[data-id="${destination.at(-1)}"]`))
   let targetRow = c.view(fresh.state.replica, [HOME]).tasks.find(row => row.id === destination.at(-1))
-  assert.equal(targetRow.checkable, true); assert.equal(targetRow.title, 'Keep this title'); assert.equal(targetRow.template.id, 'lib:custom')
+  assert.equal(targetRow.checkable, true); assert.equal(targetRow.title, 'Keep this title'); assert.equal(targetRow.template.id, 'custom')
   assert(c.view(fresh.state.replica, destination).tasks.some(row => row.id === retained.at(-1)), 'drop preserves existing children')
   assert(c.view(fresh.state.replica, destination).tasks.some(row => row.title === 'Check the result'), 'drop copies the library definition, even with a same-named local template')
   fresh.undo()
@@ -153,25 +156,25 @@ async function main() {
   assert(document.querySelector('.constructor-chip[aria-label="Custom workflow"]'), 'task requirements suggest library constructors')
   drop(document.querySelector(`.tree .task[data-id="${needed.at(-1)}"]`))
   assert.equal(c.view(fresh.state.replica, [HOME]).tasks.find(row => row.id === needed.at(-1)).requirement?.capability, 'task', 'drop preserves the requirement')
-  assert(c.view(fresh.state.replica, needed).tasks.some(row => row.template?.id === 'lib:custom'), 'drop inserts an execution inside the requirement')
+  assert(c.view(fresh.state.replica, needed).tasks.some(row => row.template?.id === 'custom'), 'drop inserts an execution inside the requirement')
   fresh.select(null)
-  fresh.addPlaceholder('workflow', 'template:lib:custom', [HOME])
+  fresh.addPlaceholder('workflow', 'template:custom', [HOME])
   const workflow = fresh.placeholders().find(arg => arg.name === 'workflow')
-  fresh.insertLibraryConstructor('lib:custom', [HOME, workflow.id])
+  fresh.insertLibraryConstructor('custom', [HOME, workflow.id])
   const boundArgument = c.resolveScope(fresh.state.replica.store, c.headCid(fresh.state.replica), [HOME, workflow.id])
   const boundValue = c.refValueCid(fresh.state.replica.store, c.content(fresh.state.replica.store, boundArgument))
   assert(boundValue, 'a library execution binds an input typed by its definition')
   // The pattern belongs to the enclosing row, never to the argument node.
-  assert.equal(c.content(fresh.state.replica.store, c.argumentRefs(fresh.state.replica.store, c.resolveScope(fresh.state.replica.store, c.headCid(fresh.state.replica), [HOME])).find(arg => arg.cid === boundArgument).type).data.alias.id, 'lib:custom')
+  assert.equal(c.content(fresh.state.replica.store, c.argumentRefs(fresh.state.replica.store, c.resolveScope(fresh.state.replica.store, c.headCid(fresh.state.replica), [HOME])).find(arg => arg.cid === boundArgument).type).data.alias.id, 'custom')
   assert.equal(fresh.placeholders().find(arg => arg.id === workflow.id).status, 'missing', 'its confirmation remains unresolved until the workflow is completed')
   fresh.addPlaceholder('peer_only', 'peer', [HOME])
   const peerOnly = fresh.placeholders().find(arg => arg.name === 'peer_only')
   const incompatibleHead = c.headCid(fresh.state.replica)
-  assert.throws(() => fresh.insertLibraryConstructor('lib:custom', [HOME, peerOnly.id]), /matching/, 'a workflow without a peer property cannot fill a peer pattern')
+  assert.throws(() => fresh.insertLibraryConstructor('custom', [HOME, peerOnly.id]), /matching/, 'a workflow without a peer property cannot fill a peer pattern')
   assert.equal(c.headCid(fresh.state.replica), incompatibleHead)
-  fresh.set({ replica: c.deleteTask(fresh.state.replica, bundlePath, 'lib:custom', Date.now()) })
+  fresh.set({ replica: c.deleteTask(fresh.state.replica, bundlePath, 'custom', Date.now()) })
   assert(!constructor('Custom workflow'), 'removed library constructors leave the menu')
-  assert.throws(() => fresh.insertLibraryConstructor('lib:custom'), /unavailable/, 'a stale drag cannot instantiate a deleted definition')
+  assert.throws(() => fresh.insertLibraryConstructor('custom'), /unavailable/, 'a stale drag cannot instantiate a deleted definition')
   fresh.select(null)
   const errand = fresh.applyConstructor([HOME], { type: TASK_TYPE, text: 'Errand', done: false })
   fresh.set({ replica: c.addRow(fresh.state.replica, errand, ALLOCATION_TYPE, 'Tell the client', Date.now(), { id: 'mail', requirement: { capability: 'mail' } }) })
@@ -200,7 +203,7 @@ async function main() {
   assert.equal(c.view(fresh.state.replica, [...errand, 'where']).tasks.find(t => (!!t.allocation && !t.requirement)).allocation.location.name, 'Eiffel Tower, Paris')
   Object.defineProperty(navigator, 'geolocation', { value: { getCurrentPosition: ok => ok({ coords: { latitude: 48.85837, longitude: 2.294481 } }) }, configurable: true })
   fresh.refresh(); await tick()
-  const device = handlers('near').find(b => b.dataset.handler === 'lib:device:location')
+  const device = handlers('near').find(b => b.dataset.handler === c.deviceHandlers(fresh.state.replica)[0].id)
   assert(device, 'the device handler shows when the device reports its position')
   device.click(); await tick(); await tick()
   assert.equal(req('near').requirement.satisfied, true, 'the device position fills a location requirement')

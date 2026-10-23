@@ -11,24 +11,21 @@ function setup() {
   commitRoot(store, updateAtScope(store, headCid(r), ['project'], node => withProposal(store, makeLink(store, node, 4), 'peer', proposal, 'Alternative'), 'node'), 5)
   return { r, proposal, branch, base }
 }
-test('a proposal is a child mutable ref constructor with branch and merge-request arguments', () => {
-  const { r, proposal, branch, base } = setup(), store = r.store, node = content(store, proposal)
+test('a submission is rows of the submission constructors: who sent it, the value, its base, the branch it carries', () => {
+  const { r, proposal, branch, base } = setup(), store = r.store, node = content(store, proposal), p = store.primitive
   expect(node.data.proposal).toBeUndefined()
-  expect(node.children.some(([key]) => key === store.primitive.instructionPointerConstructor.getId())).toBe(false)
-  const args = argumentRefs(store, proposal)
-  expect(args.map(a => a.name).sort()).toEqual(['branch', 'request merge', 'status'])
-  const branchArg = content(store, args.find(a => a.name === 'branch')!.cid)
-  expect(refValueCid(store, branchArg)).toBe(branch)
-  expect(branchArg.children).toContainEqual([store.primitive.previousVersion.getId(), base])
-  const input = args.find(a => a.name === 'request merge')!
-  expect(input.type).toBe(store.primitive.approveAction.getId())
-  expect(refValueCid(store, content(store, input.cid))).toBeNull()
-  const path = ['project', node.data.alias!.id]
-  expect(resolveScope(store, headCid(r), path)).toBe(proposal)
-  const changed = writeNodeValue(r, path, 'status', 'rejected', 6)
-  const next = resolveScope(store, headCid(changed), path)!
-  expect(next).not.toBe(proposal)
-  expect(readProposal(store, next)!.status).toBe('rejected')
+  // no named arguments: what each row is, is its left
+  expect(argumentRefs(store, proposal)).toEqual([])
+  expect(node.children).toContainEqual([p.proposedContentField.getId(), branch])
+  expect(node.children).toContainEqual([p.previousVersion.getId(), base])
+  const sender = node.children.find(([key]) => key === p.senderField.getId())![1]
+  expect(content(store, sender).data.peerId?.content).toBe('peer')
+  expect(readProposal(store, proposal)).toMatchObject({ peerId: 'peer', name: 'Alternative', contentCid: branch, baseCid: base, status: 'open', timestamp: 4 })
+  // a rejected one says so in its data; the rest stays
+  const rejected = put(store, proposalContent(store, 'peer', 'Alternative', branch, base, 4, 'rejected'))
+  expect(readProposal(store, rejected)).toMatchObject({ status: 'rejected', contentCid: branch })
+  // a peer's main submission carries no branch
+  expect(readProposal(store, put(store, proposalContent(store, 'peer', '', branch, base, 4)))!.name).toBe('')
 })
 test('copying a proposed branch preserves main and the peer proposal', () => {
   let { r, proposal, branch } = setup()
@@ -43,10 +40,4 @@ test('copying a proposed branch preserves main and the peer proposal', () => {
   expect(view(r, ['project'])!.tasks.map(t => t.title)).toEqual(['Proposed child', 'My edit'])
   r = copyProposalBranch(r, ['project'], proposal, 'second-copy', 8)
   expect(view(r, ['project'])!.tasks.map(t => t.title)).toEqual(['Proposed child'])
-})
-test('legacy proposal records remain readable', () => {
-  const { r, branch, base } = setup(), s = r.store
-  const text = (value: string) => put(s, { data: { description: { content: value } }, children: [] })
-  const old = put(s, { data: { proposal: { status: 'rejected' } }, children: [[s.primitive.proposalNameField.getId(), text('Old')], [s.primitive.proposedContentField.getId(), branch], [s.primitive.senderField.getId(), text('peer')], [s.primitive.timestampField.getId(), text('4')], [s.primitive.previousVersion.getId(), base]] })
-  expect(readProposal(s, old)).toMatchObject({ name: 'Old', status: 'rejected', contentCid: branch, baseCid: base })
 })

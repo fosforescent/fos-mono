@@ -41,11 +41,24 @@ import { addMemberAt, addRow, addTypedRow, applyProposalAt, createReplica, headC
 import { createBranch } from './branches'
 import { executionInput, executionSnapshot } from './execution-access'
 import { capabilityPeers } from './bindings'
-import { writeNodeValue } from './evaluation'
+import { writeExecutionRequest } from './evaluation'
+import { acceptSubmission, type Attester } from './approvals'
+import { rowWithLeft } from './row-values'
+import { isExecuteLeft } from './capabilities'
+import { readGraphValue } from './node-values'
 import { workClaims, saveWorkClaims, workOverlaps, within, WORK_LEASE_MS, type WorkClaim } from './work-claims'
 
 /** The named value a peer's evaluation request carries inside its proposal. */
-export const EVALUATION_REQUEST = 'fos:evaluation-request'
+/** A peer's request that a node be run (on another peer's node): the execute row's request in the submission it sends. */
+export type EvaluationRequest = { id: string; peer: string; expected: string; time: number }
+/** The evaluation request the submitted content `contentCid` makes of its node at `path`, if it is one. */
+export function submittedRequest(store: FosStore, contentCid: string, path: Scope): EvaluationRequest | null {
+  const node = resolveScope(store, contentCid, path)
+  const row = node ? rowWithLeft(store, node, isExecuteLeft) : null
+  const state = row ? readGraphValue(store, row.ref) as { request?: EvaluationRequest } | undefined : undefined
+  const request = state?.request
+  return request && typeof request.id === 'string' && typeof request.peer === 'string' ? request : null
+}
 import { nodeLinkMaskAt } from './node-provider'
 
 /** Who is acting. Supplied by the transport (JWT claims, a loopback token, a linked phone), never by the event. */
@@ -62,7 +75,7 @@ export type Principal = {
 
 export type EventBranch = { path: Scope; name: string }
 /**
- * `add_row` adds a row of the standard-library row type `type` (e.g. `lib:type:note`, resolved by the nearest library
+ * `add_row` adds a row of the standard-library row type `type` (a library field, e.g. `note`, resolved by the nearest library
  * at the parent) holding `text`. `id` (add operations only): the new row's alias id, so later changes of the same
  * submission can add inside it.
  */
@@ -142,8 +155,8 @@ export function parseEvent(input: unknown): FosEvent {
       const changes: Change[] = raw.changes.map((change: any) => {
         if (!change || typeof change !== 'object') throw new EventError('Invalid change.')
         if (!['add_row', 'add_task', 'add_note', 'add_plain', 'rename', 'complete'].includes(change.operation)) throw new EventError('Unknown change operation.')
-        if ((change.operation === 'add_row') !== (change.type !== undefined) || (change.type !== undefined && (typeof change.type !== 'string' || !/^lib:type:[\w-]{1,64}$/.test(change.type)))) throw new EventError('add_row names a standard-library row type (lib:type:…); other operations take none.')
-        if (change.id !== undefined && (!ADDS.includes(change.operation) || typeof change.id !== 'string' || !/^[\w.:-]{1,128}$/.test(change.id) || change.id.startsWith('fos:'))) throw new EventError('Only added rows take an id (letters, digits, . : _ -).')
+        if ((change.operation === 'add_row') !== (change.type !== undefined) || (change.type !== undefined && (typeof change.type !== 'string' || !/^[A-Za-z][\w-]{0,63}$/.test(change.type)))) throw new EventError('add_row names a standard-library row type (a library field such as note); other operations take none.')
+        if (change.id !== undefined && (!ADDS.includes(change.operation) || typeof change.id !== 'string' || !/^[\w.:-]{1,128}$/.test(change.id))) throw new EventError('Only added rows take an id (letters, digits, . : _ -).')
         return { path: pathOf(change.path), operation: change.operation, ...(change.text !== undefined ? { text: textOf(change.text) } : {}), ...(typeof change.done === 'boolean' ? { done: change.done } : {}), ...(change.id !== undefined ? { id: change.id } : {}), ...(change.type !== undefined ? { type: change.type } : {}) }
       })
       return { kind, path, branches, expected: expectedOf(raw.expected), ...(raw.name !== undefined ? { name: textOf(raw.name, 100) } : {}), changes }
@@ -198,12 +211,14 @@ const bookkeeping = new Set(['alias', 'ref', 'versionControl', 'disabledCapabili
  * load and save, and runs `evaluate` when returned. Owners act directly; peers read what their grants allow and
  * leave proposals.
  */
-export function dispatchEvent(r: Replica, event: FosEvent, principal: Principal, now: number): Dispatched {
+/** `attester`: who attests the approvals this host records for others (the fos server's `approve` handler). */
+export type DispatchOptions = { attester?: Attester | null }
+export function dispatchEvent(r: Replica, event: FosEvent, principal: Principal, now: number, options: DispatchOptions = {}): Dispatched {
   const before = r.store.rootNodeId
-  try { return dispatch(r, event, principal, now) }
+  try { return dispatch(r, event, principal, now, options) }
   catch (error) { r.store.rootNodeId = before; throw error }
 }
-function dispatch(r: Replica, event: FosEvent, principal: Principal, now: number): Dispatched {
+function dispatch(r: Replica, event: FosEvent, principal: Principal, now: number, options: DispatchOptions): Dispatched {
   const store = r.store, root = rootTargetCid(store), owner = principal.owner
   let canonical = contextScope(store, root, principal.scope)
   const attachment = [...canonical], session = principal.sessionId ?? principal.peerId
@@ -396,25 +411,30 @@ function dispatch(r: Replica, event: FosEvent, principal: Principal, now: number
       // request is a proposal on the node, which the owner's `request` trigger evaluates or the owner reviews.
       if (!editable) throw new EventError('Peer cannot request evaluation of this attachment.')
       if (!capabilityPeers(r, absolute(path), 'request').length) throw new EventError('No peer accepts evaluation requests in this context.')
-      const requestName = `evaluate ${path.length ? path.join('/') : '[]'}`
+      // the request: a submission whose node at `path` asks to be run (its execute row's request), named by its id
+      const request = newId()
       const identity = content(store, selectedIdentity(store, attached!))
-      if (readProposals(store, identity).some(p => p.peerId === principal.peerId && p.name === requestName && p.status === 'open')) throw new EventError('This evaluation is already requested.')
+      if (readProposals(store, identity).some(p => p.peerId === principal.peerId && p.status === 'open' && submittedRequest(store, p.contentCid, path))) throw new EventError('This evaluation is already requested.')
       const base = put(store, valueContent(store, attached!)), draftStore = new FosStore()
       importNodes(draftStore, reachableNodes(store, [base]))
       commitRoot(draftStore, base, now)
       nestScope(draftStore, { store, root, at: canonical })
-      const draft = writeNodeValue(createReplica(principal.peerId, draftStore), path, EVALUATION_REQUEST, { peer: principal.peerId, expected: event.expected, time: now }, now)
+      const draft = writeExecutionRequest(createReplica(principal.peerId, draftStore), path, { id: request, peer: principal.peerId, expected: event.expected, time: now } satisfies EvaluationRequest, now)
       importNodes(store, reachableNodes(draftStore, [headCid(draft)]))
-      const proposal = put(store, proposalContent(store, principal.peerId, requestName, headCid(draft), base, now))
-      const next = updateAtScope(store, root, canonical, current => withProposal(store, makeLink(store, current, now), principal.peerId, proposal, requestName), 'node')
+      const proposal = put(store, proposalContent(store, principal.peerId, request, headCid(draft), base, now))
+      const next = updateAtScope(store, root, canonical, current => withProposal(store, makeLink(store, current, now), principal.peerId, proposal, request), 'node')
       commitRoot(store, next, now)
-      return { replica: { ...r }, changed: true, result: { status: 'requested', proposalId: proposal, request: requestName, node: absolute(path) } }
+      return { replica: { ...r }, changed: true, result: { status: 'requested', proposalId: proposal, request, node: absolute(path) } }
     }
     if (event.kind === 'decide') {
       // deciding a submission is how edit is exercised on a node with several peers
       if (!permission(cid, 'edit')) throw new EventError('The edit capability is required on this node.')
-      const next = event.decision === 'approve' ? applyProposalAt(r, absolute(path), event.proposalId, principal.peerId, now) : rejectProposalAt(r, absolute(path), event.proposalId, now)
-      return { replica: next, changed: headCid(next) !== headCid(r), result: { decision: event.decision, proposalId: event.proposalId } }
+      if (event.decision === 'reject') { const next = rejectProposalAt(r, absolute(path), event.proposalId, now); return { replica: next, changed: headCid(next) !== headCid(r), result: { decision: event.decision, proposalId: event.proposalId } } }
+      // approving is the one way a submission is accepted: the approval is recorded (the owner's as this store's,
+      // another member's attested), and the submission applies once the node's merge rule holds
+      const approver = owner ? r.meta.peerId : principal.peerId
+      const accepted = acceptSubmission(r, absolute(path), event.proposalId, approver, now, approver !== r.meta.peerId && options.attester ? { attester: options.attester } : {})
+      return { replica: accepted.replica, changed: true, result: { decision: event.decision, proposalId: accepted.proposal, merged: accepted.merged, missing: accepted.missing } }
     }
     if (event.kind === 'invite') {
       if (!owner) throw new EventError('Only the account owner invites users to a node.')

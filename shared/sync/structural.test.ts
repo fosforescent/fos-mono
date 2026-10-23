@@ -55,11 +55,11 @@ test('immutable property rows are addressable only under their actual parent', (
 
 test('a template input matches its constructed product without requiring editor policy rows', () => {
   let r = createReplica()
-  r = addRow(r, [], 'lib:type:template', 'Workflow definition', 1, { id: 'definition' })
-  r = addRow(r, ['definition'], 'lib:type:allocation', 'Review it', 2, { id: 'review', requirement: { capability: 'confirmation' } })
+  r = addRow(r, [], 'template', 'Workflow definition', 1, { id: 'definition' })
+  r = addRow(r, ['definition'], 'allocation', 'Review it', 2, { id: 'review', requirement: { capability: 'confirmation' } })
   const definition = resolveScope(r.store, headCid(r), ['definition'])!
   const pattern = templateValuePattern(r.store, definition)
-  r = addRow(r, [], 'lib:type:task', 'My instance', 3, { id: 'instance' })
+  r = addRow(r, [], 'task', 'My instance', 3, { id: 'instance' })
   r = instantiateTemplateValue(r, [], 'instance', definition, 4)
   expect(matchesGraph(r.store, pattern, resolveScope(r.store, headCid(r), ['instance'])!)).toBe(true)
   expect(matchesGraph(r.store, pattern, put(r.store, { data: {}, children: [] }))).toBe(false)

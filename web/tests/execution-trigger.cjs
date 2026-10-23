@@ -2,8 +2,8 @@ const assert = require('node:assert/strict')
 const { build } = require('esbuild')
 const { mkdtempSync, rmSync } = require('node:fs')
 const path = require('node:path')
-const ALLOCATION_TYPE = 'lib:type:allocation'
-const TEMPLATE_TYPE = 'lib:type:template'
+const ALLOCATION_TYPE = 'allocation'
+const TEMPLATE_TYPE = 'template'
 const dir = mkdtempSync(path.join(require('node:os').tmpdir(), 'fos-execution-trigger-'))
 async function main() {
   await build({ nodePaths: [path.resolve(__dirname, '../node_modules'), ...(process.env.NODE_PATH ?? '').split(path.delimiter).filter(Boolean)], stdin: { contents: `export {createSharingHandlers} from './backend/sync/sharing'; export {createEventService} from './backend/sync/events'; export * from './shared/sync/execution-access'; export * from './shared/sync/index'`, resolveDir: path.resolve(__dirname, '../..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), plugins: [{ name: 'persistence', setup(b) {
@@ -62,7 +62,7 @@ async function main() {
   replicas.host = c.setMemberCapabilitiesAt(c.addMemberAt(replicas.host, ['peer-task'], 'user:host-laptop', 'Laptop', [], 3), ['peer-task'], 'user:host-laptop', [], [], 3, ['request'])
   const requested = await interact({ ...reader, peerId: 'peer:editor' }, [], { kind: 'complete', path: [], expected: (await interact({ ...reader, peerId: 'peer:editor' }, [], { kind: 'read', path: [] })).valueRevision })
   assert.equal(requested.status, 'requested', 'an editor\'s completion becomes an evaluation request for the owner\'s rules')
-  assert(c.view(replicas.host, ['peer-task']).proposals.some(p => p.peerId === 'peer:editor' && p.name === 'evaluate []'))
+  assert(c.view(replicas.host, ['peer-task']).proposals.some(p => p.peerId === 'peer:editor' && p.status === 'open'))
   replicas.host = c.removeMemberAt(replicas.host, ['peer-task'], 'peer:reader', 4)
   await assert.rejects(interact(reader, [], { kind: 'read', path: [] }), /access/)
   const configured = await configure('public'); assert.equal(configured.status, 200)

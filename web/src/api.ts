@@ -351,7 +351,7 @@ export async function searchFosUsers(session: Session, query: string): Promise<s
 const bytes = (base64: string): ArrayBuffer => Uint8Array.from(atob(base64), c => c.charCodeAt(0)).buffer as ArrayBuffer
 /**
  * The device's verify check for a server attestation: WebCrypto Ed25519 against the key that server published in this
- * graph (`publishedKey`, the `fos:key:<peer>` row in Home; no endpoint). No key, another verifier or another method is
+ * graph (`publishedKey`, the key row on the peer's member entry; no endpoint). No key, another verifier or another method is
  * false. Where the platform has no Ed25519 (older webviews) the answer is null: the object came through this
  * account's own graph, and the server re-checks the attestation whenever it acts on it (payments, fos points).
  */

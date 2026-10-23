@@ -1,13 +1,22 @@
 /** One view of handler advertisements for bindings, menus, and executors.
  * Native capability markers are read adapters; new advertisements are typed refs.
  */
+import { peerNode } from './graph'
+import { TEMPLATE_TYPE, REF_TYPE } from './library-types'
 import type { FosStore } from '../dag-implementation/store'
+import { handlerOfferId, publishedTemplateId } from './graph'
 import { sameCapabilityType } from './capabilities'
-import { capabilityTarget, branchEdge, isBranchChoice, readMembers, MARKET_PEER, capabilityOfTarget, content, identityCid, isMemberEdge, marketMemberOf, memberHandlers, put, refNodeContent, advertisedRows, memberHandlerRows, resolveScope, isRowEdge, isRowOfType, valueContent, withMainBranchPolicy, type Capability, type Scope } from './graph'
+
+import { membershipOf, capabilityTarget, branchEdge, isBranchChoice, readMembers, MARKET_PEER, capabilityOfTarget, content, identityCid, isMemberEdge, marketMemberOf, memberHandlers, put, refNodeContent, advertisedRows, memberHandlerRows, resolveScope, isRowEdge, isRowOfType, valueContent, withMainBranchPolicy, type Capability, type Scope } from './graph'
+
 import { addMemberAt, setHandlerOffersAt, headCid, type Replica } from './replica'
+
 import { marketGrantsAt } from './market'
+
 import { refProperties } from './refs'
+
 import { enclosingScopes, importNodes, reachableNodes } from './graph'
+
 import { inspectRef, scopedRefs, type ScopedRef } from './scoped-refs'
 
 export type HandlerEnvironment = { isPeerActive?: (peerId: string) => boolean }
@@ -65,7 +74,7 @@ export function discoverHandlers(r: Replica, path: Scope, environment: HandlerEn
       const capability = capabilityOfTarget(s, edge[1])
       if (edge[0] !== s.primitive.capabilityNode.getId() || !capability || !(peerId === 'fos' || peerId.startsWith('mcp:') && capability === 'tool')) continue
       if (member.children.some(e => e[0] === s.primitive.acceptsNode.getId() && capabilityOfTarget(s, e[1]) === capability)) continue
-      const type = capabilityTarget(s, capability), id = 'fos:handler:' + peerId + ':' + capability
+      const type = capabilityTarget(s, capability), id = handlerOfferId(peerId, capability)
       const value = put(s, { data: { peerId: { content: peerId }, description: { content: capability } }, children: [...content(s, type).children] })
       const cid = put(s, refNodeContent(s, { alias: { id }, name: { content: capability } }, value))
       local.set(id, { cid, type, legacy: true })
@@ -90,10 +99,10 @@ export function publishTemplate(r: Replica, at: Scope, templatePath: Scope, labe
   const cid = resolveScope(r.store, headCid(r), templatePath)
   if (!cid || !templatePath.length) throw new Error('Select a template to publish.')
   const parent = resolveScope(r.store, headCid(r), templatePath.slice(0, -1))
-  if (!parent || !valueContent(r.store, parent).children.some(e => identityCid(r.store, e) === cid && isRowOfType(r.store, e, 'lib:type:template'))) throw new Error('Only template rows can be published.')
+  if (!parent || !valueContent(r.store, parent).children.some(e => identityCid(r.store, e) === cid && isRowOfType(r.store, e, TEMPLATE_TYPE))) throw new Error('Only template rows can be published.')
   const type = r.store.primitive.templateField.getId(), peerId = r.meta.peerId
   if (!contextMemberRefs(r, at).has(peerId)) r = addMemberAt(r, at, peerId, peerId, [], now)
-  const id = `fos:published:${templatePath.at(-1)}`
+  const id = publishedTemplateId(peerId, templatePath.at(-1)!)
   const handler = put(r.store, refNodeContent(r.store, { alias: { id }, name: { content: label.trim() || valueContent(r.store, cid).data.description?.content || 'Template' } }, cid, []))
   const existing = discoverHandlers(r, at).filter(o => o.peerId === peerId && o.type === type && o.id !== id).map(o => o.cid)
   r = setHandlerOffersAt(r, at, peerId, type, [...existing, handler], now)
@@ -105,7 +114,7 @@ export function publishTemplate(r: Replica, at: Scope, templatePath: Scope, labe
 }
 
 export function contextMembers(r: Replica, path: Scope) {
-  return [...contextMemberRefs(r, path).values()].flatMap(cid => readMembers(r.store, { data: {}, children: [[r.store.primitive.memberField.getId(), cid]] }))
+  return [...contextMemberRefs(r, path)].flatMap(([peer, cid]) => readMembers(r.store, { data: {}, children: [[peerNode(r.store, peer), cid]] }))
 }
 
 /** Handlers offered to the market (typed refs on the market member's `to` side, switched on), read from main policy. */
@@ -118,13 +127,13 @@ export function marketplaceOffers(r: Replica): Array<HandlerOffer & { path: Scop
       if (visited.size >= 5000 || path.length > 64) throw new Error('Marketplace context exceeds traversal limit.')
       visited.add(cid)
       const node = content(s, policyIdentity(s, cid))
-      const member = node.children.find(e => isMemberEdge(s, e) && content(s, e[1]).data.peerId?.content === MARKET_PEER)
+      const member = membershipOf(s, node, MARKET_PEER)
       const disabled = member ? content(s, member[1]).data.disabledCapabilities?.content ?? [] : []
       for (const [type, h] of member ? memberHandlerRows(s, node, MARKET_PEER, s.primitive.capabilityNode.getId()) : []) {
         const offer = content(s, h), id = offer.data.alias?.id ?? h
         if (!disabled.includes(id)) result.set(id, { id, cid: h, type, peerId: MARKET_PEER, legacy: false, label: offer.data.name?.content ?? valueContent(s, h).data.description?.content ?? 'Capability', enabled: true, active: true, path })
       }
-      for (const edge of valueContent(s, cid).children) if (isRowEdge(s, edge) && !isRowOfType(s, edge, 'lib:type:ref')) { const id = content(s, identityCid(s, edge)).data.alias?.id; if (id) walk([...path, id]) }
+      for (const edge of valueContent(s, cid).children) if (isRowEdge(s, edge) && !isRowOfType(s, edge, REF_TYPE)) { const id = content(s, identityCid(s, edge)).data.alias?.id; if (id) walk([...path, id]) }
     }
     walk([])
     return [...result.values()]

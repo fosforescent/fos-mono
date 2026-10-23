@@ -38,7 +38,7 @@ export type FosDataContent = {
   triggerDefinition?: { label: string; icon: string; mode: 'instantiate' | 'resume'; hidden?: boolean; schedule?: { field: string; input: 'datetime-local' | 'text'; label: string } };
   scalar?: { type: 'text' | 'number' | 'peer' | 'time' | 'boolean' | 'null'; value: string | number | boolean | null };
   /** Presentation is a projection of fields, not a second copy of their values. */
-  presentation?: { title?: string[]; headline?: string[]; attribution?: { id: string[]; name: string[] }; sequence?: boolean };
+  presentation?: { title?: string[]; headline?: string[]; attribution?: { id: string[]; name: string[] }; sequence?: boolean; icon?: string };
   created?: { time: number };
   position?: { value: number };
   versionControl?: {
@@ -178,6 +178,10 @@ export type FosDataContent = {
   disabledCapabilities?: {
     content: string[]
   },
+  /** On a member reference: the constructors the owner switched off in that peer's menu here (menu ids). */
+  disabledConstructors?: {
+    content: string[]
+  },
   /** Retired row marker (older builds wrote it): never a row discriminator, and the library compiler refuses it. A row's type is its edge's left node. */
   instanceKind?: {
     kind: string
@@ -267,6 +271,11 @@ export type FosDataContent = {
   },
   proposal?: {
     status: 'open' | 'rejected'
+  }
+  /** On a node link endpoint (a provideNode ref on the store root's alias): the local node it links (its id), and whether that node is the other peer's projection here. */
+  nodeLink?: {
+    node: string
+    projection?: boolean
   }
   group?: {
     id: string;

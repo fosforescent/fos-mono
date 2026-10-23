@@ -1,3 +1,4 @@
+import { settingOf } from '@fosforescent/shared/sync/index'
 import type { Request, Response } from 'express'
 import { evaluationRecord, formTitle, recoverEvaluation, setTaskDone, discoverHandlers, setHandlerEnabledAt, addRow, addTask, addRefAt, applyProposalAt, proposeRefAt, capabilityTarget, content, headCid, memberHandlers, refArguments, resolveScope, setMemberCapabilitiesAt, valueContent, createReplica, view, type Replica } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
@@ -119,7 +120,8 @@ test('failed calls retain their binding, retries cannot silently switch to a nea
   let recovered = replica()
   const scope = ['proj', 'trip', 'rq']
   expect(evaluationRecord(recovered, scope)?.status).toBe('needs-recovery')
-  for (const row of view(recovered, scope)!.tasks.filter(t => t.id.startsWith('rollback:'))) recovered = setTaskDone(recovered, scope, row.id, true, 20)
+  // the journal names the rows asking for a manual rollback
+  for (const task of evaluationRecord(recovered, scope)!.effects.flatMap(e => e.task ? [e.task] : [])) recovered = setTaskDone(recovered, scope, task, true, 20)
   recoverEvaluation(recovered, scope, 21)
   expect((await run(['proj', 'trip'], 'rq')).json.evaluation.status).toBe('committed')
   expect(invoked).toEqual([5, 5]) // the pinned provider, not the nearer one attached later
@@ -166,7 +168,7 @@ test('an explicit handler ref is honored and the return ref addresses the result
   r = replica()
   const request = valueContent(store, resolveScope(store, headCid(r), scope)!)
   expect(refArguments(store, request, capabilityTarget(store, 'tool'))[0]!.targetCid).toBe(handler)
-  const returned = refArguments(store, request, store.primitive.documentField.getId()).filter(a => !content(store, a.cid).data.name?.content.startsWith('fos:'))
+  const returned = refArguments(store, request, store.primitive.documentField.getId()).filter(a => !settingOf(store, content(store, a.cid)))
   expect(returned).toHaveLength(1)
   expect(formTitle(store, valueContent(store, returned[0]!.targetCid!))).toBe('weather(Paris next week) = sunny')
 })

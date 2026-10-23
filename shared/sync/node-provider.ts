@@ -1,9 +1,13 @@
+import { approvalsOf } from './approvals'
 import type { FosDataContent, FosNodeContent, FosNodesData, FosPathElem } from '../types'
 import { hashContent, isCid } from '../dag-implementation/cid'
 import { content, put, refNodeContent, refValueCid, isRefNode, capabilityTarget, commitRoot, updateAtScope, resolveScope, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, isShippedLibrary, reachableNodes, bookkeepingOf, rootTargetCid, withPeer,
-  valueContent, readMembers, memberFor, memberEntryId, isMemberEntryId, isGrantEdge, grantChildId, memberEdgesOf, isMemberEdge, capabilityOf, MEMBER_ENTRY_PREFIX, isHandle, isPeerReference, isBookkeepingEdge, isRowEdge, identityCid, withMainBranchPolicy,
+  membershipOf, valueContent, readMembers, memberFor, memberPeerOf, peerNode, memberEntryPeerAt, isGrantEdge, grantChildId, memberEdgesOf, isMemberEdge, capabilityOf, isHandle, isPeerReference, isBookkeepingEdge, isRowEdge, identityCid, withMainBranchPolicy,
   readProposals, submissionAdditions, CAPABILITIES, type MemberRecord, type ProposalView, type Capability, type Scope } from './graph'
-import { importNodes } from './graph'
+import { advertisedRows, importNodes } from './graph'
+import { sameCapabilityType } from './capabilities'
+import { primitiveValue } from './primitives'
+import { refSubmissions } from './scoped-refs'
 import { headCid, type Replica } from './replica'
 import { constructNodeValue, readGraphValue } from './node-values'
 
@@ -17,6 +21,11 @@ export type NodeRequest = {
   templates?: string[]
   /** Content of templates the provider asked for (`ProvidedNode.wanted`), or of the grants an update's member entry pins; accepted only for those. */
   templateNodes?: FosNodesData
+  /**
+   * A proposing peer's branch: its update is the submission named after it (`branch:<name>`, one per peer and branch),
+   * a pull request the owner sees as an option of the node, instead of the peer's one `node-sync` submission.
+   */
+  submission?: string
 }
 export type NodeShape = { data: FosDataContent; children: NodeChild[] }
 /**
@@ -24,12 +33,14 @@ export type NodeShape = { data: FosDataContent; children: NodeChild[] }
  * cid), so the type travels as the template and nothing else. `held`: its content is not served through this node (a
  * reference row, whose target has its own attachment, or a node another peer holds: `address` says which).
  *
- * Member entries are children too (`template` = the MEMBER primitive, `id` = `fos:peer:<peer>`), listed to the peers
- * that receive them (`memberEntryVisible`) and synced in their own round like any node. In a member entry, its grants
+ * Memberships are children too (`template` = the peer's node, their row's left; `peer` = who it is for; `id` = the
+ * membership row's alias), listed to the peers that receive them (`memberEntryVisible`) and synced in their own round
+ * like any node. In a member entry, its grants
  * and offers (`[CAPABILITY|ACCEPTS, x]`, `template` = that primitive) are immutable children `pinned` to the cid of
  * `x`, whose content travels with the shape (`ProvidedNode.templates`, `NodeRequest.templateNodes`).
  */
-export type NodeChild = { id: string; address: NodeAddress; template: string; held?: true; pinned?: string; right?: { name?: string; bound: boolean } }
+/** `peer`: a membership's, whom it is for (the peer on its row's left). */
+export type NodeChild = { id: string; address: NodeAddress; template: string; held?: true; pinned?: string; right?: { name?: string; bound: boolean }; peer?: string }
 /** Shallow wire projection of a row's right ref. The graph remains the source of
  * truth: the enclosing row supplies its pattern; bound is the presence of TARGET. No values are bundled. */
 export function rightChild(r: Replica, edge: FosPathElem): NodeChild['right'] {
@@ -62,7 +73,6 @@ export type NodeAuthority = {
   proposeOnly?: boolean
   capabilities: Capability[]
 }
-const LINK_NAME = 'fos:node-link:'
 const forbiddenFields = new Set(['alias', 'ref', 'versionControl', 'disabledCapabilities', 'peerId'])
 export class NodeAccessError extends Error {}
 
@@ -77,8 +87,9 @@ export function parseNodeRequest(value: unknown): NodeRequest {
   if (r.proposal !== undefined && (!r.proposal || !validPath(r.proposal.scope) || typeof r.proposal.id !== 'string' || !r.proposal.id || r.proposal.id.length > 256 || r.update)) throw new NodeAccessError('Proposal previews are read-only.')
   if (r.templates !== undefined && (!Array.isArray(r.templates) || r.templates.length > 256 || r.templates.some(cid => !isCid(cid)))) throw new NodeAccessError('Invalid template request.')
   if (r.templateNodes !== undefined && (!r.templateNodes || typeof r.templateNodes !== 'object' || Array.isArray(r.templateNodes) || JSON.stringify(r.templateNodes).length > 4 * 1024 * 1024)) throw new NodeAccessError('Invalid template content.')
+  if (r.submission !== undefined && (typeof r.submission !== 'string' || !r.submission.trim() || r.submission.length > 200)) throw new NodeAccessError('Invalid submission name.')
   return { peerId: r.peerId, scope: [...r.scope], path: [...r.path], linkId: r.linkId, ...(r.branches?.length ? { branches: r.branches.map(b => ({ scope: [...b.scope], name: b.name })) } : {}), ...(r.proposal ? { proposal: { ...r.proposal, scope: [...r.proposal.scope] } } : {}), ...(r.update !== undefined ? { update: r.update } : {}),
-    ...(r.templates?.length ? { templates: [...new Set(r.templates)] } : {}), ...(r.templateNodes ? { templateNodes: r.templateNodes } : {}) }
+    ...(r.templates?.length ? { templates: [...new Set(r.templates)] } : {}), ...(r.templateNodes ? { templateNodes: r.templateNodes } : {}), ...(r.submission ? { submission: r.submission } : {}) }
 }
 function maskOf(value: unknown): NodeMask {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new NodeAccessError('Invalid node mask.')
@@ -92,13 +103,16 @@ function sourceId(r: Replica, path: Scope): string {
   if (!cid) throw new NodeAccessError('Linked node unavailable.')
   return content(r.store, cid).data.alias?.id ?? cid
 }
-const linkName = (r: Replica, peer: string, path: Scope) => LINK_NAME + JSON.stringify([peer, sourceId(r, path)])
 const localLinkId = (peer: string, other: string, id: string) => hashContent({ data: { description: { content: JSON.stringify([peer, other, id]) } }, children: [] })
 
 function linkAt(r: Replica, path: Scope, peer: string, remoteId: string) {
   // One endpoint per peer at a node. A caller cannot evade a mask by choosing a new link id.
-  const name = linkName(r, peer, path)
-  const edge = content(r.store, r.store.rootNodeId).children.find(e => e[0] === capabilityTarget(r.store, 'provideNode') && content(r.store, e[1]).data.name?.content === name)
+  const node = sourceId(r, path)
+  const edge = content(r.store, r.store.rootNodeId).children.find(e => {
+    if (e[0] !== capabilityTarget(r.store, 'provideNode')) return false
+    const data = content(r.store, e[1]).data
+    return data.nodeLink?.node === node && data.ref?.peer === peer
+  })
   return edge ? { cid: edge[1] } : undefined
 }
 function readMask(r: Replica, path: Scope, peer: string, remoteId: string): NodeMask {
@@ -133,9 +147,8 @@ export function isNodeProjection(r: Replica, path: Scope): boolean {
   const id = sourceId(r, path)
   return content(r.store, r.store.rootNodeId).children.some(e => {
     if (e[0] !== capabilityTarget(r.store, 'provideNode')) return false
-    const ref = content(r.store, e[1])
-    if (ref.data.description?.content !== 'fos:node-projection') return false
-    try { return JSON.parse(ref.data.name?.content?.slice(LINK_NAME.length) ?? 'null')?.[1] === id } catch { return false }
+    const link = content(r.store, e[1]).data.nodeLink
+    return !!link?.projection && link.node === id
   })
 }
 
@@ -155,8 +168,8 @@ export function setNodeLinkMask(r: Replica, path: Scope, peer: string, remoteId:
   const policy = constructNodeValue(r.store, maskOf(mask), previous ? content(r.store, previous.cid).data.alias!.id : id, previous?.cid).cid
   const ref = put(r.store, refNodeContent(r.store, {
     alias: { id: previous ? content(r.store, previous.cid).data.alias!.id : id },
-    ...(previous && content(r.store, previous.cid).data.description ? { description: content(r.store, previous.cid).data.description } : {}),
-    name: { content: linkName(r, peer, path) }, ref: { id: remoteId, peer }
+    nodeLink: { node: sourceId(r, path), ...(previous && content(r.store, previous.cid).data.nodeLink?.projection ? { projection: true } : {}) },
+    ref: { id: remoteId, peer }
   }, policy, previous ? [[r.store.primitive.previousVersion.getId(), previous.cid]] : []))
   if (previous && content(r.store, previous.cid).data.ref?.id === remoteId && refValueCid(r.store, content(r.store, previous.cid)) === policy) return r
   // Endpoint refs belong to this peer's root alias, outside its shared TARGETPOINTER.
@@ -191,11 +204,17 @@ export function inheritedNodeGrants(r: Replica, path: Scope, authority: NodeAuth
 export function decidingMember(store: Replica['store'], value: FosNodeContent, authority: Pick<NodeAuthority, 'peerId' | 'owner'>): MemberRecord | undefined {
   if (!authority.owner) return memberFor(store, value, authority.peerId)
   const own = readMembers(store, value).find(m => m.peerId === authority.peerId)
-  if (!own || own.capabilities.length) return own
-  const entry = value.children.find(e => isMemberEdge(store, e) && content(store, e[1]).data.peerId?.content === authority.peerId)
-  // an entry not loaded here yet (its device pushes it next) or one carrying only offers says nothing about grants
-  const node = entry && content(store, entry[1])
-  return node && (isPeerReference(node) || node.children.some(e => e[0] === store.primitive.acceptsNode.getId())) ? undefined : own
+  return own && grantsOf(store, value, own) ? own : undefined
+}
+
+/**
+ * Whether `member` (a membership of `value`) says anything about grants: one that grants nothing and is not loaded here
+ * yet (its device pushes it next), or carries only offers (its peer's handlers, the transport that reaches it), does not.
+ */
+export function grantsOf(store: Replica['store'], value: FosNodeContent, member: MemberRecord): boolean {
+  if (member.capabilities.length) return true
+  const entry = membershipOf(store, value, member.peerId), node = entry && content(store, entry[1])
+  return !(node && (isPeerReference(node) || node.children.some(e => e[0] === store.primitive.acceptsNode.getId())))
 }
 
 function permitted(r: Replica, cid: string, authority: Pick<NodeAuthority, 'peerId' | 'owner'>, inherited: boolean): boolean {
@@ -207,36 +226,51 @@ function permitted(r: Replica, cid: string, authority: Pick<NodeAuthority, 'peer
 
 /**
  * Which member entries of a node a peer receives, as children of that node: the owner (its own devices) all of them,
- * any other peer only its own (`fos:peer:<itself>`: its grants, its offers, the rows left there for it such as its
+ * any other peer only its own (the one whose left is that peer: its grants, its offers, the rows left there for it such as its
  * relay queue). Everything else about who else is a member stays the owner's.
  */
-export function memberEntryVisible(id: string, authority: Pick<NodeAuthority, 'peerId' | 'owner'>): boolean {
-  return !!authority.owner || id === memberEntryId(authority.peerId)
+export function memberEntryVisible(peer: string, authority: Pick<NodeAuthority, 'peerId' | 'owner'>): boolean {
+  return !!authority.owner || peer === authority.peerId
 }
 
 /** A member entry a peer listed and this side has not loaded: who it names, no grants yet (so it grants nothing). */
 export function unloadedMemberEdge(store: Replica['store'], child: NodeChild): FosPathElem {
   const ref = { id: child.id, peer: child.address.peerId, version: 'unloaded', ...(child.held ? { held: true } : {}), scope: child.address.scope, ...(child.address.branches ? { branches: child.address.branches } : {}) }
-  return [store.primitive.memberField.getId(), put(store, { data: { alias: { id: child.id }, peerId: { content: child.id.slice(MEMBER_ENTRY_PREFIX.length) }, ref }, children: [] })]
+  return [peerNode(store, child.peer!), put(store, { data: { alias: { id: child.id }, ref }, children: [] })]
 }
 
-/** Fields a member entry's shape carries besides the usual ones (who it is, what is switched off). */
-export const MEMBER_ENTRY_FIELDS = new Set(['peerId', 'disabledCapabilities'])
+/** Fields a membership's shape carries besides the usual ones (what is switched off; who it is for is its row's left). */
+export const MEMBER_ENTRY_FIELDS = new Set(['disabledCapabilities', 'disabledConstructors'])
 
 /** The children of the node `cid` (at `path`) as node exchange lists them: its rows, then its member entries (or, in a member entry, its grants). */
+/**
+ * Whether a membership is exchanged: one for a store reached through this machine's files (granted `local`,
+ * `linkLocalStore`) is this machine's link and never leaves it, and so is one that only holds this device's transport
+ * to its peer.
+ */
+export function exchangedMember(store: Replica['store'], edge: FosPathElem): boolean {
+  const right = content(store, edge[1])
+  if (right.children.some(e => capabilityOf(store, e) === 'local')) return false
+  return !(right.children.length && right.children.every(e => isTransportOffer(store, e)))
+}
+/** A peer's transport offered here (`offerNodeTransport`): a native `provideNode` value, this device's connection to that peer, never exchanged. */
+export function isTransportOffer(store: Replica['store'], edge: FosPathElem): boolean {
+  if (edge[0] !== store.primitive.acceptsNode.getId()) return false
+  const type = capabilityTarget(store, 'provideNode')
+  return advertisedRows(store, edge[1]).some(([left, ref]) => sameCapabilityType(store, left, type) && refSubmissions(store, ref).some(value => primitiveValue(store, value)))
+}
 export function exchangedChildren(r: Replica, cid: string, path: Scope): Array<{ id: string; edge: FosPathElem; member?: true; grant?: true }> {
   const value = valueContent(r.store, cid), out: Array<{ id: string; edge: FosPathElem; member?: true; grant?: true }> = []
-  const entry = isMemberEntryId(path.at(-1))
+  const entry = memberEntryPeerAt(r.store, headCid(r), path) !== null
   for (const edge of value.children) {
-    if (entry && isGrantEdge(r.store, edge)) { out.push({ id: grantChildId(r.store, edge), edge, grant: true }); continue }
+    if (entry && isGrantEdge(r.store, edge)) { if (!isTransportOffer(r.store, edge)) out.push({ id: grantChildId(r.store, edge), edge, grant: true }); continue }
     if (isBookkeepingEdge(r.store, edge) || !exchangedValueEdge(r, edge)) continue
     const id = content(r.store, identityCid(r.store, edge)).data.alias?.id
     if (id && !isShippedLibrary(r.store, path, edge)) out.push({ id, edge })
   }
   if (!entry && !isHandle(content(r.store, cid))) for (const edge of memberEdgesOf(r.store, cid)) {
     const id = content(r.store, edge[1]).data.alias?.id
-    // a store reached through this machine's files (granted `local`, `linkLocalStore`) is this machine's link: it never leaves it
-    if (isMemberEntryId(id) && !content(r.store, edge[1]).children.some(e => capabilityOf(r.store, e) === 'local')) out.push({ id, edge, member: true })
+    if (id && exchangedMember(r.store, edge)) out.push({ id, edge, member: true })
   }
   return out
 }
@@ -267,7 +301,7 @@ export function provideNode(r: Replica, input: NodeRequest, authority: NodeAutho
       const identity = content(r.store, cid)
       if (isHandle(identity)) throw new NodeAccessError('Reference targets require their own attachment.')
       // a member entry is a child like a row, for the peers that receive it (`memberEntryVisible`)
-      const edge = exchangedChildren(r, cid, path).find(child => child.id === id && !child.grant && (!child.member || memberEntryVisible(id, authority)))?.edge
+      const edge = exchangedChildren(r, cid, path).find(child => child.id === id && !child.grant && (!child.member || memberEntryVisible(memberPeerOf(r.store, child.edge), authority)))?.edge
       if (!edge) throw new NodeAccessError('Node unavailable.')
       cid = identityCid(r.store, edge)
       path.push(id)
@@ -283,12 +317,12 @@ export function provideNode(r: Replica, input: NodeRequest, authority: NodeAutho
     restrictFields(mask)
     const identity = content(r.store, cid)
     const value = heldByRequester ? { data: {}, children: [] } : valueContent(r.store, cid)
-    const entry = isMemberEntryId(path.at(-1))
+    const entry = memberEntryPeerAt(r.store, headCid(r), path) !== null
     const data = Object.fromEntries(Object.entries(value.data).filter(([key]) => (!forbiddenFields.has(key) || (entry && MEMBER_ENTRY_FIELDS.has(key))) && (!fields || fields.has(key)))) as FosDataContent
     const children: NodeChild[] = []
     const pinned = new Set<string>(), wanted = new Set<string>(), grantNodes: string[] = []
     for (const { id, edge, member, grant } of heldByRequester ? [] : exchangedChildren(r, cid, path)) {
-      if ((mask.children && !mask.children.includes(id)) || (member && !memberEntryVisible(id, authority))) continue
+      if ((mask.children && !mask.children.includes(id)) || (member && !memberEntryVisible(memberPeerOf(r.store, edge), authority))) continue
       // a grant is pinned by its node's cid; its content goes with the answer (it is small and immutable)
       if (grant) { grantNodes.push(edge[1]); children.push({ id, address: { peerId: r.meta.peerId, scope: [...path, id] }, template: edge[0], pinned: edge[1] }); continue }
       const childCid = identityCid(r.store, edge), child = content(r.store, childCid)
@@ -300,7 +334,7 @@ export function provideNode(r: Replica, input: NodeRequest, authority: NodeAutho
       if (right) grantNodes.push(pinnedTemplateOf(r.store, edge)!)
       const missing = !member && missingTemplateOf(r.store, edge), template = member ? edge[0] : pinnedTemplateOf(r.store, edge)!
       if (!member) (missing ? wanted : pinned).add(template)
-      children.push({ id, ...(right ? { right } : {}), ...(isHandle(child) ? { held: true as const } : {}), address: { peerId: remote?.peer ?? r.meta.peerId, scope: remote?.scope ?? [...path, id], ...(remote?.branches ? { branches: remote.branches } : {}) }, template })
+      children.push({ id, ...(right ? { right } : {}), ...(isHandle(child) ? { held: true as const } : {}), ...(member ? { peer: memberPeerOf(r.store, edge) } : {}), address: { peerId: remote?.peer ?? r.meta.peerId, scope: remote?.scope ?? [...path, id], ...(remote?.branches ? { branches: remote.branches } : {}) }, template })
     }
     // Only templates this node's visible rows are pinned to are served, never an arbitrary cid.
     const served = (request.templates ?? []).filter(cid => pinned.has(cid))
@@ -308,7 +342,7 @@ export function provideNode(r: Replica, input: NodeRequest, authority: NodeAutho
     const proposals: ProposalView[] = readProposals(r.store, content(r.store, cid))
       .filter(p => authority.owner || grants.includes('edit') || p.peerId === authority.peerId)
       // the owner sees what each submission is called and which rows it adds (ids only: the rows load when opened)
-      .map(p => ({ id: p.cid, peerId: p.peerId, name: authority.owner ? p.name || 'Proposed node changes' : 'Proposed node changes', status: p.status, timestamp: p.timestamp, summary: { added: [], changed: [], removed: [] },
+      .map(p => ({ id: p.cid, peerId: p.peerId, name: authority.owner || p.peerId === authority.peerId ? p.name : '', status: p.status, timestamp: p.timestamp, summary: { added: [], changed: [], removed: [] }, approvals: approvalsOf(r.store, p.cid),
         ...(authority.owner && p.status === 'open' ? { additions: submissionAdditions(r.store, p.baseCid, p.contentCid) } : {}) }))
     const existing = linkAt(r, path, authority.peerId, request.linkId)
     if (existing && content(r.store, existing.cid).data.ref?.id && content(r.store, existing.cid).data.ref?.id !== request.linkId) throw new NodeAccessError('Node link endpoint mismatch.')
@@ -328,7 +362,7 @@ export function acceptProvidedNode(r: Replica, at: Scope, request: NodeRequest, 
   const cid = resolveScope(r.store, headCid(r), at)
   if (!cid) throw new NodeAccessError('The receiving node no longer exists.')
   // a member entry is not a projection of its own: it syncs in its node's rounds (node-sync.ts `installNodeShape`)
-  if (isMemberEntryId(at.at(-1))) throw new NodeAccessError('A member entry syncs with its node.')
+  if (memberEntryPeerAt(r.store, headCid(r), at) !== null) throw new NodeAccessError('A member entry syncs with its node.')
   const before = content(r.store, cid), local = nodeLinkMaskAt(r, at, node.peerId), ownMask = readMask(r, at, node.peerId, node.linkId)
   const data = Object.fromEntries(Object.entries(node.data).filter(([key]) => !forbiddenFields.has(key) && (!local.fields || local.fields.includes(key)))) as FosDataContent
   const listed = node.children.filter(child => (!local.children || local.children.includes(child.id)) && !child.pinned)
@@ -343,8 +377,7 @@ export function acceptProvidedNode(r: Replica, at: Scope, request: NodeRequest, 
     }
     importNodes(r.store, schemas)
   }
-  const memberType = r.store.primitive.memberField.getId()
-  const children = listed.filter(child => child.template !== memberType).map(child => {
+  const children = listed.filter(child => child.peer === undefined).map(child => {
     if (child.right) return unloadedRightEdge(r.store, child)
     const stub = put(r.store, { data: { alias: { id: child.id }, ref: { id: child.id, peer: child.address.peerId, version: 'unloaded', ...(child.held ? { held: true } : {}), scope: child.address.scope, ...(child.address.branches ? { branches: child.address.branches } : {}) } }, children: [] })
     return pinnedRowEdge(r.store, stub, child.template)
@@ -352,14 +385,14 @@ export function acceptProvidedNode(r: Replica, at: Scope, request: NodeRequest, 
   // Preserve local grants and masks; the provider cannot replace them with its own (member entries it lists that are
   // not here arrive unloaded, granting nothing until they sync). A root keeps its shipped library.
   const shipped = valueContent(r.store, cid).children.filter(edge => isShippedLibrary(r.store, at, edge))
-  const kept = bookkeepingOf(r.store, isPeerReference(before) ? { data: {}, children: [] } : before)
-  const known = new Set(kept.filter(e => isMemberEdge(r.store, e)).map(e => content(r.store, e[1]).data.alias?.id))
-  const members = listed.filter(child => child.template === memberType && isMemberEntryId(child.id) && !known.has(child.id)).map(child => unloadedMemberEdge(r.store, child))
-  const identity = withPeer(r.store, refNodeContent(r.store, { alias: before.data.alias ?? { id: request.linkId }, ...(before.data.name ? { name: before.data.name } : {}) }, put(r.store, { data, children: [...shipped, ...children] }), [...kept, ...members]), node.peerId)
+  const kept = isPeerReference(before) ? [] : bookkeepingOf(r.store, before).filter(e => !isMemberEdge(r.store, e))
+  const memberships = isPeerReference(before) ? [] : memberEdgesOf(r.store, cid), known = new Set(memberships.map(e => memberPeerOf(r.store, e)))
+  const members = listed.filter(child => typeof child.peer === 'string' && !known.has(child.peer)).map(child => unloadedMemberEdge(r.store, child))
+  const identity = withPeer(r.store, refNodeContent(r.store, { alias: before.data.alias ?? { id: request.linkId }, ...(before.data.name ? { name: before.data.name } : {}) }, put(r.store, { data, children: [...shipped, ...children, ...memberships, ...members] }), kept), node.peerId)
   commitRoot(r.store, updateAtScope(r.store, headCid(r), at, () => identity, 'replace'), now)
   r = setNodeLinkMask({ ...r }, at, node.peerId, node.linkId, ownMask, now, request.linkId)
   const endpoint = linkAt(r, at, node.peerId, node.linkId)!, ref = content(r.store, endpoint.cid)
-  const marked = put(r.store, { ...ref, data: { ...ref.data, description: { content: 'fos:node-projection' } } })
+  const marked = put(r.store, { ...ref, data: { ...ref.data, nodeLink: { node: ref.data.nodeLink!.node, projection: true } } })
   const root = content(r.store, r.store.rootNodeId)
   r.store.rootNodeId = put(r.store, { ...root, children: root.children.map(edge => edge[1] === endpoint.cid ? [edge[0], marked] : edge) })
   return { ...r }

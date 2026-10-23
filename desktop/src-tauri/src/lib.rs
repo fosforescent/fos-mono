@@ -281,6 +281,48 @@ fn read_node_file(root: String, path: String) -> Result<String, String> {
     String::from_utf8(bytes).map_err(|_| "Binary or non-UTF-8 file; text preview unavailable".into())
 }
 
+#[derive(Serialize)]
+struct FetchResponse {
+    status: u16,
+    body: String,
+}
+
+/// The `fetch` primitive on the desktop: one http(s) request made natively, so browser CORS rules do not apply. The
+/// body is returned as text, cut at 1 MB.
+#[tauri::command]
+async fn fetch_url(url: String, method: String) -> Result<FetchResponse, String> {
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err("Only http and https addresses can be fetched.".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .timeout_global(Some(std::time::Duration::from_secs(30)))
+            .http_status_as_error(false)
+            .build()
+            .into();
+        let response = match method.to_ascii_uppercase().as_str() {
+            "GET" => agent.get(&url).call(),
+            "HEAD" => agent.head(&url).call(),
+            "DELETE" => agent.delete(&url).call(),
+            "POST" => agent.post(&url).send_empty(),
+            "PUT" => agent.put(&url).send_empty(),
+            "PATCH" => agent.patch(&url).send_empty(),
+            other => return Err(format!("{} is not a supported method.", other)),
+        };
+        let mut response = response.map_err(|e| e.to_string())?;
+        let status = response.status().as_u16();
+        let mut body = response.body_mut().read_to_string().unwrap_or_default();
+        if body.len() > 1_000_000 {
+            let mut end = 1_000_000;
+            while !body.is_char_boundary(end) { end -= 1; }
+            body.truncate(end);
+        }
+        Ok(FetchResponse { status, body })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// The SHA-256 a graph row keeps for a file it references (files.rs): `path` relative to the linked root (or absolute
 /// below it); None when the file is gone. Symbolic links, `..`, `.fos` and `.git` are refused.
 #[tauri::command]
@@ -334,7 +376,7 @@ pub fn run() {
             local_store,
             read_project_file,
             write_project_file,
-            link_node_directory, list_node_directory, read_node_file, hash_node_file,
+            link_node_directory, list_node_directory, read_node_file, hash_node_file, fetch_url,
             node_agent::node_agent_start, node_agent::node_agent_poll, node_agent::node_agent_reply, node_agent::node_agent_stop,
             agents::local_git, agents::validate_agent_repository, agents::agent_clis, agents::agent_start, agents::agent_poll, agents::agent_control, agents::open_agent_link,
             claude_desktop::claude_desktop_mcp,

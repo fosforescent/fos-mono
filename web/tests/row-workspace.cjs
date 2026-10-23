@@ -9,10 +9,10 @@ const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'FormData', 'Node', 'Option', 'navigator', 'localStorage', 'sessionStorage', 'location', 'FileReader']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export {parsePastedRows} from './src/paste'; export {parseRowInput,rawRowText} from './src/rows'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid', 'katex', 'katex/*'] })
 const { put, content, rowTypeAt, addConstructedRow, parsePastedRows, rawRowText, App, mountUi, createMemoryStorage, parseRowInput, view, HOME_ID, resolveScope, headCid, requirementOutputs, argumentRefs, createReplica, ensureHomeContext, exchangeNode, SERVER_TRANSPORT_CAPABILITIES, addMemberAt } = require(path.join(dir, 'app.cjs'))
-const TASK_TYPE = 'lib:type:task'
-const PLAIN_TYPE = 'lib:type:plain'
-const COMMENT_TYPE = 'lib:type:comment'
-const ALLOCATION_TYPE = 'lib:type:allocation'
+const TASK_TYPE = 'task'
+const PLAIN_TYPE = 'plain'
+const COMMENT_TYPE = 'comment'
+const ALLOCATION_TYPE = 'allocation'
   // what a real account server advertises with the default handler registry (backend/sync/hostHandlers.ts)
   const SERVER_CAPABILITIES = [...SERVER_TRANSPORT_CAPABILITIES, 'search', 'market', 'llm']
 const tick = () => new Promise(resolve => setImmediate(resolve))
@@ -92,12 +92,12 @@ async function main() {
     const target = document.querySelector('.constructor-drop-target'); assert(!target.hidden)
     return { control, target, drop() { const event = new window.Event('drop', { bubbles: true, cancelable: true }); Object.defineProperty(event, 'dataTransfer', { value: transfer }); target.dispatchEvent(event) } }
   }
-  let drag = dragConstructor('Note'); assert.equal(drag.target.textContent, 'Disable'); drag.drop(); await tick()
-  assert.equal(document.querySelector('.constructor-grid [aria-label="Note"]').getAttribute('aria-disabled'), 'true')
-  assert.equal(a.constructorEnabled(a.state.replica.meta.peerId, 'seed:> '), false)
+  let drag = dragConstructor('Decision'); assert.equal(drag.target.textContent, 'Disable'); drag.drop(); await tick()
+  assert.equal(document.querySelector('.constructor-grid [aria-label="Decision"]').getAttribute('aria-disabled'), 'true')
+  assert.equal(a.constructorEnabled(a.state.replica.meta.peerId, 'seed:-choice: '), false)
   a.refresh(); await tick()
-  drag = dragConstructor('Note'); assert.equal(drag.target.textContent, 'Enable'); drag.drop(); await tick()
-  assert.equal(a.constructorEnabled(a.state.replica.meta.peerId, 'seed:> '), true)
+  drag = dragConstructor('Decision'); assert.equal(drag.target.textContent, 'Enable'); drag.drop(); await tick()
+  assert.equal(a.constructorEnabled(a.state.replica.meta.peerId, 'seed:-choice: '), true)
   assert(document.querySelector('.constructor-drop-target').hidden)
   assert(!document.querySelector('[aria-label="Permissions"]'), 'permissions are expanded inline')
   assert(!document.querySelector('.constructor-permissions'), 'no duplicate permission or constructor panels')
@@ -180,7 +180,7 @@ async function main() {
   bodyEditor.value = '// literal text, not another comment'
   bodyEditor.dispatchEvent(new window.Event('commit-edit'))
   assert.equal(a.rowAt([bodyId]).title, '// literal text, not another comment')
-  assert.equal(a.rowAt([bodyId]).type, 'lib:type:text', 'primitive text bypasses row-marker parsing')
+  assert.equal(a.rowAt([bodyId]).type, 'text', 'primitive text bypasses row-marker parsing')
   a.rewriteRowAt([], bodyId, { type: PLAIN_TYPE, text: 'Later comment', done: false })
   a.goTo(commentParent)
   a.select(null); await tick()

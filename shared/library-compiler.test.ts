@@ -4,7 +4,8 @@ import { compileLibrary, type LibrarySource } from './library-compiler'
 import { hashContent } from './dag-implementation/cid'
 import { FOS_DATA_VERSION } from './version'
 import type { FosNodeContent } from './types'
-import { addConstructedRow, createReplica, importNodes, put, reachableNodes, view, writeGraphNode, rowTypeAt, exportLocalLibrary, COMMENT_TYPE, TEMPLATE_TYPE, LIBRARY_ID, ROW_TYPES_ID } from './sync/index'
+import { FosStore } from './dag-implementation/store'
+import { addConstructedRow, createReplica, ensureDeviceLibrary, put, reachableNodes, refNodeContent, view, writeGraphNode, rowTypeAt, exportLocalLibrary, COMMENT_TYPE, TEMPLATE_TYPE, LIBRARY_ID } from './sync/index'
 
 const source = sourceJson as unknown as LibrarySource
 
@@ -27,10 +28,11 @@ test('a data-only definition edit changes constructed fields and UI projections'
   }
   const rootNodeId = rewrite(source.rootNodeId)
   const compiled = compileLibrary({ ...source, rootNodeId, nodes })
-  let r = createReplica('new')
-  importNodes(r.store, compiled.nodes)
-  const definition = compiled.types.find(type => type.data.alias?.id === 'lib:type:comment')!
-  r = addConstructedRow(r, [], put(r.store, definition), { text: 'From data', texts: ['One'] }, 1, 'message')
+  // a device whose library ref holds the edited library: its comment is the edited node
+  let r = ensureDeviceLibrary(createReplica('new', new FosStore()), { version: compiled.version, root: compiled.rootNodeId, nodes: compiled.nodes }, 1)
+  const definition = compiled.refs['comment']!
+  expect(rowTypeAt(r.store, COMMENT_TYPE)).toBe(definition)
+  r = addConstructedRow(r, [], definition, { text: 'From data', texts: ['One'] }, 1, 'message')
   const row = view(r, [])!.tasks.find(row => row.id === 'message')!
   expect(row.type).toBe(COMMENT_TYPE)
   expect(row.form?.fields.map(field => field.label)).toEqual(['Message content', 'Person', 'Texts'])
@@ -48,15 +50,18 @@ test('invalid or missing graph content fails compilation', () => {
   expect(() => compileLibrary({ version: FOS_DATA_VERSION, rootNodeId: cid, nodes: { [cid]: node } })).toThrow(/instanceKind/)
 })
 
-test('locally authored definition rows export as buildable graph data', () => {
+test('locally authored library rows export as buildable graph data: a named ref and the node it names', () => {
   let r = createReplica('author')
-  const definition = { data: { alias: { id: 'lib:type:count' }, description: { content: 'Count' }, form: { primitive: 'number' as const } }, children: [] }
-  r = writeGraphNode(r, [LIBRARY_ID, ROW_TYPES_ID], definition, 1, rowTypeAt(r.store, TEMPLATE_TYPE))
-  r = writeGraphNode(r, [LIBRARY_ID, ROW_TYPES_ID, 'lib:type:count'], { ...definition, data: { ...definition.data, description: { content: 'Quantity' } } }, 2)
+  // the definition carries no name; the ref in the library's rows names it
+  const count = put(r.store, { data: { description: { content: 'Count' }, form: { primitive: 'number' } }, children: [] })
+  const ref = (value: string) => refNodeContent(r.store, { alias: { id: 'count' }, name: { content: 'count' } }, value)
+  r = writeGraphNode(r, [LIBRARY_ID], ref(count), 1, rowTypeAt(r.store, TEMPLATE_TYPE))
+  // writing at the ref's path writes its value: the node it names
+  r = writeGraphNode(r, [LIBRARY_ID, 'count'], { data: { description: { content: 'Quantity' }, form: { primitive: 'number' } }, children: [] }, 2)
   const exported = compileLibrary(exportLocalLibrary(r))
-  expect(exported.types.find(type => type.data.alias?.id === 'lib:type:count')?.data.description?.content).toBe('Quantity')
+  expect(exported.nodes[exported.refs['count']!]!.data.description?.content).toBe('Quantity')
   expect(Object.values(exported.nodes).some(node => node.data.description?.content === 'Count')).toBe(false)
   const before = r.store.rootNodeId
-  expect(() => writeGraphNode(r, [LIBRARY_ID, ROW_TYPES_ID, 'lib:type:count'], { data: {}, children: [['missing', 'missing']] }, 3)).toThrow(/CIDs/)
+  expect(() => writeGraphNode(r, [LIBRARY_ID, 'count'], { data: {}, children: [['missing', 'missing']] }, 3)).toThrow(/CIDs/)
   expect(r.store.rootNodeId).toBe(before)
 })

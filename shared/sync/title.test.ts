@@ -24,6 +24,6 @@ test('a note made from one line is titled as typed; from more lines, its whole t
   expect(view(r, ['two'])!.tasks.find(t => t.id === 'two/field/body')!.title).toBe('# Euler\n\n$$e^{i\pi} + 1 = 0$$')
   // asking a peer's title handler: a `title` requirement in the note, which reads the note's text
   const asked = requestTitle(r, ['two'], 3, () => 'x')
-  expect(asked.path).toEqual(['two', 'fos:title:x'])
+  expect(asked.path).toEqual(['two', 'x'])
   expect(titleRequestAt(asked.replica, asked.path)).toEqual({ text: '# Euler\n\n$$e^{i\pi} + 1 = 0$$' })
 })

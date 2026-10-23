@@ -13,7 +13,7 @@ const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTextAreaElement','Node','Option','navigator','localStorage','sessionStorage','location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {createMemoryStorage} from './src/storage'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), external: ['mermaid','katex','katex/*'] })
 const c = require(path.join(dir, 'test.cjs'))
-const ALLOCATION_TYPE = 'lib:type:allocation'
+const ALLOCATION_TYPE = 'allocation'
 const tick = () => new Promise(resolve => setTimeout(resolve, 20))
 
 // the server's ed25519 identity key, as backend/sync/verify.ts makes it from a seed
@@ -71,7 +71,7 @@ async function main() {
   assert.equal(bob.verification.by, 'fos')
   assert.deepEqual(c.verifyPublished(app.state.replica, bob, (payload, signature, key) => require('node:crypto').verify(null, Buffer.from(payload), createPublicKey({ key: Buffer.concat([Buffer.from('302a300506032b6570032100', 'hex'), Buffer.from(key, 'base64')]), format: 'der', type: 'spki' }), Buffer.from(signature, 'base64'))), { ok: true, by: 'fos' })
   assert.deepEqual(c.cachedUser(app.state.replica, 'bob'), bob, 'kept among the people in Home')
-  assert(!c.view(app.state.replica, [HOME, 'fos:users']).tasks.some(t => t.id === c.verifyRequestId('bob')), 'the filled request is removed')
+  assert(!c.verifyRequestAt(app.state.replica, 'bob'), 'the filled request is removed')
   // later rows bind the cached object without asking again
   app.addRowAt([HOME, 'review'], ALLOCATION_TYPE, 'again', { id: 'rq2', extras: { requirement: { capability: 'peer' }, user: c.unverifiedUser('bob') } })
   await settle()
@@ -83,7 +83,7 @@ async function main() {
     setup()
     app.addRowAt([HOME, 'review'], ALLOCATION_TYPE, label, { id: label, extras: { requirement: { capability: 'peer' }, user: c.unverifiedUser('bob') } })
     // forget the cached object so the name is asked for again
-    app.set({ replica: c.deleteTask(app.state.replica, [HOME, 'fos:users'], c.userObjectId({ username: 'bob' }), 11) })
+    app.set({ replica: c.deleteTask(app.state.replica, c.usersPath(app.state.replica), c.userObjectId({ username: 'bob' }), 11) })
     app.addRowAt([HOME, 'review'], ALLOCATION_TYPE, label + ' 2', { id: label + '2', extras: { requirement: { capability: 'peer' }, user: c.unverifiedUser('bob') } })
     await settle()
     assert.match(app.state.notice.text, /verification of @bob does not check out/, label)
@@ -96,11 +96,11 @@ async function main() {
   app.addRowAt([HOME, 'review'], ALLOCATION_TYPE, 'who', { id: 'nobody', extras: { requirement: { capability: 'peer' }, user: c.unverifiedUser('nobody') } })
   await settle()
   assert.match(app.state.notice.text, /No Fos user is named @nobody/)
-  assert(!c.view(app.state.replica, [HOME, 'fos:users']).tasks.some(t => t.id === c.verifyRequestId('nobody')))
+  assert(!c.verifyRequestAt(app.state.replica, 'nobody'))
 
   // the server's key missing from the graph: nothing verifies
   signer = server
-  app.set({ replica: c.deleteTask(app.state.replica, [c.memberEntryId('fos')], c.peerKeyId('fos'), 12) })
+  app.set({ replica: c.deleteTask(app.state.replica, c.membershipPathAt(app.state.replica, [], 'fos'), c.peerKeyId('fos'), 12) })
   app.addRowAt([HOME, 'review'], ALLOCATION_TYPE, 'no key', { id: 'nokey', extras: { requirement: { capability: 'peer' }, user: c.unverifiedUser('bob') } })
   await settle()
   assert.match(app.state.notice.text, /does not check out/)
@@ -112,7 +112,7 @@ async function main() {
   await settle()
   assert.equal(calls.length, before)
   assert.equal(named('offline').verification, null)
-  assert(!c.view(app.state.replica, [HOME, 'fos:users']).tasks.some(t => t.id === c.verifyRequestId('carol')), 'no request is left behind')
+  assert(!c.verifyRequestAt(app.state.replica, 'carol'), 'no request is left behind')
   console.log('users: ok')
 }
 main().then(() => process.exit(0), error => { console.error(error); process.exit(1) })

@@ -12,10 +12,10 @@ for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTex
 buildSync({ stdin: { contents: `export {App} from './src/app'; export * from './src/yaml'; export {createProjectStorage} from './src/project'; export {mountUi} from './src/ui'; export * from './src/storage'; export * from './src/virtual'; export {renderMarkdown} from './src/markdown'; export {renderInlineText,parseRowInput} from './src/rows'; export * from '../shared/sync/index'`, resolveDir: root }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid','katex','katex/*'] })
 const sync = require(path.join(dir, 'app.cjs'))
 const { exchangeNode, SERVER_TRANSPORT_CAPABILITIES, headCid, App, mountUi, createMemoryStorage, createLocalStorageAdapter, addTask, nodeTreeSync, createReplica, ensureHomeContext, view, renameTask, addMemberAt, virtualStorage, serializeReplica, loadReplica, renderMarkdown, renderInlineText, virtualPeerFromUrl, parseRowInput, HOME_ID, LIBRARY_ID } = require(path.join(dir, 'app.cjs'))
-const TASK_TYPE = 'lib:type:task'
-const PLAIN_TYPE = 'lib:type:plain'
-const COMMENT_TYPE = 'lib:type:comment'
-const TEMPLATE_TYPE = 'lib:type:template'
+const TASK_TYPE = 'task'
+const PLAIN_TYPE = 'plain'
+const COMMENT_TYPE = 'comment'
+const TEMPLATE_TYPE = 'template'
   // what a real account server advertises with the default handler registry (backend/sync/hostHandlers.ts)
   const SERVER_CAPABILITIES = [...SERVER_TRANSPORT_CAPABILITIES, 'search', 'market', 'llm']
 const tick = () => new Promise(resolve => setImmediate(resolve))
@@ -832,7 +832,7 @@ async function main() {
   assert.equal(workspaceApp.settingValue('theme'), 'dark', 'settings are stored as child refs')
   assert(document.querySelector('.tasks [data-setting="theme"]'), 'settings appear in the child list')
   document.activeElement.blur(); workspaceApp.refresh()
-  const themeRow = workspaceApp.currentView().tasks.find(row => row.construction?.name === workspaceApp.settingKey('theme'))
+  const themeRow = workspaceApp.currentView().tasks.find(row => row.construction?.name === 'theme' && row.construction?.holder === workspaceApp.state.replica.meta.peerId)
   assert(themeRow && document.querySelector(`[data-id="${themeRow.id}"]`), 'stored constructor uses the ordinary row shell')
   workspaceApp.deleteTaskAt([], themeRow.id)
   assert(!workspaceApp.currentView().tasks.some(row => row.id === themeRow.id))
@@ -841,7 +841,7 @@ async function main() {
   workspaceApp.undo()
   assert.equal(workspaceApp.settingValue('theme'), 'dark', 'ordinary undo restores constructor and its value')
   workspaceApp.goTo([themeRow.id])
-  assert.equal(workspaceApp.currentRow().construction.name, workspaceApp.settingKey('theme'))
+  assert.equal(workspaceApp.currentRow().construction.name, 'theme')
   assert(document.querySelector('[aria-label="Device theme"]'), 'zoomed constructor retains its handler')
   workspaceApp.goTo([])
   const homeForSearch = [...workspaceApp.state.view]
@@ -909,8 +909,8 @@ async function main() {
   const reader = new App({ baseUrl: 'http://localhost', autoLogin: null, storage: createMemoryStorage(), localStores: { read: async id => disk[id] ?? null, write: async (id, value) => { disk[id] = JSON.parse(JSON.stringify(value)) } } })
   reader.startPolling = () => {}; reader.openEvents = () => {}; apps.push(reader)
   await reader.linkLocalStores([{ peerId: 'home-store', name: 'laptop', home: true }])
-  const entry = 'fos:peer:home-store', held = [entry, 'store:home-store']
-  const storeRow = view(reader.state.replica, [entry]).tasks.find(t => t.id === 'store:home-store')
+  const entry = sync.membershipPathAt(reader.state.replica, [], 'home-store').at(-1), held = [entry, sync.localStoreRowId('home-store')]
+  const storeRow = view(reader.state.replica, [entry]).tasks.find(t => t.id === sync.localStoreRowId('home-store'))
   assert.equal(storeRow.refPeer, 'home-store'); assert.equal(storeRow.title, 'laptop')
   assert(sync.localStores(loadReplica(disk['home-store'])).some(s => s.peerId === reader.state.replica.meta.peerId), 'the other store links this one back at once')
   await reader.loadPeerNode(held)

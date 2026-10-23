@@ -33,11 +33,13 @@ Connected endpoint rows also expose field and child-reference switches under
 Connection and capabilities. These edit only this device's endpoint.
 
 **Member edges travel like other children** (`exchangedChildren`,
-`memberEntryVisible` in node-provider.ts). A node's member entries
-(`[MEMBER, entry]` on its identity, `entry.data.alias.id = fos:peer:<peer>`)
-are children of that node in its shape, with the MEMBER primitive as their
-`template`, and each entry syncs in its own round like any node: its data
-(`name`, `peerId`, which must match its id, and `disabledCapabilities`), its
+`memberEntryVisible` in node-provider.ts). A node's memberships are rows of
+its content whose left is the peer's node (`peerNode`: `{ peerId }`, content
+addressed; the peer id is an opaque label) and whose right is what the node
+keeps for that peer. They are children of that node in its shape, with the
+peer's node as their `template` and `peer` saying who they are for, and each
+syncs in its own round like any node: its data (`name` and
+`disabledCapabilities`), its
 rows (a relay queue, a published key, a linked store's row) and its grants and
 offers. A grant or offer (`[CAPABILITY, x]` = the `to` side, `[ACCEPTS, x]` =
 the `from` side, `x` a capability constructor or a typed handler ref) is
@@ -124,7 +126,7 @@ evaluations and list the outstanding work; `edit` and `execute` both include rea
 (`App.openSharedNode`): `GET /user/data/peer-sync/locate?owner=&id=` answers
 where it lives in the owner's account and what they may do, then the same
 `provide-node` route with `owner` in the body serves it as that account's peer
-`user:<me>` (`proposeOnly`, so every edit is their `node-sync` proposal on the
+`user:<me>` (`proposeOnly`, so every edit is their main submission on the
 owner's node), and the row becomes a live projection: the tree view edits it,
 children load the same way, `Analyze` reads what is loaded, and `Run` sends a
 `complete` event with `owner` (`POST /user/data/events {event, scope, owner}`),
@@ -157,18 +159,18 @@ on every edit, its alias id does not.
 ```
 row         [type, rowNode]              rowNode.data: alias{id}, description{content}, updated{time}. The type (the left node, the
                                      instruction) is what the row is, and nothing else is: a row type (see "Row types" below; every
-                                     pinned version shares its graph identity `lib:type:…`) or a template row the row was made from,
+                                     pinned version shares its graph identity `lib.<type>`) or a template row the row was made from,
                                      pinned by the cid of that version's content. Library row types and the native data their rows hold:
-              Task        lib:type:task        + todo{completed,time}   (checkbox; "[ ]"/"[x]" prefix in the add bar)
-              Row         lib:type:plain       the default row: text with links/embeds; rows of a type this peer does not know
+              Task        lib.task        + todo{completed,time}   (checkbox; "[ ]"/"[x]" prefix in the add bar)
+              Row         lib.plain       the default row: text with links/embeds; rows of a type this peer does not know
                                      render like it
-              Note        lib:type:note        a graph form: a Markdown body field (">" prefix); child rows are variables (key: value,
+              Note        lib.note        a graph form: a Markdown body field (">" prefix); child rows are variables (key: value,
                                      or a row's title → its body / sub-rows as a list; ref children link other blocks); {{key}} / {key}
                                      expand; "Export note" downloads merged frontmatter + expanded body; KaTeX and Mermaid render
-              Comment     lib:type:comment     a graph form: body, person, texts ("//" prefix or the menu; replies are child comments)
-              Reference   lib:type:ref         + ref{id, owner?}: stands for the row whose alias id is `id` (Alt+drag); Ctrl+drag places a deep
+              Comment     lib.comment     a graph form: body, person, texts ("//" prefix or the menu; replies are child comments)
+              Reference   lib.ref         + ref{id, owner?}: stands for the row whose alias id is `id` (Alt+drag); Ctrl+drag places a deep
                                      copy; `owner` marks a market result (the row lives in another account; click opens the listing)
-              Allocation  lib:type:allocation  + allocation{resource, type, amount, unit, start?, end?, by?, capability?, …}: a signed
+              Allocation  lib.allocation  + allocation{resource, type, amount, unit, start?, end?, by?, capability?, …}: a signed
                                      entry of a resource, read by sign (`flowOf`). Negative = a requirement, what its parent needs ("-"
                                      prefix; capability = task | allocation | search | confirmation | choice | market | mail | peer | …).
                                      Positive with a capability = a supply that satisfies a requirement (`ref` names an allocation/query
@@ -176,11 +178,11 @@ row         [type, rowNode]              rowNode.data: alias{id}, description{co
                                      optional window "2026-10-13..2026-10-20" after the amount, start = now / end = forever when absent;
                                      drawn from the parent context: the bank above, the bank the requirement names, or the type's
                                      default pool = first top-level bank)
-              Money       lib:type:allocation:money  the same entry for money, told apart by sign alone: negative = a request for
+              Money       lib.money  the same entry for money, told apart by sign alone: negative = a request for
                                      payment ("-$ 50"), positive = a payment ("$ 50"), which fills the request it sits under
-              Query       lib:type:query       + query{market?}   ("?" prefix; inside a `-?` requirement, which the fos search effect fills)
-              Resource    lib:type:resource    + resource{type: calendar|account|inventory|person, unit, capacity?}   ("@calendar|@money|@inventory|@person name [capacity]")
-              Template    lib:type:template    its rows are copied under every task made from it; the template's content is the
+              Query       lib.query       + query{market?}   ("?" prefix; inside a `-?` requirement, which the fos search effect fills)
+              Resource    lib.resource    + resource{type: calendar|account|inventory|person, unit, capacity?}   ("@calendar|@money|@inventory|@person name [capacity]")
+              Template    lib.template    its rows are copied under every task made from it; the template's content is the
                                      type of those tasks ("`name" prefix; "[ ] `name` …" makes the task [Trip's content, taskNode])
 reference error  [missing, rowNode]      the row is pinned to a template this peer has not received; `missing` is a stand-in template
                                      (data.missingTemplate{cid}). Node sync reports it as the row it stands for, asks the peer
@@ -235,14 +237,14 @@ peer → device   ProvidedNode { data, children, mask?, proposals?, grants?, cap
 NodeChild       { id, address, template, held?, pinned? }
 ```
 
-`NodeChild` is a row (`template` = its type), a member entry (`template` = the
-MEMBER primitive, `id` = `fos:peer:<peer>`) or, in a member entry's shape, a
+`NodeChild` is a row (`template` = its type), a membership (`template` = the
+peer's node, `peer` = that peer, `id` = the membership row's alias) or, in a membership's shape, a
 grant or offer pinned to its node's cid (`pinned`; `template` = the CAPABILITY
 or ACCEPTS primitive). The wire change for member sync is that one optional
 field plus the content of pinned grants in the existing `templates` /
 `templateNodes` fields, and member entry shapes carrying `peerId` and
 `disabledCapabilities` in their data (`validateNodeShape(shape, at)` allows
-them at a `fos:peer:` path only, `peerId` matching the id). A peer that does not
+them at a member entry's path only, `peerId` matching the id). A peer that does not
 know member children sees MEMBER-typed children it cannot load and ignores
 them; one that predates `pinned` would treat grants as rows of an unknown type,
 so both sides should run this version (the node-exchange format already changed
@@ -279,8 +281,10 @@ way (policy, small) and everything in this device's own entries (its relay
 queues); other rows below stay unloaded until they are opened. An owner's
 device attached at Home also pulls, receive-only, the server's own member
 entry on the account root above it (`NodeSyncContext.above`,
-`accountContextAbove`: the server's offers and its published key); nothing
-else above Home is exchanged. The `fos` CLI syncs the whole tree (`nodeTreeSync`, a
+`accountContextAbove`: the server's offers and its published key). The entry
+synced is the account's own membership of the server's peer, the row of the
+account root whose left is that peer (found in its listing, `membershipSyncContext`),
+whatever its id; nothing else above Home is exchanged. The `fos` CLI syncs the whole tree (`nodeTreeSync`, a
 generator the binary drives through `nodeSyncBegin` / `nodeSyncStep` in
 `embed.ts`): the attachment first, then every child the peer's answer lists that
 is here or held by that peer. A child the peer holds only as a reference to this
@@ -326,7 +330,8 @@ ref node   data: alias{id} (+ ref{id} for a reference row)
            [TARGETPOINTER, valueCid]       the current value (content node: description, todo, rows…)
            [INSTRUCTIONPOINTER, typeCid]   optional type (the root points at ROOT)
            [PREV, previousRefCid]*         history: one per parent version, two after a merge that changed the value
-           [MEMBER, ref]* [PROPOSAL, p]* [PEER, ref]*   who is attached to the reference
+           [PROPOSAL, p]* [PEER, ref]*     who is attached to the reference
+  (memberships are rows of the value: [peer's node, what the node keeps for that peer])
 ```
 
 - **The root** of every replica and of the user group is a ref node; `commitRoot`
@@ -369,12 +374,43 @@ removed) or rejects it (kept, marked rejected; a further edit by the peer
 reopens it). The link panel shows members, version count and proposals with
 an added/changed/removed summary against the proposal's base.
 
+### Pull requests, approvals and merge rules (`node-sync.ts` `pullRequest`, `approvals.ts`, `backend/sync/approve.ts`)
+
+A peer that sees another peer's node as a peer-held row branches a row of it (caret menu → new branch) and presses
+the pull-request button beside that branch. The branch goes to the holder as that peer's submission carrying the
+branch (`NodeRequest.submission`; `pullRequest` / `sendPullRequest` sync the tree with that branch selected locally),
+beside the peer's main submission. A branch marked for merge (`setBranchMergeRequest`) is sent as its pull request on
+every tree sync. A submission named for a branch is a proposal whoever sends it, owners included: it never writes main.
+Names are labels and replacement keys only; no kind of submission is told apart by its name.
+
+**One acceptance.** Every submission to a mutable ref (a node's edits, a pull request, a value for a ref, an
+evaluation request, a visitor's input, a library update) is accepted the same way, `acceptSubmission(r, at,
+proposal, approver, now, { attester? })`: whoever accepts it approves it, and it is applied once the node's merge
+rule holds. The owner's own writes of a ref value are not submissions (`setRefValueAt`).
+
+- **The approval.** A row of the submission node itself: its left the `approve` capability, its right the approver (a
+  reference to its member entry, with its peer). A submission node never travels (peers see `ProposalView`, with its
+  approvals), so the approvals in it were recorded by the store holding it, for approvers it authenticated. When a peer
+  attests one (the fos server's `approve` handler, for the members of the accounts it serves; `decide` events pass it
+  as `DispatchOptions.attester`), the approval also has a row whose left is the attester's published key row and
+  whose right is its ed25519 signature over `['fos-approve/2', approver, content]` (`approvalPayload`), so anyone can
+  check it (`verifyApproval`). Approvals belong to the submission: a new content is a new submission. Unchecking
+  withdraws one (`withdrawApproval`).
+- **The merge rule.** The node's row of the `approveMerge` capability: a pattern of approval rows, one per required
+  approver (`setMergeRule`, `mergeRule`). Without one, the default: one approval by any peer that may change the node
+  directly, the owner or a member that may edit there, other than the proposer (`defaultApprovers`,
+  `missingApprovals`).
+- **The merge.** When the rule holds, the submission is applied (`applyProposalAt`); otherwise the result says who is
+  still missing. The proposer's next sync of its pull request receives the approvals made so far.
+
+Still to do: relaying a pull request to an offline holder.
+
 ## Requirements, resource banks, queries and the market
 
 **Requirements** (`-` prefix, under a task) are what the task needs before it
 can be completed. `-` is a modifier: what follows it names the child row that
 fills the requirement (a requirement is a negative allocation entry; money is
-its own row type, `lib:type:allocation:money`, a negative money row a request
+its own row type, `lib.money`, a negative money row a request
 for payment and a positive one a payment). `-[ ] text` needs a task inside it to be done;
 `-$ 50 text` (or `-@account 50`, `-@calendar 1h`, `-@inventory 2 widgets`)
 needs an allocation of that resource and amount inside it; `-? text` needs a
@@ -399,7 +435,7 @@ children. Each resource type has a marker: `$` money, `:` time, `#` things,
 `-ff`, `-at` for the matching requirements; `-at Eiffel Tower` needs a
 location allocation at that place, by name or by a device's position). A
 place at a time is not its own type: it is the product of a location row and
-a time row in one node (the library's "Meet up" template). Fos points are the account's token balance
+a time row in one node. Fos points are the account's token balance
 (`GET /tokens/balance`, shown on the fos row); an `ff` allocation with no
 `@points` bank above draws from that balance (`resource: 'fos:points'`). A
 `-ff N` requirement under a task is a **payout**: when the task runs, the fos
@@ -474,7 +510,7 @@ standing for what it shares (Home in Home's store, else its root); it can be
 moved or linked anywhere, and so can its nodes. What crosses a link is still
 only what those grants allow, through node exchange on the store's files: the
 reader loads the other store's replica and exchanges nodes with it (the app's
-peer provider for `local` peers, `App.localStoreProvider` with the `local_store`
+transport for that store's peer, `App.localStoreTransport` with the `local_store`
 command; `browseStore`, `fos peers ls <name>`), never reading its graph
 directly. Edits to a node opened from another store go back to it like edits to
 any peer's node (`meta.heldNodes`, keyed by the row's alias so moves keep them;
@@ -485,22 +521,23 @@ is (`.fos/stores.json`, never in the graph; `desktop/src-tauri/src/stores.rs`).
 `fos peers` lists the links.
 
 **Row types.** What every row is made from lives in the standard library's
-"Row types" group (`lib:types`): one template row per type (`lib:type:task`,
-`lib:type:note`, `lib:type:allocation:money`, ...) whose content is the row type a row edge pins. A row
+fields: one row per type (`lib.task`,
+`lib.note`, `lib.money`, ...) whose content is the row type a row edge pins. A row
 is told apart by that left node alone (`rowTypeOf`, `isRowOfType`, any pinned
 version, by graph identity); there is no row kind and no `builtin:` behavior
 marker. Data from builds before data version 0.0.1 (which had such markers)
 is not readable and is not migrated (`docs/cid-versioning.md`). New rows
-are made from the nearest library row (`fos:library`) above them that has the
+are made from the nearest library ref above them that has the
 type (`rowTypeAt`; a library seeded before a type existed falls back to the
-build's definition); with none, making a row is an error. The library is a
-row in two places. The **device root ships one**, filled from the client's
-build (`ensureLibraryRow`, `ensureDeviceLibrary`); it is local to that device:
-node exchange of a root leaves it out on both sides (`isShippedLibrary`).
-**People who contribute link the
-shared library into Home** (`ensureLibraryLink`, "Contribute to the standard
-library" on the shipped library row) with the fos server as its peer, and
-under Home it overrides the shipped one. A changed row type is a new version:
+build's definition); with none, making a row is an error. A library ref is a
+ref whose value is a library, the namespace that defines the Library type
+(`isLibraryRef`, `libraryRowOf`): it is found by what it holds, not by a name.
+The **device root has one**, a row of the Library type filled from the
+client's build (`ensureLibraryRow`, `ensureDeviceLibrary`); it is local to that
+device: node exchange of a root leaves it out on both sides
+(`isShippedLibrary`). A library shared across accounts is an ordinary ref
+someone publishes to its members; a member's Home references it, and once its
+content is there it overrides the device root's under Home (nearest ancestor). A changed row type is a new version:
 new rows are made from it, rows made before keep the version they pin. The
 library's `version` is the data version (`FOS_DATA_VERSION`), the one its cids
 carry.
@@ -512,7 +549,7 @@ reference error and asks for it.
 **What a type accepts** (`shared/sync/patterns.ts`). Every type says which rows
 it accepts as children with **pattern rows** of its own, made from the Pattern
 type (patterns as types, `docs/language-design.md` §2.1). A pattern names a row
-type (`pattern.type`, e.g. `lib:type:home`) and optionally the versions of it
+type (`pattern.type`, e.g. `lib.home`) and optionally the versions of it
 that match (`pattern.versions`, pinned cids; none = any version); `pattern.any`
 is the wildcard. Without the wildcard a type accepts what its patterns match;
 with it, everything except what they match. A child is matched by its row type
@@ -671,7 +708,7 @@ A voice transcript, a long paste or a texted message is organized into one
 node as an effect, not through a route of its own. The client places an
 `organize` requirement in the target (`requestOrganize`: identity
 `fos:organize:…`, so it is never part of an outline; text = what the capture
-is, e.g. "Voice note"; its `lib:type:note` row = the captured text) and
+is, e.g. "Voice note"; its `lib.note` row = the captured text) and
 sends `complete` on it. The server's `organize` handler refuses a non-paying
 account over the voice budget before the evaluation opens, builds the
 outline from the account's own store (`captureOutline`: the target's
@@ -801,7 +838,7 @@ and local agents are one device:
 
 ```
 fos                      GUI for your account   (context ~, state in ~/.fos)
-fos <dir>                GUI for a project      (nearest fos.config.toml, state in <dir>/.fos)
+fos <dir>                GUI for a project      (nearest fos.config.toml, else a new store here; state in <dir>/.fos)
 fos [dir] run            sync, print the tree, then serve local devices/agents
 fos [dir] repl           interactive shell (ls, add, done, cd, mv, sync, approve, …)
 fos [dir] ls | add "…" | done <id> | open <id> | status | sync | approve <id> | reject <id>
@@ -858,7 +895,10 @@ from = ["edit"]
 
 `fos <dir>` (or any subdirectory) finds the config by walking up and keeps
 local state in `<dir>/.fos/` (ignored): `device.json` (this directory as one
-device), `session.json` (the credential) and `replicas/<branch>.json`.
+device), `session.json` (the credential) and `replicas/<branch>.json`. A directory
+inside no configured project becomes a store of its own on first use
+(`Project::ensure_store`: it writes `fos.config.toml`, attached to the server Home
+uses, then `.fos/` and its device); it never falls back to Home's state.
 
 **Git branches are proposed values.** The current branch is read from
 `.git/HEAD`; each branch has its own replica and is reported with the sync, so
@@ -877,7 +917,7 @@ grammar") as the directory's owner, for local agents; `/status`; and
 
 ## Attachment and presence
 
-A device's `[PEER, ref]` edge (and its `[MEMBER, ref]` entry) persists until
+A device's `[PEER, ref]` edge (and its membership row) persists until
 someone removes it deliberately: the owner through the device's menu on the
 node, or the device itself (*Detach this device* in the ☰ menu, which calls
 `DELETE /user/data/peer-sync/attachment`). Signing out keeps the attachment.
@@ -897,7 +937,7 @@ and a dismissable **Connect** modal with three ways in:
 1. **Sign in** with username and password → a user session; the device attaches
    where the account says.
 2. **Connection token / QR code** (`backend/sync/peerInvites.ts`). The inviting
-   user picks a node (root or any task) and chooses *Invite a device here*:
+   user adds an `@{invite}` peer row to a node (root or any task) and completes it:
    the server creates a token (stored hashed, 15 min) tied to that scope and
    the app shows it as text and QR. The connecting device claims it
    (`POST /peer/connect`), the inviting user is notified over the WebSocket
@@ -955,21 +995,15 @@ nodes and peers keyed by alias ids.
 
 Sync itself needs no schema change; nodes land in `FosNodeModel` like any other. Invites use the `PeerInviteModel` table.
 
-## The standard library (`shared/sync/library.ts`, `backend/sync/library.ts`)
+## The standard library (`shared/sync/library.ts`)
 
-One node every account reads and can propose changes to, owned by a system
-account on the server (`FOS_LIBRARY_OWNER`, default `fos-library`; created at
-startup by `backend/library.ts`). At startup `ensureStandardLibrary` makes sure
-the account's Home holds the `fos:library` row "Standard library", shares it
-with the `users` audience granting read, edit and rank, gives it a
-**merge policy** (`fos:merge-policy`, default two approvals) and seeds the
-standard templates (`STANDARD_LIBRARY`: Invoice, Group decision,
-Paid task, Contact form, Research note; `fos:library` records the seed version so
-later versions add only what is missing and rows the group removed stay removed).
-The registry then carries the address. Accounts do not get the library
-linked: devices ship it, and people who contribute link this node into their
-Home (a reference row `fos:library` with the shared address as
-`fos:shared-link`).
+The standard library is a mutable ref like any other: every device root has one
+(above), and a group shares one the way it shares any node. There is no system
+account and no server-owned copy. It changes like any ref's value, by a
+submission being accepted (`acceptSubmission`) under the ref's merge rule: a
+later build's library is the fos peer's submission to the device's library ref
+(`ensureDeviceLibrary`, `submitLibrary`); a member's change to a shared library
+is that member's submission on the owner's node.
 
 **Audiences are groups.** `memberFor` (graph.ts) resolves a peer's member entry
 to its own, else to `audience:users` for any `user:*` peer, else to
@@ -977,44 +1011,26 @@ to its own, else to `audience:users` for any `user:*` peer, else to
 `nodeAuthorityAt`, `allowedToEdit`, the provider) goes through it. Sharing a
 node with an audience therefore makes it a group nobody has to join one by one;
 an explicit member entry still wins, so a single account can be restricted.
-`participants` lists participation records found on the node, not only
-explicit members.
 
-**Offline.** The web app opens the reference as a live projection
-(`openSharedNode`) on the first online sync and pulls the whole tree
-(`materializeSharedTree`), so `findTemplateByName` finds the library's templates
-in the local replica and `` [ ] `Invoice` `` instantiates them offline;
-`syncSharedNodes` keeps the copy current and pushes local edits as the member's
-proposal on the owner's node.
-
-**Governance.** Members approve proposals in the shared view (the row's
-"Updates" link); after each submission the server applies the node's merge
-policy (`applyMergePolicy`): a proposal with at least that many approvals at the
-current revision is merged as the owner. Votes are tied to the revision, so the
-remaining proposals wait for fresh approvals after a merge. Without a policy the
-owner decides by hand, as on any shared node; the policy value is itself part
-of the node, so the group can propose changing it.
+**Offline.** When a shared node the web app opens turns out to be a library, it
+pulls the whole tree (`openSharedNode` → `materializeSharedTree`, and
+`syncSharedNodes` keeps it current), so `findTemplateByName` finds its templates
+in the local replica and `` [ ] `Invoice` `` instantiates them offline.
 
 **In the build.** Clients carry the library in their bundle so a device that
-never goes online still has its templates: `fos library export [--out file]`
-(the `fos` CLI, signed in as you) pulls the shared node through the account
-node by node and the embedded core turns it into rows
-(`exportProvidedLibrary`); `web/scripts/pull-library.mjs` runs it before `npm
-run build` when the CLI is on PATH (`FOS_BIN` overrides, `FOS_LIBRARY_PULL=0`
-skips) and otherwise keeps the committed `web/src/library.json`. The device
-root ships that copy as its library row (`ensureDeviceLibrary`, falling back to
-the in-code `STANDARD_LIBRARY` when the file is empty). The export also
-records the library's address (owner and path, from
-`peer-sync/locate`), which the "Contribute" action links into Home. Without a
-library linked in Home, `fos library export` finds it by the library account
-(`--owner`, default `fos-library`).
+never goes online still has its templates: the build compiles the checked-in
+`.fos/library.json` graph (`scripts/compile-library.cjs`), and `fos . library
+export [--out file]` writes the value of the library ref the store sees (the one
+referenced in Home once it is there, else the device root's) back as that
+source.
 
-**Manual fallbacks.** The library's "Manual handlers" group (`lib:manual`)
+**Manual fallbacks.** The library's "Manual handlers" group (`lib.manual`)
 carries one requirement row per kind of requirement, each a fallback the app
 offers on any unsatisfied requirement of that kind (`manualHandlersFor`,
 `App.applyManualHandler`): "Paid outside Fos", "Sent it myself", "Opened the
 issue by hand", "Enter the location", "Use this device's location"
-(`lib:device:*` rows are device handlers), and so on. Clicking one records
+(a row naming a native implementation, a primitive the device runs, is a device
+handler), and so on. Clicking one records
 that the person did it by hand: allocations get a receipt row inside the
 requirement (its resource is the requirement itself) plus the supply pointing
 at it (a money request gets the payment row alone), places come from the typed
@@ -1030,15 +1046,16 @@ The durable queue for a device that is offline is a standard-library handler,
 not a server feature: any peer can run it, and the fos server is one peer that
 does. It is three library row types (`.fos/library.json`, Row types) and a
 template, recognised only by the row edge's left node (any pinned version of
-the type, by its identity `lib:type:…`; no flags or row kinds):
+the type, by its identity `lib.<type>`; no flags or row kinds):
 
-* **Message** (`lib:type:relay-message`, a `peer` scalar form, open): a row a
+* **Message** (`lib.relayMessage`, a `peer` scalar form, open): a row a
   peer leaves at a relay node. Its value is the addressee (a peer id), its child
   rows are what it carries (a task for the desktop's agent, a note, …).
-* **Queue** (`lib:type:relay-queue`): the row `relay:queue` under a recipient's
-  member entry (`fos:peer:<id>`) on the node where that peer is a member. That
-  subtree is the recipient's queue.
-* **Acknowledgement** (`lib:type:relay-ack`, a `text` scalar): the id of a
+* **Queue** (`lib.relayQueue`): the row of that type under a recipient's
+  member entry on the node where that peer is a member (found by its type; its
+  id, `RELAY_QUEUE_ID`, is a content address). That subtree is the recipient's
+  queue.
+* **Acknowledgement** (`lib.relayAck`, a `text` scalar): the id of a
   message the recipient took.
 * **Relay** (`lib:relay`, a template): what a relay node accepts (pattern rows
   for messages and acknowledgements). A device that relays publishes it as its
@@ -1093,10 +1110,10 @@ entry until the desktop connects.
 ## Users (`shared/sync/users.ts`, `backend/sync/verify.ts`)
 
 `@name` in a row is never stored as text. It is shorthand for a **user
-object**: a row of the standard library type `lib:type:user` (graph data in
+object**: a row of the standard library type `lib.user` (graph data in
 `.fos/library.json`, read through its form, `formRecord`) with the fields
 `account` (the stable account id), `username`, `name` (display name),
-`publicKey` and `verification` (`lib:type:attestation`: `by`, the verifying
+`publicKey` and `verification` (`lib.attestation`: `by`, the verifying
 peer; `method`; `issuedAt`; `attestation`, the signature). A row that names a
 user (`-@bob`, `@bob 2h`, `-ff 5 thanks @carol`, `$ 20 @bob`) binds it as its
 `user` field: a ref, typed by the user type, to the user object node
@@ -1109,7 +1126,7 @@ object travels with the row through node sync like any form field.
 **Verification.** The account server is the verifier today, and verifying
 is an effect like any other (no user or key route). Its `verify` handler
 (`backend/sync/verify.ts`) fills a `verify` requirement: a row whose text
-names the user (`@bob`; `requestVerification` puts it under `fos:users` as
+names the user (`@bob`; `requestVerification` puts it under the People row (`lib.people`) as
 `fos:verify:bob`) completed through a `complete` event comes back with the
 attested object bound as its `user` field (`verifiedAt`) and the supply
 `{capability: 'verify', by: 'fos'}`; an unknown name is refused before the
@@ -1122,15 +1139,15 @@ derived from `JWT_SECRET`.
 verify handler) puts it in the registry's `hostOffers().keys`, and
 `ensureHomeContext(…, { keys })` (run whenever the server ensures the account
 context, e.g. on every node exchange) writes it onto the fos member entry of
-the account root (`fos:peer:fos`, the server's own place there, beside its
-offers) as a row of the user type: `fos:key:fos` with account and username
+the account root (the row whose left is the `fos` peer, the server's own place there, beside its
+offers) as a row of the user type: a key row with account and username
 `fos` and `publicKey` the raw key (`publishPeerKey`; unchanged keys write
-nothing, and a key row an older server left in Home's `fos:users` is removed).
+nothing, and a key row an older server left in Home's People row (`lib.people`) is removed).
 Member entries travel by node exchange, and an owner's device attached at Home
 pulls that entry above its attachment (`accountContextAbove`), so the key
 arrives on the device's own root fos entry (`publishedKey`, `publishedKeys`
-read the root's member entries: a user-type row named `fos:key:<peer>` under
-`fos:peer:<peer>`); no `@fos` binds it. The device's own verify handler checks an attestation
+read the root's member entries: a user-type row whose username is the entry's
+peer, on that peer's member entry); no `@fos` binds it. The device's own verify handler checks an attestation
 whose `by` is a peer with a published key against that key:
 `verifyPublished(replica, user, check)` with the crypto injected (node:crypto
 in tests), and in the app the `fos` entry of `App.verifiers`
@@ -1149,7 +1166,7 @@ proves possession of the key, not the account.
 username only). Online with a fos peer that offers `verify`, the app runs a
 verify requirement for that name on the server (`App.resolveUser` →
 `runOnServer`: sync, `complete`, sync), checks the result with its verify
-handler, keeps it in Home under `fos:users` (`cacheUser`, one user row
+handler, keeps it in Home under the People row (`lib.people`) (`cacheUser`, one user row
 each), rebinds every row that named that username (`rebindUsers`) and removes
 the request; later rows bind the cached object directly (`knownUser`).
 Offline rows keep the unverified object until the next edit online.
@@ -1213,7 +1230,8 @@ implemented.
 to the linked root. Errors remain in the local view and stale responses are discarded.
 
 A desktop window opened on a project (`fos <dir>`, which keeps its state in
-`<dir>/.fos/`) lists that directory at the project's root node without linking it
+`<dir>/.fos/`, creating the store when the directory has none) lists that directory
+at the project's root node without a per-node binding
 (`linkedDirectory` in `web/src/filesystem.ts`: a "Link with directory" binding at the
 node, else a `local-repository` argument at or above it, else the project directory
 at the root). The home context (`fos` with no directory) does not list `~`. Outside
@@ -1221,7 +1239,7 @@ the desktop shell (web, and mobile, which has no project context) nothing is lis
 
 **File references.** A file row's **Reference** action (or **Reference this file** in
 an open file's workspace) adds a row of the standard-library type
-`lib:type:file-reference` (`.fos/library.json`) to the hosting graph node: the row
+`lib.fileReference` (`.fos/library.json`) to the hosting graph node: the row
 edge's left node is that type, and its form fields hold `path` (`/`-separated,
 relative to the linked directory), `sha256` and `size` as computed by the desktop
 (`hash_node_file`, `desktop/src-tauri/src/files.rs`: streamed in 64 KB blocks,
@@ -1409,10 +1427,10 @@ that audience.
 (`sharedProjection`, `shared/sync/sharing.ts`) carries each row's `type`, the id
 of the library row type its left node is (`rowTypeOfEdge`; every pinned version
 of a library type shares that id), and nothing else to tell rows apart
-(`shared/sync/published-types.ts`). A note (`lib:type:note`) carries its whole
+(`shared/sync/published-types.ts`). A note (`lib.note`) carries its whole
 markdown `body` (up to `SHARED_BODY_LIMIT`, 100,000 characters, and
 `SHARED_TOTAL_BODY`, 1,000,000 per projection; a cut body says `truncated`) and a
-short `title` (`markdownTitle`). A scalar field (`lib:type:text|number|time|peer`)
+short `title` (`markdownTitle`). A scalar field (`lib.text|number|time|peer`)
 carries its name as `title` and its value as `body`; the field a row presents as
 its title (a note's body, per its type's `form.title`) is not repeated, and an
 empty one is declared as an input, rendered as a control of that field's type.
@@ -1433,9 +1451,11 @@ diagrams; markdown goes through marked + DOMPurify everywhere.
 when signed in. On the shared original (not a template execution) their text
 answers are candidate values in the owner's node (`proposeVisitorValues`): a
 missing binding gets that visitor's binding proposal on its ref, empty fields one
-node proposal named `fos:visitor-submission` per visitor (a resubmission replaces
-it). The owner accepts or rejects them like any submission; they are not offered
-to other visitors to vote on and never merge by a merge policy.
+node proposal per visitor (a resubmission replaces it). The owner accepts or
+rejects them like any submission; they are not offered to other visitors to vote
+on. A visitor's record of taking part (its answers, ranking and name) is the
+sharing handler's result on its member entry, and a signed-in guest's copy the
+result on its link row to the node.
 
 **Embedding.** `web/src/embed.ts` builds to `dist/embed.js` (a second Vite build,
 `web/vite.embed.config.ts`, IIFE, about 80 kB) and is served by Cloudflare Pages
@@ -1453,7 +1473,7 @@ without credentials; every other route keeps the account origins list. The embed
 shows math and diagram fences as source. The public audience's row offers "Copy
 embed".
 
-Not yet: a payment form (money requests are rows of `lib:type:allocation:money`, so
+Not yet: a payment form (money requests are rows of `lib.money`, so
 a page can render them by type; the visitor-pays path through Stripe Checkout is
 not wired); messages to online visitors (the seam: a visitor is
 already a member peer `visitor:<uuid>` with a receipt; a delivery channel keyed by
@@ -1497,13 +1517,15 @@ survey answer can pay out fos points or run any other effect the owner configure
 **Choices are inputs.** A published `choice` requirement is a choice input each
 visitor answers (their answer is their participation record); deciding it from
 the answers is a handler's job, composed in the standard library, not a built-in
-poll. Approvals and rankings of pending proposals are input the owner decides
-with (or a merge policy, for the standard library); the tally never merges a
-proposal by itself.
+poll. A visitor's approval of a pending proposal is an approval like any member's
+(an approval row of the submission, attested by the server); it merges the
+proposal only when the node's merge rule holds, and visitors are not approvers
+under the default rule. Rankings are participation data. The shared projection's
+proposal ids do not change as approvals arrive (`sharedProposalId`).
 
 **Evaluation requests.** A peer that may edit but does not own the node cannot run
-effects. Its `complete` becomes a proposal on the node named `evaluate <path>`,
-carrying `fos:evaluation-request`, and is accepted only where some peer in that
+effects. Its `complete` becomes its submission on the node, whose content's execute
+row carries the request (`{ id, peer, expected, time }`, `submittedRequest`), and is accepted only where some peer in that
 context offers the `request` capability (a device does when it has configured an
 "on request" trigger). The owner's `request` trigger evaluates it automatically, or
 the owner reviews it by hand. On the requesting side, `requestContinuation` sets up a
@@ -1541,6 +1563,40 @@ Ordinary published nodes also expose interactions through their configured peers
 unlike a visitor's private template instance, executing effects on the shared
 original requires explicit edit permissions.
 
+
+## Patterns, solve and fetch (`shared/sync/pattern-bindings.ts`, `unify.ts`)
+
+A pattern is an ordinary node whose rows have mutable refs (placeholders) on the
+right. Using it with a right node, the row `[pattern, node]` (`usePatternAt`; in
+the UI, Change template → *Use as pattern*), submits the node's values to the
+pattern's refs position by position: the i-th row of the node goes to the ref on
+the right of the pattern's i-th row, checked against that row's left; a nested
+pattern takes the nested rows. Bookkeeping and placement rules (a template's
+`lib.pattern` "accepts" rows) are not positions. Submissions are value
+submissions labelled per source (by the source's path), recorded on the refs of the use
+site's left node, so the shared pattern is unchanged and each use is its own
+scope. Viewing the node lists each ref with its value and its submitted options;
+choosing one binds it (`choosePatternBindingAt`) and the others stay options.
+
+`unify` is `matchesGraph` that binds: a placeholder on the pattern side binds to
+the value it meets, every occurrence of the same placeholder must meet the same
+value, and a row's left is a constraint (the same instruction, a matching one, or
+one the actual value satisfies). `-solve` is a device primitive: the solve row's
+rows (minus its supplies and `fos:` records) are the pattern, the rows under its
+parent are the candidates, and each solution is submitted to the placeholders as
+an option (`solveAt`); nothing is bound until one is chosen. Named-source options
+stay choosable after another is bound.
+
+`-fetch [METHOD] <url>` is the other new device primitive: the device makes the
+request (natively in the desktop shell via the `fetch_url` command, so browser CORS
+does not apply; `fetch` in the browser) and submits the response body to the row's
+`response` ref. Both are declared in `web/src/device-handlers.ts` with `opensRefs`:
+their handler submits to the step's open refs, so evaluation does not require those
+refs to be bound first or count them as instructions. The library declares their
+capability patterns (`lib:capability-pattern:fetch|solve`). Next: the inverse of
+fetch, a positive (supplied) `fetch` that accepts requests instead of sending them,
+each one submitted to its `request` ref, as allocations are the inverse of
+requirements.
 
 ## Structural row patterns
 

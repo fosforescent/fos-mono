@@ -108,11 +108,6 @@ pub fn attachment(session: &Session, peer_id: &str) -> Result<Value, String> {
 }
 
 /// Approve or reject a submission: a `decide` event of the shared grammar at the node (`scope`).
-/// Where a node another account shared with this user lives there (`GET /user/data/peer-sync/locate`).
-pub fn locate_shared(session: &Session, owner: &str, alias_id: &str) -> Result<Value, String> {
-    get(&session.base_url, &format!("/user/data/peer-sync/locate?owner={}&id={}", urlencoding(owner), urlencoding(alias_id)), Some(&session.jwt))
-}
-
 /// One node exchange with the account server (node-provider protocol): this account's node, or with `owner` one of
 /// another account's shared tree, served as this user.
 pub fn provide_node(session: &Session, request: &Value, owner: Option<&str>) -> Result<Value, String> {
@@ -121,9 +116,6 @@ pub fn provide_node(session: &Session, request: &Value, owner: Option<&str>) -> 
     post(&session.base_url, "/user/data/peer-sync/provide-node", &body, Some(&session.jwt))
 }
 
-fn urlencoding(value: &str) -> String {
-    value.bytes().map(|b| match b { b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (b as char).to_string(), _ => format!("%{:02X}", b) }).collect()
-}
 
 pub fn decide_proposal(session: &Session, scope: &Value, proposal_id: &str, decision: &str) -> Result<Value, String> {
     post(&session.base_url, "/user/data/events", &json!({ "scope": scope, "event": { "kind": "decide", "path": [], "proposalId": proposal_id, "decision": decision } }), Some(&session.jwt))

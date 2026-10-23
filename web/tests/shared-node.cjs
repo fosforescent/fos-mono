@@ -5,8 +5,8 @@ const { buildSync } = require('esbuild')
 const { mkdtempSync, rmSync } = require('node:fs')
 const path = require('node:path')
 const { JSDOM } = require('jsdom')
-const PLAIN_TYPE = 'lib:type:plain'
-const REF_TYPE = 'lib:type:ref'
+const PLAIN_TYPE = 'plain'
+const REF_TYPE = 'ref'
 const dir = mkdtempSync(path.join(require('node:os').tmpdir(), 'fos-shared-node-'))
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'Node', 'Option', 'navigator', 'localStorage', 'sessionStorage', 'location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
@@ -77,7 +77,7 @@ async function main() {
   app.set({ replica: c.renameTask(app.state.replica, at, 'flights', 'Book flights early', 50) })
   await app.syncSharedNodes(false)
   const trip = c.view(alice, [HOME, 'trip'])
-  assert.deepEqual(trip.proposals.map(p => [p.peerId, p.name, p.status]), [['user:bob', 'node-sync', 'open']], 'the edit is a proposal on the owner\'s node')
+  assert.deepEqual(trip.proposals.map(p => [p.peerId, p.name, p.status]), [['user:bob', '', 'open']], 'the edit is a proposal on the owner\'s node')
   assert.equal(c.view(alice, [HOME, 'trip', 'flights']).name, 'Book flights', 'main content is untouched until alice decides')
 
   // Run: alice's host evaluates the node for bob (execute); the request names her and the node's path in her account

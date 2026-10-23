@@ -5,7 +5,7 @@ import { acceptSubmissionRows, exchangeNode, nodeSyncKey } from './node-sync'
 import { syncWith } from './test-helpers'
 import { dispatchEvent, parseEvent } from './events'
 import { NOTE_TYPE, PLAIN_TYPE } from './published-types'
-import { ORGANIZE_PEER, ORGANIZE_REQUEST_PREFIX, applyOrganizePlan, proposeOrganizePlan, captureOutline, organizePlanChanges, organizeRequestAt, outlineText, parseOrganizePlan, parseOutline, requestOrganize, type OrganizePlan } from './organize'
+import { ORGANIZE_PEER, applyOrganizePlan, proposeOrganizePlan, captureOutline, organizePlanChanges, organizeRequestAt, outlineText, parseOrganizePlan, parseOutline, requestOrganize, type OrganizePlan } from './organize'
 
 function project(): Replica {
   let r = ensureHomeContext(createReplica('user:alice'), 1)
@@ -45,7 +45,7 @@ test('plans are validated: unknown parents fall back to the target, refs are uni
     { ref: 'n5', text: '   ' },
     'junk',
     { ref: 'n6', parent: 'n2', text: 'Line one\nline two' },
-    { ref: 'n7', parent: 'n2', type: 'lib:type:task', text: 'a type a plan may not name' },
+    { ref: 'n7', parent: 'n2', type: 'task', text: 'a type a plan may not name' },
     { ref: 'n8', parent: 'n2', type: NOTE_TYPE, text: 'named note' },
   ] }) + '\n```', ['garden', 'tomatoes', 'trip'])
   expect(plan.title).toBe('Garden thoughts')
@@ -127,7 +127,7 @@ test('the same plan as one submission of the event grammar: added rows take ids 
   expect(() => parseEvent({ kind: 'submit', expected: 'x', changes: [{ path: ['a'], operation: 'rename', text: 't', id: 'x' }] })).toThrow(/Only added rows/)
   expect(() => parseEvent({ kind: 'submit', expected: 'x', changes: [{ path: [], operation: 'add_row', text: 't' }] })).toThrow(/row type/)
   expect(() => parseEvent({ kind: 'submit', expected: 'x', changes: [{ path: [], operation: 'add_plain', type: NOTE_TYPE, text: 't' }] })).toThrow(/row type/)
-  expect(() => dispatchEvent(r, parseEvent({ kind: 'submit', expected: (dispatchEvent(r, { kind: 'read', path: [] }, principal, 10).result as { revision: string }).revision, changes: [{ path: [], operation: 'add_row', type: 'lib:type:nonexistent', text: 't' }] }), principal, 11)).toThrow(/No standard library/)
+  expect(() => dispatchEvent(r, parseEvent({ kind: 'submit', expected: (dispatchEvent(r, { kind: 'read', path: [] }, principal, 10).result as { revision: string }).revision, changes: [{ path: [], operation: 'add_row', type: 'nonexistent', text: 't' }] }), principal, 11)).toThrow(/No standard library/)
   const again = dispatchEvent(r, { kind: 'read', path: [] }, principal, 10).result as { revision: string }
   expect(() => dispatchEvent(r, parseEvent({ kind: 'submit', expected: again.revision, changes: [{ path: [], operation: 'add_plain', text: 'a', id: 'garden' }] }), principal, 11)).toThrow(/already exists/)
   expect(() => dispatchEvent(r, parseEvent({ kind: 'submit', expected: again.revision, changes: [{ path: [], operation: 'add_plain', text: 'a', id: 'q1' }, { path: ['q1'], operation: 'rename', text: 'b' }] }), principal, 11)).toThrow(/only take further rows/)
@@ -146,7 +146,7 @@ test('rows added through the grammar without ids behave as before', () => {
 test('an organize request is a requirement in the target holding the capture as its note, outside the outline', async () => {
   const r = project()
   const asked = requestOrganize(r, [HOME_ID, 'garden'], '  water the tomatoes  ', 'Voice note', 9, () => 'x1')
-  expect(asked.path).toEqual([HOME_ID, 'garden', `${ORGANIZE_REQUEST_PREFIX}x1`])
+  expect(asked.path).toEqual([HOME_ID, 'garden', 'x1'])
   const row = view(asked.replica, [HOME_ID, 'garden'])!.tasks.find(t => t.id === asked.path.at(-1))!
   expect(row.title).toBe('Voice note')
   expect(row.requirement).toMatchObject({ capability: 'organize', satisfied: false })

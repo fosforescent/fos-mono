@@ -2,11 +2,11 @@
 const { buildSync } = require('esbuild')
 const { mkdtempSync, rmSync } = require('node:fs')
 const path = require('node:path')
-const NOTE_TYPE = 'lib:type:note'
+const NOTE_TYPE = 'note'
 const dir = mkdtempSync(path.join(require('node:os').tmpdir(), 'fos-spec-test-'))
 try {
  buildSync({stdin:{contents:`export {App} from './src/app'; export {createMemoryStorage} from './src/storage'; export * from '../shared/sync/index'`,resolveDir:path.resolve(__dirname,'..')},bundle:true,platform:'node',format:'cjs',outfile:path.join(dir,'test.cjs')})
- const {App,createMemoryStorage,addSpecification,specificationRows,importSpecifications,addRow,view,queueSpecificationVerification,readNodeValue}=require(path.join(dir,'test.cjs'))
+ const {App,createMemoryStorage,addSpecification,specificationRows,importSpecifications,addRow,view,queueSpecificationVerification,verificationRequest}=require(path.join(dir,'test.cjs'))
  const app=new App({baseUrl:'http://localhost',autoLogin:null,storage:createMemoryStorage()});app.scheduleSync=()=>{}
  const root=app.state.view
  let a=addSpecification(app.state.replica,root,'Parent',1),b=addSpecification(a.replica,a.path,'Child',2)
@@ -21,7 +21,7 @@ try {
  assert.throws(()=>importSpecifications(r,root,[{...child,parent:child.id}],5),/cycle/)
  r=queueSpecificationVerification(r,root,'abc123','main',6)
  const queued=view(r,root).tasks.find(row=>row.title.startsWith('Verify specifications'))
- assert(queued);assert.equal(readNodeValue(r,[...root,queued.id],'fos:verification-request').status,'pending')
+ assert(queued);assert.equal(verificationRequest(r,[...root,queued.id]).status,'pending')
  r=queueSpecificationVerification(r,root,'abc123','main',7)
  assert.equal(view(r,root).tasks.filter(row=>row.title.startsWith('Verify specifications')).length,1)
  app.state.replica=r
