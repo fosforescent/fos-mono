@@ -266,8 +266,8 @@ export function libraryRowOf(store: FosStore, cid: string): { id: string; cid: s
   }
   return null
 }
-/** The library instance among the rows of the node `cid`, if it has one: its id there, its `lib` ref and the library it pins. */
-export function libraryInstanceOf(store: FosStore, cid: string): { id: string; cid: string; library: string } | null {
+/** The library instances among the rows of the node `cid`: each one's id there, its `lib` ref and the library it pins. */
+function libraryInstancesOf(store: FosStore, cid: string): Array<{ id: string; cid: string; library: string }> {
   const instances: Array<{ id: string; cid: string; library: string }> = []
   for (const edge of valueContent(store, cid).children) {
     const plain = plainEdge(store, edge)
@@ -275,6 +275,11 @@ export function libraryInstanceOf(store: FosStore, cid: string): { id: string; c
     const node = content(store, plain[1]), id = aliasIdOf(node)
     if (isLibraryInstance(store, node)) instances.push({ id: id ?? plain[1], cid: plain[1], library: plain[0] })
   }
+  return instances
+}
+/** The library instance among the rows of the node `cid`, if it has one: its id there, its `lib` ref and the library it pins. */
+export function libraryInstanceOf(store: FosStore, cid: string): { id: string; cid: string; library: string } | null {
+  const instances = libraryInstancesOf(store, cid)
   if (instances.length > 1) throw new Error('Ambiguous library binding in this scope.')
   const instance = instances[0] ?? null
   if (instance && !isLibraryValue(store, instance.library)) throw new Error('The library binding is unavailable.')
@@ -467,15 +472,14 @@ export function libraryTypeAt(store: FosStore, typeId: string, at: Scope = [], r
 
 /** The nearest directly declared library instance. A namespace shadows as a whole. */
 export function libraryBindingAt(store: FosStore, at: Scope = [], root: string = rootTargetCid(store)): { library: string; cid: string; id: string; path: Scope; source: FosStore } | null {
-  for (const scope of enclosingScopes(store, root, at)) {
-    const instance = libraryInstanceOf(scope.store, scope.cid)
-    if (!instance) continue
-    const fields = namesInLibrary(scope.store, instance.library)
-    if (fields.ambiguous.size) throw new Error(`Ambiguous library field ${[...fields.ambiguous][0]}.`)
-    if (scope.store !== store) importNodes(store, reachableNodes(scope.store, [instance.library, instance.cid]))
-    return { ...instance, path: scope.path, source: scope.store }
-  }
-  return null
+  const found = nearestInScope(enclosingScopes(store, root, at), scope => libraryInstancesOf(scope.store, scope.cid), 'library binding')
+  if (!found) return null
+  const { value: instance, ...scope } = found
+  if (!isLibraryValue(scope.store, instance.library)) throw new Error('The library binding is unavailable.')
+  const fields = namesInLibrary(scope.store, instance.library)
+  if (fields.ambiguous.size) throw new Error(`Ambiguous library field ${[...fields.ambiguous][0]}.`)
+  if (scope.store !== store) importNodes(store, reachableNodes(scope.store, [instance.library, instance.cid]))
+  return { ...instance, path: scope.path, source: scope.store }
 }
 
 /** Code-facing fields of the library instance at this graph position. No implicit installation or synthesized fields. */
@@ -513,9 +517,10 @@ export function copyOuterScope(source: FosStore, target: FosStore): void {
   if (outer) nestScope(target, outer)
 }
 
+export type EnclosingScope = { store: FosStore; cid: string; path: Scope }
 /** Lexical ancestors, nearest first, continuing through a nested document's device root. */
-export function enclosingScopes(store: FosStore, root: string, at: Scope): Array<{ store: FosStore; cid: string; path: Scope }> {
-  const result: Array<{ store: FosStore; cid: string; path: Scope }> = [], visited = new Set<FosStore>()
+export function enclosingScopes(store: FosStore, root: string, at: Scope): EnclosingScope[] {
+  const result: EnclosingScope[] = [], visited = new Set<FosStore>()
   while (!visited.has(store)) {
     visited.add(store)
     for (let depth = at.length; depth >= 0; depth--) {
@@ -529,6 +534,38 @@ export function enclosingScopes(store: FosStore, root: string, at: Scope): Array
   return result
 }
 
+/**
+ * What a lookup by name or kind sees from a position. `blocked`: the scope that answers holds the declaration, but it
+ * cannot be used here (unavailable, denied, cyclic); that is the answer, never a reason to look further out.
+ */
+export type ScopeLookup<T> =
+  | { status: 'ready'; scope: EnclosingScope; value: T }
+  | { status: 'ambiguous'; scope: EnclosingScope; values: T[] }
+  | { status: 'blocked'; scope: EnclosingScope }
+  | { status: 'missing' }
+/**
+ * The scope rule every lookup by name or kind follows. `find` reads one scope's direct declarations: none (`[]`)
+ * passes the lookup outward; the nearest scope that declares anything answers it, several there being ambiguous, and
+ * `null` (it declares the name but cannot provide it) blocking it. Outer scopes are never consulted once a nearer one
+ * answers. Collecting every alternative of a type (handler discovery) is not a lookup by name: it reads every visible
+ * declaration, and only the same declaration identity shadows.
+ */
+export function lookupInScope<T>(scopes: EnclosingScope[], find: (scope: EnclosingScope) => T[] | null): ScopeLookup<T> {
+  for (const scope of scopes) {
+    const values = find(scope)
+    if (values === null) return { status: 'blocked', scope }
+    if (values.length === 1) return { status: 'ready', scope, value: values[0]! }
+    if (values.length > 1) return { status: 'ambiguous', scope, values }
+  }
+  return { status: 'missing' }
+}
+/** `lookupInScope` for code that needs one declaration: ambiguous and blocked declarations are errors, not absence. */
+export function nearestInScope<T>(scopes: EnclosingScope[], find: (scope: EnclosingScope) => T[] | null, what: string): (EnclosingScope & { value: T }) | null {
+  const found = lookupInScope(scopes, find)
+  if (found.status === 'ambiguous') throw new Error(`Ambiguous ${what} in this scope.`)
+  if (found.status === 'blocked') throw new Error(`The ${what} in this scope is unavailable.`)
+  return found.status === 'ready' ? { ...found.scope, value: found.value } : null
+}
 
 /**
  * The library row a device root ships is local to that device: node exchange of a root leaves it out on both sides,
@@ -1634,15 +1671,12 @@ export function requirementSatisfied(store: FosStore, requirementCid: string, ro
 export function findTemplate(store: FosStore, rootCid: string, name: string, at: Scope = []): { row: TaskView; cid: string } | null {
   const wanted = name.trim().toLowerCase()
   if (!wanted) return null
-  for (const scope of enclosingScopes(store, rootCid, at)) {
-    const matches = childRows(scope.store, scope.cid).filter(row => isRowOfType(scope.store, row.edge, TEMPLATE_TYPE) &&
-      (valueContent(scope.store, row.cid).data.description?.content ?? '').trim().toLowerCase() === wanted)
-    if (matches.length > 1) throw new Error('Ambiguous template declaration in this scope.')
-    const found = matches[0]
-    if (found) {
-      if (scope.store !== store) importNodes(store, reachableNodes(scope.store, [found.cid, found.edge[0]]))
-      return { row: rowView(store, found.cid, found.edge), cid: found.cid }
-    }
+  const local = nearestInScope(enclosingScopes(store, rootCid, at), scope => childRows(scope.store, scope.cid).filter(row => isRowOfType(scope.store, row.edge, TEMPLATE_TYPE) &&
+    (valueContent(scope.store, row.cid).data.description?.content ?? '').trim().toLowerCase() === wanted), 'template declaration')
+  if (local) {
+    const { store: source, value: found } = local
+    if (source !== store) importNodes(store, reachableNodes(source, [found.cid, found.edge[0]]))
+    return { row: rowView(store, found.cid, found.edge), cid: found.cid }
   }
   const binding = libraryBindingAt(store, at, rootCid)
   if (!binding) return null

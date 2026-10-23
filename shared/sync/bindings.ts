@@ -1,17 +1,17 @@
 /** Shared, read-only resolution for data arguments and callable values. */
 import { discoverHandlers, type HandlerEnvironment } from './handlers'
 import { resolveRequirementOutput } from './destructure'
-import { keyValueOf, splitFrontmatter } from './notes'
-import { formText, formTitle } from './forms'
+import { formText } from './forms'
 import type { FosStore } from '../dag-implementation/store'
 import {
-  isBranchChoice, selectedBranchValue, libraryTypeAt, type Capability, put, childRows, flowOf, requirementSatisfied, content, identityCid, isChoiceEdge, isRefNode, refValueCid,
-  resolveScope, valueContent, importNodes, reachableNodes, typeIdOf, isTemplateType, isLibraryRef, type Scope
+  isBranchChoice, selectedBranchValue, libraryTypeAt, type Capability, childRows, flowOf, requirementSatisfied, content, isChoiceEdge, isRefNode, refValueCid,
+  valueContent, importNodes, reachableNodes, enclosingScopes, lookupInScope, type EnclosingScope, type Scope
 } from './graph'
-import { PLAIN_TYPE, isAllocationType } from './library-types'
+import { isAllocationType } from './library-types'
 import { headCid, type Replica } from './replica'
 import { refProperties } from './refs'
-import { sameCapabilityType, isHandlerStateLeft } from './capabilities'
+import { sameCapabilityType } from './capabilities'
+import { declares } from './scoped-refs'
 import { matchesGraph } from './structural'
 import { parseRefExpression, resolveRefExpression, textRefExpressions, type RefAccess } from './ref-paths'
 
@@ -25,59 +25,39 @@ export type BindingResolution = {
   sources: string[]
   problems: string[]
 }
+/** The node's declarations as binding candidates: named ones bind by name, the others only as explicit arguments. */
 export function argumentRefs(store: FosStore, cid: string): BindingCandidate[] {
-  // Named properties and explicit ref declarations are lexical bindings. Other
-  // rows still have a right-hand argument, but do not declare an implicit name.
-  return refProperties(store, cid, 'arguments').filter(ref => {
-    const node = content(store, ref.cid)
-    if (isLibraryRef(store, node)) return false
-    // an execute row holds the evaluator's journal of this node: its state, never an argument
-    if (isHandlerStateLeft(store, ref.type)) return false
-    const pattern = ref.type && content(store, ref.type)
-    return node.data.name || valueContent(store, ref.cid).data.name || isRefNode(store, node) &&
-      !!ref.type && !isTemplateType(store, ref.type) && (!typeIdOf(store, ref.type) || !!pattern && (pattern.data.capabilityDefinition || pattern.data.form?.primitive))
-  }).map(ref => ({ cid: ref.cid, type: ref.type!, ...(content(store, ref.cid).data.name || valueContent(store, ref.cid).data.name ? { name: ref.name } : {}) }))
+  return refProperties(store, cid, 'arguments').filter(ref => !!ref.type && declares(store, ref.type, ref.cid))
+    .map(ref => ({ cid: ref.cid, type: ref.type!, ...(content(store, ref.cid).data.name || valueContent(store, ref.cid).data.name ? { name: ref.name } : {}) }))
 }
 
-/** Only explicitly passed arguments and advertised peer handlers enter the context. */
+/**
+ * The bindings visible at `at`. Each name binds to its nearest declaration (`lookupInScope`), whatever its type; a
+ * nearer name hides an outer one. Only declarations that provide a value count: an unfilled one is a hole, bound from
+ * further out. Unnamed rows are explicit arguments of their own parent, never ambient names. Handler offers join as
+ * typed alternatives, attached to the named declaration they stand in for.
+ */
 export function contextBindings(r: Replica, at: Scope, environment: BindingEnvironment = {}): BindingCandidate[] {
-  const named = new Map<string, BindingCandidate[]>()
-  for (let i = 0; i <= at.length; i++) {
-    const cid = resolveScope(r.store, headCid(r), at.slice(0, i))
-    if (!cid) continue
-    const local = new Map<string, BindingCandidate[]>()
-    // Legacy note variables are adapters into the same typed candidate set.
-    const textType = r.store.primitive.documentField.getId()
-    const addText = (name: string, text: string) => {
-      const key = `${textType}/${name}`
-      const value = put(r.store, { data: { description: { content: text } }, children: [] })
-      local.set(key, [...(local.get(key) ?? []), { cid: value, type: textType, name }])
-    }
-    const frontmatter = splitFrontmatter(formText(r.store, valueContent(r.store, cid))).frontmatter
-    for (const [name, text] of Object.entries(frontmatter)) addText(name, text)
-    const childNames = new Set<string>()
-    for (const child of childRows(r.store, cid).filter(c => c.type === PLAIN_TYPE)) {
-      // Product fields are values, not legacy "key: value" declarations.
-      if (child.value.data.scalar || child.value.data.presentation) continue
-      const kv = keyValueOf(formTitle(r.store, child.value))
-      if (!kv) continue
-      if (!childNames.has(kv.key)) { local.delete(`${textType}/${kv.key}`); childNames.add(kv.key) }
-      addText(kv.key, kv.value)
-    }
-    for (const arg of argumentRefs(r.store, cid)) {
-      // Unnamed rows are explicit arguments of their own parent, not ambient
-      // name bindings in every descendant (e.g. the linked Home document).
-      if (!arg.name) continue
-      // Unfilled local arguments are consumers, not providers.
-      if (refValueCid(r.store, content(r.store, arg.cid)) || content(r.store, arg.cid).data.ref) local.set(`${arg.type}/${arg.name}`, [...(local.get(`${arg.type}/${arg.name}`) ?? []), arg])
-    }
-    for (const [key, values] of local) named.set(key, values)
+  const scopes = enclosingScopes(r.store, headCid(r), at), provided = new Map<EnclosingScope, BindingCandidate[]>()
+  const providers = (scope: EnclosingScope): BindingCandidate[] => {
+    if (!provided.has(scope)) provided.set(scope, argumentRefs(scope.store, scope.cid).filter(arg => {
+      const node = content(scope.store, arg.cid)
+      return !!arg.name && (!!refValueCid(scope.store, node) || !!node.data.ref)
+    }))
+    return provided.get(scope)!
   }
-  const namedValues = [...named.values()].flat()
+  const names = new Set(scopes.flatMap(scope => providers(scope).map(arg => arg.name!)))
+  const namedValues = [...names].flatMap(name => {
+    const found = lookupInScope(scopes, scope => providers(scope).filter(arg => arg.name === name))
+    if (found.status !== 'ready' && found.status !== 'ambiguous') return []
+    const values = found.status === 'ready' ? [found.value] : found.values
+    if (found.scope.store !== r.store) importNodes(r.store, reachableNodes(found.scope.store, values.flatMap(value => [value.cid, value.type])))
+    return values
+  })
   return [...namedValues, ...discoverHandlers(r, at, environment).filter(o => o.enabled && o.active && !namedValues.some(value => value.cid === o.cid)).map(({ id, cid, type, refPath, refIds }) => {
     const name = refPath?.join('.') ?? content(r.store, cid).data.name?.content
     const declaration = namedValues.find(value => content(r.store, value.cid).data.alias?.id === id) ??
-      (name ? namedValues.find(value => value.name === name && sameCapabilityType(r.store, value.type, type)) : undefined)
+      (name ? namedValues.find(value => value.name === name) : undefined)
     return { cid, type, ...(name ? { name } : {}), ...(refIds ? { refIds } : {}), ...(declaration ? { alternativeOf: declaration.cid } : {}) }
   })]
 }

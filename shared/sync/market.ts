@@ -13,20 +13,18 @@ import { FosStore } from '../dag-implementation/store'
 import type { FosNodesData, FosPathElem } from '../types'
 import {
   MARKET_PEER, memberEdgesOf, commitRoot, content, findRowByAlias, identityCid, importNodes, isBookkeepingEdge, isPrevEdge, marketGrantsOf, marketMemberOf, nestScope, put,
-  isRowEdge, isRowOfType, reachableNodes, resolveScope, updateAtScope, valueContent, withMainBranchPolicy, copyRowContent, newId, type Capability, type Scope
+  isRowEdge, isRowOfType, reachableNodes, resolveScope, updateAtScope, valueContent, withMainBranchPolicy, copyRowContent, newId, enclosingScopes, nearestInScope, type Capability, type Scope
 } from './graph'
 import { addMemberAt, createReplica, headCid, removeMemberAt, type Replica } from './replica'
 
 /** What the market may do at `path` below `root`: the nearest market member on the way down, else nothing. */
 export function marketGrantsAt(store: FosStore, root: string, path: Scope): Capability[] {
   return withMainBranchPolicy(store, () => {
-    let grants: Capability[] = []
-    for (let i = 0; i <= path.length; i++) {
-      const cid = resolveScope(store, root, path.slice(0, i))
-      if (!cid) return []
-      grants = marketGrantsOf(store, cid) ?? grants
-    }
-    return grants
+    if (!resolveScope(store, root, path)) return []
+    return nearestInScope(enclosingScopes(store, root, path), scope => {
+      const grants = marketGrantsOf(scope.store, scope.cid)
+      return grants ? [grants] : []
+    }, 'market membership')?.value ?? []
   })
 }
 

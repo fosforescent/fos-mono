@@ -6,6 +6,9 @@ Record intended behavior and restrictions here. Keep implementation details in c
 
 - Resolve both sides of a row from its parent scope. Declarations inside the row are available to its children, not to the row itself. Do not introduce recursive bindings implicitly.
 - Search direct declarations in each enclosing scope, nearest first. Siblings and descendants must not contribute ambient bindings.
+- Every lookup by name or kind goes through `lookupInScope`/`nearestInScope`: the nearest scope that declares anything answers, several there are ambiguous, and an unusable declaration there blocks. Never walk paths by hand or fall through to an outer scope.
+- A nearer name hides an outer one of any type. An unfilled declaration is a hole bound from further out. Only declarations bind (`declares`); text conventions such as `key: value` titles or frontmatter never do.
+- Collecting a type's alternatives (handler discovery) reads every visible declaration; only the same declaration identity shadows, and more than one candidate is a choice.
 - Bind the library instance before selecting a field. A nearer instance shadows the whole namespace; a missing field must not fall through to an outer library or the build bundle.
 - Missing, unavailable, or ambiguous bindings must remain visible failures. Never manufacture a capability because code requested an unfamiliar name.
 - Library definitions and instances have different roles: edits change definitions; explicit upgrades change an instance's pinned version.
@@ -37,6 +40,7 @@ Record intended behavior and restrictions here. Keep implementation details in c
 - Preserve complete choice alternatives and keep branch preview content separate from authoritative policy.
 - Exchange only authorized graph content. Do not traverse remote references using cached data as a substitute for access checks.
 - Scope discovery must not bypass member grants or masks. Unavailable or disabled providers must not satisfy dependencies.
+- Hosts list a step's available executors; the evaluator selects exactly one (`selectExecutor`). Several are a choice for the owner, never resolved by ordering on any host.
 - Persist an effect's journal before dispatch. Interrupted or uncertain effects must not be retried automatically; expose recovery work.
 - Do not retain compatibility branches merely to satisfy old tests. Replace shortcut fixtures with explicit graph declarations and test the desired behavior.
 

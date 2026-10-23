@@ -174,13 +174,12 @@ async function runRequirement(deps: McpPeerDeps, replica: Replica, user: Account
       get: () => replica,
       save: async next => { replica = next; await deps.saveStore(user, next.store) },
       now: () => deps.now?.() ?? Date.now(),
-      handles: step => JSON.stringify(step.path) === JSON.stringify(scope),
-      outputs: () => [bound.returnId],
-      check: () => stillAdvertised(replica, scope, bound.peerId, bound.tool) ? [] : ['The bound MCP handler is no longer available.'],
-      effect: async () => {
+      executors: step => JSON.stringify(step.path) === JSON.stringify(scope) ? [{ effect: async () => {
         const done = await executeTool(deps, replica, bound, user.id, at, req, deps.now?.() ?? Date.now())
         replica = done.replica; text = done.text
-      }
+      } }] : [],
+      outputs: () => [bound.returnId],
+      check: () => stillAdvertised(replica, scope, bound.peerId, bound.tool) ? [] : ['The bound MCP handler is no longer available.']
     })
     return record.status === 'committed' ? { replica, text } : { error: record.error ?? 'Tool evaluation needs recovery.' }
   } catch (error) { return { error: error instanceof Error ? error.message : String(error) } }

@@ -79,7 +79,7 @@ test('nested product holes are execute inputs and may be filled without replacin
   r = executionInput(r, ['work'], { revision: headCid(r), key: field.key, value: 'Supplied' }, 'owner', 3)
   expect(resolveText(r, ['work'], '{.record.answer} {.record.sibling}').text).toBe('Supplied Keep')
   expect(executionInputs(r, ['work'])).toEqual([])
-  const completed = await evaluateNode(['work'], { get: () => r, save: next => { r = next }, now: () => 4, handles: () => false, check: () => [] })
+  const completed = await evaluateNode(['work'], { get: () => r, save: next => { r = next }, now: () => 4, executors: () => [], check: () => [] })
   expect(completed.status).toBe('committed')
 })
 
@@ -87,7 +87,7 @@ test('a nested output may remain open during execution', async () => {
   let r = addTask(createReplica(), [], 'Work', 1, 'work'), type = r.store.primitive.documentField.getId()
   const output = put(r.store, refNodeContent(r.store, { alias: { id: 'result' }, name: { content: 'Result' }, refRole: 'output' }, null, []))
   r = addRefAt(r, ['work'], 'record', put(r.store, { data: {}, children: [] }), 2, put(r.store, { data: {}, children: [[type, output]] }), 'record')
-  const completed = await evaluateNode(['work'], { get: () => r, save: next => { r = next }, now: () => 3, handles: () => false, check: () => [] })
+  const completed = await evaluateNode(['work'], { get: () => r, save: next => { r = next }, now: () => 3, executors: () => [], check: () => [] })
   expect(completed.status).toBe('committed')
   expect(compileRow(r, ['work']).right.holes.some(hole => hole.id === 'result')).toBe(true)
 })

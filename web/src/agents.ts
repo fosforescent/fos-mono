@@ -1,4 +1,4 @@
-import { localRepositoryHere } from '../../shared/sync/repository'
+import { localRepositoryAt } from '../../shared/sync/repository'
 /**
  * Coding agents on this computer (desktop): Claude Code and Codex are local peers of the device (`agent-cli:<provider>`),
  * Claude Desktop is one too (`agent-app:claude-desktop`). Their launch buttons live on the peer's own panel. A launch
@@ -16,12 +16,10 @@ export const AGENT_CLI_NAME: Record<AgentProvider, string> = { claude: 'Claude C
 export const agentPeerId = (provider: AgentProvider) => `agent-cli:${provider}`
 export const CLAUDE_DESKTOP_PEER = 'agent-app:claude-desktop'
 
+/** This device's checkout for the node at `path`: the nearest binding's, when it is this device's. */
 export function localRepository(r: Replica, path: Scope): string | null {
-  for (let depth = path.length; depth >= 0; depth--) {
-    const binding = localRepositoryHere(r, path.slice(0, depth))
-    if (binding) return binding.device === r.meta.peerId ? binding.path : null
-  }
-  return null
+  const found = localRepositoryAt(r, path)
+  return found?.repository.device === r.meta.peerId ? found.repository.path : null
 }
 /** A read-only projection of the subtree at `at` (feature verification, and the outline a prompt inlines). */
 export function agentContext(r: Replica, at: Scope) {

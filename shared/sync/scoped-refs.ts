@@ -1,7 +1,7 @@
 /** Lexically scoped declarations and their accepted submissions. No capability vocabulary. */
 import { isHandlerStateLeft } from './capabilities'
 import type { FosStore } from '../dag-implementation/store'
-import { isTemplateType, isLibraryRef, content, enclosingScopes, importNodes, reachableNodes, identityCid, isBranchChoice, isGrantEdge, isMemberEdge, isRowEdge, put, readChoice, refNodeContent, isRefNode, refValueCid, typeIdOf, type Scope } from './graph'
+import { isTemplateType, isLibraryRef, content, enclosingScopes, importNodes, reachableNodes, identityCid, isBranchChoice, isRowEdge, readChoice, isRefNode, refValueCid, typeIdOf, valueContent, type Scope } from './graph'
 import { matchesGraph } from './structural'
 import { headCid, type Replica } from './replica'
 
@@ -44,26 +44,25 @@ function refAlternatives(store: FosStore, cid: string): Array<{ cid: string }> {
 export function refDeclarations(store: FosStore, cid: string): string[] {
   return declarationRows(store, cid).map(row => row.cid)
 }
+/**
+ * Whether the row `[type, cid]` declares a binding: a named row, or a ref whose left is a pattern of its own (not a
+ * library constructor or a template, whose rows are containers). Every lookup, by name or by type, reads declarations
+ * through this one test.
+ */
+export function declares(store: FosStore, type: string, cid: string): boolean {
+  if (!store.table.has(cid)) return false
+  const node = content(store, cid)
+  // A library ref is a container: its names resolve as its fields (namesInLibrary), never as lexical bindings.
+  if (isLibraryRef(store, node)) return false
+  // a native handler's state rows (an execute row's journal, a trigger row) are no bindings
+  if (isHandlerStateLeft(store, type)) return false
+  if (node.data.name || valueContent(store, cid).data.name) return true
+  const pattern = store.table.get(type)
+  return isRefNode(store, node) && !isTemplateType(store, type) && (!typeIdOf(store, type) || !!pattern?.data.capabilityDefinition || !!pattern?.data.form?.primitive)
+}
 function declarationRows(store: FosStore, cid: string): Array<{ cid: string; type: string }> {
   if (!store.table.has(cid)) return []
-  const node = content(store, cid)
-  return node.children.flatMap(edge => {
-    if (!store.table.has(edge[1])) return []
-    const ref = content(store, edge[1])
-    const namedRow = (ref.data.name || content(store, refValueCid(store, ref) ?? edge[1]).data.name) && refValueCid(store, ref) && isRowEdge(store, edge)
-    const left = content(store, edge[0])
-    // A library ref is a container: its names resolve as names (namesInLibrary), never as lexical bindings.
-    if (isLibraryRef(store, ref)) return []
-    // a native handler's state rows (an execute row's journal, a trigger row) are no bindings
-    if (isRowEdge(store, edge) && isHandlerStateLeft(store, edge[0])) return []
-    // Linked library document rows are containers, not implicit lexical names.
-    // Explicit names and ref constructor arguments declare bindings.
-    const declaration = ref.data.name || !isTemplateType(store, edge[0]) && (!typeIdOf(store, edge[0]) || left.data.capabilityDefinition || left.data.form?.primitive)
-    const type = isRowEdge(store, edge) && (namedRow || isRefNode(store, ref) && declaration) ? edge[0] : null
-    if (!ref.data.alias || !type) return []
-    return edge[0] === type || isRowEdge(store, edge) || isMemberEdge(store, edge) ||
-      (isGrantEdge(store, edge) && edge[0] === store.primitive.acceptsNode.getId()) ? [{ cid: edge[1], type }] : []
-  })
+  return content(store, cid).children.flatMap(edge => isRowEdge(store, edge) && content(store, edge[1]).data.alias && declares(store, edge[0], edge[1]) ? [{ cid: edge[1], type: edge[0] }] : [])
 }
 
 /** Inspect a declaration recursively; siblings stay alternatives, never a synthetic merged handler. */

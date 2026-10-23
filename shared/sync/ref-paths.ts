@@ -1,6 +1,6 @@
 /** Property paths and their parenthesized spelling share one small, serializable grammar. */
 import type { FosStore } from '../dag-implementation/store'
-import { content, advertisedRows, enclosingScopes, identityCid, isBranchChoice, isLibraryInstance, isHandle, isRowEdge, isMemberEdge, memberPeerOf, isGrantEdge, refValueCid, selectedBranchValue, type Scope } from './graph'
+import { content, advertisedRows, enclosingScopes, lookupInScope, identityCid, isBranchChoice, isLibraryInstance, isHandle, isRowEdge, isMemberEdge, memberPeerOf, isGrantEdge, refValueCid, selectedBranchValue, type Scope } from './graph'
 import { fieldNode } from '../library-names'
 import { headCid, type Replica } from './replica'
 
@@ -81,11 +81,12 @@ export function resolveRefExpression(r: Replica, at: Scope, expression: string |
     const scope = scopes[0]!, location = { store: scope.store, cid: scope.cid, path: scope.path }
     return access.canRead && !access.canRead(location.store, location.cid, location.path) ? { status: 'denied', locations: [] } : { status: 'ready', locations: [location] }
   }
-  let locations: RefLocation[] = []
-  for (const scope of parsed.lexical ? scopes : scopes.slice(0, 1)) {
-    locations = properties(scope, parsed.path[0]!)
-    if (locations.length || (failure as string) === 'denied' || (failure as string) === 'cycle') break
-  }
+  // the first name is a lexical lookup (or a property of the scope `up` names): the shared scope rule decides it
+  const first = lookupInScope<RefLocation>(parsed.lexical ? scopes : scopes.slice(0, 1), scope => {
+    const found = properties(scope, parsed.path[0]!)
+    return found.length || (failure !== 'denied' && failure !== 'cycle') ? found : null
+  })
+  let locations: RefLocation[] = first.status === 'ready' ? [first.value] : first.status === 'ambiguous' ? first.values : []
   for (const name of parsed.path.slice(1)) locations = locations.flatMap(location => properties(location, name))
   return { status: locations.length === 1 ? 'ready' : locations.length > 1 ? 'ambiguous' : failure, locations }
 }

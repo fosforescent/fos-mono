@@ -2943,17 +2943,17 @@ export class App {
       const record = await evaluateNode(path, {
         get: () => { valid(); return this.state.replica },
         save: async replica => { valid(); this.set({ replica }); await this.config.storage.flush?.(); valid(); this.scheduleSync() },
-        now: () => this.now(), isPeerActive: id => this.isOnline(id), handles: step => this.deviceHandlers.executors(this.state.replica, step, this.state.replica.meta.peerId).length > 0,
-        opensRefs: step => this.deviceHandlers.executors(this.state.replica, step, this.state.replica.meta.peerId).some(executor => executor.opensRefs),
+        now: () => this.now(), isPeerActive: id => this.isOnline(id),
         check: step => localPull(step) && !this.pullPeers().some(p => p.id === step.row?.requirement?.peer) ? ['The Pull peer is not connected.'] : [],
-        effect: async (step, operation) => {
-          const executors = this.deviceHandlers.executors(this.state.replica, step, this.state.replica.meta.peerId)
-          if (executors.length !== 1) throw new Error('Choose one available device handler for this constructor.')
-          valid()
-          const result = await executors[0]!.effect!({ step, operation })
-          valid()
-          return result
-        }
+        executors: step => this.deviceHandlers.executors(this.state.replica, step, this.state.replica.meta.peerId).map(executor => ({
+          ...(executor.opensRefs ? { opensRefs: true } : {}),
+          effect: async (current, operation) => {
+            valid()
+            const result = await executor.effect!({ step: current, operation })
+            valid()
+            return result
+          }
+        }))
       })
       if (record.status !== 'committed' && record.status !== 'awaiting-review') throw new Error(record.error ?? 'Evaluation needs recovery.')
     } catch (error) { if (triggered) throw error; this.notify('error', error instanceof Error ? error.message : String(error)) }

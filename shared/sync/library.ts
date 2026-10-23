@@ -1,6 +1,6 @@
 /** Library definitions are editable values. Runtime consumers must use explicitly pinned instances. */
 import { homePath, proposeRefAt, view, type Replica } from './replica'
-import { commitRoot, content, ensureLibraryRow, importNodes, reachableNodes, enclosingScopes, libraryBindingAt, libraryTypeAt, viewNode, isLibraryDefinition, isPeerReference, libraryInstanceEdge, libraryInstanceOf, libraryRowOf, updateAtScope, put, refValueCid, resolveScope, valueContent, SERVER_MEMBER, type Scope } from './graph'
+import { commitRoot, content, ensureLibraryRow, importNodes, reachableNodes, enclosingScopes, nearestInScope, libraryBindingAt, libraryTypeAt, viewNode, isLibraryDefinition, isPeerReference, libraryInstanceEdge, libraryInstanceOf, libraryRowOf, updateAtScope, put, refValueCid, resolveScope, valueContent, SERVER_MEMBER, type Scope } from './graph'
 import type { FosNodeContent, FosNodesData } from '../types'
 import { headCid } from './replica'
 import { FOS_DATA_VERSION } from '../version'
@@ -51,17 +51,12 @@ export type ManualHandler = { id: string; label: string; capability: Requirement
  * under Home, the device root's elsewhere. Rows are made from the version its instance pins (`lib`, graph.ts).
  */
 export function libraryPath(r: Replica, at: Scope = homePath(r)): Scope | null {
-  for (const scope of enclosingScopes(r.store, headCid(r), at)) {
-    // This is the editable definition, not runtime field resolution. Never search
-    // an unrelated child document for a definition.
-    const definitions = valueContent(scope.store, scope.cid).children.flatMap(([, right]) => {
-      const node = scope.store.table.get(right)
-      return node?.data.alias && isLibraryDefinition(scope.store, node) ? [node.data.alias.id] : []
-    })
-    if (definitions.length > 1) throw new Error('Choose which library definition to edit.')
-    if (definitions.length) return scope.store === r.store ? [...scope.path, definitions[0]!] : null
-  }
-  return null
+  // This is the editable definition, not runtime field resolution; it follows the same scope rule.
+  const found = nearestInScope(enclosingScopes(r.store, headCid(r), at), scope => valueContent(scope.store, scope.cid).children.flatMap(([, right]) => {
+    const node = scope.store.table.get(right)
+    return node?.data.alias && isLibraryDefinition(scope.store, node) ? [node.data.alias.id] : []
+  }), 'library definition')
+  return found && found.store === r.store ? [...found.path, found.value] : null
 }
 
 /** Use the library defined at `definition` under the node at `at`: its instance there, pinned to the definition's current value. */

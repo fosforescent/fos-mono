@@ -24,7 +24,7 @@ import { hashContent } from '../dag-implementation/cid'
 import {
   commitRoot, content, findChild, identityCid, isMemberEdge, isPeerReference, isRowOfType, libraryTypeAt, membershipIdOf, memberPeerOf, inMemberEntry, moveChild, aliasIdOf,
   libAt, put, proposalContent, readProposals, refNodeContent, resolveScope, updateAtScope, valueContent, withMainBranchPolicy, withProposal,
-  isLibraryRef, handlerOfferId, shippedLibrary, memberEdgesOf, isRowEdge, type ProposalRecord, type Scope, type TaskView,
+  isLibraryRef, handlerOfferId, memberEdgesOf, isRowEdge, enclosingScopes, nearestInScope, type ProposalRecord, type Scope, type TaskView,
 } from './graph'
 import { constructForm } from './forms'
 import { addMemberAt, headCid, setHandlerOffersAt, view, type Replica } from './replica'
@@ -93,15 +93,17 @@ function received(store: FosStore, edge: FosPathElem): boolean {
   return true
 }
 
-/** Where `peerId` is a member at or above `at` (the nearest declaration): the path of its member entry, or null. */
+/**
+ * Where `peerId` is a member at or above `at`, read on main: the path of its nearest member entry (`nearestInScope`),
+ * or null when there is none, or the nearest is in an enclosing store rather than in `r`.
+ */
 export function memberEntryPath(r: Replica, at: Scope, peerId: string): Scope | null {
   return withMainBranchPolicy(r.store, () => {
-    for (let i = at.length; i >= 0; i--) {
-      const cid = resolveScope(r.store, headCid(r), at.slice(0, i))
-      const id = cid && membershipIdOf(r.store, cid, peerId)
-      if (id) return [...at.slice(0, i), id]
-    }
-    return null
+    const found = nearestInScope(enclosingScopes(r.store, headCid(r), at), scope => {
+      const id = membershipIdOf(scope.store, scope.cid, peerId)
+      return id ? [id] : []
+    }, `membership of ${peerId}`)
+    return found && found.store === r.store ? [...found.path, found.value] : null
   })
 }
 
@@ -227,10 +229,10 @@ export function relayAfterSubmission(r: Replica, path: Scope, handlerPeer: strin
   return r
 }
 
-/** The library's Relay template as `at` sees it: the nearest library's, else this build's. */
+/** The Relay template of the library bound at `at`. */
 export function relayTemplate(r: Replica, at: Scope = []): string {
   const template = libraryTypeAt(r.store, RELAY_TEMPLATE, at)
-  if (!template) throw new Error('This build has no Relay template.')
+  if (!template) throw new Error('The library in this scope has no Relay template.')
   return template
 }
 

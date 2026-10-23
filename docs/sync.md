@@ -164,9 +164,8 @@ row         [type, rowNode]              rowNode.data: alias{id}, description{co
               Task        lib.task        + todo{completed,time}   (checkbox; "[ ]"/"[x]" prefix in the add bar)
               Row         lib.plain       the default row: text with links/embeds; rows of a type this peer does not know
                                      render like it
-              Note        lib.note        a graph form: a Markdown body field (">" prefix); child rows are variables (key: value,
-                                     or a row's title → its body / sub-rows as a list; ref children link other blocks); {{key}} / {key}
-                                     expand; "Export note" downloads merged frontmatter + expanded body; KaTeX and Mermaid render
+              Note        lib.note        a graph form: a Markdown body field (">" prefix); {{name}} / {name} resolve from the
+                                     bindings in scope, like any text; KaTeX and Mermaid render
               Comment     lib.comment     a graph form: body, person, texts ("//" prefix or the menu; replies are child comments)
               Reference   lib.ref         + ref{id, owner?}: stands for the row whose alias id is `id` (Alt+drag); Ctrl+drag places a deep
                                      copy; `owner` marks a market result (the row lives in another account; click opens the listing)
@@ -494,6 +493,25 @@ siblings' descendants must not leak into scope. Explicit identity links may
 address nodes elsewhere through the shared ref resolver. They must not create
 a second name-lookup mechanism. A nested store must retain its enclosing graph
 scope, including when it is copied for evaluation or exchange.
+
+Every lookup by name or by kind (a library instance, a named binding, a ref
+path's first name, a template by name, a peer's nearest member entry, the market
+grant, a local checkout) follows one rule (`lookupInScope` in
+`shared/sync/graph.ts`): the nearest enclosing scope that declares anything
+answers; several declarations there are ambiguous; a declaration there that
+cannot be used (unavailable, denied, cyclic) blocks the lookup. None of these
+fall through to an outer scope. A nearer name hides an outer one whatever its
+type. An unfilled declaration is a hole, bound from further out, and hides
+nothing. Collecting the alternatives of a type (handler discovery) is not a
+lookup by name: it reads every visible declaration, only the same declaration
+identity shadows, and more than one candidate is a choice for the owner.
+Bindings are declarations; text such as `key: value` titles or frontmatter is
+text, never a binding.
+
+**Executor selection.** A step runs through exactly one executor. Every host
+lists the executors it has for a step and the shared evaluator selects
+(`selectExecutor`): one runs, several are a problem the owner resolves in the
+graph, none leaves the step to its requirement. No host may pick by ordering.
 
 **Stores on one machine (desktop).** Every `.fos` store is a device root of its
 own: Home's (`~/.fos`, the home context, the only one with Home) and each

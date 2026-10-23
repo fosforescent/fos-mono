@@ -1,5 +1,5 @@
 import { userView } from './test-helpers'
-import { addRow, addSupply, addTask, createReplica, evaluateNode, evaluationRecord, view, renameTask, setTaskDone, serializeReplica, loadReplica, type EvaluationDriver, type Replica } from './index'
+import { addRow, addSupply, addTask, createReplica, evaluateNode, evaluationRecord, selectExecutor, view, renameTask, setTaskDone, serializeReplica, loadReplica, type EvaluationDriver, type Replica } from './index'
 import { RESOURCE_TYPE, ALLOCATION_TYPE } from './library-types'
 
 function setup() {
@@ -7,7 +7,7 @@ function setup() {
   r = addTask(r, ['parent'], 'Child', 2, 'child')
   const events: string[] = []
   const driver: EvaluationDriver = {
-    get: () => r, save: value => { r = value }, now: () => 10, check: () => [], handles: () => false,
+    get: () => r, save: value => { r = value }, now: () => 10, check: () => [], executors: () => [],
     open: async s => { events.push(`open ${s.path.at(-1)}`) },
     commit: async s => { events.push(`commit ${s.path.at(-1)}`) }
   }
@@ -31,8 +31,7 @@ test('an unresolved confirmation stops all effects before opening a transaction'
 test('a failed effect gets a manual recovery task and cannot be repeated after reload', async () => {
   const s = setup()
   s.set(addRow(s.get(), ['parent'], ALLOCATION_TYPE, 'Create issue', 3, { id: 'req', requirement: { capability: 'repo' } }))
-  s.driver.handles = step => step.row?.requirement?.capability === 'repo'
-  s.driver.effect = async () => { throw new Error('Response lost after sending') }
+  s.driver.executors = step => step.row?.requirement?.capability === 'repo' ? [{ effect: async () => { throw new Error('Response lost after sending') } }] : []
   const result = await evaluateNode(['parent'], s.driver)
   expect(result.status).toBe('needs-recovery')
   expect(view(s.get(), ['parent'])!.tasks.some(t => t.title.includes('Manually roll back'))).toBe(true)
@@ -43,8 +42,7 @@ test('a failed effect gets a manual recovery task and cannot be repeated after r
 test('compensates successful effects in reverse order when commit fails', async () => {
   const s = setup(), reverted: string[] = []
   for (const id of ['a', 'b']) s.set(addRow(s.get(), ['parent'], ALLOCATION_TYPE, id, 3, { id, requirement: { capability: 'repo' } }))
-  s.driver.handles = step => step.row?.requirement?.capability === 'repo'
-  s.driver.effect = async step => { s.set(addSupply(s.get(), step.path.slice(0, -1), step.path.at(-1)!, { capability: 'repo', by: 'test' }, 4)) }
+  s.driver.executors = step => step.row?.requirement?.capability === 'repo' ? [{ effect: async step => { s.set(addSupply(s.get(), step.path.slice(0, -1), step.path.at(-1)!, { capability: 'repo', by: 'test' }, 4)) } }] : []
   s.driver.commit = async () => { throw new Error('Commit failed') }
   s.driver.rollback = async step => { reverted.push(step.path.at(-1)!) }
   const result = await evaluateNode(['parent'], s.driver)
@@ -108,9 +106,8 @@ test('declared return slots can start empty, but an effect cannot commit with an
   const s = setup()
   s.set(addRow(s.get(), ['parent'], ALLOCATION_TYPE, 'Produce a result', 3, { id: 'req', requirement: { capability: 'tool' } }))
   s.set(addRefAt(s.get(), ['parent', 'req'], 'result', s.get().store.primitive.documentField.getId(), 4))
-  s.driver.handles = step => step.row?.requirement?.capability === 'tool'
+  s.driver.executors = step => step.row?.requirement?.capability === 'tool' ? [{ effect: async () => { s.set(addSupply(s.get(), ['parent'], 'req', { capability: 'tool', by: 'tool' }, 5)) } }] : []
   s.driver.outputs = () => ['result']
-  s.driver.effect = async () => { s.set(addSupply(s.get(), ['parent'], 'req', { capability: 'tool', by: 'tool' }, 5)) }
   const record = await evaluateNode(['parent'], s.driver)
   expect(record.status).toBe('needs-recovery')
   expect(record.error).toMatch(/valid return value/)
@@ -122,18 +119,28 @@ test.each([false, true])('output rows are tracked by declaration identity, not a
   const s = setup(), path = ['parent', 'child']
   s.set(writeNodeValue(s.get(), path, 'result', {}, 3))
   s.set(writeNodeValue(s.get(), path, 'result.other', { count: 1 }, 3))
-  s.driver.handles = () => true
   const { argumentRefs, content, resolveScope, headCid } = await import('./index')
   const declared = argumentRefs(s.get().store, resolveScope(s.get().store, headCid(s.get()), path)!).find(a => a.name === 'result')!
   const output = content(s.get().store, declared.cid).data.alias!.id
   s.driver.outputs = () => [output]
-  s.driver.effect = async () => {
+  s.driver.executors = () => [{ effect: async () => {
     s.set(writeNodeValue(s.get(), path, 'result', { nested: { count: 2 } }, 4))
     if (changeInput) s.set(writeNodeValue(s.get(), path, 'result.other', { count: 9 }, 4))
-  }
+  } }]
   const record = await evaluateNode(path, s.driver)
   if (changeInput) {
     expect(record.status).toBe('needs-recovery')
     expect(record.error).toMatch(/Instructions changed/)
   } else expect(record.status).toBe('committed')
+})
+
+test('a step with several executors is a choice for its owner, never the first one a host lists', async () => {
+  const s = setup(), ran: string[] = []
+  s.set(addRow(s.get(), ['parent'], ALLOCATION_TYPE, 'Create issue', 3, { id: 'req', requirement: { capability: 'repo' } }))
+  const executor = (name: string) => ({ effect: async () => { ran.push(name) } })
+  s.driver.executors = step => step.row?.requirement?.capability === 'repo' ? [executor('first'), executor('second')] : []
+  await expect(evaluateNode(['parent'], s.driver)).rejects.toThrow(/2 handlers can run this step/)
+  expect(ran).toEqual([])
+  expect(selectExecutor([executor('only')]).executor).not.toBeNull()
+  expect(selectExecutor([])).toEqual({ executor: null, problem: null })
 })

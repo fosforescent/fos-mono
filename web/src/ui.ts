@@ -27,7 +27,6 @@ import QRCode from 'qrcode'
 import { sharingControls } from './sharing'
 import { readNodeValue, nodeShape, NODE_PERMISSION_DEFAULT, requirementOutputs, resolveRequirementOutput, resolveScope, resolveText, put, content, headCid, viewNode, findChild, WORK_SYSTEM, isDirty, view as viewAt, type ChoiceView, homePath, type MovePosition, type NodeView, type Scope, type TaskView } from '../../shared/sync/index'
 import type { App, AppState, ContextPeer } from './app'
-import { exportNote, noteContext, noteFilename, type NoteChild } from './notes'
 import { hydrateDiagrams, renderMarkdown } from './markdown'
 import { RESOURCE_NAME, SYNTAX_HELP, allocationTag, describeParsed, downloadText, formatAmount, rawRowText, renderInlineText } from './rows'
 import { consumption } from '../../shared/sync/execution-access'
@@ -2455,32 +2454,14 @@ function inlineFields(task: TaskView): string[] {
 }
 
 /**
- * Direct children of a note (with their sub-rows and resolved refs), for variables. A Markdown field row (a note's
- * body) reads the rows of the note it belongs to.
+ * A note block: markdown with its `{name}` references resolved from the bindings in scope (the same resolution as
+ * execution); math and diagrams fill in asynchronously.
  */
-function noteChildren(task: TaskView, at: Scope, state: AppState, app: App): NoteChild[] {
-  const own = [...state.view, ...at, task.id]
-  const notePath = task.scalar ? own.slice(0, -1) : own
-  const node = viewAt(state.replica, notePath)
-  if (!node) return []
-  const owner = task.scalar ? (notePath.length ? viewAt(state.replica, notePath.slice(0, -1))?.tasks.find(row => row.id === notePath.at(-1)) : undefined) : task
-  const fields = new Set([...(owner?.form?.fields.map(field => field.path[0]) ?? []), task.id])
-  return node.tasks.filter(row => !fields.has(row.id)).map((row) => {
-    const subRows = row.childCount ? viewAt(state.replica, [...notePath, row.id])?.tasks ?? [] : []
-    if (row.refId === undefined) return { row, subRows }
-    const target = app.refTarget(row.refId ?? '')
-    const targetSub = target && target.row.childCount ? viewAt(state.replica, [...target.path, target.row.id])?.tasks ?? [] : []
-    return { row, subRows, refTarget: target ? { row: target.row, subRows: targetSub } : null }
-  })
-}
-
-/** A note block: markdown with variables expanded; math and diagrams fill in asynchronously. */
-function renderNoteBody(task: TaskView, at: Scope, state: AppState, app: App): HTMLElement {
+function renderNoteBody(task: TaskView, at: Scope, state: AppState, _app: App): HTMLElement {
   const body = div('title note-body', '')
   body.title = 'Click or press Enter to edit (Ctrl+Enter saves)'
-  const ctx = noteContext(task.title, noteChildren(task, at, state, app))
-  const resolve = noteResolver(ctx, [...state.view, ...at, task.id], state)
-  const expanded = ctx.body.trim() ? task.text?.interpolate ? expandNoteText(ctx, resolve) : ctx.body : ''
+  const text = task.title.trim() ? task.title : ''
+  const expanded = text && task.text?.interpolate ? resolveText(state.replica, [...state.view, ...at, task.id], text).text : text
   if (!expanded) { body.append(span('muted', '(empty note)')); return body }
   const cached = noteHtml.get(expanded)
   if (cached) {
@@ -2494,22 +2475,6 @@ function renderNoteBody(task: TaskView, at: Scope, state: AppState, app: App): H
     })
   }
   return body
-}
-
-function noteResolver(ctx: ReturnType<typeof noteContext>, path: Scope, state: AppState) {
-  const store = state.replica.store
-  const defaults = Object.entries(ctx.vars).map(([name, variable]) => ({
-    name, type: store.primitive.documentField.getId(),
-    cid: put(store, { data: { description: { content: Array.isArray(variable.value) ? variable.value.map(v => `- ${v}`).join('\n') : variable.value } }, children: [] })
-  }))
-  return (name: string) => {
-    const resolved = resolveText(state.replica, path, `{{${name}}}`, defaults)
-    return resolved.bindings.every(b => b.status === 'ready') ? resolved.text : undefined
-  }
-}
-
-function expandNoteText(ctx: ReturnType<typeof noteContext>, resolve: (name: string) => string | undefined): string {
-  return exportNote(ctx, resolve).replace(/^---\n[\s\S]*?\n---\n\n?/, '')
 }
 
 function insideTemplate(state: AppState, fullPath: Scope): boolean {

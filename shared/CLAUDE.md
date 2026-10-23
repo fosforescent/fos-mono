@@ -82,23 +82,6 @@ shared/
 └── defaults.ts           # Default values
 ```
 
-## Current Implementation Status
-
-### Implemented ✅
-- Content-addressable nodes (FosNode)
-- Graph storage and querying (FosStore)
-- Pattern matching (matchPattern, query, queryTriple)
-- Primitive node types (~100+ types)
-- Mutable aliases with version history
-- Type checking as pattern matching (`sync/patterns.ts`: `acceptsChild`, `rejectedChildren`; rows holding what their type rejects are wrapped as `[TYPE_ERROR, error]`, `canonicalTypeErrors` on every `commitRoot`)
-- Evaluation and effects through handlers (`sync/evaluation.ts`, `sync/handlers.ts`, `sync/bindings.ts`; the backend driver is `backend/sync/evaluation.ts`)
-
-### Not Yet Implemented ❌
-- The language-design primitives (TYPE, PI, SIGMA, EQ, REFL, HOLE, BOX, …)
-- Holes as a separate construct (`hole.ts`), modal types, actor registry
-- Scope management with HoTT binding (`scope.ts`)
-- Interpreter: `IFosInterpreter` in `dag-types.ts` is an interface with no implementation
-
 ## Implementation Priorities
 
 Based on `docs/implementation-roadmap.md` (roadmap items; none of the files below exist yet):

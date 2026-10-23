@@ -22,14 +22,13 @@ test('host primitives are execute-only sub-refs and ordinary rows call them with
   expect(compileRow(r, ['call']).canRun).toBe(true)
   expect(primitiveExecutors(r, step, 'host').map(value => value.native)).toEqual([render])
   const completed = await evaluateNode(['call'], { get: () => r, save: next => { r = next }, now: () => 3,
-    check: () => [], handles: current => primitiveExecutors(r, current, 'host').length === 1,
-    effect: async current => primitiveExecutors<void>(r, current, 'host')[0]!.native.effect!(), rollback: async () => {} })
+    check: () => [], executors: current => primitiveExecutors<void>(r, current, 'host').map(value => ({ effect: async () => value.native.effect!() })), rollback: async () => {} })
   expect(completed.error).toBeUndefined()
   expect(completed.status).toBe('committed')
   expect(calls).toBe(1)
   r = setHandlerEnabledAt(r, [], 'host', content(r.store, ref.cid).data.alias!.id, false, 4)
   expect(primitiveExecutors(r, step, 'host')).toEqual([])
-  await expect(evaluateNode(['call'], { get: () => r, save: () => {}, now: () => 5, check: () => [], handles: () => false })).rejects.toThrow(/no available executor/)
+  await expect(evaluateNode(['call'], { get: () => r, save: () => {}, now: () => 5, check: () => [], executors: () => [] })).rejects.toThrow(/no available executor/)
 })
 
 test('unregistered and foreign primitive identities never select local code', () => {

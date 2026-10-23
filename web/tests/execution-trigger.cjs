@@ -29,7 +29,7 @@ async function main() {
   const hostDeps = { loadStore: async name => replicas[name] ? { user: { id: 1, username: name }, store: replicas[name].store } : null, saveStore: async (user, store) => { replicas[user.username] = c.createReplica('user:' + user.username, store) }, now: () => 100 }
   const events = c.createEventService(hostDeps, async (username, request) => {
     let r = c.createReplica('user:' + username, replicas[username].store)
-    const result = await c.evaluateNode(request.path, { get: () => r, save: async next => { r = next; replicas[username] = c.createReplica('user:' + username, next.store) }, now: () => 100, handles: () => false, check: () => [] })
+    const result = await c.evaluateNode(request.path, { get: () => r, save: async next => { r = next; replicas[username] = c.createReplica('user:' + username, next.store) }, now: () => 100, executors: () => [], check: () => [] })
     if (result.status !== 'committed') throw new Error(result.error ?? 'needs recovery')
     return result
   })

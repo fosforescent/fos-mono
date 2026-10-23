@@ -247,7 +247,7 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
       if (outcome.complete) {
         try {
           if (evaluate) await evaluate(at.owner, { path: at.path, branches: {}, expected: outcome.expected })
-          else await withUserLock(`user:${at.owner}`, async () => { const loaded = (await deps.loadStore(at.owner))!; let r = createReplica(`user:${at.owner}`, loaded.store); await evaluateNode(at.path, { get: () => r, save: async next => { r = next; await save(loaded.user, r) }, now, check: () => [], handles: () => false }) })
+          else await withUserLock(`user:${at.owner}`, async () => { const loaded = (await deps.loadStore(at.owner))!; let r = createReplica(`user:${at.owner}`, loaded.store); await evaluateNode(at.path, { get: () => r, save: async next => { r = next; await save(loaded.user, r) }, now, check: () => [], executors: () => [] }) })
         } catch (error) {
           await withUserLock(`user:${at.owner}`, async () => {
             const loaded = (await deps.loadStore(at.owner))!, r = createReplica(`user:${at.owner}`, loaded.store)
