@@ -281,8 +281,10 @@ way (policy, small) and everything in this device's own entries (its relay
 queues); other rows below stay unloaded until they are opened. An owner's
 device attached at Home also pulls, receive-only, the server's own member
 entry on the account root above it (`NodeSyncContext.above`,
-`accountContextAbove`: the server's offers and its published key); nothing
-else above Home is exchanged. The `fos` CLI syncs the whole tree (`nodeTreeSync`, a
+`accountContextAbove`: the server's offers and its published key). The entry
+synced is the account's own membership of the server's peer, the row of the
+account root whose left is that peer (found in its listing, `membershipSyncContext`),
+whatever its id; nothing else above Home is exchanged. The `fos` CLI syncs the whole tree (`nodeTreeSync`, a
 generator the binary drives through `nodeSyncBegin` / `nodeSyncStep` in
 `embed.ts`): the attachment first, then every child the peer's answer lists that
 is here or held by that peer. A child the peer holds only as a reference to this
@@ -508,7 +510,7 @@ standing for what it shares (Home in Home's store, else its root); it can be
 moved or linked anywhere, and so can its nodes. What crosses a link is still
 only what those grants allow, through node exchange on the store's files: the
 reader loads the other store's replica and exchanges nodes with it (the app's
-peer provider for `local` peers, `App.localStoreProvider` with the `local_store`
+transport for that store's peer, `App.localStoreTransport` with the `local_store`
 command; `browseStore`, `fos peers ls <name>`), never reading its graph
 directly. Edits to a node opened from another store go back to it like edits to
 any peer's node (`meta.heldNodes`, keyed by the row's alias so moves keep them;

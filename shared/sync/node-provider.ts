@@ -4,7 +4,10 @@ import { hashContent, isCid } from '../dag-implementation/cid'
 import { content, put, refNodeContent, refValueCid, isRefNode, capabilityTarget, commitRoot, updateAtScope, resolveScope, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, isShippedLibrary, reachableNodes, bookkeepingOf, rootTargetCid, withPeer,
   membershipOf, valueContent, readMembers, memberFor, memberPeerOf, peerNode, memberEntryPeerAt, isGrantEdge, grantChildId, memberEdgesOf, isMemberEdge, capabilityOf, isHandle, isPeerReference, isBookkeepingEdge, isRowEdge, identityCid, withMainBranchPolicy,
   readProposals, submissionAdditions, CAPABILITIES, type MemberRecord, type ProposalView, type Capability, type Scope } from './graph'
-import { importNodes } from './graph'
+import { advertisedRows, importNodes } from './graph'
+import { sameCapabilityType } from './capabilities'
+import { primitiveValue } from './primitives'
+import { refSubmissions } from './scoped-refs'
 import { headCid, type Replica } from './replica'
 import { constructNodeValue, readGraphValue } from './node-values'
 
@@ -201,11 +204,17 @@ export function inheritedNodeGrants(r: Replica, path: Scope, authority: NodeAuth
 export function decidingMember(store: Replica['store'], value: FosNodeContent, authority: Pick<NodeAuthority, 'peerId' | 'owner'>): MemberRecord | undefined {
   if (!authority.owner) return memberFor(store, value, authority.peerId)
   const own = readMembers(store, value).find(m => m.peerId === authority.peerId)
-  if (!own || own.capabilities.length) return own
-  const entry = membershipOf(store, value, authority.peerId)
-  // an entry not loaded here yet (its device pushes it next) or one carrying only offers says nothing about grants
-  const node = entry && content(store, entry[1])
-  return node && (isPeerReference(node) || node.children.some(e => e[0] === store.primitive.acceptsNode.getId())) ? undefined : own
+  return own && grantsOf(store, value, own) ? own : undefined
+}
+
+/**
+ * Whether `member` (a membership of `value`) says anything about grants: one that grants nothing and is not loaded here
+ * yet (its device pushes it next), or carries only offers (its peer's handlers, the transport that reaches it), does not.
+ */
+export function grantsOf(store: Replica['store'], value: FosNodeContent, member: MemberRecord): boolean {
+  if (member.capabilities.length) return true
+  const entry = membershipOf(store, value, member.peerId), node = entry && content(store, entry[1])
+  return !(node && (isPeerReference(node) || node.children.some(e => e[0] === store.primitive.acceptsNode.getId())))
 }
 
 function permitted(r: Replica, cid: string, authority: Pick<NodeAuthority, 'peerId' | 'owner'>, inherited: boolean): boolean {
@@ -234,15 +243,27 @@ export function unloadedMemberEdge(store: Replica['store'], child: NodeChild): F
 export const MEMBER_ENTRY_FIELDS = new Set(['disabledCapabilities', 'disabledConstructors'])
 
 /** The children of the node `cid` (at `path`) as node exchange lists them: its rows, then its member entries (or, in a member entry, its grants). */
-/** Whether a membership is exchanged: one for a store reached through this machine's files (granted `local`, `linkLocalStore`) is this machine's link, and never leaves it. */
+/**
+ * Whether a membership is exchanged: one for a store reached through this machine's files (granted `local`,
+ * `linkLocalStore`) is this machine's link and never leaves it, and so is one that only holds this device's transport
+ * to its peer.
+ */
 export function exchangedMember(store: Replica['store'], edge: FosPathElem): boolean {
-  return !content(store, edge[1]).children.some(e => capabilityOf(store, e) === 'local')
+  const right = content(store, edge[1])
+  if (right.children.some(e => capabilityOf(store, e) === 'local')) return false
+  return !(right.children.length && right.children.every(e => isTransportOffer(store, e)))
+}
+/** A peer's transport offered here (`offerNodeTransport`): a native `provideNode` value, this device's connection to that peer, never exchanged. */
+export function isTransportOffer(store: Replica['store'], edge: FosPathElem): boolean {
+  if (edge[0] !== store.primitive.acceptsNode.getId()) return false
+  const type = capabilityTarget(store, 'provideNode')
+  return advertisedRows(store, edge[1]).some(([left, ref]) => sameCapabilityType(store, left, type) && refSubmissions(store, ref).some(value => primitiveValue(store, value)))
 }
 export function exchangedChildren(r: Replica, cid: string, path: Scope): Array<{ id: string; edge: FosPathElem; member?: true; grant?: true }> {
   const value = valueContent(r.store, cid), out: Array<{ id: string; edge: FosPathElem; member?: true; grant?: true }> = []
   const entry = memberEntryPeerAt(r.store, headCid(r), path) !== null
   for (const edge of value.children) {
-    if (entry && isGrantEdge(r.store, edge)) { out.push({ id: grantChildId(r.store, edge), edge, grant: true }); continue }
+    if (entry && isGrantEdge(r.store, edge)) { if (!isTransportOffer(r.store, edge)) out.push({ id: grantChildId(r.store, edge), edge, grant: true }); continue }
     if (isBookkeepingEdge(r.store, edge) || !exchangedValueEdge(r, edge)) continue
     const id = content(r.store, identityCid(r.store, edge)).data.alias?.id
     if (id && !isShippedLibrary(r.store, path, edge)) out.push({ id, edge })

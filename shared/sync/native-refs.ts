@@ -1,6 +1,7 @@
 /** Ref declarations register handlers. Native constructors only give graph values their local meaning. */
 import type { FosStore } from '../dag-implementation/store'
-import { content, enclosingScopes, put, refNodeContent, type Scope } from './graph'
+import { capabilityTarget, content, enclosingScopes, handlerOfferId, put, refNodeContent, type Scope } from './graph'
+import type { NodeProvider } from './node-provider'
 import { addMemberAt, headCid, setHandlerOffersAt, type Replica } from './replica'
 import { contextMemberRefs, discoverHandlers } from './handlers'
 import { sameCapabilityType } from './capabilities'
@@ -14,7 +15,15 @@ export type NativeImplementation<Context> = {
   effect?(context: Context): Promise<void | 'pending'>
   /** It submits to the step's open refs itself, so they need not be bound before it runs. */
   opensRefs?: boolean
+  /** A peer's node transport: the local meaning of its `provideNode` offer (`nodeTransportAt`). */
+  provideNode?: NodeTransport
 }
+/**
+ * How node exchange reaches a peer from this device (a connection: the account session, a direct link, another store on
+ * this machine, ...). `attachment`: the part of an address on that peer this device is attached at (a request's scope);
+ * `available`: whether the connection can carry a request now.
+ */
+export type NodeTransport = Omit<NodeProvider, 'id'> & { attachment(address: Scope): Scope; available(): boolean }
 export type PrimitiveDefinition<Context> = NativeImplementation<Context> & {
   id: string
   type(store: FosStore): string
@@ -33,6 +42,23 @@ export function publishNativeRef(replica: Replica, at: Scope, host: string, ref:
   const offers = discoverHandlers(replica, at).filter(offer => offer.peerId === host && sameCapabilityType(replica.store, offer.type, type))
   if (offers.some(offer => offer.cid === ref)) return replica
   return setHandlerOffersAt(replica, at, host, type, [...offers.filter(offer => !offer.legacy && offer.id !== node.data.alias!.id).map(offer => offer.cid), ref], now)
+}
+
+/**
+ * Offer `peer`'s node transport on its row at the device root: a native ref of the `provideNode` capability, published
+ * once (`publishNativeRef`); later calls only give it its local meaning again.
+ */
+export function offerNodeTransport(replica: Replica, peer: string, transport: NodeTransport, now: number): Replica {
+  const ref = nativeRef(replica.store, peer, { id: handlerOfferId(peer, 'provideNode'), label: peer, type: store => capabilityTarget(store, 'provideNode') }, { provideNode: transport })
+  return publishNativeRef(replica, [], peer, ref, now)
+}
+
+/** What reaches `peer` from the node at `at`: the native of its enabled `provideNode` offer in scope, when it can carry a request now. */
+export function nodeTransportAt(replica: Replica, at: Scope, peer: string): (NodeProvider & Pick<NodeTransport, 'attachment'>) | null {
+  const type = capabilityTarget(replica.store, 'provideNode')
+  const offers = new Set(discoverHandlers(replica, at).filter(offer => offer.peerId === peer && sameCapabilityType(replica.store, offer.type, type)).map(offer => offer.cid))
+  const found = nativeRefValues(replica, at, peer).find(value => offers.has(value.ref) && value.native.provideNode?.available())
+  return found ? { id: peer, ...found.native.provideNode! } : null
 }
 
 /** Walk the registered refs, then execute the local meaning of their accepted primitive values. */

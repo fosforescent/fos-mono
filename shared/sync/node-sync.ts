@@ -7,11 +7,11 @@ import type { FosDataContent, FosNodeContent, FosNodesData } from '../types'
 import { FOS_DATA_VERSION, cidVersion, isCid, isCurrentCid } from '../dag-implementation/cid'
 import { advertisedRows, content, valueContent, identityCid, isRowEdge, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, rowTypeOf, isShippedLibrary, resolveScope, isHandle, isPeerReference,
   scopeBranches, branchSelection, selectBranch, isBranchChoice, readChoice, CAPABILITIES, putStripped, readProposals, proposalContent, withProposal, submissionAdditions, removeProposalByCid, importNodes, reachableNodes, capabilityTarget, refValueCid, withMainBranchPolicy, readMembers, memberFor, updateAtScope, commitRoot, put, refNodeContent, bookkeepingOf,
-  memberEntryPeerAt, inMemberEntry, isMemberEdge, memberEdgesOf, memberPeerOf, mapMembership, membershipPath, withMembershipRow, withMembershipRows, makeLink, isRefNode, SERVER_MEMBER, type Scope } from './graph'
+  memberEntryPeerAt, inMemberEntry, isMemberEdge, memberEdgesOf, memberPeerOf, membershipPath, withMembershipRow, withMembershipRows, makeLink, isRefNode, SERVER_MEMBER, type Scope } from './graph'
 import { loadReplica, serializeReplica, headCid, type Replica } from './replica'
 import { sameValue } from './merge'
 import { provideNode, parseNodeRequest, inheritedNodeGrants, nodeLinkMaskAt, nodeLinkEndpoint, setNodeLinkMask, nodeRequestLinkId, NodeAccessError, exchangedChildren, memberEntryVisible, unloadedMemberEdge, decidingMember, MEMBER_ENTRY_FIELDS, rightChild, validRightChild, exchangedValueEdge, unloadedRightEdge,
-  exchangedMember, type NodeBranch, type NodeRequest, type NodeShape, type NodeChild, type ProvidedNode, type NodeAuthority } from './node-provider'
+  exchangedMember, grantsOf, isTransportOffer, type NodeBranch, type NodeRequest, type NodeShape, type NodeChild, type ProvidedNode, type NodeAuthority } from './node-provider'
 
 export type NodeSyncState = { local: NodeShape; remote: NodeShape & Pick<ProvidedNode, 'proposals' | 'grants'> }
 const forbidden = new Set(['alias', 'ref', 'versionControl', 'disabledCapabilities', 'peerId', '__proto__', 'constructor', 'prototype'])
@@ -135,7 +135,8 @@ function installMemberEntry(r: Replica, path: Scope, shape: NodeShape, now: numb
   // who the membership is for: its row here (a peer's node on its left)
   const peerId = memberEntryPeerAt(s, headCid(r), path)
   if (!peerId) throw new NodeAccessError('Invalid node update.')
-  const entry = put(s, { data: { ...shape.data, alias: { id } }, children })
+  // this device's transport to that peer is its own: it stays
+  const entry = put(s, { data: { ...shape.data, alias: { id } }, children: [...children, ...before.children.filter(e => isTransportOffer(s, e))] })
   if (cid === entry) return r
   const root = updateAtScope(s, headCid(r), path.slice(0, -1), node => withMembershipRow(s, node, peerId, entry), 'node')
   if (root !== headCid(r)) commitRoot(s, root, now)
@@ -428,7 +429,7 @@ export function outgoingNodeShape(r: Replica, path: Scope, peer: string, shape: 
   for (let i = 0; i <= path.length; i++) {
     const cid = resolveScope(r.store, headCid(r), path.slice(0, i))
     const member = cid && memberFor(r.store, content(r.store, cid), peer)
-    if (member && (member.disabled?.includes('read') || member.disabled?.includes('provideNode') || (!member.capabilities.includes('read') && !member.capabilities.includes('edit')))) throw new NodeAccessError('Local node access denied.')
+    if (member && grantsOf(r.store, content(r.store, cid), member) && (member.disabled?.includes('read') || member.disabled?.includes('provideNode') || (!member.capabilities.includes('read') && !member.capabilities.includes('edit')))) throw new NodeAccessError('Local node access denied.')
     const mask = nodeLinkMaskAt(r, path.slice(0, i), peer)
     if (mask?.fields) fields = fields ? fields.filter(f => mask.fields!.includes(f)) : mask.fields
     if (i < path.length && mask?.children && !mask.children.includes(path[i]!)) throw new NodeAccessError('Local link masks this child.')
@@ -627,22 +628,29 @@ export function nodeBranchBase(r: Replica, path: Scope): NodeShape | null {
  * space: `localRoot` is the local path of the attachment, `scope` the peer's attachment scope, `remoteRoot` the remote
  * path that corresponds to `localRoot`.
  */
+/** The peer a provider is addressed as before this side has learnt its id (a virtual guest's host, until it answers). */
+export const UNKNOWN_PROVIDER = 'virtual-host'
+
 export type NodeSyncContext = {
   peer: string | null; scope: Scope; remoteRoot: Scope; localRoot: Scope; branches: NodeBranch[]; push: boolean
   /** A pull request: what this side sends is its submission named after a branch here (`pullRequest`). */
   submission?: string
   /**
-   * Member entries above the attachment, at the same path on both sides, that `nodeTreeSync` pulls after it (receive
-   * only): an owner's device attached at Home takes its account server's own entry on the root (its offers, its key).
+   * Memberships above the attachment that `nodeTreeSync` pulls after it (receive only): an owner's device attached at
+   * Home takes its account server's own entry on the root (its offers, its key).
    */
   above?: Scope[]
+  /**
+   * The local root is this peer's membership, and `remoteRoot` the node it is a row of on the provider: what syncs with
+   * it is the provider's own membership of that peer there (the row whose left is the peer), whatever its id.
+   */
+  member?: string
 }
 
-/** The node at `at` with `peerId`'s membership row under the id `id` (the row a peer lists for it, reused here). */
-function reuseMembershipRow(r: Replica, at: Scope, peerId: string, id: string, now: number): Replica {
-  const root = updateAtScope(r.store, headCid(r), at, node => mapMembership(r.store, node, peerId, right => ({ ...right, data: { ...right.data, alias: { id } } })), 'node')
-  if (root !== headCid(r)) commitRoot(r.store, root, now)
-  return { ...r }
+/** Receive-only sync of the membership at `at` with the provider's own membership of the same peer at the same node. */
+export function membershipSyncContext(r: Replica, at: Scope, peer: string | null): NodeSyncContext | null {
+  const member = memberEntryPeerAt(r.store, headCid(r), at)
+  return member === null ? null : { peer, scope: [], remoteRoot: at.slice(0, -1), localRoot: at, branches: [], push: false, member }
 }
 
 /** What an owner's device attached below its account's root takes from above it: the server's member entry there. */
@@ -666,7 +674,7 @@ export function planNodeSync(r: Replica, path: Scope, context: NodeSyncContext):
   const baseline = state?.local ?? branchBase ?? main?.local ?? empty()
   const dirty = !sameNodeShape(local, baseline)
   const remotePath = [...remoteRoot.slice(scope.length), ...path.slice(localRoot.length)]
-  const request = { ...nodeSyncRequest(r, path, peer ?? 'virtual-host', scope, remotePath), ...(branches.length ? { branches } : {}), ...(submission ? { submission } : {}) }
+  const request = { ...nodeSyncRequest(r, path, peer ?? UNKNOWN_PROVIDER, scope, remotePath), ...(branches.length ? { branches } : {}), ...(submission ? { submission } : {}) }
   // a writer asks with an (empty) update, so the answer tells it what it may write
   const first = push && dirty ? { ...request, update: { base: empty(), value: empty() } } : request
   return { path, peer, scope, remotePath, push, dirty, request, first, local, baseline, previousRemote: state?.remote ?? branchBase ?? main?.remote ?? null, ...(submission ? { submission } : {}) }
@@ -781,18 +789,12 @@ export function* pullRequest(r: Replica, context: NodeSyncContext, at: Scope, na
  */
 export function* nodeTreeSync(r: Replica, context: NodeSyncContext, now: () => number, limit = 1000): Generator<{ request: NodeRequest; replica: Replica }, NodeTreeSync, ProvidedNode> {
   let peer = context.peer, synced = 0
-  // a membership synced at the same address on both sides (the account's entry above Home) is the peer's row there:
-  // this side reuses the row the provider lists for that peer, under its id
-  const memberPeer = !context.scope.length && equal(context.localRoot, context.remoteRoot) && nodePersistenceAllowed(r, context.localRoot) ? memberEntryPeerAt(r.store, headCid(r), context.localRoot) : null
-  if (memberPeer !== null && peer) {
-    const parent = context.localRoot.slice(0, -1)
-    const listing = yield { request: nodeSyncRequest(r, parent, peer, [], parent), replica: r }
-    const listed = listing.children.find(child => child.peer === memberPeer)
-    if (!listed) return { replica: r, peer, synced }
-    if (listed.id !== context.localRoot.at(-1)) {
-      r = reuseMembershipRow(r, parent, memberPeer, listed.id, now())
-      context = { ...context, localRoot: [...parent, listed.id], remoteRoot: [...parent, listed.id] }
-    }
+  if (context.member !== undefined) {
+    // the provider's membership of that peer is a row of the node it lists: the one whose left is the peer
+    const listing = yield { request: nodeSyncRequest(r, context.localRoot.slice(0, -1), peer ?? UNKNOWN_PROVIDER, context.scope, context.remoteRoot.slice(context.scope.length)), replica: r }
+    const listed = listing.children.find(child => child.peer === context.member)
+    if (!listed) return { replica: r, peer: listing.peerId, synced }
+    context = { ...context, remoteRoot: [...context.remoteRoot, listed.id], member: undefined }
   }
   // the branches here marked for merge (`setBranchMergeRequest`): each goes to the peer as its pull request after this walk
   const requested: Array<{ at: Scope; name: string }> = []
@@ -838,8 +840,9 @@ export function* nodeTreeSync(r: Replica, context: NodeSyncContext, now: () => n
     r = sent.replica; peer = sent.peer ?? peer; synced += sent.synced
   }
   if (!context.scope.length) for (const at of context.above ?? []) {
-    if (!resolveScope(r.store, headCid(r), at)) continue
-    const above: NodeTreeSync = yield* nodeTreeSync(r, { peer, scope: [], remoteRoot: at, localRoot: at, branches: [], push: false }, now, limit - synced)
+    const membership = resolveScope(r.store, headCid(r), at) && nodePersistenceAllowed(r, at) ? membershipSyncContext(r, at, peer) : null
+    if (!membership) continue
+    const above: NodeTreeSync = yield* nodeTreeSync(r, membership, now, limit - synced)
     r = above.replica; peer = above.peer ?? peer; synced += above.synced
   }
   return { replica: r, peer, synced }
