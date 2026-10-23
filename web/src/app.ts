@@ -1,3 +1,9 @@
+import { setLibraryArg } from '../../shared/sync/library'
+import { nativeRef } from '../../shared/sync/native-refs'
+import { primitiveImplementation } from '../../shared/sync/primitives'
+import { handlerOfferId } from '../../shared/sync/graph'
+/** A device's location reader: the native it passes its library for `requires.deviceLocation`. */
+type DeviceLocation = { available(): boolean; locate(): Promise<{ lat: number; lng: number }> }
 import { settingOf, isTemplateType } from '../../shared/sync/graph'
 import { hashContent } from '../../shared/dag-implementation/cid'
 import { nativeRefValues } from '../../shared/sync/native-refs'
@@ -634,14 +640,37 @@ export class App {
    * root; it is nested in the browser's and resolves its rows through it.
    */
   private withRootContext(replica: Replica): Replica {
-    if (!this.config.deviceRoot && !this.config.scopedDocument) return this.deviceHandlers.publish(ensureDeviceLibrary(replica, LIBRARY_BUNDLE as LibraryBundle, Date.now()), [], replica.meta.peerId, 0, undefined, 'this-device')
+    if (!this.config.deviceRoot && !this.config.scopedDocument) return this.deviceHandlers.publish(this.passDeviceNatives(ensureDeviceLibrary(replica, LIBRARY_BUNDLE as LibraryBundle, Date.now())), [], replica.meta.peerId, 0, undefined, 'this-device')
     if (!this.deviceRoot) {
       const stored = this.config.deviceRoot?.serialized
-      this.deviceRoot = ensureDeviceLibrary(stored ? loadReplica(stored) : createReplica(), LIBRARY_BUNDLE as LibraryBundle, Date.now())
+      this.deviceRoot = this.passDeviceNatives(ensureDeviceLibrary(stored ? loadReplica(stored) : createReplica(), LIBRARY_BUNDLE as LibraryBundle, Date.now()))
     }
     this.deviceRoot = this.deviceHandlers.publish(this.deviceRoot, [], replica.meta.peerId, 0, undefined, 'this-device')
     nestScope(replica.store, { store: this.deviceRoot.store, root: headCid(this.deviceRoot), at: [] })
     return replica
+  }
+  /**
+   * What this device passes the standard library it uses (its `lib` instance on the device root): the natives the
+   * library requires, registered here. The library never calls device code itself; it uses what it is passed.
+   */
+  private passDeviceNatives(r: Replica): Replica {
+    const peer = r.meta.peerId
+    const reader: DeviceLocation = {
+      available: () => typeof navigator !== 'undefined' && !!navigator.geolocation,
+      locate: () => new Promise((resolve, reject) => {
+        const geolocation = typeof navigator !== 'undefined' ? navigator.geolocation : undefined
+        if (!geolocation) { reject(new Error('This device does not report its location.')); return }
+        geolocation.getCurrentPosition(position => resolve({ lat: Math.round(position.coords.latitude * 1e5) / 1e5, lng: Math.round(position.coords.longitude * 1e5) / 1e5 }), reject, { timeout: 15_000, maximumAge: 60_000 })
+      })
+    }
+    const native = nativeRef(r.store, peer, { id: handlerOfferId(peer, 'allocation', 'location'), label: 'This device', type: store => capabilityTarget(store, 'allocation') }, reader as never)
+    try { return setLibraryArg(r, [], 'deviceLocation', native, 0) } catch { return r }
+  }
+  /** The native a device fallback runs (what this device passed its library), when the device can run it now. */
+  deviceNative(handler: ManualHandler): DeviceLocation | null {
+    if (!handler.native) return null
+    const value = primitiveImplementation<DeviceLocation>(this.state.replica.store, valueCidOf(this.state.replica.store, handler.native))?.value
+    return value && value.available() ? value : null
   }
   /** The device root a virtual peer's document is nested in (read only). */
   private deviceRoot: Replica | null = null
@@ -3268,11 +3297,11 @@ export class App {
     let location: { name?: string; lat?: number; lng?: number } | undefined
     if (req.resource === 'location') {
       if (handler.device) {
-        const geolocation = typeof navigator !== 'undefined' ? navigator.geolocation : undefined
-        if (!geolocation) { this.notify('error', 'This device does not report its location.'); return }
+        // the native this device passed its library does it
+        const native = this.deviceNative(handler)
+        if (!native) { this.notify('error', 'This device does not report its location.'); return }
         try {
-          const position = await new Promise<GeolocationPosition>((resolve, reject) => geolocation.getCurrentPosition(resolve, reject, { timeout: 15_000, maximumAge: 60_000 }))
-          location = { lat: Math.round(position.coords.latitude * 1e5) / 1e5, lng: Math.round(position.coords.longitude * 1e5) / 1e5, ...(req.place ? { name: req.place } : {}) }
+          location = { ...await native.locate(), ...(req.place ? { name: req.place } : {}) }
         } catch (error) { this.notify('error', `Location unavailable: ${error instanceof Error ? error.message : (error as { message?: string })?.message ?? String(error)}`); return }
       } else {
         const name = (input ?? req.place ?? '').trim()

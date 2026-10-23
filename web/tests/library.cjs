@@ -93,7 +93,8 @@ async function main() {
   const fresh = new c.App({ baseUrl: 'http://localhost', autoLogin: null, storage: c.createMemoryStorage() }); fresh.scheduleSync = () => {}
   assert.deepEqual(c.libraryPath(fresh.state.replica), [c.LIBRARY_ID], 'a never-synced device ships the library in its root')
   assert(!c.view(fresh.state.replica, [HOME]).tasks.some(row => fresh.isLibrary([HOME, row.id])), 'Home references no library of its own')
-  assert(c.manualHandlers(fresh.state.replica).length >= 12, 'the shipped copy carries the manual handlers')
+  assert(c.manualHandlers(fresh.state.replica).length >= 11, 'the shipped copy carries the manual handlers')
+  assert.deepEqual(c.deviceHandlers(fresh.state.replica).map(h => h.label), ["Use this device's location"], 'the device passed its library its location reader')
   document.getElementById('app').replaceChildren()
   c.mountUi(document.getElementById('app'), fresh)
   const libraryTab = () => document.querySelector('.peer-tabs [aria-label="Standard library"]')
@@ -202,7 +203,7 @@ async function main() {
   assert.equal(c.view(fresh.state.replica, [...errand, 'where']).tasks.find(t => (!!t.allocation && !t.requirement)).allocation.location.name, 'Eiffel Tower, Paris')
   Object.defineProperty(navigator, 'geolocation', { value: { getCurrentPosition: ok => ok({ coords: { latitude: 48.85837, longitude: 2.294481 } }) }, configurable: true })
   fresh.refresh(); await tick()
-  const device = handlers('near').find(b => b.dataset.handler === c.manualHandlers(fresh.state.replica).find(h => h.device).id)
+  const device = handlers('near').find(b => b.dataset.handler === c.deviceHandlers(fresh.state.replica)[0].id)
   assert(device, 'the device handler shows when the device reports its position')
   device.click(); await tick(); await tick()
   assert.equal(req('near').requirement.satisfied, true, 'the device position fills a location requirement')

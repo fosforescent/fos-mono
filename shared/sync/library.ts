@@ -12,14 +12,15 @@
  */
 import { homePath, proposeRefAt, view, type Replica } from './replica'
 import { commitRoot, content, ensureLibraryRow, importNodes, reachableNodes, findNearestRow, isLibraryDefinition, isPeerReference, libraryInstanceEdge, libraryInstanceOf, libraryRowOf, updateAtScope, put, refValueCid, resolveScope, valueContent, SERVER_MEMBER, type Scope } from './graph'
-import type { FosNodesData } from '../types'
+import type { FosNodeContent, FosNodesData } from '../types'
 import { headCid } from './replica'
 import { FOS_DATA_VERSION } from '../version'
 import * as COMPILED_LIBRARY from './library.generated.json'
 import { compileLibrary, type LibrarySource } from '../library-compiler'
 import { fieldNode } from '../library-names'
 import { plainEdge } from './patterns'
-import { isBookkeepingEdge, refNodeContent, valueCidOf } from './graph'
+import { bookkeepingOf, isBookkeepingEdge, namesInLibrary, refNodeContent, valueCidOf } from './graph'
+import { hashContent } from '../dag-implementation/cid'
 
 /** The library's field holding the manual fallback handlers (`manualHandlers`). */
 export const MANUAL_HANDLERS = 'manual'
@@ -50,8 +51,11 @@ export function exportLocalLibrary(r: Replica, at: Scope | null = libraryPath(r)
   return { version: checked.version, rootNodeId: checked.rootNodeId, nodes: checked.nodes }
 }
 
-/** A fallback the library offers for a kind of requirement: the row's text is the button, its requirement the kind it fills. */
-export type ManualHandler = { id: string; label: string; capability: Requirement['capability']; resource?: Requirement['resource']; device: boolean }
+/**
+ * A fallback the library offers for a kind of requirement: the row's text is the button, its requirement the kind it
+ * fills. `native`: a native the device passed the library (`setLibraryArg`), which does it; else the person does it.
+ */
+export type ManualHandler = { id: string; label: string; capability: Requirement['capability']; resource?: Requirement['resource']; device: boolean; native?: string }
 
 /**
  * The library definition a row at `at` sees, by nearest ancestor: one referenced in Home (once its content is here)
@@ -86,6 +90,60 @@ export function upgradeLibrary(r: Replica, at: Scope, definition: Scope, now: nu
   return { ...r }
 }
 
+/** The library's field declaring what it needs passed in by the device that uses it (its natives). */
+export const LIBRARY_REQUIRES = 'requires'
+
+/** The nearest library instance a row at `at` sees: the node it is on and the instance. */
+function nearestInstance(r: Replica, at: Scope): { at: Scope; instance: NonNullable<ReturnType<typeof libraryInstanceOf>> } | null {
+  for (let i = at.length; i >= 0; i--) {
+    const path = at.slice(0, i), cid = resolveScope(r.store, headCid(r), path)
+    const instance = cid && libraryInstanceOf(r.store, cid)
+    if (instance) return { at: path, instance }
+  }
+  return null
+}
+
+/**
+ * Pass `value` (a native this device registered, `nativeRef`) into the library instance of the node at `at` as its
+ * argument `name`: what the library's `requires.<name>` declares. The library never calls a native itself; it uses
+ * what it was passed.
+ */
+export function setLibraryArg(r: Replica, at: Scope, name: string, value: string, now: number): Replica {
+  const store = r.store, node = resolveScope(store, headCid(r), at), instance = node && libraryInstanceOf(store, node)
+  if (!instance) throw new Error('There is no library here.')
+  const left = namesInLibrary(store, instance.library).byName.get(`${LIBRARY_REQUIRES}.${name}`)
+  if (!left) throw new Error(`The library requires no ${name}.`)
+  const ref = content(store, instance.cid), args = content(store, refValueCid(store, ref) ?? put(store, { data: {}, children: [] }))
+  const existing = args.children.find(([, right]) => store.table.get(right)?.data.name?.content === name)
+  if (existing && refValueCid(store, content(store, existing[1])) === value) return r
+  const arg = put(store, refNodeContent(store, { alias: { id: hashContent({ data: { name: { content: name } }, children: [] }) }, name: { content: name } }, value))
+  const nextArgs = put(store, { ...args, children: [...args.children.filter(edge => edge !== existing), [left, arg]] })
+  const nextRef = put(store, refNodeContent(store, ref.data, nextArgs, bookkeepingOf(store, ref)))
+  commitRoot(store, updateAtScope(store, headCid(r), at, value => ({ ...value, children: value.children.map(edge => plainEdge(store, edge)[1] === instance.cid ? [instance.library, nextRef] : edge) })), now)
+  return { ...r }
+}
+
+/**
+ * What the nearest library instance at `at` was passed for its `requires` declarations: each declaration (its name
+ * and node) with the native the device passed, when it passed one.
+ */
+export function libraryArgs(r: Replica, at: Scope): Array<{ name: string; declaration: FosNodeContent; value: string }> {
+  const near = nearestInstance(r, at)
+  if (!near) return []
+  const store = r.store, { instance } = near
+  const target = store.primitive.targetPointerConstructor.getId(), alias = store.primitive.aliasConstructor.getId(), get = (id: string) => store.table.get(id)
+  const group = namesInLibrary(store, instance.library).byName.get(LIBRARY_REQUIRES)
+  const args = refValueCid(store, content(store, instance.cid))
+  if (!group || !args) return []
+  return content(store, group).children.flatMap(edge => {
+    const declared = fieldNode(get, edge as [string, string], target, alias)
+    if (!declared) return []
+    const passed = content(store, args).children.find(([, right]) => get(right)?.data.name?.content === declared.name)
+    const value = passed && refValueCid(store, content(store, passed[1]))
+    return value ? [{ name: declared.name, declaration: content(store, edge[1]), value }] : []
+  })
+}
+
 /** The path of the row that is the field `field` of the library at `at` (a template, a group), if it has one. */
 export function libraryFieldPath(r: Replica, field: string, at?: Scope): Scope | null {
   const path = libraryPath(r, at), cid = path && resolveScope(r.store, headCid(r), path)
@@ -103,15 +161,22 @@ export function manualHandlers(r: Replica, at?: Scope): ManualHandler[] {
   return (view(r, path)?.tasks ?? []).flatMap(row => {
     const req = row.requirement
     if (!req || !row.title.trim()) return []
-    const cid = resolveScope(r.store, headCid(r), [...path, row.id])
-    const device = !!cid && content(r.store, cid).data.name?.content === 'deviceLocation'
-    return [{ id: row.id, label: row.title.trim(), capability: req.capability, ...(req.resource ? { resource: req.resource } : {}), device }]
+    return [{ id: row.id, label: row.title.trim(), capability: req.capability, ...(req.resource ? { resource: req.resource } : {}), device: false }]
+  })
+}
+
+/** The device's fallbacks: the natives it passed the library for what the library requires, each filling the requirement it declares. */
+export function deviceHandlers(r: Replica, at?: Scope): ManualHandler[] {
+  return libraryArgs(r, at ?? homePath(r)).flatMap(({ name, declaration, value }) => {
+    const allocation = declaration.data.allocation
+    if (!allocation) return []
+    return [{ id: name, label: declaration.data.description?.content ?? name, capability: 'allocation' as const, resource: allocation.type, device: true, native: value }]
   })
 }
 
 /** The library's fallbacks that fit one requirement: same capability and, for allocations, the same resource. */
 export function manualHandlersFor(r: Replica, requirement: { capability: Requirement['capability']; resource?: Requirement['resource'] }, at?: Scope): ManualHandler[] {
-  return manualHandlers(r, at).filter(h => h.capability === requirement.capability && (requirement.capability !== 'allocation' || h.resource === requirement.resource))
+  return [...manualHandlers(r, at), ...deviceHandlers(r, at)].filter(h => h.capability === requirement.capability && (requirement.capability !== 'allocation' || h.resource === requirement.resource))
 }
 
 /**

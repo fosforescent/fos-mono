@@ -2582,7 +2582,7 @@ function manualControls(app: App, state: AppState, at: Scope, task: TaskView, ab
       controls.push(place, record)
       continue
     }
-    if (handler.device && typeof navigator !== 'undefined' && !navigator.geolocation) continue
+    if (handler.device && !app.deviceNative(handler)) continue
     const record = button('secondary small manual-handler', handler.label, () => void app.applyManualHandler(at, task, handler, undefined, absolute)); record.dataset.handler = handler.id
     record.title = handler.device ? 'Records this device\'s position as the place' : 'Records that you did this by hand; no peer is involved'
     controls.push(record)
