@@ -1,3 +1,4 @@
+import { declareTestCapability } from './test-helpers'
 import { createHash } from 'node:crypto'
 import { addMemberAt, ensureHomeContext, setMemberCapabilitiesAt, addConstructedRow, addRow, applyProposalAt, createReplica, headCid, view } from './replica'
 import { content, put, readProposals, resolveScope, rowTypeAt, valueContent } from './graph'
@@ -108,6 +109,7 @@ test('a published node\'s link is made from the page base the url handler record
 
 test('a capability this build does not know is kept, as one with no handler here yet', () => {
   let r = ensureHomeContext(createReplica('user:host'), 1)
-  r = setMemberCapabilitiesAt(r, [], 'fos', [], [], 2, ['search', 'teleport' as never])
+  r = declareTestCapability(r, 'teleport')
+  r = setMemberCapabilitiesAt(r, [], 'fos', [], [], 2, ['search', 'teleport'])
   expect(view(r, [])!.members.find(m => m.peerId === 'fos')!.accepts).toEqual(expect.arrayContaining(['search', 'teleport']))
 })

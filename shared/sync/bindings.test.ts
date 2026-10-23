@@ -1,5 +1,5 @@
-import { userView } from './test-helpers'
-import { proposeRefAt, applyProposalAt, argumentRefs, renameTask, setRowContentAt, capabilityTarget, addMemberAt, addRefAt, addRow, addTask, addSubtasksTemplate, beginTaskWork, content, contextBindings, createReplica, decideTaskResult, headCid, instantiateTemplate, proposeTaskResult, put, refNodeContent, resolveBinding, resolveScope, resolveText, taskWorkContext, view, workAttempts, workHandler } from './index'
+import { userView, installTestHandler } from './test-helpers'
+import { setHandlerEnabledAt, discoverHandlers, setMemberCapabilitiesAt, proposeRefAt, applyProposalAt, argumentRefs, renameTask, setRowContentAt, libAt, addMemberAt, addRefAt, addRow, addTask, addSubtasksTemplate, beginTaskWork, content, contextBindings, createReplica, decideTaskResult, headCid, instantiateTemplate, proposeTaskResult, put, refNodeContent, resolveBinding, resolveScope, resolveText, taskWorkContext, view, workAttempts, workHandler } from './index'
 import { PLAIN_TYPE, NOTE_TYPE, ALLOCATION_TYPE, TEMPLATE_TYPE } from './library-types'
 
 const literal = (r: ReturnType<typeof createReplica>, text: string) => put(r.store, { data: { description: { content: text } }, children: [] })
@@ -46,7 +46,7 @@ test('generate subtasks derives readiness from the LLM dependency and creates ro
   const added = addSubtasksTemplate(r, ['project'], 2); r = added.replica
   const path = ['project', added.requestId]
   expect(workHandler(r, path).status).toBe('missing')
-  r = addMemberAt(r, [], 'fos', 'fos', ['llm'], 3)
+  r = installTestHandler(r, 'fos', 'llm')
   expect(workHandler(r, path).status).toBe('ready')
   const preview = taskWorkContext(r, path)
   expect(preview.blockers).toEqual([])
@@ -74,15 +74,15 @@ test('handler requirements participate in readiness without executing anything',
 
 test('a disabled or removed Fos binding cannot enable a previously available action', () => {
   let r = addTask(createReplica(), [], 'Task', 1, 'task')
-  r = addMemberAt(r, [], 'fos', 'fos', ['llm'], 2)
+  r = installTestHandler(r, 'fos', 'llm')
   expect(workHandler(r, ['task']).status).toBe('ready')
-  r = addMemberAt(r, ['task'], 'fos', 'fos', [], 3)
+  r = setHandlerEnabledAt(r, ['task'], 'fos', discoverHandlers(r, ['task'])[0]!.id, false, 3)
   expect(workHandler(r, ['task']).status).toBe('missing')
 })
 
 test('offline peers cannot satisfy explicit or transitive handler dependencies', () => {
   const r = createReplica('device'), store = r.store
-  const type = capabilityTarget(store, 'llm')
+  const type = libAt(store).capabilities.llm!
   const peer = put(store, { data: { peerId: { content: 'fos' }, description: { content: 'llm' } }, children: content(store, type).children })
   const bound = put(store, refNodeContent(store, { alias: { id: 'handler' } }, peer, []))
   expect(resolveBinding(store, type, bound, [], undefined, { isPeerActive: () => false }).status).toBe('missing')
@@ -103,7 +103,7 @@ test('disabling an offered handler removes availability without removing its con
 
 test('editing memberships preserves typed handlers in their original direction', async () => {
   const { withMember, memberHandlers, advertisement, peerNode } = await import('./index')
-  const r = createReplica(), store = r.store, type = capabilityTarget(store, 'llm')
+  const r = createReplica(), store = r.store, type = libAt(store).capabilities.llm!
   const to = put(store, refNodeContent(store, { alias: { id: 'to' } }, literal(r, 'to'), []))
   const from = put(store, refNodeContent(store, { alias: { id: 'from' } }, literal(r, 'from'), []))
   const member = put(store, { data: { alias: { id: 'peer-entry' } }, children: [[store.primitive.capabilityNode.getId(), advertisement(store, type, to)], [store.primitive.acceptsNode.getId(), advertisement(store, type, from)]] })

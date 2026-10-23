@@ -1,4 +1,4 @@
-import { addTask, createReplica, headCid, resolveScope, content, put, putStripped, proposalContent, readProposal, withProposal, makeLink, commitRoot, updateAtScope, refValueCid, argumentRefs, capabilityTarget, copyProposalBranch, view, selectBranch, writeNodeValue, rowEdgeAt } from './index'
+import { addTask, createReplica, headCid, resolveScope, content, put, putStripped, proposalContent, readProposal, withProposal, makeLink, commitRoot, updateAtScope, refValueCid, argumentRefs, libAt, copyProposalBranch, view, selectBranch, writeNodeValue, rowEdgeAt } from './index'
 import { PLAIN_TYPE } from './library-types'
 function setup() {
   let r = addTask(createReplica('owner'), [], 'Project', 1, 'project')

@@ -31,7 +31,7 @@ import { exportNote, noteContext, noteFilename, type NoteChild } from './notes'
 import { hydrateDiagrams, renderMarkdown } from './markdown'
 import { RESOURCE_NAME, SYNTAX_HELP, allocationTag, describeParsed, downloadText, formatAmount, rawRowText, renderInlineText } from './rows'
 import { consumption } from '../../shared/sync/execution-access'
-import { CAPABILITY_LABEL, manualHandlersFor, paymentRecord, type Capability, type PeerPolicy, type RowExtras } from '../../shared/sync/index'
+import { capabilityLabels, manualHandlersFor, paymentRecord, type Capability, type PeerPolicy, type RowExtras } from '../../shared/sync/index'
 import { TASK_TYPE, PLAIN_TYPE, NOTE_TYPE, COMMENT_TYPE, QUERY_TYPE, RESOURCE_TYPE, ALLOCATION_TYPE, MONEY_TYPE, TEMPLATE_TYPE, HOME_TYPE, isAllocationType } from '../../shared/sync/library-types'
 
 type Regions = {
@@ -732,7 +732,7 @@ function constructorOptions(app: App): ConstructorItem[] {
     { id: 'trigger:public', label: 'Public template endpoint', icon: 'broadcast', output: 'trigger', group: 'triggers' },
     { id: 'trigger:users', label: 'Fos template endpoint', icon: 'user-check', output: 'trigger', group: 'triggers' },
     ...ROW_SEEDS.map(([label, seed, icon]) => ({ id: `seed:${seed}`, label, icon, output: 'row', group: 'device' })),
-    ...app.handlerOffers().filter(o => !o.legacy && !content(app.state.replica.store,o.type).data.triggerDefinition).map(o => ({ id: `handler:${o.cid}`, label: o.label, icon: 'handler', output: o.type === app.state.replica.store.primitive.templateField.getId() ? 'template' : o.capability ?? o.type, group: offerGroup(o.peerId) })),
+    ...app.handlerOffers().filter(o => !content(app.state.replica.store,o.type).data.triggerDefinition).map(o => ({ id: `handler:${o.cid}`, label: o.label, icon: 'handler', output: o.type === app.state.replica.store.primitive.templateField.getId() ? 'template' : o.capability ?? o.type, group: offerGroup(o.peerId) })),
     ...(canVerifySpecifications(app,app.constructorContext()) ? [{id:'verify-specifications',label:'Verify specifications',icon:'verify',output:'tool',group:'device'}] : []),
     { id: 'feature-specification', label: 'Feature specification', icon: 'specification', output: 'note', group: 'device' },
     ...CONSTRUCTORS.map(c => ({ ...c, output: c.id === 'integration' ? 'peer' : c.id === 'repository' ? 'repo' : c.id, group: c.id === 'repository' ? github : 'device' })),
@@ -873,7 +873,7 @@ function insertConstructor(app: App, id: string, path = app.constructorContext()
   if (id.startsWith('action:')) {
     const cap = id.slice(7) as 'search' | 'llm' | 'market'
     if (!['search','llm','market'].includes(cap) || !app.capabilityAvailable(cap, path)) { app.notify('error', 'This action has no active handler here.'); return }
-    try { app.applyConstructor(path, { type: ALLOCATION_TYPE, text: CAPABILITY_LABEL[cap] ?? cap, done: false, extras: { requirement: { capability: cap } } }) } catch (error) { app.notify('error', String(error)) }
+    try { app.applyConstructor(path, { type: ALLOCATION_TYPE, text: capabilityLabels(app.state.replica.store, app.state.view)[cap] ?? cap, done: false, extras: { requirement: { capability: cap } } }) } catch (error) { app.notify('error', String(error)) }
     return
   }
   if (!id.startsWith('trigger:')) { openConstructor(app, id, path, replace); return }
@@ -1440,7 +1440,7 @@ function placeholderForm(app: App): HTMLElement {
   } })
   const box = combobox('Placeholder template', 'Choose a placeholder template…', query => [
     option('Text', 'text', 'Types'),
-    ...app.allCapabilities().map(cap => option(CAPABILITY_LABEL[cap] ?? cap, cap, 'Types')),
+    ...app.allCapabilities().map(cap => option(capabilityLabels(app.state.replica.store, app.state.view)[cap] ?? cap, cap, 'Types')),
     ...app.searchLocalNodes(query, TEMPLATE_TYPE).map(found => option(found.row.title, 'template:' + found.row.id, 'Templates'))
   ], () => [], 'Search template types, then drag…')
   box.addEventListener('dragstart', event => { if (!selected) return; event.stopPropagation(); event.dataTransfer?.setData('application/x-fos-placeholder', selected); if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy' })
@@ -1593,7 +1593,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   const shared = app.sharedNodeAt(state.view)
   if (shared) {
     const grants = app.sharedGrants(state.view) ?? []
-    const line = div('muted shared-grants', `Shared by @${shared.owner} · you can ${grants.length ? grants.map(g => CAPABILITY_LABEL[g] ?? g).join(', ') : 'read'} here; your edits reach them as proposals.`)
+    const line = div('muted shared-grants', `Shared by @${shared.owner} · you can ${grants.length ? grants.map(g => capabilityLabels(app.state.replica.store, app.state.view)[g] ?? g).join(', ') : 'read'} here; your edits reach them as proposals.`)
     header.append(line)
   }
   const run = toolbar.querySelector<HTMLButtonElement>('.evaluate')!
@@ -2917,13 +2917,13 @@ function renderRootRows(state: AppState, app: App, mode: 'peers' | 'integrations
     const out: HTMLElement[] = []
     for (const cap of list) {
       const isOff = off.includes(cap)
-      const chip = span('chip cap-chip' + (online && !isOff ? '' : ' off') + (isOff ? ' disabled' : ''), CAPABILITY_LABEL[cap] ?? cap)
+      const chip = span('chip cap-chip' + (online && !isOff ? '' : ' off') + (isOff ? ' disabled' : ''), capabilityLabels(app.state.replica.store, app.state.view)[cap] ?? cap)
       chip.title = `${capTitle[cap] ?? cap}${isOff ? ' (switched off)' : online ? '' : ' (offline)'}${change ? ' · click to switch ' + (isOff ? 'on' : 'off') : lockedNote ? ` · ${lockedNote}` : ''}`
       if (change) {
         chip.classList.add('editable')
         chip.addEventListener('click', () => change(list, isOff ? off.filter((c) => c !== cap) : [...off, cap]))
         const x = button('icon cap-remove', '×', () => change(list.filter((c) => c !== cap), off.filter((c) => c !== cap)))
-        x.title = `Remove ${CAPABILITY_LABEL[cap] ?? cap}`
+        x.title = `Remove ${capabilityLabels(app.state.replica.store, app.state.view)[cap] ?? cap}`
         chip.append(x)
       }
       out.push(chip)
@@ -2935,7 +2935,7 @@ function renderRootRows(state: AppState, app: App, mode: 'peers' | 'integrations
         const add = document.createElement('select')
         add.className = 'small cap-add'
         add.append(new Option('+ add', ''))
-        for (const c of missing) add.append(new Option(CAPABILITY_LABEL[c] ?? c, c))
+        for (const c of missing) add.append(new Option(capabilityLabels(app.state.replica.store, app.state.view)[c] ?? c, c))
         add.addEventListener('change', () => { if (add.value) change([...list, add.value as Capability], off) })
         out.push(add)
       }
@@ -3022,7 +3022,7 @@ function renderRootRows(state: AppState, app: App, mode: 'peers' | 'integrations
     }
     const offers = p.name === 'fos' ? p.capabilities : p.integration ? p.integration.provides : p.accepts
     if (offers.length) lines.append(direction('available here:', 'Handlers available to this node and its children. Overrides inherit until another node overrides them.', offers.map(cap => {
-      const b = button('chip cap-chip' + (p.disabled.includes(cap) || !p.online ? ' off' : ''), CAPABILITY_LABEL[cap] ?? cap, () => app.setPeerOffers(p.name === 'fos' ? 'fos' : p.id, [cap], p.disabled.includes(cap)))
+      const b = button('chip cap-chip' + (p.disabled.includes(cap) || !p.online ? ' off' : ''), capabilityLabels(app.state.replica.store, app.state.view)[cap] ?? cap, () => app.setPeerOffers(p.name === 'fos' ? 'fos' : p.id, [cap], p.disabled.includes(cap)))
       if (cap === 'persist' && p.name === 'fos') b.title = 'Disabling Fos storage pauses account replication of this entire attached group and its history. Direct device replication remains available. Re-enabling does not release excluded history; use a separate data session for server-synced content.'
       b.disabled = !owner; b.setAttribute('aria-pressed', String(!p.disabled.includes(cap))); return b
     })))

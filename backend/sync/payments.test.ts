@@ -19,6 +19,7 @@ import { MONEY_TYPE } from '@fosforescent/shared/sync/library-types'
 const fresh = (r: Replica) => loadReplica(serializeReplica(r))
 /** One owner account on a test host: events, the evaluator and payment settlement share its store. */
 function host(r: Replica, runtime: ReturnType<typeof createHostRuntime>) {
+  r = ensureHomeContext(r, 0, runtime.hostOffers())
   let time = 100
   const notified: unknown[] = []
   const deps = { loadStore: async () => ({ user: { id: 1, username: 'owner' }, store: r.store }), saveStore: async (_user: unknown, store: any) => { r = { ...r, store } }, now: () => ++time, notify: (_id: number, message: unknown) => { notified.push(message) } }

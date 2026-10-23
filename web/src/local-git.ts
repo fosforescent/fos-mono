@@ -2,7 +2,7 @@ import { localRepositoryHere } from '../../shared/sync/repository'
 import type { App } from './app'
 import { launchAgent } from './agents'
 import { inTauri, tauriInvoke } from './project'
-import { argumentRefs, capabilityTarget, content, contextMembers, headCid, refValueCid, resolveScope, specificationRows, type FeatureSpecification, type Scope } from '../../shared/sync/index'
+import { argumentRefs, libAt, content, contextMembers, headCid, refValueCid, resolveScope, specificationRows, type FeatureSpecification, type Scope } from '../../shared/sync/index'
 
 type Snapshot = { cwd: string; branch: string; head: string; revision: string; specifications: FeatureSpecification[]; branches: string[]; merged: boolean; dirty: boolean }
 type Binding = { path: string; scope: Scope; peer: string }

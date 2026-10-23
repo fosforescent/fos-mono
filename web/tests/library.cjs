@@ -1,6 +1,4 @@
-/* The standard library: a mutable ref like any other. A library another account shares (a ref of the Library type it
-   published to its members) opens as a live projection in Home, is pulled whole so its templates work offline, and
-   is the library rows under Home use. */
+/* Shared definitions must materialize offline; consumers must explicitly pin and upgrade their library instances. */
 const assert = require('node:assert/strict')
 const { buildSync } = require('esbuild')
 const { mkdtempSync } = require('node:fs')
@@ -51,6 +49,9 @@ async function main() {
   // my device: signed in; my Home references alice's library (the row her invite placed)
   const app = new c.App({ baseUrl: 'http://localhost', autoLogin: null, storage: c.createMemoryStorage() })
   app.scheduleSync = () => {}; app.syncNow = async () => {}
+  let materialized
+  const materialize = app.materializeSharedTree.bind(app)
+  app.materializeSharedTree = (...args) => (materialized = materialize(...args))
   c.mountUi(document.getElementById('app'), app)
   let me = c.ensureHomeContext(c.createReplica('user:me'), 1)
   me = { ...me, meta: { ...me.meta, peerId: 'user:me', serverPeerId: 'user:me' } }
@@ -62,19 +63,21 @@ async function main() {
 
   // opening pulls the projection as her library's member, and the whole tree follows: it is a library
   await app.openSharedNode([HOME, TEAM])
+  await materialized
   // under Home, the team library's template (the device root's library has one of that name too)
-  const teamTemplate = () => { const t = c.findTemplateByName(app.state.replica, 'Paid task', [HOME]); return t && t.path[1] === TEAM ? t : null }
+  const teamTemplate = () => c.view(app.state.replica, [HOME, TEAM])?.tasks.find(row => row.title === 'Paid task')
   for (let i = 0; i < 80 && !teamTemplate(); i++) await tick()
   assert(app.isPeerNode([HOME, TEAM]), 'the reference became a live projection')
   assert.deepEqual(app.state.view, [HOME, TEAM])
   assert(app.isLibrary([HOME, TEAM]), 'its content is a library')
-  assert.deepEqual(c.libraryPath(app.state.replica), [HOME, TEAM], 'under Home it is the library rows see')
+  assert.deepEqual(c.libraryPath(app.state.replica), [HOME, TEAM], 'editing finds the nearest shared definition')
+  app.set({ replica: c.useLibrary(app.state.replica, [HOME], [HOME, TEAM], ++now) })
   const trip = teamTemplate()
   assert(trip, 'the library\'s templates are in the local replica')
   // the template's requirements, beside its pattern rows (what tasks made from it accept)
-  const tripRows = () => (c.view(app.state.replica, trip.path.concat(trip.row.id))?.tasks ?? []).filter(t => !!t.requirement)
+  const tripRows = () => (c.view(app.state.replica, [HOME, TEAM, trip.id])?.tasks ?? []).filter(t => !!t.requirement)
   for (let i = 0; i < 40 && tripRows().length < 2; i++) await tick()
-  assert.equal(tripRows().length, 2, 'template children were pulled too: ' + JSON.stringify([trip.path, trip.row.id, app.isPeerNode([...trip.path, trip.row.id]), c.view(app.state.replica, [...trip.path, trip.row.id]).tasks.map(t => t.id), calls.length]))
+  assert.equal(tripRows().length, 2, 'template children were pulled too: ' + JSON.stringify([[HOME, TEAM], trip.id, app.isPeerNode([HOME, TEAM, trip.id]), c.view(app.state.replica, [HOME, TEAM, trip.id]).tasks.map(t => t.id), calls.length]))
   assert(calls.filter(p => p.endsWith('provide-node')).length > 3, `the tree was materialized node by node: ${calls.length} requests`)
 
   // offline: a task made from a library template gets the template's requirements, with no request to the server
@@ -87,6 +90,7 @@ async function main() {
   assert.deepEqual(requirements.map(t => t.requirement.capability), tripRows().map(t => t.requirement.capability))
   assert.equal(calls.length, before, 'nothing was requested while offline')
   assert(app.libraryConstructors().some(item => item.label === 'Paid task'), 'the menu reads the live library projection')
+  assert(!app.libraryConstructors().some(item => item.label === 'Manual handlers'), 'a shared group remains distinct from executable templates')
 
   // The library's manual fallbacks: a device that never synced has them from its build. Doing a thing by hand
   // records the supply (and a receipt for money or a place) as the person; no peer is involved.
@@ -118,6 +122,8 @@ async function main() {
   edited = c.addRow(edited, [...bundlePath, 'custom'], ALLOCATION_TYPE, 'Check the result', Date.now(), { id: 'custom-check', requirement: { capability: 'confirmation' } })
   edited = c.setTemplateIcon(edited, [...bundlePath, 'custom'], 'confirm', Date.now())
   fresh.set({ replica: edited })
+  assert(constructor('Paid task') && !constructor('Custom workflow'), 'definition edits must not alter the pinned menu')
+  fresh.set({ replica: c.upgradeLibrary(fresh.state.replica, [], bundlePath, Date.now()) })
   assert(!constructor('Paid task') && constructor('Get together') && constructor('Custom workflow'), 'renames and additions appear without a UI catalog change')
   assert.equal(fresh.libraryConstructors().find(item => item.id === 'custom').icon, 'confirm')
   // A local template with the same name must not shadow the library definition.
@@ -173,7 +179,9 @@ async function main() {
   assert.throws(() => fresh.insertLibraryConstructor('custom', [HOME, peerOnly.id]), /matching/, 'a workflow without a peer property cannot fill a peer pattern')
   assert.equal(c.headCid(fresh.state.replica), incompatibleHead)
   fresh.set({ replica: c.deleteTask(fresh.state.replica, bundlePath, 'custom', Date.now()) })
-  assert(!constructor('Custom workflow'), 'removed library constructors leave the menu')
+  assert(constructor('Custom workflow'), 'deletion does not alter the pinned namespace')
+  fresh.set({ replica: c.upgradeLibrary(fresh.state.replica, [], bundlePath, Date.now()) })
+  assert(!constructor('Custom workflow'), 'an explicit upgrade removes deleted fields')
   assert.throws(() => fresh.insertLibraryConstructor('custom'), /unavailable/, 'a stale drag cannot instantiate a deleted definition')
   fresh.select(null)
   const errand = fresh.applyConstructor([HOME], { type: TASK_TYPE, text: 'Errand', done: false })
@@ -210,4 +218,4 @@ async function main() {
   assert.deepEqual(c.view(fresh.state.replica, [...errand, 'near']).tasks.find(t => (!!t.allocation && !t.requirement)).allocation.location, { lat: 48.85837, lng: 2.29448 })
   console.log('PASS: live and bundled library discovery, menu/search, click/drop, typed inputs, undo, library edits, and manual fallbacks')
 }
-main().catch(error => { console.error(error); process.exit(1) })
+main().catch(error => { console.error(error); process.exitCode = 1 }).finally(() => { dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pagehide')); dom.window.close() })

@@ -36,6 +36,8 @@ export function compileLibrary(source: LibrarySource): CompiledLibrary {
   const target = hashContent({ data: { description: { content: 'Target Constructor Node' } }, children: [] })
   const alias = hashContent({ data: { description: { content: 'Alias Constructor Node' } }, children: [] })
   // the names the library gives its nodes (refs in the graph; see library-names.ts)
-  const refs = Object.fromEntries(libraryNames(cid => nodes[cid], source.rootNodeId, target, alias).byName)
+  const names = libraryNames(cid => nodes[cid], source.rootNodeId, target, alias)
+  if (names.ambiguous.size) throw new Error(`Ambiguous library fields: ${[...names.ambiguous].join(', ')}`)
+  const refs = Object.fromEntries(names.byName)
   return { version: FOS_DATA_VERSION, rootNodeId: source.rootNodeId, nodes: Object.fromEntries(Object.entries(nodes).sort(([a], [b]) => a.localeCompare(b))), refs }
 }

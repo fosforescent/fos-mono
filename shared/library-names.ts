@@ -9,19 +9,28 @@
  */
 import type { FosNodeContent } from './types'
 
-export type LibraryNames = { byName: Map<string, string>; byNode: Map<string, string> }
+export type LibraryNames = { byName: Map<string, string>; byNode: Map<string, string>; ambiguous: Set<string> }
 type Get = (cid: string) => FosNodeContent | null | undefined
 
 /** The node a named row `[left, right]` of a library stands for, or null when it is no field. */
 export function fieldNode(get: Get, edge: [string, string], target: string, alias: string): { name: string; node: string } | null {
   const [left, right] = edge
-  const node = get(right)
+  let node = get(right), current = right
+  const seen = new Set<string>()
+  // A shared row may have a local ref envelope around its named value.
+  // Follow that graph edge before interpreting the declaration itself.
+  while (node && !node.data.name && !seen.has(current)) {
+    seen.add(current)
+    const pointer = node.children.find(([key]) => key === target)?.[1]
+    if (!pointer) break
+    current = pointer; node = get(current)
+  }
   const name = node?.data.name?.content
   if (!node || !name) return null
   const pointer = node.children.find(([key]) => key === target)?.[1]
   if (pointer) return { name, node: pointer }
   if (node.children.some(([key]) => key === alias)) return { name, node: left }
-  return { name, node: right }
+  return { name, node: current }
 }
 
 /** The value of `cid` (through ref pointers). */
@@ -37,18 +46,21 @@ function valueOf(get: Get, cid: string, target: string): FosNodeContent | null {
 
 /** The field `name` of the node `cid` (a library value or one of its fields), or null. */
 export function fieldOf(get: Get, cid: string, name: string, target: string, alias: string): string | null {
+  const matches: string[] = []
   for (const edge of valueOf(get, cid, target)?.children ?? []) {
     const field = fieldNode(get, edge as [string, string], target, alias)
-    if (field?.name === name) return field.node
+    if (field?.name === name) matches.push(field.node)
   }
-  return null
+  if (matches.length > 1) throw new Error(`Ambiguous library field ${name}.`)
+  return matches[0] ?? null
 }
 
 /** The library value `root`'s fields and their fields (dotted paths); `target`/`alias` are the ref constructors. */
 export function libraryNames(get: Get, root: string, target: string, alias: string): LibraryNames {
-  const byName = new Map<string, string>(), byNode = new Map<string, string>()
+  const byName = new Map<string, string>(), byNode = new Map<string, string>(), ambiguous = new Set<string>()
   const name = (path: string, node: string) => {
-    if (!byName.has(path)) byName.set(path, node)
+    if (byName.has(path)) ambiguous.add(path)
+    else byName.set(path, node)
     if (!byNode.has(node)) byNode.set(node, path)
   }
   const fields: Array<{ name: string; node: string }> = []
@@ -62,5 +74,5 @@ export function libraryNames(get: Get, root: string, target: string, alias: stri
     const inner = fieldNode(get, edge as [string, string], target, alias)
     if (inner && inner.node === edge[0]) name(`${field.name}.${inner.name}`, inner.node)
   }
-  return { byName, byNode }
+  return { byName, byNode, ambiguous }
 }

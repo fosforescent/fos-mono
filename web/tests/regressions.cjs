@@ -760,6 +760,8 @@ async function main() {
   assert.equal(view(workspaceApp.state.replica, [parentA]).tasks[0].title, 'A child')
   workspaceApp.addPlaceholder('customer', 'text')
   assert(workspaceApp.placeholders().some(p => p.name === 'customer' && p.status === 'missing'))
+  const agreement = sync.put(workspaceApp.state.replica.store, { data: { name: { content: 'Agreement' } }, children: [] })
+  workspaceApp.edit(sync.addRefAt(workspaceApp.state.replica, workspaceApp.state.view, 'agreement-type', agreement, 1, null, 'Agreement'))
   workspaceApp.addPlaceholder('document', 'Agreement')
   assert(workspaceApp.placeholders().some(p => p.name === 'document' && p.type === 'Agreement'))
   const documentArg = workspaceApp.placeholders().find(p => p.name === 'document')

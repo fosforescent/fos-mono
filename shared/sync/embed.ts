@@ -42,7 +42,7 @@ import { dispatchEvent, type FosEvent } from './events'
 import { readNodeValue } from './evaluation'
 import { membershipPathAt } from './replica'
 import { LIBRARY_VERSION, ensureDeviceLibrary, exportLocalLibrary } from './library'
-import { capabilityTarget, libraryInstanceOf, libraryRowOf, content, importNodes, put, resolveScope, valueContent, valueCidOf } from './graph'
+import { libAt, libraryInstanceOf, libraryRowOf, content, importNodes, put, resolveScope, valueContent, valueCidOf } from './graph'
 import { nativeRef, publishNativeRef } from './native-refs'
 import { discoverHandlers } from './handlers'
 import { writeGraphNode, nativeDefaultsApplied, markNativeDefaultsApplied } from './replica'
@@ -82,7 +82,7 @@ export const api = {
     loaded = ensureDeviceLibrary(loaded, undefined, Date.now())
     const seeded = nativeDefaultsApplied(loaded, [], `desktop:${peerId}`)
     for (const name of ['provideNode', 'sync']) {
-      const ref = nativeRef(loaded.store, peerId, { id: `desktop:${name}`, label: name, type: store => capabilityTarget(store, name) })
+      const ref = nativeRef(loaded.store, peerId, { id: `desktop:${name}`, label: name, type: (store, at) => libAt(store, at).capabilities[name]! })
       if (!seeded) loaded = publishNativeRef(loaded, [], peerId, ref, 0)
     }
     loaded = markNativeDefaultsApplied(loaded, [], `desktop:${peerId}`, 0)

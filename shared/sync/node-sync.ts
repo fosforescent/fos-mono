@@ -6,7 +6,7 @@ import { mergeNodes } from './merge'
 import type { FosDataContent, FosNodeContent, FosNodesData } from '../types'
 import { FOS_DATA_VERSION, cidVersion, isCid, isCurrentCid } from '../dag-implementation/cid'
 import { advertisedRows, content, valueContent, identityCid, isRowEdge, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, rowTypeOf, isShippedLibrary, resolveScope, isHandle, isPeerReference,
-  scopeBranches, branchSelection, selectBranch, isBranchChoice, readChoice, CAPABILITIES, putStripped, readProposals, proposalContent, withProposal, submissionAdditions, removeProposalByCid, importNodes, reachableNodes, capabilityTarget, refValueCid, withMainBranchPolicy, readMembers, memberFor, updateAtScope, commitRoot, put, refNodeContent, bookkeepingOf,
+  scopeBranches, branchSelection, selectBranch, isBranchChoice, readChoice, capabilityNames, putStripped, readProposals, proposalContent, withProposal, submissionAdditions, removeProposalByCid, importNodes, reachableNodes, copyOuterScope, refValueCid, withMainBranchPolicy, readMembers, memberFor, updateAtScope, commitRoot, put, refNodeContent, bookkeepingOf,
   memberEntryPeerAt, inMemberEntry, isMemberEdge, memberEdgesOf, memberPeerOf, membershipPath, withMembershipRow, withMembershipRows, makeLink, isRefNode, SERVER_MEMBER, type Scope } from './graph'
 import { loadReplica, serializeReplica, headCid, type Replica } from './replica'
 import { sameValue } from './merge'
@@ -477,6 +477,7 @@ function exchangeProposedNode(r: Replica, input: NodeRequest, authority: NodeAut
   if (!existing && !request.update) return provideNode(r, request, authority, now)
   // Work on an isolated store so errors cannot mutate main or its pending value.
   let fork = loadReplica(serializeReplica(r))
+  copyOuterScope(r.store, fork.store)
   const rebased = existing && existing.baseCid !== base
   const pending = !existing ? null : rebased ? mergeNodes(fork.store, existing.baseCid, base, existing.contentCid, { ours: 'main', theirs: authority.peerId }).cid : existing.contentCid
   // the pending value replaces main's value; the node itself (a link's ref node, its identity) stays
@@ -494,9 +495,9 @@ function exchangeProposedNode(r: Replica, input: NodeRequest, authority: NodeAut
     const next = withProposal(r.store, main, authority.peerId, proposal, name)
     commitRoot(r.store, updateAtScope(r.store, headCid(r), authority.scope, () => next, 'node'), now)
   }
-  const type = capabilityTarget(r.store, 'provideNode'), root = content(r.store, r.store.rootNodeId)
-  const endpoints = content(fork.store, fork.store.rootNodeId).children.filter(e => e[0] === type)
-  r.store.rootNodeId = put(r.store, { ...root, children: [...root.children.filter(e => e[0] !== type), ...endpoints] })
+  const root = content(r.store, r.store.rootNodeId)
+  const endpoints = content(fork.store, fork.store.rootNodeId).children.filter(e => !!content(fork.store, e[1]).data.nodeLink)
+  r.store.rootNodeId = put(r.store, { ...root, children: [...root.children.filter(e => !content(r.store, e[1]).data.nodeLink), ...endpoints] })
   served.node.grants = grants
   served.node.children = served.node.children.filter(child => {
     if (child.peer !== undefined && !memberEntryVisible(child.peer, authority)) return false

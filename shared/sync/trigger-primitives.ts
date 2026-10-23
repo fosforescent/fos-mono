@@ -1,5 +1,5 @@
 /** Host-language observer primitives. Availability comes only from scoped ref declarations. */
-import { capabilityTarget, resolveScope, valueContent } from './graph'
+import { libAt, resolveScope, valueContent } from './graph'
 import { headCid, view } from './replica'
 import { evaluationRecord } from './evaluation'
 import { watchedRefValue, type TriggerObserver } from './triggers'
@@ -136,6 +136,6 @@ const deviceObservers: Array<[string, TriggerObserver]> = [
 export const deviceTriggerDefinitions: PrimitiveDefinition<unknown>[] = deviceObservers.map(([name, observer]) => ({
   id: 'device:' + name,
   label: name,
-  type: (store) => capabilityTarget(store, name),
+  type: (store, at) => libAt(store, at).capabilities[name]!,
   trigger: observer
 }))

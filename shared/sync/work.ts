@@ -6,7 +6,7 @@ import { discoverHandlers } from './handlers'
 import { contextBindings, resolveBinding, resolveText, type BindingEnvironment } from './bindings'
 import { constructForm, formText, formTitle } from './forms'
 import {
-  demandOf, capabilityTarget, commitRoot, content, findRowByAlias, identityCid, newId, put,
+  demandOf, libAt, commitRoot, content, findRowByAlias, identityCid, newId, put,
   readProposals, refArguments, refNodeContent, refValueCid, resolveScope,
   rowEdgeAt, rowTypeAt, rowTypeOf, typeIdOf, isRowEdge, isRowOfType, isAllocationRow, flowOf, updateAtScope, valueContent, type Scope
 } from './graph'
@@ -32,12 +32,12 @@ const nodeAt = (r: Replica, path: Scope) => {
 const slots = (r: Replica, cid: string, type: string) => refArguments(r.store, valueContent(r.store, cid), type)
 /** A model attempt record (`beginTaskWork`): handler binding plus return slot. Runtime bookkeeping, not work to evaluate. */
 export function isAttempt(r: Replica, cid: string): boolean {
-  return slots(r, cid, capabilityTarget(r.store, 'llm')).length > 0 && slots(r, cid, r.store.primitive.documentField.getId()).length > 0
+  return valueContent(r.store, cid).children.some(([left]) => typeIdOf(r.store, left) === 'capabilities.llm') && slots(r, cid, r.store.primitive.documentField.getId()).length > 0
 }
 
 /** Shared resolution, with the primitive Fos advertisement adapted to a native value. */
 export function workHandler(r: Replica, requestPath: Scope, environment: BindingEnvironment = {}) {
-  const store = r.store, type = capabilityTarget(store, 'llm')
+  const store = r.store, type = libAt(store, requestPath).capabilities.llm!
   const request = nodeAt(r, requestPath)
   const handlers = slots(r, request.cid, type)
   const candidates = contextBindings(r, requestPath, environment)
@@ -150,7 +150,7 @@ export function beginTaskWork(r: Replica, requestPath: Scope, preview: WorkConte
   const current = taskWorkContext(r, requestPath)
   if (current.blockers.length) throw new Error(current.blockers.join('\n'))
   if (current.prompt !== preview.prompt || JSON.stringify(current.sources) !== JSON.stringify(preview.sources)) throw new Error('The task changed. Refresh the context preview before running.')
-  const store = r.store, type = capabilityTarget(store, 'llm')
+  const store = r.store, type = libAt(store, requestPath).capabilities.llm!
   const resolved = workHandler(r, requestPath)
   if (resolved.status !== 'ready') throw new Error(resolved.problems.join('\n'))
   const handler = resolved.cid!

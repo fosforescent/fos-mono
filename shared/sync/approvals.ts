@@ -19,7 +19,7 @@
 import type { FosStore } from '../dag-implementation/store'
 import type { FosPathElem } from '../types'
 import { hashContent } from '../dag-implementation/cid'
-import { capabilityTarget, commitRoot, content, memberEdgesOf, memberPeerOf, put, readMembers, readProposal, readProposals, refNodeContent, refValueCid, resolveScope, updateAtScope, valueContent, withProposal, MARKET_PEER, SERVER_MEMBER, type ProposalRecord, type Scope } from './graph'
+import { libAt, typeIdOf, commitRoot, content, memberEdgesOf, memberPeerOf, put, readMembers, readProposal, readProposals, refNodeContent, refValueCid, resolveScope, updateAtScope, valueContent, withProposal, MARKET_PEER, SERVER_MEMBER, type ProposalRecord, type Scope } from './graph'
 import { applyProposalAt, headCid, type Replica } from './replica'
 import { plainEdge } from './patterns'
 import { isUserType, readUser, type SignatureCheck } from './users'
@@ -29,8 +29,8 @@ export type Approval = { approver: string; signature?: { key: string; value: str
 /** Who attests approvals and how: a peer with a published key (the fos server for now; peers' own keys later). */
 export type Attester = { key: string; sign(payload: string): string }
 
-const approveLeft = (store: FosStore) => capabilityTarget(store, 'approve')
-const approveMergeLeft = (store: FosStore) => capabilityTarget(store, 'approveMerge')
+const isApproval = (store: FosStore, left: string) => typeIdOf(store, left) === 'capabilities.approve'
+const isMergeRule = (store: FosStore, left: string) => typeIdOf(store, left) === 'capabilities.approveMerge'
 /** An approval's identity among the submission's rows: whose it is (approving again replaces it). */
 const approvalId = (approver: string) => hashContent({ data: { peerId: { content: approver }, description: { content: 'approval' } }, children: [] })
 
@@ -46,9 +46,8 @@ function approverOf(store: FosStore, node: string): string | null {
 
 /** The approvals the submission `proposalCid` holds, as written (not yet verified). */
 export function approvalsOf(store: FosStore, proposalCid: string): Approval[] {
-  const left = approveLeft(store)
   return content(store, proposalCid).children.flatMap(([key, node]) => {
-    if (key !== left) return []
+    if (!isApproval(store, key)) return []
     const approver = approverOf(store, node)
     if (!approver) return []
     const sig = content(store, node).children[0]
@@ -57,28 +56,28 @@ export function approvalsOf(store: FosStore, proposalCid: string): Approval[] {
 }
 
 /** The submission `proposalCid` with `approver`'s approval (signed by `attester` when given), in place of an earlier one of theirs. */
-function withApproval(store: FosStore, proposalCid: string, approver: string, attester?: Attester): string {
+function withApproval(store: FosStore, proposalCid: string, approver: string, at: Scope, attester?: Attester): string {
   const proposal = readProposal(store, proposalCid)
   if (!proposal) throw new Error('That submission is gone.')
   const signature: FosPathElem[] = attester ? [[attester.key, put(store, { data: { description: { content: attester.sign(approvalPayload(approver, proposal.contentCid)) } }, children: [] })]] : []
   const node = put(store, { data: { alias: { id: approvalId(approver) }, peerId: { content: approver } }, children: signature })
-  const left = approveLeft(store), submission = content(store, proposalCid)
-  const others = submission.children.filter(([key, n]) => !(key === left && approverOf(store, n) === approver))
+  const left = libAt(store, at).capabilities.approve!, submission = content(store, proposalCid)
+  const others = submission.children.filter(([key, n]) => !(isApproval(store, key) && approverOf(store, n) === approver))
   return put(store, { ...submission, children: [...others, [left, node]] })
 }
 
 /** A submission's identity apart from its approvals: the same however many have approved it. */
 export function submissionKey(store: FosStore, proposalCid: string): string {
-  const left = approveLeft(store), node = content(store, proposalCid)
-  return hashContent({ ...node, children: node.children.filter(([key]) => key !== left) })
+  const node = content(store, proposalCid)
+  return hashContent({ ...node, children: node.children.filter(([key]) => !isApproval(store, key)) })
 }
 
 /** Withdraw `approver`'s approval of the submission `proposalCid` at `at` (nothing when they have none there). */
 export function withdrawApproval(r: Replica, at: Scope, proposalCid: string, approver: string, now: number): Replica {
   const store = r.store, record = readProposal(store, proposalCid)
   if (!record) return r
-  const left = approveLeft(store), node = content(store, proposalCid)
-  const kept = node.children.filter(([key, n]) => !(key === left && approverOf(store, n) === approver))
+  const node = content(store, proposalCid)
+  const kept = node.children.filter(([key, n]) => !(isApproval(store, key) && approverOf(store, n) === approver))
   if (kept.length === node.children.length) return r
   const next = put(store, { ...node, children: kept })
   commitRoot(store, updateAtScope(store, headCid(r), at, value => withProposal(store, value, record.peerId, next, record.name), 'node'), now)
@@ -108,21 +107,21 @@ export function verifyApproval(r: Replica, contentCid: string, approval: Approva
 }
 
 /** A pattern of approvals: one approval row per peer. */
-function approvalPattern(store: FosStore, approvers: string[]): string {
-  const left = approveLeft(store)
+function approvalPattern(store: FosStore, approvers: string[], at: Scope): string {
+  const left = libAt(store, at).capabilities.approve!
   return put(store, { data: {}, children: approvers.map(p => [left, put(store, { data: { peerId: { content: p } }, children: [] })] as FosPathElem) })
 }
 
 /** The group's merge rule at `at`, its approveMerge row's pattern of approvals; null when the default holds. */
 export function mergeRule(r: Replica, at: Scope): string | null {
   const cid = resolveScope(r.store, headCid(r), at)
-  const row = cid ? rowWithLeft(r.store, cid, approveMergeLeft(r.store)) : null
+  const row = cid ? rowWithLeft(r.store, cid, isMergeRule) : null
   return row ? refValueCid(r.store, content(r.store, row.ref)) : null
 }
 
 /** Set the group's merge rule at `at`: the approval of each of `approvers` (the approveMerge capability's handler there is that pattern). */
 export function setMergeRule(r: Replica, at: Scope, approvers: string[], now: number): Replica {
-  const store = r.store, left = approveMergeLeft(store), pattern = approvalPattern(store, approvers)
+  const store = r.store, left = libAt(store, at).capabilities.approveMerge!, pattern = approvalPattern(store, approvers, at)
   const row: FosPathElem = [left, put(store, refNodeContent(store, { alias: { id: left } }, pattern))]
   commitRoot(store, updateAtScope(store, headCid(r), at, value => ({ ...value, children: [...value.children.filter(edge => plainEdge(store, edge)[0] !== left), row] })), now)
   return { ...r }
@@ -166,7 +165,7 @@ export function acceptSubmission(r: Replica, at: Scope, proposalCid: string, app
   const store = r.store, cid = resolveScope(store, headCid(r), at)
   const record = readProposal(store, proposalCid)
   if (!cid || !record || record.status !== 'open' || !readProposals(store, content(store, cid)).some(p => p.cid === proposalCid)) throw new Error('That submission is no longer open here.')
-  const approved = withApproval(store, proposalCid, approver, options.attester)
+  const approved = withApproval(store, proposalCid, approver, at, options.attester)
   commitRoot(store, updateAtScope(store, headCid(r), at, node => withProposal(store, node, record.peerId, approved, record.name), 'node'), now)
   r = { ...r }
   const missing = missingApprovals(r, at, approved)

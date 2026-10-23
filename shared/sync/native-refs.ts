@@ -1,13 +1,13 @@
 /** Ref declarations register handlers. Native constructors only give graph values their local meaning. */
 import type { FosStore } from '../dag-implementation/store'
-import { capabilityTarget, content, enclosingScopes, handlerOfferId, put, refNodeContent, type Scope } from './graph'
+import { libAt, content, enclosingScopes, handlerOfferId, put, refNodeContent, type Scope } from './graph'
 import type { NodeProvider } from './node-provider'
 import { addMemberAt, headCid, setHandlerOffersAt, type Replica } from './replica'
 import { contextMemberRefs, discoverHandlers } from './handlers'
 import { sameCapabilityType } from './capabilities'
 import type { EvaluationStep } from './evaluation'
 import { refSubmissions, refValueCompatible } from './scoped-refs'
-import { primitiveRef, primitiveValue, primitiveImplementation, matchesInstructionRef, instructionPrimitives } from './primitives'
+import { primitiveConstructor, primitiveRef, primitiveValue, primitiveImplementation, matchesInstructionRef, instructionPrimitives } from './primitives'
 
 export type NativeImplementation<Context> = {
   trigger?: import('./triggers').TriggerObserver
@@ -26,12 +26,27 @@ export type NativeImplementation<Context> = {
 export type NodeTransport = Omit<NodeProvider, 'id'> & { attachment(address: Scope): Scope; available(): boolean }
 export type PrimitiveDefinition<Context> = NativeImplementation<Context> & {
   id: string
-  type(store: FosStore): string
+  type(store: FosStore, at: Scope): string
   label?: string
 }
 
-export function nativeRef<Context>(store: FosStore, host: string, definition: PrimitiveDefinition<Context>, native: NativeImplementation<Context> = definition): string {
-  return primitiveRef(store, { id: definition.id, type: definition.type(store), host, label: definition.label, native })
+export function nativeRef<Context>(store: FosStore, host: string, definition: PrimitiveDefinition<Context>, native: NativeImplementation<Context> = definition, at: Scope = []): string {
+  const type = definition.type(store, at)
+  return primitiveRef(store, { id: handlerOfferId(host, type, definition.id), implementation: definition.id, type, host, label: definition.label, native })
+}
+
+/** Restore only published native values, retaining the capability version each offer pinned. */
+export function restoreNativeRef<Context>(replica: Replica, at: Scope, host: string, definition: PrimitiveDefinition<Context>, native: NativeImplementation<Context> = definition): void {
+  const store = replica.store
+  for (const offer of discoverHandlers(replica, at).filter(offer => offer.peerId === host)) {
+    const implementation = definition.id
+    for (const value of refSubmissions(store, offer.cid)) {
+      const primitive = primitiveValue(store, value)
+      if (primitive?.host !== host || primitive.implementation !== implementation) continue
+      const edge = content(store, value).children.find(([left]) => left === primitiveConstructor(store))!
+      store.getNodeByAddress(edge[1])!.nativeImplementation = { value: native, type: offer.type }
+    }
+  }
 }
 
 /** Explicit graph mutation: publish a ref under its host. Merely constructing a primitive advertises nothing. */
@@ -41,7 +56,7 @@ export function publishNativeRef(replica: Replica, at: Scope, host: string, ref:
   if (!contextMemberRefs(replica, at).has(host)) replica = addMemberAt(replica, at, host, label, [], now)
   const offers = discoverHandlers(replica, at).filter(offer => offer.peerId === host && sameCapabilityType(replica.store, offer.type, type))
   if (offers.some(offer => offer.cid === ref)) return replica
-  return setHandlerOffersAt(replica, at, host, type, [...offers.filter(offer => !offer.legacy && offer.id !== node.data.alias!.id).map(offer => offer.cid), ref], now)
+  return setHandlerOffersAt(replica, at, host, type, [...offers.filter(offer => offer.id !== node.data.alias!.id).map(offer => offer.cid), ref], now)
 }
 
 /**
@@ -49,13 +64,13 @@ export function publishNativeRef(replica: Replica, at: Scope, host: string, ref:
  * once (`publishNativeRef`); later calls only give it its local meaning again.
  */
 export function offerNodeTransport(replica: Replica, peer: string, transport: NodeTransport, now: number): Replica {
-  const ref = nativeRef(replica.store, peer, { id: handlerOfferId(peer, 'provideNode'), label: peer, type: store => capabilityTarget(store, 'provideNode') }, { provideNode: transport })
+  const ref = nativeRef(replica.store, peer, { id: 'transport', label: peer, type: (store, at) => libAt(store, at).capabilities.provideNode! }, { provideNode: transport })
   return publishNativeRef(replica, [], peer, ref, now)
 }
 
 /** What reaches `peer` from the node at `at`: the native of its enabled `provideNode` offer in scope, when it can carry a request now. */
 export function nodeTransportAt(replica: Replica, at: Scope, peer: string): (NodeProvider & Pick<NodeTransport, 'attachment'>) | null {
-  const type = capabilityTarget(replica.store, 'provideNode')
+  const type = libAt(replica.store, at).capabilities.provideNode!
   const offers = new Set(discoverHandlers(replica, at).filter(offer => offer.peerId === peer && sameCapabilityType(replica.store, offer.type, type)).map(offer => offer.cid))
   const found = nativeRefValues(replica, at, peer).find(value => offers.has(value.ref) && value.native.provideNode?.available())
   return found ? { id: peer, ...found.native.provideNode! } : null
@@ -63,8 +78,8 @@ export function nodeTransportAt(replica: Replica, at: Scope, peer: string): (Nod
 
 /** Walk the registered refs, then execute the local meaning of their accepted primitive values. */
 export function primitiveExecutors<Context, Native extends NativeImplementation<Context> = NativeImplementation<Context>>(replica: Replica, step: EvaluationStep, host?: string): Array<{ native: Native; host: string; ref: string }> {
-  const offers = discoverHandlers(replica, step.path)
-  return nativeRefValues<Context, Native>(replica, step.path, host).filter(value => {
+  const parent = step.path.slice(0, -1), offers = discoverHandlers(replica, parent)
+  return nativeRefValues<Context, Native>(replica, parent, host).filter(value => {
     if (!value.native.effect) return false
     const offer = offers.find(offer => offer.cid === value.ref && offer.peerId === value.host)!
     return instructionPrimitives(replica, step).length ? matchesInstructionRef(replica, step, offer) : value.native.handles ? value.native.handles(step, replica) : matchesInstructionRef(replica, step, offer)

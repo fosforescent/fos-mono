@@ -1,4 +1,4 @@
-import { STANDARD_CAPABILITY_PATTERNS, capabilityName, sameCapabilityType, triggerDefinitionOf, isTriggerLeft } from './capabilities'
+import { capabilityName, sameCapabilityType, triggerDefinitionOf, isTriggerLeft } from './capabilities'
 export { triggerDefinitionOf, isTriggerLeft } from './capabilities'
 import { discoverHandlers } from './handlers'
 import { nativeRefValues } from './native-refs'
@@ -13,12 +13,12 @@ export { cronMatches } from './trigger-primitives'
  * declarations: inactive until the template is applied, when their placeholders are bound (`bindTemplateTriggers`).
  */
 import { addTask, headCid, instantiateTemplate, view, type Replica } from './replica'
-import { newId, resolveScope, valueContent, content, isBranchChoice, readChoice, refBranches, put, withBranches, type Scope } from './graph'
+import { libAt, newId, resolveScope, valueContent, content, isBranchChoice, readChoice, refBranches, put, withBranches, type Scope } from './graph'
 import { TEMPLATE_TYPE } from './library-types'
 import { bindRefInputs } from './refs'
 import { readGraphValue } from './node-values'
 import { rowWithLeft, writeRowValue } from './row-values'
-/** Compatibility spelling at API boundaries; declarations, not this string, determine behavior. */
+/** A presentation label; it must never select an observer implementation. */
 export type TriggerKind = string
 export type TriggerDefinition = NonNullable<import('../types').FosDataContent['triggerDefinition']>
 export type TriggerContext = { replica: Replica; path: Scope; config: NodeTrigger; now: number; previous: TriggerState | null }
@@ -26,9 +26,7 @@ export type TriggerEvent = { id: string; reset?: boolean; state?: Partial<Trigge
 export type TriggerObserver = { validate?(context: TriggerContext): void; observe(context: TriggerContext): TriggerEvent | null }
 export function triggerOffers(r: Replica, path: Scope) {
   return discoverHandlers(r, path).flatMap((offer) => {
-    const definition =
-      content(r.store, offer.type).data.triggerDefinition ??
-      STANDARD_CAPABILITY_PATTERNS.find((p) => p.name === capabilityName(r.store, offer.type))?.node.data.triggerDefinition
+    const definition = triggerDefinitionOf(r.store, offer.type)
     return definition && refSubmissions(r.store, offer.cid).some((cid) => primitiveValue(r.store, cid)) ? [{ ...offer, definition }] : []
   })
 }
@@ -48,18 +46,18 @@ function storedTrigger(r: Replica, path: Scope): { left: string; value: StoredTr
 }
 export function triggerObserver(r: Replica, path: Scope, t: NodeTrigger): TriggerObserver | null {
   const offers = triggerOffers(r, path).filter(
-    (o) => o.enabled && o.active && o.peerId === t.peer && (t.handler ? o.cid === t.handler : t.observer ? sameCapabilityType(r.store, o.type, t.observer) : (o.capability ?? o.id) === t.kind)
+    (o) => o.enabled && o.active && o.peerId === t.peer && (t.handler ? o.cid === t.handler : !!t.observer && sameCapabilityType(r.store, o.type, t.observer))
   )
   if (offers.length !== 1) return null
   return nativeRefValues<unknown>(r, path, t.peer).find((value) => value.ref === offers[0]!.cid)?.native.trigger ?? null
 }
 function definitionOf(t: NodeTrigger): TriggerDefinition | undefined {
-  return t.definition ?? STANDARD_CAPABILITY_PATTERNS.find((p) => p.name === t.kind)?.node.data.triggerDefinition
+  return t.definition
 }
 /** What a `response` trigger waits for: the evaluation request this peer left on another peer's node. */
 export type AwaitedResponse = { request: string; node: Scope; requestedAt: number }
 export type TriggerInput = {
-  /** Legacy selector; new calls supply the handler ref directly. Never persisted. */
+  /** Presentation only; select an observer through `handler` or `observer`. */
   kind?: TriggerKind
   peer: string
   enabled: boolean
@@ -117,7 +115,8 @@ export function bindTemplateTriggers(r: Replica, path: Scope, bindings: Record<s
     if (stored) {
       const { state: _state, declaration: kept, ...current } = stored.value
       const declaration = kept ?? current
-      const trigger = { ...(bindRefInputs(declaration, bindings) as TriggerInput), kind: capabilityName(r.store, stored.left) ?? stored.left, declaration } as NodeTrigger
+      const handler = pinnedOffer(r, stored.left)
+      const trigger = { ...(bindRefInputs(declaration, bindings) as TriggerInput), ...(handler ? { handler } : { observer: stored.left }), declaration }
       trigger.created = now
       if (trigger.watch) {
         if (!Array.isArray(trigger.watch.path) || !trigger.watch.path.length || typeof trigger.watch.branch !== 'string')
@@ -162,7 +161,7 @@ export function setNodeTrigger(r: Replica, path: Scope, trigger: TriggerInput, n
       o.peerId === trigger.peer &&
       o.enabled &&
       o.active &&
-      (trigger.handler ? o.cid === trigger.handler : trigger.observer ? sameCapabilityType(r.store, o.type, trigger.observer) : (o.capability ?? o.id) === trigger.kind)
+      (trigger.handler ? o.cid === trigger.handler : !!trigger.observer && sameCapabilityType(r.store, o.type, trigger.observer))
   )
   if (offers.length !== 1) throw new Error('Choose one available observer ref in this scope.')
   const offer = offers[0]!,
@@ -263,5 +262,5 @@ export async function runNodeTriggers(driver: {
  * while its app is open, like the other device triggers.
  */
 export function requestContinuation(r: Replica, at: Scope, awaited: AwaitedResponse, now: number): Replica {
-  return setNodeTrigger(r, at, { kind: 'response', peer: r.meta.peerId, enabled: true, created: now, response: awaited }, now)
+  return setNodeTrigger(r, at, { observer: libAt(r.store, at).capabilities.response!, peer: r.meta.peerId, enabled: true, created: now, response: awaited }, now)
 }

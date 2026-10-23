@@ -18,7 +18,7 @@ async function main() {
   const instruction = c.put(r.store, { data: { description: { content: 'Custom instruction' } }, children: [[text, source]] })
   c.commitRoot(r.store, c.updateAtScope(r.store, c.headCid(r), [c.HOME_ID], node => ({ ...node, children: node.children.map(edge => c.content(r.store, edge[1]).data.alias?.id === 'work' ? [instruction, edge[1]] : edge) })), 2)
   const answer = c.put(r.store, c.refNodeContent(r.store, { alias: { id: 'answer' }, name: { content: 'Answer' }, refRole: 'output' }, null, []))
-  r = c.addRefAt(r, root, 'result', c.capabilityTarget(r.store, 'record'), 3, c.put(r.store, { data: {}, children: [[text, answer]] }), 'result')
+  r = c.addRefAt(r, root, 'result', c.put(r.store, { data: {}, children: [] }), 3, c.put(r.store, { data: {}, children: [[text, answer]] }), 'result')
   app.set({ replica: r, view: root })
   c.mountUi(document.getElementById('app'), app)
   assert.equal(document.querySelector('.evaluate').disabled, true, 'an instruction hole disables Run')
