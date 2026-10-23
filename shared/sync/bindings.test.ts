@@ -102,12 +102,12 @@ test('disabling an offered handler removes availability without removing its con
 })
 
 test('editing memberships preserves typed handlers in their original direction', async () => {
-  const { withMember, memberHandlers, advertisement } = await import('./index')
+  const { withMember, memberHandlers, advertisement, peerNode } = await import('./index')
   const r = createReplica(), store = r.store, type = capabilityTarget(store, 'llm')
   const to = put(store, refNodeContent(store, { alias: { id: 'to' } }, literal(r, 'to'), []))
   const from = put(store, refNodeContent(store, { alias: { id: 'from' } }, literal(r, 'from'), []))
-  const member = put(store, { data: { peerId: { content: 'peer' } }, children: [[store.primitive.capabilityNode.getId(), advertisement(store, type, to)], [store.primitive.acceptsNode.getId(), advertisement(store, type, from)]] })
-  const updated = withMember(store, { data: {}, children: [[store.primitive.memberField.getId(), member]] }, 'peer', 'Peer', ['llm'], [], ['llm'])
+  const member = put(store, { data: { alias: { id: 'peer-entry' } }, children: [[store.primitive.capabilityNode.getId(), advertisement(store, type, to)], [store.primitive.acceptsNode.getId(), advertisement(store, type, from)]] })
+  const updated = withMember(store, { data: {}, children: [[peerNode(store, 'peer'), member]] }, 'peer', 'Peer', ['llm'], [], ['llm'])
   expect(memberHandlers(store, updated, 'peer', store.primitive.capabilityNode.getId())).toEqual([to])
   expect(memberHandlers(store, updated, 'peer', store.primitive.acceptsNode.getId())).toEqual([from])
 })

@@ -1,3 +1,4 @@
+import { memberEdgesOf } from './graph'
 import { syncWith, userView } from './test-helpers'
 import { contextMembers, createBranch, selectBranch, addSupply, addMemberAt, addRow, addTask, content, createReplica, moveNode, ensureHomeContext, findChild, headCid, HOME_ID, homePath, resetHomeContent, isRowOfType, rowTypeAt, valueContent, view } from './index'
 import { ALLOCATION_TYPE, TEMPLATE_TYPE } from './library-types'
@@ -11,8 +12,8 @@ test('legacy rows move into Home, constructors and peers remain at root, and mig
   r = ensureHomeContext(r, 4)
   expect(homePath(r)).toEqual([HOME_ID])
   expect(userView(r)!.tasks.find(row => row.id === HOME_ID)!.type).toBe(HOME_TYPE)
-  const rootMembers = content(r.store, headCid(r)).children.filter(edge => edge[0] === r.store.primitive.memberField.getId())
-  const homeMembers = content(r.store, findChild(r.store, headCid(r), HOME_ID)!).children.filter(edge => edge[0] === r.store.primitive.memberField.getId())
+  const rootMembers = memberEdgesOf(r.store, headCid(r))
+  const homeMembers = memberEdgesOf(r.store, findChild(r.store, headCid(r), HOME_ID)!)
   expect(homeMembers.some(edge => rootMembers.some(root => root[1] === edge[1]))).toBe(false)
   expect(contextMembers(r, [HOME_ID]).some(peer => peer.peerId === 'fos')).toBe(true)
   expect(userView(r)!.tasks.map(row => row.id)).toEqual(['workflow', HOME_ID])

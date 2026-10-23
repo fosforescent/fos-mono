@@ -21,7 +21,8 @@ import { readGraphValue } from './node-values'
  *               [TARGETPOINTER, valueCid]       the current value (a content node: description, todo, rows…)
  *               [ALIAS, empty]                 ref constructor; the enclosing row supplies the pattern
  *               [PREV, previousRefCid]*         history: one per parent version, two after a merge
- *               [MEMBER, ref]* [PROPOSAL, p]* [PEER, ref]*   who is attached to the reference
+ *               [PROPOSAL, p]* [PEER, ref]*     who is attached to the reference (memberships are rows of the value:
+ *                                               [peer's node, what the node keeps for that peer])
  *
  *   A row whose identity node is a ref node is a "link row": its text and rows
  *   are read through TARGETPOINTER (`valueContent`), edits advance the ref
@@ -394,6 +395,8 @@ export function isLibraryType(store: FosStore, typeCid: string, typeId: string):
  */
 export function rowTypeOf(store: FosStore, edge: FosPathElem): string | null {
   edge = plainEdge(store, edge)
+  // a membership is the node's row for a peer, not one of its content rows
+  if (isMemberEdge(store, edge)) return null
   if (isChoiceEdge(store, edge)) {
     if (!store.table.has(edge[1])) return null
     const node = content(store, edge[1])
@@ -1072,11 +1075,8 @@ export function withChildValue(store: FosStore, edge: FosPathElem, nextValue: Fo
 
 /** Deliberately detach a device: drop its PEER edge (and its MEMBER entry, if any). */
 export function withoutPeer(store: FosStore, value: FosNodeContent, peerId: string): FosNodeContent {
-  const children = value.children.filter((e) => {
-    if (isPeerEdge(store, e) || isMemberEdge(store, e)) return content(store, e[1]).data.peerId?.content !== peerId
-    return true
-  })
-  return children.length === value.children.length ? value : { ...value, children }
+  const children = value.children.filter((e) => !isPeerEdge(store, e) || content(store, e[1]).data.peerId?.content !== peerId)
+  return withoutMember(store, children.length === value.children.length ? value : { ...value, children }, peerId)
 }
 
 export function withPeer(store: FosStore, value: FosNodeContent, peerId: string): FosNodeContent {
@@ -1139,7 +1139,7 @@ export function homeIdOf(store: FosStore, rootCid: string): string | null {
   if (!home) return null
   return isBranchChoice(store, content(store, home)) ? readChoice(store, home).id : content(store, home).data.alias?.id ?? null
 }
-/** The account server's member on a store root (its offers, the key it publishes): `memberEntryId('fos')`. */
+/** The account server's peer: its membership on a store root holds its offers and the key it publishes. */
 export const SERVER_MEMBER = 'fos'
 
 /** Replace a member's offers (ACCEPTS edges) when they differ from `offers`, keeping its grants and switches. */
@@ -1169,7 +1169,7 @@ export function homeContextCid(store: FosStore, rootCid: string, now: number, of
     const edge = root.children.find(edge => identityCid(store, edge) === homeCid)!
     const nextEdge = rowEdge(store, homeCid, keptRowType(store, edge, HOME_TYPE) ?? rowTypeAt(store, HOME_TYPE, [], rootCid))
     if (nextEdge[0] === edge[0] && nextEdge[1] === edge[1] && bindings === identity && identity === content(store, rootCid)) return rootCid
-    const nextValue = put(store, { ...root, children: root.children.map(e => e === edge ? nextEdge : e) })
+    const nextValue = put(store, withMembershipRows(store, { ...root, children: root.children.map(e => e === edge ? nextEdge : e) }, memberEdgesOfContent(store, bindings)))
     return put(store, refNodeContent(store, identity.data, nextValue, bookkeepingOf(store, bindings)))
   }
   const movable = homeCid ? [] : root.children.filter(edge => ((isRowEdge(store, edge) && !isRowOfType(store, edge, TEMPLATE_TYPE)) || isChoiceEdge(store, edge)) && !isShippedLibrary(store, [], edge))
@@ -1180,9 +1180,9 @@ export function homeContextCid(store: FosStore, rootCid: string, now: number, of
     home = refNodeContent(store, home.data, put(store, { data: homeValue.data, children: homeValue.children.filter((edge) => !isRowOfType(store, edge, PATTERN_TYPE)) }), bookkeepingOf(store, home))
   }
   // Integration handlers belong to Home; carry over old root bindings without losing overrides.
-  const legacyIntegrations = bindings.children.filter(edge => isMemberEdge(store, edge) && content(store, edge[1]).data.peerId?.content?.startsWith('integration:'))
-  for (const edge of legacyIntegrations) if (!readMembers(store, home).some(member => member.peerId === content(store, edge[1]).data.peerId?.content)) home = { ...home, children: [...home.children, edge] }
-  if (legacyIntegrations.length) bindings = { ...bindings, children: bindings.children.filter(edge => !legacyIntegrations.includes(edge)) }
+  const legacyIntegrations = memberHolder(store, bindings).children.filter(edge => isMemberEdge(store, edge) && memberPeerOf(store, edge).startsWith('integration:'))
+  for (const edge of legacyIntegrations) if (!readMembers(store, home).some(member => member.peerId === memberPeerOf(store, edge))) home = withMembershipRow(store, home, memberPeerOf(store, edge), edge[1])
+  for (const edge of legacyIntegrations) bindings = withoutMember(store, bindings, memberPeerOf(store, edge))
   for (const peer of INTEGRATION_PEERS) {
     const provides = offers.integrations?.[peer.id]
     if (!readMembers(store, home).some(member => member.peerId === `integration:${peer.id}`)) home = withMember(store, home, `integration:${peer.id}`, peer.name, peer.consumes, [], provides ?? [])
@@ -1194,7 +1194,7 @@ export function homeContextCid(store: FosStore, rootCid: string, now: number, of
   const homeEdge = root.children.find(edge => identityCid(store, edge) === homeCid)
   if (homeEdge && isRowOfType(store, homeEdge, HOME_TYPE) && homeCid === nextHome && bindings === identity && identity === content(store, rootCid)) return rootCid
   const keep = root.children.filter(edge => !movable.includes(edge) && (!homeCid || identityCid(store, edge) !== homeCid))
-  const nextValue = put(store, { ...root, children: [...keep, rowEdge(store, nextHome, (homeEdge && keptRowType(store, homeEdge, HOME_TYPE)) ?? rowTypeAt(store, HOME_TYPE, [], rootCid))] })
+  const nextValue = put(store, withMembershipRows(store, { ...root, children: [...keep, rowEdge(store, nextHome, (homeEdge && keptRowType(store, homeEdge, HOME_TYPE)) ?? rowTypeAt(store, HOME_TYPE, [], rootCid))] }, memberEdgesOfContent(store, bindings)))
   return put(store, refNodeContent(store, identity.data, nextValue, bookkeepingOf(store, bindings)))
 }
 
@@ -1783,8 +1783,9 @@ export function viewNode(store: FosStore, cid: string, constructors = false): No
   if (constructors) {
     const seen = new Set<string>()
     for (const edge of [...value.children, ...(identity === value ? [] : identity.children)]) {
+      if (!store.table.has(edge[1])) continue
       const child = content(store, identityCid(store, edge))
-      const peerId = (isMemberEdge(store, edge) || isPeerEdge(store, edge)) ? child.data.peerId?.content : undefined
+      const peerId = isMemberEdge(store, edge) ? memberPeerOf(store, edge) : isPeerEdge(store, edge) ? child.data.peerId?.content : undefined
       const setting = settingOf(store, child)
       const evaluation = isRowEdge(store, edge) && isExecuteLeft(store, plainEdge(store, edge)[0])
       if ((!peerId && !evaluation && !setting) || !child.data.alias?.id) continue
@@ -1878,7 +1879,6 @@ export function scopeNames(store: FosStore, nodeCid: string | null, scope: Scope
 //
 //   link node  data.link = { createdAt }; edges:
 //     [PREV, previousVersionCid]       one per parent version (two after a merge)
-//     [MEMBER, memberRef]              memberRef.data: peerId{content}, actor{capabilities}
 //     [PROPOSAL, constructorRef]      typed ref with branch/input/status arguments
 //        branch is a ref to proposed content, with PREV pointing to the merge base
 //
@@ -1974,17 +1974,34 @@ export function isPrevEdge(store: FosStore, edge: FosPathElem): boolean {
   return edge[0] === store.primitive.previousVersion.getId()
 }
 
+/**
+ * A peer, as rows refer to it: the peer's node, `{ peerId }` (its identity, an opaque label nothing parses), content
+ * addressed so every store has the same one. A peer is declared once in scope as a row of the Peer type with this node
+ * on its right (`declarePeer`); a membership is a row with it on its left.
+ */
+export function peerNode(store: FosStore, peerId: string): string {
+  return put(store, { data: { alias: { id: hashContent({ data: { peerId: { content: peerId } }, children: [] }) }, peerId: { content: peerId } }, children: [] })
+}
+/**
+ * Whether `edge` is a membership: a row of the node whose left is a peer's node (the peer it is for), its right what
+ * the node keeps for that peer (its grants for now, and the rows left for it: its relay queue, a key, a record).
+ */
 export function isMemberEdge(store: FosStore, edge: FosPathElem): boolean {
-  return edge[0] === store.primitive.memberField.getId()
+  const left = store.table.get(edge[0])
+  return !!left?.data.peerId && !left.children.length && !!left.data.alias && !left.data.ref
+}
+/** The peer a membership row is for. */
+export function memberPeerOf(store: FosStore, edge: FosPathElem): string {
+  return content(store, edge[0]).data.peerId!.content
 }
 
 export function isProposalEdge(store: FosStore, edge: FosPathElem): boolean {
   return edge[0] === store.primitive.proposalField.getId()
 }
 
-/** Edges that describe who/what is attached to a link node rather than its content. */
+/** Edges that describe a link node's history and attachments rather than its content (its memberships are rows of its content). */
 export function isBookkeepingEdge(store: FosStore, edge: FosPathElem): boolean {
-  return isPrevEdge(store, edge) || isMemberEdge(store, edge) || isProposalEdge(store, edge) || isPeerEdge(store, edge)
+  return isPrevEdge(store, edge) || isProposalEdge(store, edge) || isPeerEdge(store, edge)
 }
 
 /** The content a link node stands for: the TARGETPOINTER value for ref nodes; for legacy inline links the node without its bookkeeping. */
@@ -1997,7 +2014,7 @@ export function stripLink(store: FosStore, value: FosNodeContent): FosNodeConten
   return { data, children: value.children.filter((e) => !isBookkeepingEdge(store, e)) }
 }
 
-/** Bookkeeping edges (PREV, MEMBER, PROPOSAL, PEER) of a link node, wherever they live. */
+/** Bookkeeping edges (PREV, PROPOSAL, PEER) of a link node, wherever they live. */
 export function bookkeepingOf(store: FosStore, value: FosNodeContent): FosPathElem[] {
   return value.children.filter((e) => isBookkeepingEdge(store, e))
 }
@@ -2078,7 +2095,6 @@ export function acceptsOf(store: FosStore, edge: FosPathElem): Capability | null
  * it is for, so two peers that add the same member make the same entry. Opaque: nothing reads a peer out of it; what
  * an entry is, and for whom, is its member edge and its data (`memberEntryPeerAt`).
  */
-export const memberEntryId = (peerId: string): string => hashContent({ data: { peerId: { content: peerId } }, children: [] })
 /**
  * The identity of `peerId`'s offer of `capability` (a handler ref it advertises, `variant` telling apart two of the
  * same peer and capability): a content address, the same in every store, standing for nothing it is parsed from.
@@ -2089,30 +2105,77 @@ export const handlerOfferId = (peerId: string, capability: string, variant?: str
 export const publishedTemplateId = (peerId: string, templateId: string): string =>
   hashContent({ data: { peerId: { content: peerId }, ref: { id: templateId } }, children: [] })
 
-/** The peer the member entry at `path` is for, when its last step is a member entry of its parent; else null. */
+/** The peer the membership at `path` is for, when its last step is a membership row of its parent; else null. */
 export function memberEntryPeerAt(store: FosStore, root: string | null, path: Scope): string | null {
   if (!path.length) return null
   const parent = resolveScope(store, root, path.slice(0, -1))
   if (!parent) return null
   const id = path.at(-1)
   const edge = memberEdgesOf(store, parent).find(e => content(store, e[1]).data.alias?.id === id)
-  return edge ? content(store, edge[1]).data.peerId?.content ?? null : null
+  return edge ? memberPeerOf(store, edge) : null
 }
 /** Whether `path` goes into a member entry (one of its steps is one). */
 export function inMemberEntry(store: FosStore, root: string | null, path: Scope): boolean {
   return path.some((_, i) => memberEntryPeerAt(store, root, path.slice(0, i + 1)) !== null)
 }
 
-/** The node a node's member edges live on: its identity (a link's ref node), through a selected branch. */
+/** The node whose memberships the node `cid` has: itself, through a selected branch. */
 export function memberHolderCid(store: FosStore, cid: string): string {
   const node = content(store, cid)
   const edge = isBranchChoice(store, node) ? branchEdge(store, cid) : null
   return edge ? memberHolderCid(store, identityCid(store, edge)) : cid
 }
+/** The content a node's memberships are rows of: a link's value, else the node itself. */
+function memberHolder(store: FosStore, value: FosNodeContent): FosNodeContent {
+  if (isBranchChoice(store, value)) { const edge = withMainBranchPolicy(store, () => branchEdge(store, put(store, value))); if (edge) return memberHolder(store, content(store, identityCid(store, edge))) }
+  const target = !isHandle(value) && isRefNode(store, value) ? refValueCid(store, value) : null
+  return target && store.table.has(target) ? content(store, target) : value
+}
+/** `peerId`'s membership row in `value` (a node, or a link to one), if it has one. */
+export function membershipOf(store: FosStore, value: FosNodeContent, peerId: string): FosPathElem | undefined {
+  return memberEdgesOfContent(store, value).find(e => memberPeerOf(store, e) === peerId)
+}
+/** `value` with `peerId`'s membership right replaced by `f` of it (unchanged when it has none). */
+export function mapMembership(store: FosStore, value: FosNodeContent, peerId: string, f: (right: FosNodeContent) => FosNodeContent): FosNodeContent {
+  const holder = memberHolder(store, value)
+  if (!holder.children.some(e => isMemberEdge(store, e) && memberPeerOf(store, e) === peerId)) return value
+  return withMemberHolder(store, value, { ...holder, children: holder.children.map((e): FosPathElem => isMemberEdge(store, e) && memberPeerOf(store, e) === peerId ? [e[0], put(store, f(content(store, e[1])))] : e) })
+}
+/** `value` with `peerId`'s membership row set to `right` (a membership's right, from node exchange), replacing its earlier one. */
+export function withMembershipRow(store: FosStore, value: FosNodeContent, peerId: string, right: string): FosNodeContent {
+  const holder = memberHolder(store, value)
+  return withMemberHolder(store, value, { ...holder, children: [...holder.children.filter(e => !(isMemberEdge(store, e) && memberPeerOf(store, e) === peerId)), [peerNode(store, peerId), right]] })
+}
+/** `value` with exactly these membership rows (the rest of its content kept). */
+export function withMembershipRows(store: FosStore, value: FosNodeContent, rows: FosPathElem[]): FosNodeContent {
+  const holder = memberHolder(store, value)
+  return withMemberHolder(store, value, { ...holder, children: [...holder.children.filter(e => !isMemberEdge(store, e)), ...rows] })
+}
+/** `value` (a node, or a link to one) with its content replaced by `holder` (where its memberships are rows). */
+function withMemberHolder(store: FosStore, value: FosNodeContent, holder: FosNodeContent): FosNodeContent {
+  const pointer = store.primitive.targetPointerConstructor.getId()
+  const target = !isHandle(value) && isRefNode(store, value) ? refValueCid(store, value) : null
+  if (!target || !store.table.has(target)) return holder
+  return { ...value, children: value.children.map(([key, cid]): FosPathElem => key === pointer ? [key, put(store, holder)] : [key, cid]) }
+}
 
-/** The member edges (`[MEMBER, entry]`) of the node `cid`. */
+/** The memberships of `value` (a node, or a link to one). */
+export function memberEdgesOfContent(store: FosStore, value: FosNodeContent): FosPathElem[] {
+  return memberHolder(store, value).children.filter((e) => isMemberEdge(store, e))
+}
+/** The memberships of the node `cid`: its rows whose left is a peer. */
 export function memberEdgesOf(store: FosStore, cid: string): FosPathElem[] {
-  return content(store, memberHolderCid(store, cid)).children.filter((e) => isMemberEdge(store, e))
+  return memberEdgesOfContent(store, content(store, memberHolderCid(store, cid)))
+}
+/** The id of `peerId`'s membership row at the node `cid`, if it has one. */
+export function membershipIdOf(store: FosStore, cid: string, peerId: string): string | null {
+  const edge = memberEdgesOf(store, cid).find(e => memberPeerOf(store, e) === peerId)
+  return edge ? content(store, edge[1]).data.alias?.id ?? null : null
+}
+/** The path of `peerId`'s membership row at the node `at`, if it has one. */
+export function membershipPath(store: FosStore, root: string | null, at: Scope, peerId: string): Scope | null {
+  const cid = resolveScope(store, root, at), id = cid && membershipIdOf(store, cid, peerId)
+  return id ? [...at, id] : null
 }
 
 /**
@@ -2134,14 +2197,14 @@ export function grantChildId(store: FosStore, edge: FosPathElem): string {
   return `${direction}:${(row && content(store, row[1]).data.alias?.id) ?? target.data.alias?.id ?? capabilityOfTarget(store, edge[1]) ?? edge[1]}`
 }
 
-export function memberRefContent(store: FosStore, peerId: string, name: string | null, capabilities: Capability[], disabled: Capability[] = [], accepts: Capability[] = []): FosNodeContent {
+/** A membership's right: what the node keeps for `peerId` (its grants and offers for now), under the row id `id`. */
+export function memberRefContent(store: FosStore, peerId: string, name: string | null, capabilities: Capability[], disabled: Capability[] = [], accepts: Capability[] = [], id: string = newId()): FosNodeContent {
   const unique = [...new Set(capabilities)]
   const from = [...new Set(accepts)]
   const off = [...new Set(disabled)].filter((c) => unique.includes(c) || from.includes(c))
   return {
     data: {
-      alias: { id: memberEntryId(peerId) },
-      peerId: { content: peerId },
+      alias: { id },
       ...(name ? { name: { content: name } } : {}),
       ...(off.length ? { disabledCapabilities: { content: off } } : {})
     },
@@ -2159,13 +2222,12 @@ export function memberRefContent(store: FosStore, peerId: string, name: string |
 }
 
 export function readMembers(store: FosStore, value: FosNodeContent): MemberRecord[] {
-  if (isBranchChoice(store, value)) { const edge = withMainBranchPolicy(store, () => branchEdge(store, put(store, value))); if (edge) return readMembers(store, content(store, identityCid(store, edge))) }
   const out: MemberRecord[] = []
-  for (const edge of value.children) {
+  for (const edge of memberHolder(store, value).children) {
     if (!isMemberEdge(store, edge)) continue
     const ref = content(store, edge[1])
-    const peerId = ref.data.peerId?.content
-    if (!peerId) continue
+    const peerId = memberPeerOf(store, edge)
+    if (out.some(m => m.peerId === peerId)) continue
     const caps = [...new Set(ref.children.map((e) => capabilityOf(store, e)).filter((c): c is Capability => c !== null))]
     const accepts = [...new Set(ref.children.map((e) => acceptsOf(store, e)).filter((c): c is Capability => c !== null))]
     const off = (ref.data.disabledCapabilities?.content ?? []).filter((c): c is Capability => caps.includes(c) || accepts.includes(c))
@@ -2179,16 +2241,16 @@ export function memberHandlers(store: FosStore, value: FosNodeContent, peerId: s
   return memberHandlerRows(store, value, peerId, direction).map(row => row[1])
 }
 export function memberHandlerRows(store: FosStore, value: FosNodeContent, peerId: string, direction?: string): FosPathElem[] {
-  if (isBranchChoice(store, value)) { const edge = branchEdge(store, put(store, value)); if (edge) return memberHandlerRows(store, content(store, identityCid(store, edge)), peerId, direction) }
-  const member = value.children.find((e) => isMemberEdge(store, e) && content(store, e[1]).data.peerId?.content === peerId)
+  const member = memberHolder(store, value).children.find((e) => isMemberEdge(store, e) && memberPeerOf(store, e) === peerId)
   return member ? content(store, member[1]).children.filter((e) => (!direction || e[0] === direction) && isGrantEdge(store, e)).flatMap(e => advertisedRows(store, e[1])) : []
 }
 
 /** Add or replace the member entry for `peerId`. */
 export function withMember(store: FosStore, value: FosNodeContent, peerId: string, name: string | null, capabilities: Capability[], disabled: Capability[] = [], accepts: Capability[] = []): FosNodeContent {
-  const next = memberRefContent(store, peerId, name, capabilities, disabled, accepts)
+  const holder = memberHolder(store, value)
   // Connection arguments and child rows belong to this constructor, not its capability list.
-  const previous = value.children.find(edge => isMemberEdge(store, edge) && content(store, edge[1]).data.peerId?.content === peerId)
+  const previous = holder.children.find(edge => isMemberEdge(store, edge) && memberPeerOf(store, edge) === peerId)
+  const next = memberRefContent(store, peerId, name, capabilities, disabled, accepts, previous ? content(store, previous[1]).data.alias?.id : undefined)
   if (previous) {
     const old = content(store, previous[1])
     next.children.push(...old.children.filter(edge =>
@@ -2204,8 +2266,8 @@ export function withMember(store: FosStore, value: FosNodeContent, peerId: strin
     return matching.length ? matching.map(([pattern, cid]): FosPathElem => [edge[0], advertisement(store, pattern, cid)]) : [edge]
   })
   const refCid = put(store, next)
-  const children = value.children.filter((e) => !(isMemberEdge(store, e) && content(store, e[1]).data.peerId?.content === peerId))
-  return { ...value, children: [...children, [store.primitive.memberField.getId(), refCid]] }
+  const children = holder.children.filter((e) => !(isMemberEdge(store, e) && memberPeerOf(store, e) === peerId))
+  return withMemberHolder(store, value, { ...holder, children: [...children, [peerNode(store, peerId), refCid]] })
 }
 
 /** Does the owner of this node accept `capability` from `peerId` (an ACCEPTS edge on its member reference)? */
@@ -2215,7 +2277,8 @@ export function acceptsFrom(store: FosStore, value: FosNodeContent, peerId: stri
 
 /** Drop the member entry for `peerId` (and so every capability it was granted). */
 export function withoutMember(store: FosStore, value: FosNodeContent, peerId: string): FosNodeContent {
-  return { ...value, children: value.children.filter((e) => !(isMemberEdge(store, e) && content(store, e[1]).data.peerId?.content === peerId)) }
+  const holder = memberHolder(store, value)
+  return withMemberHolder(store, value, { ...holder, children: holder.children.filter((e) => !(isMemberEdge(store, e) && memberPeerOf(store, e) === peerId)) })
 }
 
 /**
@@ -2404,8 +2467,7 @@ export function findRowByAlias(store: FosStore, rootCid: string, aliasId: string
     if (found) return found
   }
   // rows a peer's entry holds (Settings: its connection arguments, the nodes it shares) are rows of the tree too
-  for (const edge of content(store, rootCid).children) {
-    if (!isMemberEdge(store, edge)) continue
+  for (const edge of memberEdgesOf(store, rootCid)) {
     const id = aliasIdOf(content(store, edge[1]))
     const found = id ? findRowByAlias(store, edge[1], aliasId, [...prefix, id]) : null
     if (found) return found

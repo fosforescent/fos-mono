@@ -40,6 +40,7 @@ import { acceptSubmission } from './approvals'
 import { sharedAddressAt } from './sharing'
 import { dispatchEvent, type FosEvent } from './events'
 import { readNodeValue } from './evaluation'
+import { membershipPathAt } from './replica'
 import { LIBRARY_VERSION, ensureDeviceLibrary, exportLocalLibrary } from './library'
 import { capabilityTarget, libraryInstanceOf, libraryRowOf, content, importNodes, put, resolveScope, valueContent, valueCidOf } from './graph'
 import { nativeRef, publishNativeRef } from './native-refs'
@@ -102,6 +103,8 @@ export const api = {
   },
   /** The stores `handle` is linked with on this machine: [{ peerId, name }]. */
   localStores(handle: string): string { return JSON.stringify(localStores(get(handle))) },
+  /** The path of `peer`'s membership row at the node `atJson`, or null. */
+  membershipPath(handle: string, atJson: string, peer: string): string { return JSON.stringify(membershipPathAt(get(handle), parse<Scope>(atJson, []), peer)) },
   /**
    * The tree of the linked store loaded under `peerHandle`, as `peerId` (this store) may see it: pulled node by node
    * through node exchange (what its grants allow), never by reading its graph directly. Text lines like `tree`.

@@ -10,7 +10,7 @@ import { cronObserver } from '@fosforescent/shared/sync/trigger-primitives'
 import { createHash } from 'node:crypto'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
 import { addRef, addRow, addSupply, beginTaskWork, deleteTask, headCid, resolveRef, resolveScope, rowsOfType, valueContent, paymentRecord, settlePaymentRecord, writePaymentRecord, proposeTaskResult, readNodeValue, relayAfterSubmission, setMarketAt, sharedProjection, publication, taskWorkContext, view, type EvaluationStep, type Replica, type ResourceType, type UserRecord } from '@fosforescent/shared/sync/index'
-import { TITLE_SYSTEM, writePageBase, memberEntryId, SERVER_MEMBER, titleRequestAt, truncateTitle, writeHandlerResult } from '@fosforescent/shared/sync/index'
+import { TITLE_SYSTEM, writePageBase, membershipPath, SERVER_MEMBER, titleRequestAt, truncateTitle, writeHandlerResult } from '@fosforescent/shared/sync/index'
 import type { EffectContext, HostHandler } from './host-runtime'
 import { formTitle } from '@fosforescent/shared/sync/forms'
 import type { VerifyHandler } from './verify'
@@ -352,8 +352,8 @@ export type HostHandlerDeps = {
 export function publicUrlHandler(webUrl: string): HostHandler {
   return { peerId: 'fos', ref: standardHostRef('fos', 'url'), submission: (replica, _path, now) => {
     const owner = replica.meta.peerId.startsWith('user:') ? replica.meta.peerId.slice('user:'.length) : null
-    const entry = [memberEntryId(SERVER_MEMBER)]
-    return owner && resolveScope(replica.store, headCid(replica), entry) ? writePageBase(replica, entry, { base: webUrl.replace(/\/$/, ''), owner }, now) : replica
+    const entry = membershipPath(replica.store, headCid(replica), [], SERVER_MEMBER)
+    return owner && entry ? writePageBase(replica, entry, { base: webUrl.replace(/\/$/, ''), owner }, now) : replica
   } }
 }
 

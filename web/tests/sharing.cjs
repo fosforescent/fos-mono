@@ -8,7 +8,7 @@ const dir = mkdtempSync(path.join(tmpdir(), 'fos-sharing-tests-'))
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'Node', 'Option', 'navigator', 'localStorage', 'sessionStorage', 'location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export * from './src/sharing'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid', 'katex', 'katex/*'] })
-const { App, mountUi, mountSharedNode, shareUrl, sharedAddress, createMemoryStorage, view, headCid, handlerResult, writePageBase, sharedAddressAt, memberEntryId, SERVER_MEMBER } = require(path.join(dir, 'app.cjs'))
+const { App, mountUi, mountSharedNode, shareUrl, sharedAddress, createMemoryStorage, view, headCid, handlerResult, writePageBase, sharedAddressAt, membershipPathAt, SERVER_MEMBER } = require(path.join(dir, 'app.cjs'))
 const c = require(path.join(dir, 'app.cjs'))
 const tick = () => new Promise(resolve => setTimeout(resolve, 10))
 let a
@@ -51,7 +51,7 @@ async function main() {
     execute.checked = true; execute.dispatchEvent(new window.Event('change')); await tick()
     assert.deepEqual(view(a.state.replica, a.state.view).members.find(m => m.peerId === peer).capabilities, ['execute'])
     // what the server's `url` handler records on its member entry (where share pages are, whose account): the link is made from it
-    a.set({ replica: writePageBase(a.state.replica, [memberEntryId(SERVER_MEMBER)], { base: 'http://localhost', owner: 'publisher' }, Date.now()) }); await tick()
+    a.set({ replica: writePageBase(a.state.replica, membershipPathAt(a.state.replica, [], SERVER_MEMBER), { base: 'http://localhost', owner: 'publisher' }, Date.now()) }); await tick()
     const published = document.querySelector('.tree .constructor-body .sharing-controls')?.closest('.constructor-body')
     const link = published.querySelector('[aria-label="Shareable URL"]').value
     assert.deepEqual(sharedAddress(new URL(link).hash), { owner: 'publisher', path: a.state.view })

@@ -1,5 +1,5 @@
 import { publishedTemplateId } from './graph'
-import { memberEntryId } from './index'
+import { membershipPathAt } from './index'
 /**
  * Member edges travel by node exchange like other children of a node: the owner's devices receive and push every
  * member entry; any other peer receives a masked projection (its own entry, the rows it may read).
@@ -75,8 +75,8 @@ test('a peer gets a masked projection: its own entry and the rows it may read, n
   for (const hidden of ['user:carol', MARKET_PEER, 'Salaries']) expect(sent).not.toContain(hidden)
   // it cannot step into another member's entry, nor write its own
   const authority = { peerId: 'user:bob', scope: PROJECT, proposeOnly: true, capabilities: SERVER_TRANSPORT_CAPABILITIES }
-  expect(() => exchangeNode(account, { peerId: 'user:bob', scope: PROJECT, path: [memberEntryId('user:carol')], linkId: 'x' }, authority, 9)).toThrow()
-  expect(() => exchangeNode(account, { peerId: 'user:bob', scope: PROJECT, path: [memberEntryId('user:bob')], linkId: 'y', update: { base: { data: {}, children: [] }, value: { data: { name: { content: 'Boss' } }, children: [] } } }, authority, 9)).toThrow()
+  expect(() => exchangeNode(account, { peerId: 'user:bob', scope: PROJECT, path: [membershipPathAt(account, PROJECT, 'user:carol')!.at(-1)!], linkId: 'x' }, authority, 9)).toThrow()
+  expect(() => exchangeNode(account, { peerId: 'user:bob', scope: PROJECT, path: [membershipPathAt(account, PROJECT, 'user:bob')!.at(-1)!], linkId: 'y', update: { base: { data: {}, children: [] }, value: { data: { name: { content: 'Boss' } }, children: [] } } }, authority, 9)).toThrow()
   expect(member(account, PROJECT, 'user:bob')!.name).toBe('Bob')
 })
 
@@ -136,7 +136,7 @@ test('a member entry arrives unloaded with its node and grants nothing until it 
   expect(entry().data.ref).toMatchObject({ version: 'unloaded', peer: account.meta.peerId })
   expect(member(phone, PROJECT, 'user:bob')).toMatchObject({ capabilities: [] })
   // its own round loads it; nothing below the project was loaded on the way
-  phone = round(phone, [...PROJECT, memberEntryId('user:bob')])
+  phone = round(phone, membershipPathAt(phone, PROJECT, 'user:bob')!)
   expect(entry().data.ref).toBeUndefined()
   expect(member(phone, PROJECT, 'user:bob')).toMatchObject({ name: 'Bob', capabilities: ['read'] })
 })

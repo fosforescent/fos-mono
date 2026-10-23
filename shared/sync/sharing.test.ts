@@ -3,7 +3,8 @@ import { addMemberAt, ensureHomeContext, setMemberCapabilitiesAt, addConstructed
 import { content, put, readProposals, resolveScope, rowTypeAt, valueContent } from './graph'
 import { formValueAt } from './forms'
 import { markdownTitle, proposeVisitorValues, publish, publication, publishedUrl, writePageBase, unpublish, sharedProjection, SHARED_BODY_LIMIT, VISITOR_SUBMISSION } from './sharing'
-import { HOME_ID, memberEntryId, SERVER_MEMBER } from './graph'
+import { HOME_ID, SERVER_MEMBER } from './graph'
+import { membershipPathAt } from './replica'
 import { MARKDOWN_TYPE, PLAIN_TYPE, NOTE_TYPE, TEXT_TYPE } from './library-types'
 
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
@@ -93,7 +94,7 @@ test('publishing is membership: the audience peer may run the node (execute only
 test('a published node\'s link is made from the page base the url handler records on the server\'s member entry', () => {
   let r = ensureHomeContext(createReplica('user:host'), 1)
   r = addRow(r, [HOME_ID], PLAIN_TYPE, 'Page', 2, { id: 'page' })
-  const entry = [memberEntryId(SERVER_MEMBER)]
+  const entry = membershipPathAt(r, [], SERVER_MEMBER)!
   r = writePageBase(r, entry, { base: 'https://app.example', owner: 'host' }, 3)
   expect(writePageBase(r, entry, { base: 'https://app.example', owner: 'host' }, 4)).toBe(r)
   expect(publishedUrl(r, [HOME_ID, 'page'])).toBeNull()

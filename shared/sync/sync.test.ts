@@ -1,3 +1,4 @@
+import { memberEdgesOf, memberPeerOf, peerNode } from './graph'
 import { userView } from './test-helpers'
 import { unverifiedUser } from './users'
 import { LIBRARY_ID } from './graph'
@@ -529,8 +530,8 @@ describe('link nodes: history, members and proposals', () => {
     expect(node.members.map((m) => [m.peerId, m.capabilities])).toEqual([['guest', ['edit']], ['reviewer', ['read', 'edit']]])
     const store = withApprover.store
     const linkValue = nodeContent(store, resolveScope(store, headCid(withApprover), ['proj'])!)
-    const refs = linkValue.children.filter((e) => e[0] === store.primitive.memberField.getId()).map((e) => nodeContent(store, e[1]))
-    const reviewer = refs.find((r) => r.data.peerId?.content === 'reviewer')!
+    const memberships = memberEdgesOf(store, resolveScope(store, headCid(withApprover), ['proj'])!)
+    const reviewer = nodeContent(store, memberships.find((e) => memberPeerOf(store, e) === 'reviewer')![1])
     expect(reviewer.data).not.toHaveProperty('actor')
     expect(reviewer.children).toEqual([
       [store.primitive.capabilityNode.getId(), capabilityTarget(store, 'read')],
@@ -720,7 +721,7 @@ describe('mutable references: root, link rows and reference rows are one node sh
     const legacy = put(store, {
       data: { ...inline.data, link: { createdAt: 0 } },
       children: [...inline.children,
-        [store.primitive.memberField.getId(), put(store, { data: { peerId: { content: 'guest' } }, children: [[store.primitive.capabilityNode.getId(), store.primitive.proposeAction.getId()]] })],
+        [peerNode(store, 'guest'), put(store, { data: { alias: { id: 'guest-entry' } }, children: [[store.primitive.capabilityNode.getId(), store.primitive.proposeAction.getId()]] })],
         [store.primitive.peerField.getId(), put(store, { data: { peerId: { content: 'guest' } }, children: [] })],
         [store.primitive.previousVersion.getId(), olderVersion]]
     })

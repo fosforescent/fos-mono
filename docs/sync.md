@@ -33,11 +33,13 @@ Connected endpoint rows also expose field and child-reference switches under
 Connection and capabilities. These edit only this device's endpoint.
 
 **Member edges travel like other children** (`exchangedChildren`,
-`memberEntryVisible` in node-provider.ts). A node's member entries
-(`[MEMBER, entry]` on its identity, `entry.data.alias.id = memberEntryId(peer)`)
-are children of that node in its shape, with the MEMBER primitive as their
-`template`, and each entry syncs in its own round like any node: its data
-(`name`, `peerId`, which must match its id, and `disabledCapabilities`), its
+`memberEntryVisible` in node-provider.ts). A node's memberships are rows of
+its content whose left is the peer's node (`peerNode`: `{ peerId }`, content
+addressed; the peer id is an opaque label) and whose right is what the node
+keeps for that peer. They are children of that node in its shape, with the
+peer's node as their `template` and `peer` saying who they are for, and each
+syncs in its own round like any node: its data (`name` and
+`disabledCapabilities`), its
 rows (a relay queue, a published key, a linked store's row) and its grants and
 offers. A grant or offer (`[CAPABILITY, x]` = the `to` side, `[ACCEPTS, x]` =
 the `from` side, `x` a capability constructor or a typed handler ref) is
@@ -235,8 +237,8 @@ peer → device   ProvidedNode { data, children, mask?, proposals?, grants?, cap
 NodeChild       { id, address, template, held?, pinned? }
 ```
 
-`NodeChild` is a row (`template` = its type), a member entry (`template` = the
-MEMBER primitive, `id` = `memberEntryId(<peer>)`) or, in a member entry's shape, a
+`NodeChild` is a row (`template` = its type), a membership (`template` = the
+peer's node, `peer` = that peer, `id` = the membership row's alias) or, in a membership's shape, a
 grant or offer pinned to its node's cid (`pinned`; `template` = the CAPABILITY
 or ACCEPTS primitive). The wire change for member sync is that one optional
 field plus the content of pinned grants in the existing `templates` /
@@ -326,7 +328,8 @@ ref node   data: alias{id} (+ ref{id} for a reference row)
            [TARGETPOINTER, valueCid]       the current value (content node: description, todo, rows…)
            [INSTRUCTIONPOINTER, typeCid]   optional type (the root points at ROOT)
            [PREV, previousRefCid]*         history: one per parent version, two after a merge that changed the value
-           [MEMBER, ref]* [PROPOSAL, p]* [PEER, ref]*   who is attached to the reference
+           [PROPOSAL, p]* [PEER, ref]*     who is attached to the reference
+  (memberships are rows of the value: [peer's node, what the node keeps for that peer])
 ```
 
 - **The root** of every replica and of the user group is a ref node; `commitRoot`
@@ -912,7 +915,7 @@ grammar") as the directory's owner, for local agents; `/status`; and
 
 ## Attachment and presence
 
-A device's `[PEER, ref]` edge (and its `[MEMBER, ref]` entry) persists until
+A device's `[PEER, ref]` edge (and its membership row) persists until
 someone removes it deliberately: the owner through the device's menu on the
 node, or the device itself (*Detach this device* in the ☰ menu, which calls
 `DELETE /user/data/peer-sync/attachment`). Signing out keeps the attachment.
@@ -1134,7 +1137,7 @@ derived from `JWT_SECRET`.
 verify handler) puts it in the registry's `hostOffers().keys`, and
 `ensureHomeContext(…, { keys })` (run whenever the server ensures the account
 context, e.g. on every node exchange) writes it onto the fos member entry of
-the account root (`memberEntryId('fos')`, the server's own place there, beside its
+the account root (the row whose left is the `fos` peer, the server's own place there, beside its
 offers) as a row of the user type: a key row with account and username
 `fos` and `publicKey` the raw key (`publishPeerKey`; unchanged keys write
 nothing, and a key row an older server left in Home's People row (`lib.people`) is removed).

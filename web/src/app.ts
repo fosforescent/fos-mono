@@ -47,7 +47,7 @@ import { readNodeValue, recoverEvaluation, evaluateNode, evaluationRecord, write
 import { withMainBranchPolicy, withBranches, scopeBranches, bindRepository, repositoryAt, repositoryPeerId, repositoryPeerAllows, type RepositorySnapshot, type RepositoryPull, readChoice, isBranchChoice, branchSelection, proposalContent, readProposal, proposalView, valueContent, identityCid, rowEdgeAt, nestScope } from '../../shared/sync/index'
 import { checkUserAttestation } from './api'
 import { requestTitle, truncateTitle, handlerResult } from '../../shared/sync/index'
-import { addTypedRow, cacheUser, cachedUser, publishedKey, rebindUsers, requestVerification, verifiedAt, memberEntryId, memberEntryPeerAt, peerEntryId, accountContextAbove, syncNodeTree, addRelayMessage, addRelayAck, relayQueues, relayInbox, type RelayDelivery, type UserRecord } from '../../shared/sync/index'
+import { addTypedRow, cacheUser, cachedUser, publishedKey, rebindUsers, requestVerification, verifiedAt, membershipIdOf, memberEntryPeerAt, peerEntryId, accountContextAbove, syncNodeTree, addRelayMessage, addRelayAck, relayQueues, relayInbox, type RelayDelivery, type UserRecord } from '../../shared/sync/index'
 import { searchFosUsers, evaluateOnServer, createRepositoryBranch, readRepository, proposeRepositoryMerge, decideRepositoryPull } from './api'
 /**
  * Application controller: owns the replica (a FosStore attached to the user
@@ -413,7 +413,7 @@ export class App {
   }
   /**
    * The device's verify handlers, by the peer that attested: a user object the fos server attested is checked
-   * against the key that server publishes on its member entry (the key row on `memberEntryId('fos')` on the root, graph data that node exchange brought here).
+   * against the key that server publishes on its member entry (the key row on the fos membership of the root, graph data that node exchange brought here).
    */
   private readonly verifiers: Record<string, (user: UserRecord) => Promise<boolean | null>> = {
     fos: user => checkUserAttestation({ peer: 'fos', publicKey: publishedKey(this.state.replica, 'fos') }, user)
@@ -1234,9 +1234,10 @@ export class App {
     // Member entries are children of their node: an entry syncs with a node that syncs (it is policy, small), and this
     // device's own entries sync with everything in them (what peers left for it, its relay queues). Other rows stay
     // lazy until they are on screen.
-    const own = memberEntryId(initial.meta.peerId)
     const onScreen = (path: Scope) => path.length === localRoot.length || (path.length <= this.state.view.length && path.every((id, i) => id === this.state.view[i]))
-    const eager = (path: Scope) => path.includes(own) || (memberEntryPeerAt(this.state.replica.store, headCid(this.state.replica), path) !== null && onScreen(path.slice(0, -1)))
+    // a path into one of this device's own memberships, at any node
+    const own = (path: Scope) => path.some((_, i) => memberEntryPeerAt(this.state.replica.store, headCid(this.state.replica), path.slice(0, i + 1)) === initial.meta.peerId)
+    const eager = (path: Scope) => own(path) || (memberEntryPeerAt(this.state.replica.store, headCid(this.state.replica), path) !== null && onScreen(path.slice(0, -1)))
     const queue = materializedNodePaths(initial, localRoot, peer), seen = new Set<string>()
     // a row's handler state (its execute row, its trigger row) syncs whenever the row does: it is that row's state
     const state = new Set<string>()
@@ -1286,7 +1287,7 @@ export class App {
         const next = [...path, child.id]
         const held = isHandlerStateLeft(this.state.replica.store, child.template) && (visible || plan.dirty)
         if (held) state.add(JSON.stringify(next))
-        if (child.peer !== undefined ? visible || child.id === own : eager(next) || held) queue.push(next)
+        if (child.peer !== undefined ? visible || child.peer === initial.meta.peerId : eager(next) || held) queue.push(next)
       }
     }
     // an owner's device attached at Home takes its server's own entry above it (its offers, its published key)

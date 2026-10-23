@@ -1,6 +1,7 @@
 import { createPrivateKey, createPublicKey, sign, verify } from 'node:crypto'
 import { addRow, addSupply, addTask, bindUserAt, createReplica, ensureHomeContext, headCid, loadReplica, serializeReplica, setRowContentAt, shareHome, view, writeGraphNode, type Replica } from './replica'
-import { content, identityCid, isRefNode, memberEntryId, resolveScope, typeIdOf, valueContent, HOME_ID } from './graph'
+import { membershipPathAt } from './replica'
+import { content, identityCid, isRefNode, resolveScope, typeIdOf, valueContent, HOME_ID } from './graph'
 import { syncWith } from './test-helpers'
 import {
   USER_FIELD, USER_SELF_ATTESTATION, USER_SERVER_ATTESTATION, userObjectContent, userType, cacheUser, cachedUser, isUserType, rebindUsers, unverifiedUser, userAttestationPayload,
@@ -124,7 +125,7 @@ test('the server publishes its key on its member entry; a device\'s verify handl
   expect(ensureHomeContext(account, 2, { keys: { fos: server.publicKey } })).toBe(account)
   expect(publishedKey(ensureHomeContext(loadReplica(serializeReplica(account)), 2, { keys: { fos: stranger.publicKey } }), 'fos')).toBe(stranger.publicKey)
   // the key row is a row of the user type on the fos member entry of the root, not in Home, and no one `@fos` binds
-  expect(rowNode(account, [memberEntryId('fos'), peerKeyId('fos')])).toBeDefined()
+  expect(rowNode(account, [...membershipPathAt(account, [], 'fos')!, peerKeyId('fos')])).toBeDefined()
   expect(usersPath(account)).toBeNull()
   expect(cachedUser(account, 'fos')).toBeNull()
   // an owner's device attached at Home takes the server's entry above it, key row included

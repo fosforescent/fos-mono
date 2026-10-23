@@ -19,7 +19,7 @@
 import type { FosStore } from '../dag-implementation/store'
 import type { FosPathElem } from '../types'
 import { hashContent } from '../dag-implementation/cid'
-import { capabilityTarget, commitRoot, content, memberEntryId, memberEdgesOf, put, readMembers, readProposal, readProposals, refNodeContent, refValueCid, resolveScope, updateAtScope, valueContent, withProposal, MARKET_PEER, SERVER_MEMBER, type ProposalRecord, type Scope } from './graph'
+import { capabilityTarget, commitRoot, content, memberEdgesOf, memberPeerOf, put, readMembers, readProposal, readProposals, refNodeContent, refValueCid, resolveScope, updateAtScope, valueContent, withProposal, MARKET_PEER, SERVER_MEMBER, type ProposalRecord, type Scope } from './graph'
 import { applyProposalAt, headCid, type Replica } from './replica'
 import { plainEdge } from './patterns'
 import { isUserType, readUser, type SignatureCheck } from './users'
@@ -61,7 +61,7 @@ function withApproval(store: FosStore, proposalCid: string, approver: string, at
   const proposal = readProposal(store, proposalCid)
   if (!proposal) throw new Error('That submission is gone.')
   const signature: FosPathElem[] = attester ? [[attester.key, put(store, { data: { description: { content: attester.sign(approvalPayload(approver, proposal.contentCid)) } }, children: [] })]] : []
-  const node = put(store, { data: { alias: { id: approvalId(approver) }, peerId: { content: approver }, ref: { id: memberEntryId(approver) } }, children: signature })
+  const node = put(store, { data: { alias: { id: approvalId(approver) }, peerId: { content: approver } }, children: signature })
   const left = approveLeft(store), submission = content(store, proposalCid)
   const others = submission.children.filter(([key, n]) => !(key === left && approverOf(store, n) === approver))
   return put(store, { ...submission, children: [...others, [left, node]] })
@@ -89,7 +89,7 @@ export function withdrawApproval(r: Replica, at: Scope, proposalCid: string, app
 function publishedKeyNodes(r: Replica): Map<string, string> {
   const keys = new Map<string, string>()
   for (const member of memberEdgesOf(r.store, headCid(r))) {
-    const peerId = content(r.store, member[1]).data.peerId?.content
+    const peerId = memberPeerOf(r.store, member)
     for (const edge of content(r.store, member[1]).children) {
       const plain = plainEdge(r.store, edge)
       if (!isUserType(r.store, plain[0])) continue
@@ -110,7 +110,7 @@ export function verifyApproval(r: Replica, contentCid: string, approval: Approva
 /** A pattern of approvals: one approval row per peer. */
 function approvalPattern(store: FosStore, approvers: string[]): string {
   const left = approveLeft(store)
-  return put(store, { data: {}, children: approvers.map(p => [left, put(store, { data: { peerId: { content: p }, ref: { id: memberEntryId(p) } }, children: [] })] as FosPathElem) })
+  return put(store, { data: {}, children: approvers.map(p => [left, put(store, { data: { peerId: { content: p } }, children: [] })] as FosPathElem) })
 }
 
 /** The group's merge rule at `at`, its approveMerge row's pattern of approvals; null when the default holds. */
@@ -177,7 +177,7 @@ export function acceptSubmission(r: Replica, at: Scope, proposalCid: string, app
 /** The key row a peer publishes on its member entry of this graph's root (its node's cid), for attesting approvals. */
 export function attesterKey(r: Replica, peerId: string): string | null {
   for (const [node] of publishedKeyNodes(r)) {
-    const entry = memberEdgesOf(r.store, headCid(r)).find(m => content(r.store, m[1]).data.peerId?.content === peerId)
+    const entry = memberEdgesOf(r.store, headCid(r)).find(m => memberPeerOf(r.store, m) === peerId)
     if (entry && content(r.store, entry[1]).children.some(edge => plainEdge(r.store, edge)[1] === node)) return node
   }
   return null

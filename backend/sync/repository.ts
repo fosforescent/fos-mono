@@ -4,7 +4,7 @@ import { handlerOfferId } from '@fosforescent/shared/sync/index'
  * No template, agent, deployment or continuation is selected here. */
 import {
   branchSelection, content, createBranch, headCid, isBranchChoice, mergeBranch,
-  readChoice, handlerResult, writeHandlerResult, memberEntryId, repositoryPeerId, withMainBranchPolicy, repositoryAt, repositoryPeerAllows, resolveScope,
+  readChoice, handlerResult, writeHandlerResult, membershipIdOf, repositoryPeerId, withMainBranchPolicy, repositoryAt, repositoryPeerAllows, resolveScope,
   selectBranch, setBranchMergeRequest, withBranches,
   loadReplica, serializeReplica, readMembers, type RepositorySnapshot, type Replica, type Scope
 } from '@fosforescent/shared/sync/index'
@@ -16,7 +16,8 @@ function repositoryEntry(r: Replica, path: Scope, peer: string): Scope | null {
   return withMainBranchPolicy(r.store, () => {
     for (let i = path.length; i >= 0; i--) {
       const cid = resolveScope(r.store, headCid(r), path.slice(0, i))
-      if (cid && readMembers(r.store, content(r.store, cid)).some(m => m.peerId === peer)) return [...path.slice(0, i), memberEntryId(peer)]
+      const id = cid && membershipIdOf(r.store, cid, peer)
+      if (id) return [...path.slice(0, i), id]
     }
     return null
   })

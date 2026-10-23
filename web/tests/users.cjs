@@ -100,7 +100,7 @@ async function main() {
 
   // the server's key missing from the graph: nothing verifies
   signer = server
-  app.set({ replica: c.deleteTask(app.state.replica, [c.memberEntryId('fos')], c.peerKeyId('fos'), 12) })
+  app.set({ replica: c.deleteTask(app.state.replica, c.membershipPathAt(app.state.replica, [], 'fos'), c.peerKeyId('fos'), 12) })
   app.addRowAt([HOME, 'review'], ALLOCATION_TYPE, 'no key', { id: 'nokey', extras: { requirement: { capability: 'peer' }, user: c.unverifiedUser('bob') } })
   await settle()
   assert.match(app.state.notice.text, /does not check out/)

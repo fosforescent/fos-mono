@@ -1,12 +1,13 @@
 /** One view of handler advertisements for bindings, menus, and executors.
  * Native capability markers are read adapters; new advertisements are typed refs.
  */
+import { peerNode } from './graph'
 import { TEMPLATE_TYPE, REF_TYPE } from './library-types'
 import type { FosStore } from '../dag-implementation/store'
 import { handlerOfferId, publishedTemplateId } from './graph'
 import { sameCapabilityType } from './capabilities'
 
-import { capabilityTarget, branchEdge, isBranchChoice, readMembers, MARKET_PEER, capabilityOfTarget, content, identityCid, isMemberEdge, marketMemberOf, memberHandlers, put, refNodeContent, advertisedRows, memberHandlerRows, resolveScope, isRowEdge, isRowOfType, valueContent, withMainBranchPolicy, type Capability, type Scope } from './graph'
+import { membershipOf, capabilityTarget, branchEdge, isBranchChoice, readMembers, MARKET_PEER, capabilityOfTarget, content, identityCid, isMemberEdge, marketMemberOf, memberHandlers, put, refNodeContent, advertisedRows, memberHandlerRows, resolveScope, isRowEdge, isRowOfType, valueContent, withMainBranchPolicy, type Capability, type Scope } from './graph'
 
 import { addMemberAt, setHandlerOffersAt, headCid, type Replica } from './replica'
 
@@ -113,7 +114,7 @@ export function publishTemplate(r: Replica, at: Scope, templatePath: Scope, labe
 }
 
 export function contextMembers(r: Replica, path: Scope) {
-  return [...contextMemberRefs(r, path).values()].flatMap(cid => readMembers(r.store, { data: {}, children: [[r.store.primitive.memberField.getId(), cid]] }))
+  return [...contextMemberRefs(r, path)].flatMap(([peer, cid]) => readMembers(r.store, { data: {}, children: [[peerNode(r.store, peer), cid]] }))
 }
 
 /** Handlers offered to the market (typed refs on the market member's `to` side, switched on), read from main policy. */
@@ -126,7 +127,7 @@ export function marketplaceOffers(r: Replica): Array<HandlerOffer & { path: Scop
       if (visited.size >= 5000 || path.length > 64) throw new Error('Marketplace context exceeds traversal limit.')
       visited.add(cid)
       const node = content(s, policyIdentity(s, cid))
-      const member = node.children.find(e => isMemberEdge(s, e) && content(s, e[1]).data.peerId?.content === MARKET_PEER)
+      const member = membershipOf(s, node, MARKET_PEER)
       const disabled = member ? content(s, member[1]).data.disabledCapabilities?.content ?? [] : []
       for (const [type, h] of member ? memberHandlerRows(s, node, MARKET_PEER, s.primitive.capabilityNode.getId()) : []) {
         const offer = content(s, h), id = offer.data.alias?.id ?? h

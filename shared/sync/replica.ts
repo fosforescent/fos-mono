@@ -20,7 +20,7 @@ import { constructForm, formFields, formText, formTitle, formValueAt, positionFo
 import { ALLOCATION_TYPE, COMMENT_TYPE, NOTE_TYPE, PLAIN_TYPE, QUERY_TYPE, REF_TYPE, RESOURCE_TYPE, TASK_TYPE, TEMPLATE_TYPE, isAllocationType } from './library-types'
 import { legacyCommentMetadata } from './legacy-comment'
 import { knownUser, publishPeerKey, userType, withUserField, type UserRecord } from './users'
-import { memberEntryId, homeIdOf, isValueSubmission, settingOf, withRequirementInputs } from './graph'
+import { membershipPath, withMembershipRow, homeIdOf, isValueSubmission, settingOf, withRequirementInputs } from './graph'
 import {
   withMainBranchPolicy, capabilityTarget, refValueCid, putRefValueBranches, selectBranch, isBranchChoice, branchEdge, branchSelection, readChoice, scopeBranches,
   HOME_ID,
@@ -56,7 +56,9 @@ import {
   readProposals,
   withPrev,
   bookkeepingOf,
-  isMemberEdge,
+  mapMembership,
+  memberEdgesOf,
+  memberPeerOf,
   isChoiceEdge,
   capabilityOf,
   identityCid,
@@ -799,7 +801,10 @@ export function resetHomeContent(replica: Replica, now: number): Replica {
 export function deleteTask(replica: Replica, at: Scope, taskId: string, now: number): Replica {
   const parent = resolveScope(replica.store, headCid(replica), at)
   const edge = parent && findEdge(replica.store, content(replica.store, parent), `a:${taskId}`)
-  if (edge && [replica.store.primitive.memberField.getId(), replica.store.primitive.peerField.getId()].includes(edge[0])) return editNode(replica, at, now, node => replaceEdge(replica.store, node, `a:${taskId}`, null))
+  // a membership row is removed as the member it is
+  const membership = parent && memberEdgesOf(replica.store, parent).find(e => content(replica.store, e[1]).data.alias?.id === taskId)
+  if (membership) return removeMemberAt(replica, at, memberPeerOf(replica.store, membership), now)
+  if (edge && edge[0] === replica.store.primitive.peerField.getId()) return editNode(replica, at, now, node => replaceEdge(replica.store, node, `a:${taskId}`, null))
   return edit(replica, at, now, (value) => {
     if (!findChildEdge(replica, value, taskId)) return value
     return replaceEdge(replica.store, value, `a:${taskId}`, null)
@@ -841,7 +846,7 @@ export function linkLocalStore(replica: Replica, peerId: string, name: string, n
   if (!member) {
     const id = localStoreRowId(peerId), store = next.store
     const held = put(store, { data: { alias: { id }, description: { content: name }, ref: { id, peer: peerId, version: 'unloaded', scope: [...shares] } }, children: [] })
-    const entry = [memberEntryId(peerId)]
+    const entry = membershipPath(store, headCid(next), [], peerId)!
     next = edit(next, entry, now, (value) => findChildEdge(next, value, id) ? value : { ...value, children: [...value.children, rowEdgeAt(store, PLAIN_TYPE, held, entry)] })
   }
   return next
@@ -849,6 +854,11 @@ export function linkLocalStore(replica: Replica, peerId: string, name: string, n
 
 /** The id of the row standing for the linked store `peerId` under its member entry: a content address. */
 export const localStoreRowId = (peerId: string): string => hashContent({ data: { ref: { id: '', peer: peerId } }, children: [] })
+
+/** The path of `peerId`'s membership row at the node `at` (a row of that node whose left is the peer), if it has one. */
+export function membershipPathAt(replica: Replica, at: Scope, peerId: string): Scope | null {
+  return membershipPath(replica.store, headCid(replica), at, peerId)
+}
 
 /** The stores this one is linked with on this machine (members reached through files). */
 export function localStores(replica: Replica): Array<{ peerId: string; name: string }> {
@@ -876,11 +886,10 @@ export function removeMemberAt(replica: Replica, at: Scope, peerId: string, now:
 
 /** Materialize the nearest inherited member before overriding its offers locally. Called in main policy context. */
 function localMember(replica: Replica, at: Scope, node: FosNodeContent, peerId: string): FosNodeContent {
-  if (!node.children.some(e => isMemberEdge(replica.store, e) && content(replica.store, e[1]).data.peerId?.content === peerId)) {
+  if (!readMembers(replica.store, node).some(m => m.peerId === peerId)) {
     const cid = contextMemberRefs(replica, at).get(peerId)
-    const inherited: [string, string] | undefined = cid ? [replica.store.primitive.memberField.getId(), cid] : undefined
-    if (!inherited) throw new Error('Peer no longer exists.')
-    node = { ...node, children: [...node.children, inherited] }
+    if (!cid) throw new Error('Peer no longer exists.')
+    node = withMembershipRow(replica.store, node, peerId, cid)
   }
   return node
 }
@@ -891,13 +900,11 @@ export function setHandlerOffersAt(replica: Replica, at: Scope, peerId: string, 
   if (!s.table.has(type) || handlers.some(cid => !s.table.has(cid) || !matchesGraph(s, type, cid))) throw new Error('Handler value does not match its advertised pattern.')
   return editPolicy(replica, at, now, node => {
     node = localMember(replica, at, node, peerId)
-    return { ...node, children: node.children.map(edge => {
-      if (!isMemberEdge(s, edge)) return edge
-      const member = content(s, edge[1]); if (member.data.peerId?.content !== peerId) return edge
+    return mapMembership(s, node, peerId, member => {
       const children = member.children.filter(e => e[0] !== marker || !advertisedRows(s, e[1]).some(row => sameCapabilityType(s, row[0], type)))
       children.push(...[...new Set(handlers)].map(cid => [marker, advertisement(s, type, cid)] as [string, string]))
-      return [edge[0], put(s, { ...member, children })]
-    }) }
+      return { ...member, children }
+    })
   })
 }
 
@@ -905,13 +912,11 @@ export function setHandlerOffersAt(replica: Replica, at: Scope, peerId: string, 
 export function setConstructorEnabledAt(replica: Replica, at: Scope, peerId: string, id: string, enabled: boolean, now: number): Replica {
   return editPolicy(replica, at, now, node => {
     node = localMember(replica, at, node, peerId)
-    return { ...node, children: node.children.map(edge => {
-      if (!isMemberEdge(replica.store, edge)) return edge
-      const member = content(replica.store, edge[1]); if (member.data.peerId?.content !== peerId) return edge
+    return mapMembership(replica.store, node, peerId, member => {
       const disabled = new Set<string>(member.data.disabledConstructors?.content ?? [])
       if (enabled) disabled.delete(id); else disabled.add(id)
-      return [edge[0], put(replica.store, { ...member, data: { ...member.data, disabledConstructors: { content: [...disabled] } } })]
-    }) }
+      return { ...member, data: { ...member.data, disabledConstructors: { content: [...disabled] } } }
+    })
   })
 }
 
@@ -921,13 +926,11 @@ export function setHandlerEnabledAt(replica: Replica, at: Scope, peerId: string,
     !marketplaceOffers(replica).some(offer => offer.peerId === peerId && offer.id === id && JSON.stringify(offer.path) === JSON.stringify(at))) throw new Error('Handler no longer exists.')
   return editPolicy(replica, at, now, node => {
     node = contextMemberRefs(replica, at).has(peerId) ? localMember(replica, at, node, peerId) : withMember(replica.store, node, peerId, peerId, [])
-    return { ...node, children: node.children.map(edge => {
-      if (!isMemberEdge(replica.store, edge)) return edge
-      const member = content(replica.store, edge[1]); if (member.data.peerId?.content !== peerId) return edge
+    return mapMembership(replica.store, node, peerId, member => {
       const disabled = new Set(member.data.disabledCapabilities?.content ?? [])
       if (enabled) disabled.delete(id); else disabled.add(id)
-      return [edge[0], put(replica.store, { ...member, data: { ...member.data, disabledCapabilities: { content: [...disabled] } } })]
-    }) }
+      return { ...member, data: { ...member.data, disabledCapabilities: { content: [...disabled] } } }
+    })
   })
 }
 

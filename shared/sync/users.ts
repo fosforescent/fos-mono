@@ -22,7 +22,7 @@
 import { hashContent } from '../dag-implementation/cid'
 import type { FosStore } from '../dag-implementation/store'
 import type { FosNodeContent, FosPathElem } from '../types'
-import { content, identityCid, isLibraryType, isRowEdge, newId, libraryTypeAt, memberEdgesOf, memberEntryId, put, refNodeContent, resolveScope, valueCidOf, valueContent, type Scope } from './graph'
+import { content, identityCid, isLibraryType, isRowEdge, newId, libraryTypeAt, memberEdgesOf, memberPeerOf, membershipPath, put, refNodeContent, resolveScope, valueCidOf, valueContent, type Scope } from './graph'
 import { constructForm, formRecord, type FormInput } from './forms'
 import { plainEdge } from './patterns'
 import { addRow, bindUserAt, deleteTask, headCid, homePath, view, writeGraphNode, type Replica } from './replica'
@@ -229,15 +229,15 @@ function keyRowAt(r: Replica, entry: Scope, peerId: string): string | null {
 }
 
 /**
- * Publish `peerId`'s public key on its member entry on the store root (`memberEntryId(<peer id>)`): a row of the user type
+ * Publish `peerId`'s public key on its membership on the store root (`membershipPath(…, [], peerId)`): a row of the user type
  * for that peer (account and username = its peer id, `publicKey` = its raw ed25519 key, base64). The account server
  * writes it whenever it ensures the account context (`ensureHomeContext(…, { keys })`); member entries travel by node
  * exchange, and an owner's device takes the server's entry above its Home (`accountContextAbove`). No-op when
  * unchanged or when `peerId` is no member of the root. A key an older server left in Home (the People row) is removed.
  */
 export function publishPeerKey(r: Replica, peerId: string, publicKey: string, now: number): Replica {
-  const id = peerKeyId(peerId), entry = [memberEntryId(peerId)]
-  if (!resolveScope(r.store, headCid(r), entry) || publishedKey(r, peerId) === publicKey) return r
+  const id = peerKeyId(peerId), entry = membershipPath(r.store, headCid(r), [], peerId)
+  if (!entry || publishedKey(r, peerId) === publicKey) return r
   const existing = keyRowAt(r, entry, peerId)
   if (existing) r = deleteTask(r, entry, existing, now)
   const type = userType(r.store, entry)
@@ -249,8 +249,7 @@ export function publishPeerKey(r: Replica, peerId: string, publicKey: string, no
 export function publishedKeys(r: Replica): Record<string, string> {
   const out: Record<string, string> = {}
   for (const member of memberEdgesOf(r.store, headCid(r))) {
-    const peerId = content(r.store, member[1]).data.peerId?.content
-    if (!peerId) continue
+    const peerId = memberPeerOf(r.store, member)
     // a key row is a row of the user type (the edge's left node) whose user is the entry's own peer; nothing else is read
     for (const edge of content(r.store, member[1]).children) {
       const plain = plainEdge(r.store, edge)

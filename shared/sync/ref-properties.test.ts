@@ -1,4 +1,4 @@
-import { memberEntryId } from './index'
+import { membershipPathAt } from './index'
 import { addRefAt, addMemberAt, addTask, bindRefInputs, content, contextMemberRefs, createBranch, createReplica, headCid, put, refProperties, resolveScope, setHandlerOffersAt, refNodeContent, selectBranch, commitRoot, updateAtScope, withMember, type Replica } from './index'
 
 const properties = (r: Replica, path: string[]) => refProperties(r.store, resolveScope(r.store, headCid(r), path)!)
@@ -10,7 +10,7 @@ test('local bindings and remote members expose properties through the same ref t
   r = addMemberAt(r, ['project'], 'remote', 'Remote', ['read'], 3)
   expect(properties(r, ['project'])).toEqual(expect.arrayContaining([
     expect.objectContaining({ id: 'input', name: 'input', type, value: null, argument: true }),
-    expect.objectContaining({ id: memberEntryId('remote'), peer: 'remote', name: 'Remote', member: true })
+    expect.objectContaining({ id: membershipPathAt(r, ['project'], 'remote')!.at(-1), peer: 'remote', name: 'Remote', member: true })
   ]))
   const handler = put(r.store, refNodeContent(r.store, { alias: { id: 'handler' }, name: { content: 'input' } }, put(r.store, { data: { description: { content: 'Remote result' } }, children: [] }), []))
   r = setHandlerOffersAt(r, ['project'], 'remote', type, [handler], 4)

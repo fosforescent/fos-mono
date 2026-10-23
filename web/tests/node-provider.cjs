@@ -18,7 +18,7 @@ async function main() {
   const authority = { peerId: 'client', scope: [], capabilities: ['provideNode', 'sync'] }
   let result = c.provideNode(source, request, authority, 6); source = result.replica
   // the rows it may read, and of the node's members only its own entry
-  assert.deepEqual(result.node.children.map(child => child.id), ['parent', c.memberEntryId('client')])
+  assert.deepEqual(result.node.children.map(child => child.peer ?? child.id), ['parent', 'client'])
   assert(!JSON.stringify(result.node).includes('Secret grandchild body'))
   assert(!JSON.stringify(result.node).includes('Hidden sibling'))
   assert.throws(() => c.provideNode(source, { ...request, path: ['hidden'] }, authority, 7), /denied/)

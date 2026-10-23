@@ -4,7 +4,7 @@
  * Everything is a row of a library type (`.fos/library.json`), recognised by the row edge's left node only:
  *   message (`lib.relayMessage`)  a row a peer leaves at a relay node: its value is the addressee (a peer id),
  *                                       its child rows are what is sent (a task, a note, ...)
- *   queue   (`lib.relayQueue`)    the row under a recipient's member entry (`memberEntryId(<id>)`) holding what was
+ *   queue   (`lib.relayQueue`)    the row under a recipient's membership (the row whose left is it) holding what was
  *                                       delivered to it; that subtree is the recipient's queue
  *   ack     (`lib.relayAck`)      a row the recipient leaves (in its queue, or as its submission at the relay
  *                                       node) naming a message it took; the message and the ack leave the queue
@@ -22,7 +22,7 @@ import type { FosPathElem } from '../types'
 import type { FosStore } from '../dag-implementation/store'
 import { hashContent } from '../dag-implementation/cid'
 import {
-  commitRoot, content, findChild, identityCid, isMemberEdge, isPeerReference, isRowOfType, libraryTypeAt, memberEntryId, inMemberEntry, moveChild, aliasIdOf,
+  commitRoot, content, findChild, identityCid, isMemberEdge, isPeerReference, isRowOfType, libraryTypeAt, membershipIdOf, memberPeerOf, inMemberEntry, moveChild, aliasIdOf,
   capabilityTarget, put, proposalContent, readProposals, refNodeContent, resolveScope, updateAtScope, valueContent, withMainBranchPolicy, withProposal,
   isLibraryRef, handlerOfferId, shippedLibrary, findNearestRow, memberEdgesOf, isRowEdge, type ProposalRecord, type Scope, type TaskView,
 } from './graph'
@@ -98,7 +98,8 @@ export function memberEntryPath(r: Replica, at: Scope, peerId: string): Scope | 
   return withMainBranchPolicy(r.store, () => {
     for (let i = at.length; i >= 0; i--) {
       const cid = resolveScope(r.store, headCid(r), at.slice(0, i))
-      if (cid && content(r.store, cid).children.some(e => isMemberEdge(r.store, e) && content(r.store, e[1]).data.peerId?.content === peerId)) return [...at.slice(0, i), memberEntryId(peerId)]
+      const id = cid && membershipIdOf(r.store, cid, peerId)
+      if (id) return [...at.slice(0, i), id]
     }
     return null
   })
@@ -206,8 +207,7 @@ export function relayAt(r: Replica, at: Scope, handlerPeer: string, now: number)
 function queuesAt(r: Replica, at: Scope): Scope[] {
   const cid = resolveScope(r.store, headCid(r), at)
   if (!cid) return []
-  return content(r.store, cid).children.flatMap(e => {
-    if (!isMemberEdge(r.store, e)) return []
+  return memberEdgesOf(r.store, cid).flatMap(e => {
     const id = content(r.store, e[1]).data.alias?.id
     return id && queueIn(r.store, e[1]) ? [[...at, id]] : []
   })
@@ -267,14 +267,14 @@ export function addRelayAck(r: Replica, at: Scope, messageId: string, now: numbe
  * entry being what it receives of the node's members). Only what is loaded is visited; bounded.
  */
 export function relayQueues(r: Replica, peerId: string, at: Scope = [], limit = 2000): Scope[] {
-  const s = r.store, out: Scope[] = [], stack: Scope[] = [at], entry = memberEntryId(peerId)
+  const s = r.store, out: Scope[] = [], stack: Scope[] = [at]
   let seen = 0
   while (stack.length && seen++ < limit) {
     const path = stack.pop()!, cid = resolveScope(s, headCid(r), path)
     if (!cid || isPeerReference(content(s, cid))) continue
-    const member = memberEdgesOf(s, cid).find(e => content(s, e[1]).data.alias?.id === entry)
-    const queue = member && queueIn(s, member[1])
-    if (queue) out.push([...path, entry, queue])
+    const member = memberEdgesOf(s, cid).find(e => memberPeerOf(s, e) === peerId)
+    const entry = member && content(s, member[1]).data.alias?.id, queue = member && queueIn(s, member[1])
+    if (entry && queue) out.push([...path, entry, queue])
     for (const edge of valueContent(s, cid).children) {
       const id = isRowEdge(s, edge) ? aliasIdOf(content(s, identityCid(s, edge))) : null
       if (id) stack.push([...path, id])

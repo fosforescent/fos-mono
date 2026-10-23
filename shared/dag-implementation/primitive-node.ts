@@ -203,7 +203,6 @@ export const getRevisionFieldNode = (store: FosStore) => generateConstructor(sto
 
 // Peer-related constructors for membership-based sync
 export const getPeerFieldNode = (store: FosStore) => generateConstructor(store, "PEER", { description: { content: 'Peer Reference Constructor' } }, [])
-export const getMemberFieldNode = (store: FosStore) => generateConstructor(store, "MEMBER", { description: { content: 'Member Edge Constructor - points to peer reference' } }, [])
 export const getPeerIdFieldNode = (store: FosStore) => generateConstructor(store, "PEERID", { description: { content: 'Peer ID Field' } }, [])
 export const getPeerPublicKeyFieldNode = (store: FosStore) => generateConstructor(store, "PEERPUBKEY", { description: { content: 'Peer Public Key Field' } }, [])
 
@@ -651,7 +650,6 @@ export const constructPrimitiveAliases = (store: FosStore) => {
   const signatureField = getSignatureNode(store)
   // Peer/membership-related constructors
   const peerField = getPeerFieldNode(store)
-  const memberField = getMemberFieldNode(store)
   const peerIdField = getPeerIdFieldNode(store)
   const peerPublicKeyField = getPeerPublicKeyFieldNode(store)
   const periodicTrigger = getPeriodicTriggerNode(store)
@@ -879,7 +877,6 @@ export const constructPrimitiveAliases = (store: FosStore) => {
     timestampField,
     signatureField,
     peerField,
-    memberField,
     peerIdField,
     peerPublicKeyField,
     revisionField,
@@ -1095,7 +1092,6 @@ export type PrimitiveAliases = {
   timestampField: FosNode,
   signatureField: FosNode,
   peerField: FosNode,
-  memberField: FosNode,
   peerIdField: FosNode,
   peerPublicKeyField: FosNode,
   targetPointerConstructor: FosNode,

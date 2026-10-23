@@ -1,6 +1,6 @@
 /** Property paths and their parenthesized spelling share one small, serializable grammar. */
 import type { FosStore } from '../dag-implementation/store'
-import { content, advertisedRows, enclosingScopes, identityCid, isBranchChoice, isRowEdge, isMemberEdge, isGrantEdge, refValueCid, selectedBranchValue, type Scope } from './graph'
+import { content, advertisedRows, enclosingScopes, identityCid, isBranchChoice, isRowEdge, isMemberEdge, memberPeerOf, isGrantEdge, refValueCid, selectedBranchValue, type Scope } from './graph'
 import { headCid, type Replica } from './replica'
 
 export type RefExpression = { up: number; path: string[]; lexical: boolean }
@@ -62,7 +62,7 @@ export function resolveRefExpression(r: Replica, at: Scope, expression: string |
         const childCid = identityCid(store, edge), child = content(store, childCid)
         if (!(isRowEdge(store, edge) || isMemberEdge(store, edge) || isGrantEdge(store, edge))) return []
         const rowName = child.data.name?.content ?? content(store, refValueCid(store, child) ?? childCid).data.name?.content
-        if (child.data.alias?.id !== name && rowName !== name && child.data.peerId?.content !== name) return []
+        if (child.data.alias?.id !== name && rowName !== name && (isMemberEdge(store, edge) ? memberPeerOf(store, edge) : child.data.peerId?.content) !== name) return []
         const childPath = [...path, child.data.alias?.id ?? name]
         if (access.canRead && !access.canRead(store, childCid, childPath)) { failure = 'denied'; return [] }
         return [{ store, cid: childCid, path: childPath, pattern: edge[0] }]

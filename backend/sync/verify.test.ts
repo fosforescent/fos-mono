@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import * as path from 'node:path'
 import type { Request, Response } from 'express'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { usersPath, HOME_ID, accountContextAbove, memberEntryId, addRow, addTask, cacheUser, cachedUser, createReplica, ensureHomeContext, evaluationRecord, loadReplica, peerKeyId, publishedKey, rebindUsers, requestVerification, serializeReplica, shareHome, syncNodeTree, unverifiedUser, verifyPublished, verifyUser, view, type NodeRequest, type ProvidedNode, type Replica } from '@fosforescent/shared/sync/index'
+import { usersPath, HOME_ID, accountContextAbove, membershipPathAt, addRow, addTask, cacheUser, cachedUser, createReplica, ensureHomeContext, evaluationRecord, loadReplica, peerKeyId, publishedKey, rebindUsers, requestVerification, serializeReplica, shareHome, syncNodeTree, unverifiedUser, verifyPublished, verifyUser, view, type NodeRequest, type ProvidedNode, type Replica } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
@@ -109,7 +109,7 @@ test('the server\'s key is graph data: published on its member entry and carried
   expect(publishedKey(h.get(), 'fos')).toBe(verify.publicKey)
   expect(publishedKey(device, 'fos')).toBe(verify.publicKey)
   // on the fos member entry of the root, above Home: not among the people
-  expect(view(device, [memberEntryId('fos')])!.tasks.map(t => t.id)).toContain(peerKeyId('fos'))
+  expect(view(device, membershipPathAt(device, [], 'fos')!)!.tasks.map(t => t.id)).toContain(peerKeyId('fos'))
   expect(usersPath(device)).toBeNull()
   // the device asks for @bob through a verify requirement, the server fills it, the device pulls the answer
   const asked = requestVerification(device, '@bob', 4)

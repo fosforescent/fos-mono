@@ -20,7 +20,7 @@ import { plainEdge } from './patterns'
 import { FIELD_TYPES, MARKDOWN_TYPE, PEER_TYPE, VISITOR_SUBMISSION } from './published-types'
 export * from './published-types'
 import { PLAIN_TYPE, REF_TYPE, TEMPLATE_TYPE } from './library-types'
-import { isRowEdge, memberEntryId, newId, SERVER_MEMBER, aliasIdOf, identityCid, capabilityTarget, nestScope, commitRoot, content, hasCapability, importNodes, makeLink, memberFor, proposalContent, put, reachableNodes, readMembers, readProposals, resolveScope, isRefNode, refValueCid, rootTargetCid, updateAtScope, valueContent, withProposal, type Capability, type Scope } from './graph'
+import { isRowEdge, membershipPath, newId, SERVER_MEMBER, aliasIdOf, identityCid, capabilityTarget, nestScope, commitRoot, content, hasCapability, importNodes, makeLink, memberFor, proposalContent, put, reachableNodes, readMembers, readProposals, resolveScope, isRefNode, refValueCid, rootTargetCid, updateAtScope, valueContent, withProposal, type Capability, type Scope } from './graph'
 
 export type Audience = 'public' | 'users'
 export const AUDIENCES: readonly Audience[] = ['public', 'users']
@@ -82,7 +82,8 @@ export function publishedUrl(r: Replica, path: Scope): string | null {
   for (let i = path.length; i >= 0; i--) {
     const at = path.slice(0, i), cid = resolveScope(r.store, headCid(r), at)
     if (!cid || !readMembers(r.store, content(r.store, cid)).some(m => m.peerId === SERVER_MEMBER)) continue
-    const base = readRowValue<PageBase>(r, [...at, memberEntryId(SERVER_MEMBER)], urlLeft(r))
+    const fos = membershipPath(r.store, headCid(r), at, SERVER_MEMBER)
+    const base = fos && readRowValue<PageBase>(r, fos, urlLeft(r))
     if (base) return nodeUrl(base.base, { owner: base.owner, path: [...r.meta.scope, ...path] })
   }
   return null
@@ -235,13 +236,14 @@ export function proposeVisitorValues(r: Replica, path: Scope, peer: string, valu
  */
 export function writeParticipation(r: Replica, path: Scope, record: Participation, now: number): Replica {
   const { approvals: _approvals, ...kept } = record
-  const entry = [...path, memberEntryId(record.peer)]
-  if (!resolveScope(r.store, headCid(r), entry)) throw new Error('Only a member of the node takes part in it.')
+  const entry = membershipPath(r.store, headCid(r), path, record.peer)
+  if (!entry) throw new Error('Only a member of the node takes part in it.')
   return writeHandlerResult(r, entry, kept, now)
 }
 
 export function participation(r: Replica, path: Scope, peer: string): Participation | null {
-  const value = handlerResult<Omit<Participation, 'approvals'>>(r, [...path, memberEntryId(peer)])
+  const entry = membershipPath(r.store, headCid(r), path, peer)
+  const value = entry && handlerResult<Omit<Participation, 'approvals'>>(r, entry)
   if (!(value && value.peer === peer && Array.isArray(value.ranking) && value.ranking.every(v => typeof v === 'string') && value.fields && typeof value.fields === 'object')) return null
   return { ...value, approvals: approvedBy(r, path, peer) }
 }
