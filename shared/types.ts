@@ -168,7 +168,7 @@ export type FosDataContent = {
     /** `tool` requirements: the tool (of an MCP peer attached above) to run; the text is its input. */
     tool?: string
   },
-  /** A supply row under a requirement: who/what satisfied it. `ref` names an allocation or query row by alias id. */
+  /** Editable supply syntax. Compile `ref` through parent scope into a declaration CID before validation. */
   supply?: {
     capability: string
     by: string

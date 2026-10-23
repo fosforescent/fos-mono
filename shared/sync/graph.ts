@@ -1,5 +1,5 @@
 import { capabilityDeclarations } from './capability-catalog'
-import { nodeOccurrence, resolveRefIdentity } from './ref-paths'
+import { compileRequirement, checkCompiledRequirement } from './compiled-requirements'
 import { readGraphValue } from './node-values'
 /**
  * Graph helpers for sync, written against the hash-consed FosStore.
@@ -44,7 +44,6 @@ import { readGraphValue } from './node-values'
  */
 
 import { allocationValue } from './destructure'
-import { standardRequirementSatisfied } from './standard-requirements'
 
 import { capabilityName, sameCapabilityType, isExecuteLeft, isTriggerLeft } from './capabilities'
 import * as COMPILED_LIBRARY from './library.generated.json'
@@ -1619,21 +1618,11 @@ export function childRows(store: FosStore, cid: string): ChildRow[] {
 }
 /** Allocation rows that hold an amount of a resource (positive entries, money payments included). */
 const allocationEntry = (row: ChildRow): boolean => isAllocationType(row.type) && !!flowOf(row.type, row.value).allocation
-/** Allocation rows that supply a requirement (a handler's answer, or a money payment). */
-const supplyEntry = (row: ChildRow) => isAllocationType(row.type) ? flowOf(row.type, row.value).supply : undefined
 /** Rows that are requirements of their parent (negative allocation entries). */
 const requirementEntry = (row: ChildRow) => isAllocationType(row.type) ? flowOf(row.type, row.value).requirement : undefined
 
-/** Does an allocation fill an allocation requirement (resource type and amount)? */
-function allocationFills(req: NonNullable<FosDataContent['requirement']>, a: FosDataContent['allocation'] | undefined, users?: RequiredUser): boolean {
-  return allocationMatches(req, a, users) && (req.amount === undefined || a!.amount >= req.amount)
-}
-
-/** The user a requirement names (its `user` field) and the one an allocation is for, when the requirement names one. */
+/** The user constraint on a requirement and its supplied allocation. */
 export type RequiredUser = { required: UserRecord | null; given: UserRecord | null | undefined }
-function requiredUser(store: FosStore, requirementCid: string, allocationCid: string): RequiredUser {
-  return { required: userOf(store, valueContent(store, requirementCid)), given: userOf(store, valueContent(store, allocationCid)) }
-}
 
 /**
  * Does an allocation count towards an allocation requirement at all (resource type matches), whatever its amount?
@@ -1653,24 +1642,8 @@ export function allocationMatches(req: NonNullable<FosDataContent['requirement']
  * payments among them) and of the allocations its supplies reference, against the amount it asks for. Null for other
  * requirements or when the requirement names no amount.
  */
-export function requirementProgress(store: FosStore, requirementCid: string, root?: string): { have: number; need: number } | null {
-  const req = demandOf(valueContent(store, requirementCid))
-  if (!req || req.capability !== 'allocation' || req.amount === undefined) return null
-  let have = 0
-  for (const row of childRows(store, requirementCid)) {
-    if (allocationEntry(row)) { const allocation = allocationValue(store, row.cid); if (allocationMatches(req, allocation, requiredUser(store, requirementCid, row.cid))) have += allocation?.amount ?? 0; continue }
-    const supply = supplyEntry(row)
-    if (supply?.capability === 'allocation' && supply.ref) {
-      const path = nodeOccurrence(store, requirementCid)
-      const resolved = path && resolveRefIdentity({ store }, path, supply.ref)
-      const found = resolved && resolved.status === 'ready' ? resolved.locations[0] : undefined
-      if (found?.pattern) {
-        const row = rowView(found.store, found.cid, [found.pattern, found.cid])
-        if (allocationMatches(req, row.allocation, { required: userOf(store, valueContent(store, requirementCid)), given: row.user })) have += row.allocation?.amount ?? 0
-      }
-    }
-  }
-  return { have, need: req.amount }
+export function requirementProgress(store: FosStore, requirementCid: string): { have: number; need: number } | null {
+  return checkCompiledRequirement(store, compileRequirement(store, requirementCid)).progress
 }
 
 /**
@@ -1678,13 +1651,13 @@ export function requirementProgress(store: FosStore, requirementCid: string, roo
  * amount (`allocation`; for money, payments), a query that has been run (`search`); or by a supply row under it that
  * matches its capability (confirmation, choice, a peer's answer, or a reference to an allocation/query row elsewhere).
  */
-export function requirementSatisfied(store: FosStore, requirementCid: string, root?: string): boolean {
+export function requirementSatisfied(store: FosStore, requirementCid: string): boolean {
   const node = content(store, requirementCid)
   if (isRefNode(store, node) && !refValueCid(store, node)) return false
   const req = demandOf(valueContent(store, requirementCid))
   if (!req) return true
   // Signed resource rows are a standard-library adapter. A handler input is not a result.
-  return standardRequirementSatisfied(store, requirementCid, req, root)
+  return checkCompiledRequirement(store, compileRequirement(store, requirementCid)).satisfied
 }
 
 /** Resolve templates from direct enclosing declarations, then the bound library's fields. */

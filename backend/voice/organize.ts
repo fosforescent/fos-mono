@@ -74,7 +74,8 @@ export function organizeHandler(model: () => VoiceDeps, usage?: VoiceUsage): Hos
       const result: OrganizedResult = { rows: submitted.rows.length, captureId: submitted.captureId, title: plan.title, under: [...new Set(plan.items.flatMap(item => item.parent && titles.has(item.parent) ? [titles.get(item.parent)!] : []))],
         proposal: submitted.proposalCid, name: submitted.name, additions: submitted.additions }
       let next = writeHandlerResult(submitted.replica, path, result, ctx.now())
-      next = addSupply(next, target, path.at(-1)!, { capability: 'organize', by: 'fos', ref: submitted.captureId }, ctx.now())
+      // Completion attests the submission. Its proposed rows remain in the recorded result until accepted.
+      next = addSupply(next, target, path.at(-1)!, { capability: 'organize', by: 'fos' }, ctx.now())
       await ctx.update(next)
     }
   }

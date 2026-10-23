@@ -1,3 +1,4 @@
+export * from './compiled-requirements'
 export * from './library-types'
 export * from './graph'
 export * from './structural'

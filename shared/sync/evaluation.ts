@@ -14,7 +14,7 @@ import { instructionPrimitives } from './primitives'
 import { readRowValue, rowWithLeft, writeRowValue } from './row-values'
 import { executeLeft, isExecuteLeft, isTriggerLeft } from './capabilities'
 import { commitRoot, content, refValueCid, newId, put, refNodeContent, resolveScope, updateAtScope, valueContent, identityCid, scopeBranches, selectBranch, importNodes, reachableNodes, type Scope, type TaskView } from './graph'
-import { resolveRefIdentity } from './ref-paths'
+import { compileRequirement, checkCompiledRequirement } from './compiled-requirements'
 import { addRefAt, addTask, headCid, setTaskDone, view, loadReplica, serializeReplica, type Replica } from './replica'
 
 const EVALUATION_BUDGET_MS = 120000
@@ -206,10 +206,7 @@ function problems(r: Replica, step: EvaluationStep, driver: EvaluationDriver): s
   }
   issues.push(...resolveText(r, step.path, formText(r.store, valueContent(r.store, cid)), [], driver).bindings.flatMap(b => b.problems))
   const req = step.row?.requirement
-  if (req?.capability === 'allocation') for (const child of view(r, step.path)?.tasks ?? []) {
-    const supplied = child.supply
-    if (supplied?.ref && resolveRefIdentity(r, step.path, supplied.ref).status !== 'ready') issues.push('The supplied allocation is unavailable in this scope for validation.')
-  }
+  if (req) issues.push(...checkCompiledRequirement(r.store, compileRequirement(r.store, cid, step.path, driver)).problems)
   if (req && !req.satisfied && !executors.length) {
     const childTasks = view(r, step.path)?.tasks.filter(t => t.checkable) ?? []
     if (req.capability !== 'task' || !childTasks.length) issues.push(`Unfulfilled ${req.capability}: ${step.row!.title}`)

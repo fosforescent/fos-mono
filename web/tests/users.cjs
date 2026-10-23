@@ -44,7 +44,7 @@ async function main() {
       if (name !== 'bob') return json(400, { error: `No Fos user is named @${name}.` })
       const user = attest({ account: '42', username: 'bob', name: 'Bob Builder', publicKey: '' }, signer)
       let next = c.bindUserAt(r, at, tamper ? { ...user, name: 'Mallory' } : user, 10)
-      next = c.addSupply(next, at.slice(0, -1), at.at(-1), { capability: 'verify', by: 'fos', ref: '42' }, 10)
+      next = c.addSupply(next, at.slice(0, -1), at.at(-1), { capability: 'verify', by: 'fos', receipt: '42' }, 10)
       app.set({ replica: next })
       return json(200, { evaluation: { status: 'committed' } })
     }

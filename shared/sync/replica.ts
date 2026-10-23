@@ -600,7 +600,7 @@ export function addRef(replica: Replica, at: Scope, targetAliasId: string, now: 
 
 /** Satisfy a requirement row at `at`/`requirementId` with a supply (who, and for search/allocation which row by alias id). */
 export function addSupply(replica: Replica, at: Scope, requirementId: string, supply: { capability: string; by: string; ref?: string; receipt?: string; choice?: number }, now: number, id?: string): Replica {
-  if (supply.capability === 'allocation' && supply.ref && !resolveRef(replica, supply.ref, [...at, requirementId])) {
+  if (supply.ref && !resolveRef(replica, supply.ref, [...at, requirementId])) {
     const source = findRowByAlias(replica.store, headCid(replica), supply.ref)
     if (!source) throw new Error('The supplied reference is unavailable.')
     replica = shareRefAt(replica, [...source.path, source.row.id], [...at, requirementId], now)

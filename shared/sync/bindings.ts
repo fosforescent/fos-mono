@@ -112,7 +112,7 @@ export function resolveBinding(store: FosStore, type: string, target: string | n
       }
       if (isBranchChoice(store, node)) { const selected = selectedBranchValue(store, cid); return selected ? follow(selected, wanted, scope) : fail('missing', 'Choose a supplied value branch') }
       if (node.children.some(e => isChoiceEdge(store, e))) return fail('conflict', 'Resolve conflicting values first')
-      const output = resolveRequirementOutput(store, cid, scope?.path)
+      const output = resolveRequirementOutput(store, cid, scope?.path, environment)
       if (output) return output.cid ? { status: 'ready', cid: output.cid, sources: [...sources], problems: [] } : fail('missing', output.error ?? 'Unfilled requirement')
       if (node.data.ref) {
         if (node.data.ref.peer || node.data.ref.owner) return fail('missing', 'The remote reference needs a handler in this scope')

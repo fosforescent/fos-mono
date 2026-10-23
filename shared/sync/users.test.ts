@@ -160,7 +160,7 @@ test('a verify request names the user in a verify requirement among the people; 
   // what the verifier does: bind the attested object, supply
   r = bindUserAt(asked.replica, asked.path, bob, 3)
   expect(view(r, people)!.tasks.find(t => t.id === asked.path.at(-1))!.requirement!.satisfied).toBe(false)
-  r = addSupply(r, people, asked.path.at(-1)!, { capability: 'verify', by: 'fos', ref: '42' }, 4)
+  r = addSupply(r, people, asked.path.at(-1)!, { capability: 'verify', by: 'fos', receipt: '42' }, 4)
   expect(view(r, people)!.tasks.find(t => t.id === asked.path.at(-1))!.requirement).toMatchObject({ satisfied: true, summary: 'verify @bob' })
   expect(verifiedAt(r, asked.path)).toEqual(bob)
   // asking again replaces the earlier request

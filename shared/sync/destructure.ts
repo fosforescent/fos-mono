@@ -1,14 +1,14 @@
+import { compileRequirement, checkCompiledRequirementOutput } from './compiled-requirements'
 /** Requirement outputs are named typed refs pointing at their source's stable identity. */
 import type { FosStore } from '../dag-implementation/store'
-import { newId, childRows, commitRoot, content, demandOf, flowOf, identityCid, put, refNodeContent, isRefNode, rowTypeOf, refValueCid, requirementSatisfied, resolveScope, updateAtScope, valueContent, type Scope } from './graph'
-import { isAllocationType } from './library-types'
+import { newId, importNodes, reachableNodes, commitRoot, content, demandOf, identityCid, put, refNodeContent, isRefNode, rowTypeOf, refValueCid, resolveScope, updateAtScope, valueContent, type Scope } from './graph'
 import { headCid, type Replica } from './replica'
-import { nodeOccurrence, resolveRefIdentity } from './ref-paths'
+import { nodeOccurrence, resolveRefIdentity, type RefAccess } from './ref-paths'
 
 export function requirementOutputs(store: FosStore, cid: string) {
   return valueContent(store, cid).children.flatMap(edge => {
     const ref = content(store, identityCid(store, edge)), type = rowTypeOf(store, edge)
-    return type && edge[0] === type && ref.data.ref ? [{ cid: identityCid(store, edge), id: ref.data.alias!.id, name: ref.data.name?.content ?? 'Value', amount: ref.data.allocation?.amount, type }] : []
+    return type && edge[0] === type && ref.data.ref && ref.data.name ? [{ cid: identityCid(store, edge), id: ref.data.alias!.id, name: ref.data.name.content, amount: ref.data.allocation?.amount, type }] : []
   })
 }
 
@@ -26,31 +26,23 @@ export function destructureRequirement(r: Replica, path: Scope, name: string, am
   return { ...r }
 }
 
-/** Resolve at use time; no funds or selected values are fabricated while a requirement is unfilled. */
-export function resolveRequirementOutput(store: FosStore, cid: string, at?: Scope): { cid?: string; error?: string } | null {
+/** Bind the editable output and compile its evidence. Source mappings must stay outside the returned value graph. */
+export function resolveRequirementOutput(store: FosStore, cid: string, at?: Scope, access: RefAccess = {}): { cid?: string; error?: string; source?: { store: FosStore; cid: string; path: Scope } } | null {
   const ref = content(store, cid)
   if (!isRefNode(store, ref) || !ref.data.ref || !ref.data.name) return null
-  if (ref.data.ref.owner) return { error: 'The source requirement is outside this workspace.' }
+  if (ref.data.ref.owner || ref.data.ref.peer) return { error: 'The source requirement needs an accessible handler in this scope.' }
   const scope = at ?? nodeOccurrence(store, cid)?.slice(0, -1)
   if (!scope) return { error: 'The placeholder is no longer part of an unambiguous scope.' }
-  const resolved = resolveRefIdentity({ store }, scope, ref.data.ref.id)
+  const resolved = resolveRefIdentity({ store }, scope, ref.data.ref.id, access)
   const source = resolved.status === 'ready' ? resolved.locations[0] : undefined
-  if (!source || source.store !== store) return { error: 'The source requirement is unavailable in this scope.' }
+  if (!source) return { error: 'The source requirement is unavailable in this scope.' }
   const sourceCid = source.cid
-  const currentOutput = requirementOutputs(store, sourceCid).find(output => output.id === ref.data.alias?.id)
-  if (!currentOutput) return { error: 'The placeholder is no longer part of the source requirement.' }
-  const req = demandOf(valueContent(store, sourceCid))
-  if (!req || !['allocation', 'choice'].includes(req.capability)) return { error: 'The source is no longer an amount or choice requirement.' }
-  if (!requirementSatisfied(store, sourceCid)) return { error: 'The source requirement must be fulfilled first.' }
-  if (req.capability === 'allocation') {
-    const slice = content(store, currentOutput.cid).data.allocation
-    const total = requirementOutputs(store, sourceCid).reduce((sum, o) => sum + (o.amount ?? 0), 0)
-    if (!slice || !Number.isFinite(slice.amount) || slice.amount <= 0 || req.amount === undefined || total > req.amount + 1e-9 || slice.amount > req.amount || slice.type !== (req.resource ?? 'account') || slice.unit !== (req.unit ?? 'USD')) return { error: 'The pieces no longer fit the source requirement.' }
-    return { cid: put(store, { data: { allocation: slice, description: { content: `${slice.amount} ${slice.unit}` } }, children: [] }) }
-  }
-  const choices = [...new Set(childRows(store, sourceCid).map(row => isAllocationType(row.type) ? flowOf(row.type, row.value).supply?.choice : undefined).filter((n): n is number => n !== undefined))]
-  if (choices.length !== 1 || !req.options?.[choices[0]!]) return { error: 'Choose exactly one constructor for the source requirement.' }
-  return { cid: put(store, { data: { description: { content: req.options[choices[0]!]! } }, children: [] }) }
+  const outputs = requirementOutputs(source.store, sourceCid)
+  const index = outputs.findIndex(output => output.id === ref.data.alias?.id)
+  if (index < 0) return { error: 'The placeholder is no longer part of the source requirement.' }
+  const result = checkCompiledRequirementOutput(source.store, compileRequirement(source.store, sourceCid, source.path, access), index)
+  if (result.cid && source.store !== store) importNodes(store, reachableNodes(source.store, [result.cid]))
+  return { ...result, source }
 }
 
 /** Bind an output as a typed property; the constructor may keep this as a record field. */
@@ -72,8 +64,8 @@ export function linkRequirementOutput(r: Replica, path: Scope, outputCid: string
 }
 
 const resolvingAllocations = new WeakMap<FosStore, Set<string>>()
-/** An allocation's amount argument is resolved live, using the same output ref as record properties. */
-export function allocationValue(store: FosStore, cid: string) {
+/** Project a compiled output back into an editable allocation; retain the source locator only in this UI/compiler projection. */
+export function allocationValue(store: FosStore, cid: string, access: RefAccess = {}) {
   const value = valueContent(store, cid), original = value.data.allocation
   if (!original) return undefined
   const argument = value.children.find(edge => edge[0] === store.primitive.allocationField.getId() && content(store, edge[1]).data.name?.content === 'amount')
@@ -88,8 +80,8 @@ export function allocationValue(store: FosStore, cid: string) {
       seen.add(current)
       const scope = nodeOccurrence(store, cid)?.slice(0, -1)
       if (!scope) return undefined
-      const output = resolveRequirementOutput(store, current, scope)
-      if (output) return output.cid ? { ...original, ...content(store, output.cid).data.allocation } : undefined
+      const output = resolveRequirementOutput(store, current, scope, access)
+      if (output) return output.cid && output.source ? { ...original, ...content(store, output.cid).data.allocation, resource: output.source.path.at(-1)! } : undefined
       current = refValueCid(store, content(store, current))
     }
     return undefined

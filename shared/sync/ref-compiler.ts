@@ -3,12 +3,13 @@ import { settingOf } from './graph'
 import { isHandlerStateLeft } from './capabilities'
 import type { FosPathElem } from '../types'
 import type { FosStore } from '../dag-implementation/store'
-import { content, findAliasEdge, identityCid, isBranchChoice, isMemberEdge, isProposalEdge, isRowEdge, put, putBranches, readChoice, isRefNode, refValueCid, resolveScope, selectedBranchValue, valueContent, type Scope } from './graph'
+import { importNodes, reachableNodes, content, findAliasEdge, identityCid, isBranchChoice, isMemberEdge, isProposalEdge, isRowEdge, put, putBranches, readChoice, isRefNode, refValueCid, resolveScope, selectedBranchValue, valueContent, type Scope } from './graph'
 import { addRefAt, headCid, type Replica } from './replica'
 import { argumentRefs } from './bindings'
 import { matchesGraph } from './structural'
 import { isNegative, primitiveOf } from './parameters'
 import { resolveRefExpression, resolveRefIdentity, type RefAccess, type RefLocation } from './ref-paths'
+import { resolveRequirementOutput } from './destructure'
 
 export type RefHole = { cid: string; id: string; type?: string; path: Scope; reason: 'unbound' | 'unavailable' | 'denied' | 'cycle' | 'ambiguous' | 'type'; role: 'input' | 'output' }
 export type CompiledRef = { cid: string; holes: RefHole[]; complete: boolean; sources: string[]; locations: Array<{ source: string; path: Scope; cid: string }> }
@@ -62,6 +63,15 @@ export function compileRefGraph(r: Replica, cid: string, at: Scope = [], options
         return put(r.store, node)
       }
       if (node.data.ref?.peer || node.data.ref?.owner) return hole(node.data.ref.id || id, type, path, 'unavailable', role)
+      if (node.data.ref && node.data.name) {
+        const output = resolveRequirementOutput(store, current, path.slice(0, -1), options)
+        if (output) {
+          if (output.source) sources.add(output.source.cid)
+          if (!output.cid) return hole(id, type, path, 'unbound', role)
+          if (store !== r.store) importNodes(r.store, reachableNodes(store, [output.cid]))
+          return output.cid
+        }
+      }
       if (node.data.refExpression) {
         const context = { ...r, store }
         const resolved = resolveRefExpression(context, path.slice(0, -1), node.data.refExpression, options)
