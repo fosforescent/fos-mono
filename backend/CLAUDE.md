@@ -1,6 +1,8 @@
 # Backend CLAUDE.md
 
 ## Directory Summary
+
+Resource submissions must preserve the supplier's nullable time bounds for every resource type. Validation must use the shared interval predicates, distinguish a demand from consuming a grant, and reject widening an existing grant. Calendar effects must require an explicit finite event start and end; do not infer an endpoint from the amount or replace null with the current time.
 The backend directory contains the Node.js/Express API server that provides the core functionality for Fosforescent. It handles authentication, data management, graph operations, subscriptions, and is the always-on account peer for the web, desktop and CLI clients.
 
 ## Key Components

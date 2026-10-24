@@ -131,7 +131,7 @@ export function mayParticipate(r: Replica, path: Scope, peer: string, capability
   const may = (who: string) => hasCapability(r.store, identity, who, capability) || hasCapability(r.store, identity, who, 'execute')
   return may(peer) && (!!policy.execution || may(audiencePeer(policy.audience)))
 }
-export type SharedInput = { key: string; name: string; kind: 'text' | 'ref' | 'allocation' | 'confirmation' | 'choice'; path?: Scope; options?: string[]; direction?: 'provide' | 'consume'; type?: string; unit?: string; amount?: number; start?: number; end?: number; role?: 'input' | 'output' }
+export type SharedInput = { key: string; name: string; kind: 'text' | 'ref' | 'allocation' | 'confirmation' | 'choice'; path?: Scope; options?: string[]; direction?: 'provide' | 'consume'; type?: string; unit?: string; amount?: number; start?: number | null; end?: number | null; role?: 'input' | 'output' }
 /**
  * A visitor's taking part: what it answered and how it ranked, with where its own copy is (`account`: its link row to
  * the node in its account). `approvals` are the submissions it approved, read from their approval rows (approvals.ts),
@@ -139,7 +139,7 @@ export type SharedInput = { key: string; name: string; kind: 'text' | 'ref' | 'a
  */
 export type Participation = {
   peer: string; name?: string; labels?: Record<string, string>; audience: string; revision: string; updated: number
-  approvals: string[]; ranking: string[]; fields: Record<string, string | boolean | number | { amount: number; type: string; unit: string; start?: number; end?: number }>
+  approvals: string[]; ranking: string[]; fields: Record<string, string | boolean | number | { amount: number; type: string; unit: string; start?: number | null; end?: number | null }>
   account?: { owner: string; ref: string }
 }
 /**

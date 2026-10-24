@@ -54,12 +54,14 @@ export type CalendarDeps = {
 export function calendarHandler(deps: CalendarDeps): HostHandler {
   return {
     peerId: 'integration:google', ref: standardHostRef('integration:google', 'calendar'),
-    handles: step => { const r = step.row?.requirement; return !!r && r.capability === 'allocation' && (r.resource === 'calendar' || r.resource === 'person') && r.start !== undefined },
+    handles: step => { const r = step.row?.requirement; return !!r && r.capability === 'allocation' && (r.resource === 'calendar' || r.resource === 'person') && r.start != null && r.end != null },
     available: userId => deps.connected(userId),
     async effect(ctx) {
       if (!await deps.connected(ctx.userId)) throw new Error('Google disconnected before the effect.')
       const req = ctx.step.row!, r = req.requirement!
-      const start = r.start!, end = r.end ?? start + Math.round((r.amount ?? 1) * 3_600_000)
+      const { start, end } = r
+      if (start == null || end == null || !Number.isFinite(start) || !Number.isFinite(end) || end <= start)
+        throw new Error('Choose a concrete start and end before creating a calendar event.')
       const task = ctx.step.path.length > 1 ? null : null
       const event = await deps.createEvent(ctx.userId, { summary: req.title || 'fos', description: req.title, start, end })
       const allocation = { resource: '', type: r.resource as ResourceType, amount: r.amount ?? (end - start) / 3_600_000, unit: 'h', start, end, ...(r.peer ? { person: r.peer } : {}) }

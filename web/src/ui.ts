@@ -914,8 +914,8 @@ function timeBanks(app: App, at: Scope = app.state.view): TimeBank[] {
   const allocations = app.allocations()
   return app.contextBanks(at).filter(({ row }) => row.resource.type === 'calendar').map(({ row }) => ({
     id: row.id, name: row.title,
-    busy: allocations.filter(a => a.row.allocation?.resource === row.id && a.row.allocation.start !== undefined).map(a => ({
-      start: a.row.allocation!.start!, end: a.row.allocation!.end ?? a.row.allocation!.start! + a.row.allocation!.amount * HOUR_MS,
+    busy: allocations.filter(a => a.row.allocation?.resource === row.id).map(a => ({
+      start: a.row.allocation!.start ?? -Infinity, end: a.row.allocation!.end ?? Infinity,
       label: a.row.title || formatAmount(a.row.allocation!.amount, a.row.allocation!.unit), open: () => app.goTo(a.path)
     }))
   }))
@@ -2634,7 +2634,7 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
         // The time-block picker places the needed time on a calendar's timeline and creates the allocation inside this requirement.
         body.append(stop(button('secondary small pick-time', 'Pick time…', () => void pickTimeForRequirement(app, [...state.view, ...at, task.id], task))))
       }
-      if (r.capability === 'allocation' && (r.resource === 'calendar' || r.resource === 'person') && r.start !== undefined) {
+      if (r.capability === 'allocation' && (r.resource === 'calendar' || r.resource === 'person') && r.start != null && r.end != null) {
         const google = state.integrations.find((p) => p.id === 'google')
         if (google?.connected && app.capabilityAvailable('calendar', [...state.view, ...at, task.id])) body.append(stop(button('secondary small', 'Add to Google Calendar', () => void app.askPeerAt(at, task))))
       }

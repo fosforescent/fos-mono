@@ -153,8 +153,8 @@ export type FosDataContent = {
     resource?: 'calendar' | 'account' | 'inventory' | 'person' | 'points' | 'location'
     amount?: number
     unit?: string
-    start?: number
-    end?: number
+    start?: number | null
+    end?: number | null
     options?: string[]
     /**
      * `peer` requirements: a peer id the task is assigned to (a shared host, a device). A user named with `-@name`
@@ -242,6 +242,8 @@ export type FosDataContent = {
     type: 'calendar' | 'account' | 'inventory' | 'person' | 'points' | 'location'
     unit: string
     capacity?: number
+    start?: number | null
+    end?: number | null
   },
   /** An allocation locks `amount` for an optional time window. Compile its editor locator to a declaration CID before accounting. */
   allocation?: {
@@ -260,9 +262,9 @@ export type FosDataContent = {
     type: 'calendar' | 'account' | 'inventory' | 'person' | 'points' | 'location'
     amount: number
     unit: string
-    /** Window the allocation holds for: start = now when absent, end = forever when absent. Every resource has its own calendar. */
-    start?: number
-    end?: number
+    /** Null means no lower/upper time bound, including money and other non-calendar resources. */
+    start?: number | null
+    end?: number | null
     by?: string
     /** Location allocations ("at Paris"): the place, by name and/or coordinates (a device's position). */
     location?: { name?: string; lat?: number; lng?: number }

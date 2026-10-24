@@ -1,4 +1,5 @@
 import { resourceHandlers } from '../../shared/sync/resource-bindings'
+import { resourceWindowContains } from '../../shared/sync/resource-window'
 import { setLibraryArg } from '../../shared/sync/library'
 import { nativeRef, nodeTransportAt, offerNodeTransport, type NodeTransport } from '../../shared/sync/native-refs'
 import { primitiveImplementation } from '../../shared/sync/primitives'
@@ -1630,7 +1631,7 @@ export class App {
   allocationWithBank(at: Scope, allocation: NonNullable<RowExtras['allocation']> | undefined, replica = this.state.replica, person?: string): NonNullable<RowExtras['allocation']> | null {
     const by = this.state.session?.username ?? this.state.deviceName
     const base = allocation ?? { resource: '', type: 'inventory' as ResourceType, amount: 0, unit: 'unit' }
-    const windowed = base.start !== undefined || base.end !== undefined
+    const windowed = base.start != null || base.end != null
     if (base.type === 'person' && !windowed) return { ...base, by }
     const bank = base.resource
       ? resourceHandlers(replica, [...this.state.view, ...at]).find(handler => handler.row.id === base.resource && handler.row.resource.type === base.type)?.row ?? null
@@ -1638,6 +1639,10 @@ export class App {
     if (!bank) {
       const names: Record<ResourceType, string> = { account: '@money Travel 500', calendar: '@calendar Week 40h', inventory: '@inventory Shelf 12', person: `@person ${person ?? 'name'} 40h`, points: '@points Pool 500', location: '@location Places' }
       this.notify('error', base.type === 'person' ? `A person allocation with a window needs ${person ?? 'their'}'s calendar: add "${names.person}" at the top level.` : `No ${base.type === 'account' ? 'money' : base.type} bank in this context: declare one in an enclosing scope ("${names[base.type]}"), or above this row.`)
+      return null
+    }
+    if (!resourceWindowContains(bank.resource, base)) {
+      this.notify('error', 'The allocation must stay within the selected resource’s time bounds.')
       return null
     }
     return { ...base, resource: bank.id, type: bank.resource.type, unit: base.unit === 'unit' ? bank.resource.unit : base.unit, by }

@@ -91,6 +91,17 @@ test('an effect whose peer is not connected blocks instead of running', async ()
   void addMemberAt; void setMemberCapabilitiesAt
 })
 
+test.each([{ start: null, end: 20 }, { start: 10, end: null }, { start: null, end: null }])('calendar effects do not guess open endpoints: %j', async bounds => {
+  let r = ensureHomeContext(createReplica('user:owner'), 1, { integrations: { google: ['calendar'] } })
+  r = addTask(r, [HOME_ID], 'Offsite', 2, 'offsite')
+  r = addRow(r, [HOME_ID, 'offsite'], ALLOCATION_TYPE, 'Slot', 3, { id: 'slot', requirement: { capability: 'allocation', resource: 'calendar', amount: 1, unit: 'h', ...bounds } })
+  const createEvent = jest.fn()
+  const h = host(r, createHostRuntime([calendarHandler({ connected: async () => true, createEvent })]))
+  const result = await h.complete([HOME_ID, 'offsite'], ['slot'])
+  expect(result.status).toBe(400)
+  expect(createEvent).not.toHaveBeenCalled()
+})
+
 
 test('the market effect lists the task, indexes the account, and records the supply as the server (the client writes neither)', async () => {
   let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['market'] })

@@ -1,4 +1,5 @@
 import { nodeAuthorityAt } from './node-context'
+import { resourceWindow, resourceWindowContains, resourceWindowSatisfies } from './resource-window'
 import { nodeLinkMaskAt, type NodeAuthority } from './node-provider'
 /** Owner-authorized execution interactions. Transport must bind identity and scope. */
 import { executionInputs } from './sharing'
@@ -54,8 +55,9 @@ export function executionInput(r: Replica, path: Scope, body: any, peer: string,
     if (field.kind === 'confirmation' ? value !== true : !Number.isInteger(value) || value < 0 || value >= (field.options?.length ?? 0)) throw new Error('Invalid requirement response.')
     return addSupply(r, target.slice(0, -1), target.at(-1)!, { capability: field.kind, by: peer, ...(field.kind === 'choice' ? { choice: value } : {}) }, now)
   }
-  if (!value || !Number.isFinite(value.amount) || value.amount < 0 || value.type !== field.type || value.unit !== field.unit || field.direction === 'consume' && value.amount > (field.amount ?? 0) || field.direction !== 'consume' && value.amount < (field.amount ?? 0) || field.start !== undefined && (!Number.isFinite(value.start) || value.start > field.start) || field.end !== undefined && (!Number.isFinite(value.end) || value.end < field.end)) throw new Error('Allocation does not match the declared bounds.')
-  const allocation = { resource: '', type: field.type as ResourceType, amount: value.amount, unit: field.unit!, ...(field.start !== undefined ? { start: field.start } : {}), ...(field.end !== undefined ? { end: field.end } : {}) }
+  if (!value || !Number.isFinite(value.amount) || value.amount < 0 || value.type !== field.type || value.unit !== field.unit || field.direction === 'consume' && value.amount > (field.amount ?? 0) || field.direction !== 'consume' && value.amount < (field.amount ?? 0) ||
+    !(field.direction === 'consume' ? resourceWindowContains(field, value) : resourceWindowSatisfies(value, field))) throw new Error('Allocation does not match the declared bounds.')
+  const allocation = { resource: '', type: field.type as ResourceType, amount: value.amount, unit: field.unit!, ...resourceWindow(value) }
   if (field.direction === 'consume') return consume(r, target, { peer, value: allocation, time: now }, now)
   const id = crypto.randomUUID()
   // money is a payment: the positive money row under the request is what fills it

@@ -11,10 +11,9 @@
  *               -? search · -market · -mail · -choice: a | b · - confirmation
  *   $ : # @     allocation of money / time / things / a person, taken from the parent context (money is the type
  *               lib.money: "$ 50" a payment, "-$ 50" a request for one, told apart by sign)
- *               (the bank above it, the bank the requirement names, or the default pool of that
- *               type: the first bank of that type at the top level). An optional window follows the
+ *               through a scoped handler declaration. An optional window follows the
  *               amount: "2026-10-13", "2026-10-13T09:00..2026-10-13T11:00", "..2026-12-31";
- *               start is now and end is forever when absent. Each resource has its own calendar.
+ *               null start has no lower bound; null end has no upper bound, for every resource.
  *   ?           query (semantic search)
  *   @calendar | @money | @inventory | @person <name> … [capacity]   resource bank
  *   `name       template: its requirement rows are copied under every task that executes it
@@ -82,15 +81,15 @@ export function parseAmount(text: string, resource?: ResourceType): { amount: nu
 const DATE = String.raw`\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2})?`
 /**
  * A window at the start of the text: "2026-10-13" (from then on), "2026-10-13T09:00..2026-10-13T11:00",
- * "..2026-12-31" (until then). Absent start = now, absent end = forever; both stay undefined in the data.
+ * "..2026-12-31" (until then). Either bound may be null, meaning unbounded in that direction.
  */
-export function parseWindow(text: string): { start?: number; end?: number; rest: string } {
+export function parseWindow(text: string): { start: number | null; end: number | null; rest: string } {
   const m = text.match(new RegExp(String.raw`^\s*(?:(${DATE})(?:\.\.(${DATE})?)?|\.\.(${DATE}))\s*(.*)$`, 's'))
-  if (!m) return { rest: text.trim() }
+  if (!m) return { start: null, end: null, rest: text.trim() }
   const start = m[1] ? localTime(m[1]) : undefined
   const endText = m[2] ?? m[3]
   const end = endText ? localTime(endText) : undefined
-  return { ...(start !== undefined && !Number.isNaN(start) ? { start } : {}), ...(end !== undefined && !Number.isNaN(end) ? { end } : {}), rest: (m[4] ?? '').trim() }
+  return { start: start !== undefined && !Number.isNaN(start) ? start : null, end: end !== undefined && !Number.isNaN(end) ? end : null, rest: (m[4] ?? '').trim() }
 }
 
 /** "2026-10-13" or "2026-10-13T09:00" as local time (a bare date is local midnight, not UTC). */
@@ -109,9 +108,9 @@ function isoLocal(t: number): string {
 }
 
 /** The window as typed: "2026-10-13..2026-10-20", "2026-10-13", "..2026-12-31", or "" when the allocation has none. */
-export function formatWindow(a: { start?: number; end?: number }): string {
-  if (a.start === undefined && a.end === undefined) return ''
-  return `${a.start !== undefined ? isoLocal(a.start) : ''}${a.end !== undefined ? '..' + isoLocal(a.end) : a.start !== undefined ? '' : '..'}`
+export function formatWindow(a: { start?: number | null; end?: number | null }): string {
+  if (a.start == null && a.end == null) return ''
+  return `${a.start != null ? isoLocal(a.start) : ''}${a.end != null ? '..' + isoLocal(a.end) : a.start != null ? '' : '..'}`
 }
 
 /** "<amount> [window] text" for a resource type → allocation data (the bank is resolved by App.addRowAt) and the remaining text. */
@@ -249,14 +248,14 @@ export function parseRowInput(raw: string, declarations?: CapabilitySyntax[]): P
   if ((m = text.match(/^\/\/\s*(.*)$/s))) return { type: COMMENT_TYPE, text: m[1] ?? '', done: false }
   if ((m = text.match(/^-\s*(.*)$/s))) { const { label, templateName, construct, ...extras } = parseRequirement(m[1] ?? '', declarations); if (construct) return { type: PLAIN_TYPE, text: label, done: false, construct }; return { type: flowType(extras.requirement?.capability === 'allocation' ? extras.requirement.resource : undefined), text: label, done: false, extras: { ...extras, user: extras.user ?? null }, ...(templateName ? { templateName } : {}) } }
   if ((m = text.match(/^\?\s*(.*)$/s))) return { type: QUERY_TYPE, text: (m[1] ?? '').trim(), done: false, extras: { query: {} } }
-  if ((m = text.match(/^@(calendar|account|money|inventory|person|points|ff)\b\s*:?\s*(.*)$/is))) {
+  if ((m = text.match(/^@(calendar|account|money|inventory|person|points|ff|location|place)\b\s*:?\s*(.*)$/is))) {
     const type = BANK_WORDS[(m[1] as string).toLowerCase()] as ResourceType
-    const rest = (m[2] ?? '').trim()
+    const win = parseWindow((m[2] ?? '').trim()), rest = win.rest
     // optional trailing capacity: "@money Travel 500", "@calendar Week 40h", "@person bob 40h"
     const cap = rest.match(/^(.*?)\s+(\d+(?:[.,]\d+)?\s*[A-Za-z€$£]*)$/)
     const amt = cap ? parseAmount(cap[2] ?? '', type) : null
     const unit = amt?.unit ?? DEFAULT_UNIT[type]
-    return { type: RESOURCE_TYPE, text: (cap ? cap[1] : rest) || `${RESOURCE_NAME[type]} bank`, done: false, extras: { resource: { type, unit, ...(amt ? { capacity: amt.amount } : {}) } } }
+    return { type: RESOURCE_TYPE, text: (cap ? cap[1] : rest) || `${RESOURCE_NAME[type]} bank`, done: false, extras: { resource: { type, unit, start: win.start, end: win.end, ...(amt ? { capacity: amt.amount } : {}) } } }
   }
   const typed = markerType(text)
   if (typed) { const { allocation, text: rest } = parseAllocation(typed.type, text.slice(typed.length)); const { user, text: label } = typed.type === 'location' ? { user: null, text: rest } : namedUser(rest); return { type: flowType(allocation.type), text: label, done: false, extras: { allocation, user } } }
@@ -267,7 +266,7 @@ export function parseRowInput(raw: string, declarations?: CapabilitySyntax[]): P
 }
 
 /** An amount with its window as it is typed: "50 USD 2026-10-13..2026-10-20". */
-function amountAndWindow(amount: number | undefined, unit: string | undefined, win: { start?: number; end?: number }): string {
+function amountAndWindow(amount: number | undefined, unit: string | undefined, win: { start?: number | null; end?: number | null }): string {
   const parts: string[] = []
   if (amount !== undefined) parts.push(formatAmount(amount, unit ?? 'unit'))
   const w = formatWindow(win)
@@ -292,7 +291,7 @@ export function rawRowText(task: TaskView): string {
       const r = task.resource
       if (!r) return `@inventory ${task.title}`
       const word = r.type === 'account' ? 'money' : r.type === 'points' ? 'points' : r.type
-      return join(`@${word}`, task.title, r.capacity !== undefined ? formatAmount(r.capacity, r.unit) : '')
+      return join(`@${word}`, formatWindow(r), task.title, r.capacity !== undefined ? formatAmount(r.capacity, r.unit) : '')
     }
     default: return task.title
   }
@@ -388,7 +387,7 @@ export const SYNTAX_HELP: Array<[string, string]> = [
   ['$ 50 text', 'an allocation of money, taken from the parent context: the bank above, the bank the requirement needs, or the default pool of that type'],
   [': 1h text', 'an allocation of time; # 2 widgets things; @bob 2h the person bob'],
   ['ff 20 text', 'an allocation of fos points (your account balance is the default pool; -ff 20 requires them)'],
-  ['$ 50 2026-10-13..2026-10-20 text', 'an allocation held for a window (start is now, end is forever, when absent): every resource has its own calendar'],
+  ['$ 50 2026-10-13..2026-10-20 text', 'an allocation held for a window (either endpoint may be open): every resource has its own calendar'],
   ['? text', 'a query: semantic search over your rows (Search runs it, results appear inside)'],
   ['@money Travel 500', 'a resource bank (money); @calendar Week 40h (time), @inventory Shelf 12 (things), @person bob 40h (their calendar). The first bank of a type at the top level is its default pool']
 ]

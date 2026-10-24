@@ -65,5 +65,6 @@ export * from './constructor-rows'
 export * from './authority'
 export * from './authority-compilation'
 export * from './resource-bindings'
+export * from './resource-window'
 
 export * from './scope-bindings'

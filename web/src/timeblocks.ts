@@ -20,8 +20,8 @@ export type TimeBlockOptions = {
   /** Block size in hours; defaults to 1. */
   amount?: number
   /** An existing window to start from. */
-  start?: number
-  end?: number
+  start?: number | null
+  end?: number | null
   banks: TimeBank[]
   /** The bank selected initially (an id from `banks`), '' for an unbound allocation. */
   bank?: string
@@ -119,8 +119,8 @@ export function openTimeBlockPicker(options: TimeBlockOptions): Promise<TimeBloc
     dialog.setAttribute('aria-label', `${options.title} — time`)
     let amount = options.amount && options.amount > 0 ? options.amount : 1
     // Without a window to start from, hold the block in a working day (or the block itself when it is longer).
-    let windowHours = options.start !== undefined && options.end !== undefined ? Math.max(amount, (options.end - options.start) / HOUR) : Math.max(amount, 8)
-    let winStart: number | undefined = options.start
+    let windowHours = options.start != null && options.end != null ? Math.max(amount, (options.end - options.start) / HOUR) : Math.max(amount, 8)
+    let winStart: number | undefined = options.start ?? undefined
     let anchor = options.start ?? SNAP[3]!(Date.now() + HOUR)
     let level: Level = levelForWindow(windowHours)
     let bank = options.bank ?? options.banks[0]?.id ?? ''

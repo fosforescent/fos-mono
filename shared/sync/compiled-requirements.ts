@@ -10,6 +10,7 @@ import { assertCompiledGraph } from './ref-compiler'
 import { resolveBinding } from './bindings'
 import { bindingProperties, scopedBindingKey, type ScopedBinding } from './scope-bindings'
 import { sameUser, userOf, userPeerId, type UserRecord } from './users'
+import { resourceWindow } from './resource-window'
 
 type Requirement = NonNullable<FosDataContent['requirement']>
 type Allocation = NonNullable<FosDataContent['allocation']>
@@ -26,11 +27,11 @@ type Evidence = {
 }
 const compiling = new WeakMap<FosStore, Set<string>>()
 
-/** Only scalar allocation constraints are evidence; the bank binding belongs to resource accounting. */
+/** Scalar constraints are evidence only; they do not establish owned authority. */
 function allocationEvidence(value: Allocation | undefined): Allocation | undefined {
   if (!value) return undefined
-  const { type, unit, amount, start, end, location } = value
-  return { resource: '', type, unit, amount, ...(start !== undefined ? { start } : {}), ...(end !== undefined ? { end } : {}), ...(location ? { location } : {}) }
+  const { type, unit, amount, location } = value
+  return { resource: '', type, unit, amount, ...resourceWindow(value), ...(location ? { location } : {}) }
 }
 
 export function compileRequirement(store: FosStore, cid: string, at = nodeOccurrence(store, cid) ?? undefined, access: RefAccess = {}): string {

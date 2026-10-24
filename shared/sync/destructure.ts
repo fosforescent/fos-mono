@@ -6,6 +6,7 @@ import { headCid, type Replica } from './replica'
 import { nodeOccurrence, resolveRefIdentity, type RefAccess } from './ref-paths'
 import { bindingProperties, type ScopedBinding } from './scope-bindings'
 import type { FosDataContent } from '../types'
+import { resourceWindow } from './resource-window'
 
 export function requirementOutputs(store: FosStore, cid: string) {
   return valueContent(store, cid).children.flatMap(edge => {
@@ -23,7 +24,7 @@ export function destructureRequirement(r: Replica, path: Scope, name: string, am
   if (outputs.some(o => o.name === name.trim())) throw new Error('That placeholder name is already used.')
   if (req.capability === 'allocation' && (amount === undefined || !Number.isFinite(amount) || amount <= 0 || req.amount === undefined || outputs.reduce((sum, o) => sum + (o.amount ?? 0), 0) + amount > req.amount + 1e-9)) throw new Error('The pieces must be positive and cannot exceed the required amount.')
   const type = req.capability === 'allocation' ? r.store.primitive.allocationField.getId() : r.store.primitive.documentField.getId()
-  const ref = put(r.store, refNodeContent(r.store, { alias: { id: newId() }, name: { content: name.trim() }, ref: { id: path.at(-1)! }, ...(req.capability === 'allocation' ? { allocation: { type: req.resource ?? 'account', resource: path.at(-1)!, amount: amount!, unit: req.unit ?? 'USD' } } : {}) }, null, []))
+  const ref = put(r.store, refNodeContent(r.store, { alias: { id: newId() }, name: { content: name.trim() }, ref: { id: path.at(-1)! }, ...(req.capability === 'allocation' ? { allocation: { type: req.resource ?? 'account', resource: path.at(-1)!, amount: amount!, unit: req.unit ?? 'USD', ...resourceWindow(req) } } : {}) }, null, []))
   commitRoot(r.store, updateAtScope(r.store, headCid(r), path, node => ({ ...node, children: [...node.children, [type, ref]] })), now)
   return { ...r }
 }

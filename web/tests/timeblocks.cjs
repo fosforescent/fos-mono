@@ -8,8 +8,8 @@ const { JSDOM } = require('jsdom')
 const dir = mkdtempSync(path.join(tmpdir(), 'fos-timeblocks-'))
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'Node', 'Option', 'navigator', 'localStorage', 'sessionStorage', 'location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
-buildSync({ stdin: { contents: `export * from './src/timeblocks'; export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export {parseRowInput} from './src/rows'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'tb.cjs'), external: ['mermaid', 'katex', 'katex/*'] })
-const { levelRange, levelForWindow, offSpans, openTimeBlockPicker, LEVELS, App, mountUi, createMemoryStorage, parseRowInput, HOME_ID, view } = require(path.join(dir, 'tb.cjs'))
+buildSync({ stdin: { contents: `export * from './src/timeblocks'; export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export {parseRowInput, parseWindow, formatWindow, rawRowText} from './src/rows'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'tb.cjs'), external: ['mermaid', 'katex', 'katex/*'] })
+const { levelRange, levelForWindow, offSpans, openTimeBlockPicker, LEVELS, App, mountUi, createMemoryStorage, parseRowInput, parseWindow, formatWindow, rawRowText, HOME_ID, view } = require(path.join(dir, 'tb.cjs'))
 const tick = () => new Promise(resolve => setImmediate(resolve))
 window.HTMLDialogElement.prototype.showModal = function () { this.open = true }
 window.HTMLDialogElement.prototype.close = function () { this.open = false; this.dispatchEvent(new window.Event('close')) }
@@ -17,6 +17,18 @@ window.HTMLElement.prototype.setPointerCapture = () => {}
 
 async function main() {
   const anchor = new Date(2026, 9, 20, 9, 0).getTime()
+  assert.deepEqual(parseWindow('description'), { start: null, end: null, rest: 'description' })
+  for (const window of ['', '2026-10-20', '..2026-10-20', '2026-10-20..2026-10-21']) {
+    const parsed = parseWindow(window)
+    assert.equal(formatWindow(parsed), window)
+    for (const marker of ['calendar', 'money', 'inventory', 'person', 'points', 'location']) {
+      const bank = parseRowInput(`@${marker} ${window} Source 10`)
+      assert.equal(bank.extras.resource.start, parsed.start)
+      assert.equal(bank.extras.resource.end, parsed.end)
+      const raw = rawRowText({ type: bank.type, title: bank.text, resource: bank.extras.resource })
+      assert.deepEqual(parseRowInput(raw).extras.resource, bank.extras.resource, 'editing a bank must retain its open bounds')
+    }
+  }
   // Each level spans one unit of the level above and offers that unit's subdivisions as ticks.
   assert.equal(LEVELS.length, 5)
   const years = levelRange(0, anchor); assert.equal(years.ticks.length, 7); assert.equal(years.crumb, '2023–2029')

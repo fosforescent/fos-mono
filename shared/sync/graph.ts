@@ -44,6 +44,7 @@ import { readGraphValue } from './node-values'
  */
 
 import { allocationValue } from './destructure'
+import { resourceWindow, resourceWindowSatisfies } from './resource-window'
 
 import { capabilityName, sameCapabilityType, isExecuteLeft, isTriggerLeft } from './capabilities'
 import * as COMPILED_LIBRARY from './library.generated.json'
@@ -794,7 +795,7 @@ export function rowContent(typeId: string, id: string, text: string, now: number
   }
   if (typeId === QUERY_TYPE) data.query = extra.query ?? {}
   if (typeId === RESOURCE_TYPE) {
-    data.resource = extra.resource ?? { type: 'inventory', unit: 'unit' }
+    data.resource = { ...(extra.resource ?? { type: 'inventory', unit: 'unit' }), ...resourceWindow(extra.resource ?? {}) }
     // Resource banks supply ordinary named bindings, just like other capability handlers.
     data.name = { content: text }
     if (extra.store) {
@@ -823,6 +824,8 @@ export function canonicalRowData(data: FosNodeContent['data']): FosNodeContent['
     data.allocation = { ...supply, resource: '', type: 'inventory', amount: 1, unit: 'unit' }
     delete data.supply
   }
+  if (data.allocation) data.allocation = { ...data.allocation, ...resourceWindow(data.allocation) }
+  if (data.resource) data.resource = { ...data.resource, ...resourceWindow(data.resource) }
   return data
 }
 
@@ -1630,8 +1633,7 @@ export type RequiredUser = { required: UserRecord | null; given: UserRecord | nu
  */
 export function allocationMatches(req: NonNullable<FosDataContent['requirement']>, a: FosDataContent['allocation'] | undefined, users?: RequiredUser): boolean {
   return !!a && (!req.resource || a.type === req.resource) && (!req.unit || a.unit?.toUpperCase() === req.unit.toUpperCase()) &&
-    (req.start === undefined || (a.start !== undefined && a.start <= req.start)) &&
-    (req.end === undefined || a.end === undefined || a.end >= req.end) &&
+    resourceWindowSatisfies(a, req) &&
     (!users?.required || (!!users.given && sameUser(users.required, users.given))) &&
     // a named place is met by an allocation at that place by name, or by a position (a device's location) with no name
     (!req.place || !a.location?.name || a.location.name.trim().toLowerCase() === req.place.trim().toLowerCase())
