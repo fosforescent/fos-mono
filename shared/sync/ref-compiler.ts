@@ -11,6 +11,7 @@ import { isNegative, primitiveOf } from './parameters'
 import { resolveRefExpression, resolveRefIdentity, type RefAccess, type RefLocation } from './ref-paths'
 import { resolveRequirementOutput } from './destructure'
 import { bindingAssignments, type ScopedBinding } from './scope-bindings'
+import { compileAuthorityInvocation } from './authority-compilation'
 
 export type RefHole = { cid: string; id: string; type?: string; path: Scope; reason: 'unbound' | 'unavailable' | 'denied' | 'cycle' | 'ambiguous' | 'type'; role: 'input' | 'output' }
 export type CompiledRef = { cid: string; holes: RefHole[]; complete: boolean; sources: string[]; locations: Array<{ source: string; path: Scope; cid: string }> }
@@ -165,6 +166,14 @@ export function compileInstructions(r: Replica, path: Scope, options: CompileRef
   const parent = path.length ? resolveScope(r.store, headCid(r), path.slice(0, -1)) : null
   const edge = parent ? findAliasEdge(r.store, valueContent(r.store, parent), path.at(-1)!)?.edge : null
   const type = edge?.[0]
+  // Authority invocation operands retain declaration identity: outputs are ref destinations,
+  // not values to substitute. Its native compiler uses the same scoped binding resolver.
+  if (type && content(r.store, type).data.authorityFrame?.role === 'invocation') {
+    const compiled = compileAuthorityInvocation(r, type, path, options)
+    return { cid: compiled.cid, holes: [] as RefHole[], complete: true,
+      sources: compiled.locations.map(location => location.binding.cid), locations: [] as CompiledRef['locations'],
+      blocking: [] as RefHole[], canRun: true }
+  }
   const bindings = argumentRefs(r.store, cid).map(arg => ({ store: r.store, cid: arg.cid, path: [...path, content(r.store, arg.cid).data.alias!.id] }))
   const empty = put(r.store, { data: {}, children: [] })
   const compiled = compileRefGraph(r, type ?? empty, path, { ...options, bindings, selected: true })

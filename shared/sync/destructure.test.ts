@@ -62,7 +62,7 @@ test('a record instance retains requirements and bound properties with instance-
   expect(userView(r)!.tasks.find(t => t.id === 'instance')!.checkable).toBe(true)
 })
 
-test('amount outputs retain their values but cannot manufacture an executable resource handler', async () => {
+test('requirement amounts remain data until an explicit authority transition backs their spending', async () => {
   const { allocationProblems, evaluationSteps } = await import('./index')
   let r = addTask(createReplica('owner'), [], 'Use budget', 1, 'work')
   r = addRow(r, ['work'], ALLOCATION_TYPE, 'Budget', 2, { id: 'budget', requirement: { capability: 'allocation', resource: 'account', amount: 50, unit: 'USD' } })
@@ -76,8 +76,30 @@ test('amount outputs retain their values but cannot manufacture an executable re
   expect(view(r, ['work'])!.tasks.find(t => t.id === 'deposit')!.allocation).toBeUndefined()
   r = addRow(r, ['work', 'budget'], ALLOCATION_TYPE, 'Funded', 7, { allocation: { type: 'account', resource: 'external', amount: 50, unit: 'USD' } })
   expect(view(r, ['work'])!.tasks.find(t => t.id === 'deposit')!.allocation?.amount).toBe(10)
-  expect(allocationProblems(r, evaluationSteps(r, ['work', 'deposit']))).toEqual([expect.stringContaining('does not match the row pattern')])
+  expect(allocationProblems(r, evaluationSteps(r, ['work', 'deposit']))).toEqual([expect.stringContaining('explicit authority transfer or split')])
   r = addRow(r, ['work'], ALLOCATION_TYPE, 'Duplicate spend', 8, { id: 'duplicate', allocation: { type: 'account', resource: '', amount: 0, unit: 'USD' } })
   r = linkRequirementOutput(r, ['work', 'duplicate'], outputs[0]!.cid, 9)
-  expect(allocationProblems(r, evaluationSteps(r, ['work', 'duplicate']))).toEqual([expect.stringContaining('does not match the row pattern')])
+  expect(allocationProblems(r, evaluationSteps(r, ['work', 'duplicate']))).toEqual([expect.stringContaining('explicit authority transfer or split')])
+})
+
+test('a descendant may receive an outer allocation argument while its containing task remains incomplete', async () => {
+  const { checkCompiledRequirement, compileRequirement, allocationProblems, evaluationSteps } = await import('./index')
+  let r = addTask(createReplica('owner'), [], 'Outer work', 1, 'work')
+  r = addRow(r, ['work'], ALLOCATION_TYPE, 'Budget', 2, { id: 'budget', requirement: { capability: 'allocation', resource: 'account', amount: 50, unit: 'USD' } })
+  r = destructureRequirement(r, ['work', 'budget'], 'nested allocation', 10, 3)
+  const output = requirementOutputs(r.store, resolveScope(r.store, headCid(r), ['work', 'budget'])!)[0]!
+  r = addRow(r, ['work', 'budget'], ALLOCATION_TYPE, 'Nested requirement', 4, { id: 'nested', requirement: { capability: 'allocation', resource: 'account', amount: 10, unit: 'USD' } })
+  r = addSupply(r, ['work', 'budget'], 'nested', { capability: 'allocation', by: 'owner', ref: output.id }, 5)
+  r = addRow(r, ['work', 'budget', 'nested'], ALLOCATION_TYPE, 'Use allocation', 6, { id: 'use', allocation: { resource: '', type: 'account', amount: 0, unit: 'USD' } })
+  r = linkRequirementOutput(r, ['work', 'budget', 'nested', 'use'], output.cid, 7)
+  const checked = () => checkCompiledRequirement(r.store, compileRequirement(r.store, resolveScope(r.store, headCid(r), ['work', 'budget', 'nested'])!))
+  expect(checked().satisfied).toBe(false)
+  expect(allocationProblems(r, evaluationSteps(r, ['work', 'budget', 'nested', 'use']))).toEqual([expect.stringMatching(/fulfilled/)])
+  r = addRow(r, ['work', 'budget'], ALLOCATION_TYPE, 'External funding', 8, { id: 'funding', allocation: { resource: '', type: 'account', amount: 50, unit: 'USD' } })
+  expect(view(r, [])!.tasks[0]!.done).toBe(false)
+  expect(checked().satisfied).toBe(true)
+  expect(checked().progress?.have).toBe(10)
+  expect(allocationProblems(r, evaluationSteps(r, ['work', 'budget', 'nested', 'use']))).toEqual([expect.stringContaining('explicit authority transfer or split')])
+  r = deleteTask(r, ['work', 'budget'], 'funding', 9)
+  expect(checked().satisfied).toBe(false)
 })

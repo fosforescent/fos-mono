@@ -10,6 +10,7 @@ import { refSubmissions, refValueCompatible } from './scoped-refs'
 import { primitiveConstructor, primitiveRef, primitiveValue, primitiveImplementation, matchesInstructionRef, instructionPrimitives } from './primitives'
 
 export type NativeImplementation<Context> = {
+  authority?: import('./authority').AuthorityChecker
   trigger?: import('./triggers').TriggerObserver
   handles?(step: EvaluationStep, replica: Replica): boolean
   effect?(context: Context): Promise<void | 'pending'>

@@ -57,24 +57,25 @@ test('refuses instructions changed during open and keeps unrelated edits', async
   expect((await evaluateNode(['parent'], s.driver)).status).toBe('rolled-back')
   expect(view(s.get(), ['parent'])!.tasks[0]!.title).toBe('Changed elsewhere')
 })
-test('checks competing allocations across the whole tree', async () => {
+test('legacy allocation rows cannot consume a bank without an explicit authority transition', async () => {
   const s = setup()
   s.set(addRow(s.get(), [], RESOURCE_TYPE, 'Drill', 1, { id: 'bank', resource: { type: 'inventory', unit: 'drill', capacity: 1 } }))
   for (const [path, start, end] of [[['parent'], 10, 20], [[], 15, 25]] as const) s.set(addRow(s.get(), [...path], ALLOCATION_TYPE, 'Reservation', 2, { allocation: { resource: 'bank', type: 'inventory', unit: 'drill', amount: 1, start, end } }))
-  await expect(evaluateNode(['parent'], s.driver)).rejects.toThrow(/overlapping/)
+  await expect(evaluateNode(['parent'], s.driver)).rejects.toThrow(/explicit authority transfer or split/)
+  expect(s.events).toEqual([])
 })
 
-test('allocation validation binds resource references in scope before comparing their CIDs', () => {
+test('a scalar bank capacity never substitutes for owned authority, regardless of its scope or amount', () => {
   let r = createReplica('owner')
   for (const group of ['a', 'b']) {
     r = addTask(r, [], group, 1, group)
     r = addRow(r, [group], RESOURCE_TYPE, `${group} bank`, 2, { id: 'bank', resource: { type: 'inventory', unit: 'drill', capacity: group === 'a' ? 2 : 0 } })
     r = addRow(r, [group], ALLOCATION_TYPE, 'Reserve', 3, { id: 'reservation', allocation: { resource: 'bank', type: 'inventory', unit: 'drill', amount: 1 } })
   }
-  expect(allocationProblems(r, evaluationSteps(r, ['a', 'reservation']))).toEqual([])
-  expect(allocationProblems(r, evaluationSteps(r, ['b', 'reservation']))).toEqual([expect.stringMatching(/Insufficient b bank/)])
+  expect(allocationProblems(r, evaluationSteps(r, ['a', 'reservation']))).toEqual([expect.stringMatching(/explicit authority/)])
+  expect(allocationProblems(r, evaluationSteps(r, ['b', 'reservation']))).toEqual([expect.stringMatching(/explicit authority/)])
   r = addRow(r, [], ALLOCATION_TYPE, 'Outside', 4, { id: 'outside', allocation: { resource: 'bank', type: 'inventory', unit: 'drill', amount: 1 } })
-  expect(allocationProblems(r, evaluationSteps(r, ['outside']))).toEqual([expect.stringMatching(/unavailable in this scope/)])
+  expect(allocationProblems(r, evaluationSteps(r, ['outside']))).toEqual([expect.stringMatching(/explicit authority/)])
 })
 test('completes task requirements bottom up without publishing partial completion', async () => {
   const s = setup()

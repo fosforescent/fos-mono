@@ -2,7 +2,7 @@
 import type { FosStore } from '../dag-implementation/store'
 import type { FosDataContent } from '../types'
 import { allocationMatches, childRows, content, demandOf, flowOf, isTaskRow, put, valueContent } from './graph'
-import { allocationValue } from './destructure'
+import { allocationValue, resolveAllocationValue } from './destructure'
 import { isAllocationType, QUERY_TYPE } from './library-types'
 import { nodeOccurrence, resolveRefIdentity, type RefAccess } from './ref-paths'
 import { constructNodeValue, readGraphValue } from './node-values'
@@ -74,9 +74,11 @@ export function compileRequirement(store: FosStore, cid: string, at = nodeOccurr
       if (content(store, row.cid).data.ref && content(store, row.cid).data.name) continue
       const flow = flowOf(row.type, row.value)
       const evidence: Evidence = { kind: 'other', user: userOf(store, row.value) }
-      let source = declaration(binding)
+      let origin = binding, source = declaration(binding)
       if (isAllocationType(row.type) && flow.allocation) {
-        evidence.kind = 'allocation'; evidence.allocation = allocationEvidence(allocationValue(store, row.cid, access))
+        const allocation = resolveAllocationValue(store, row.cid, access)
+        evidence.kind = 'allocation'; evidence.allocation = allocationEvidence(allocation.value)
+        if (allocation.debit) { origin = allocation.debit.binding; source = declaration(origin) }
       } else if (isTaskRow(store, row.edge)) {
         evidence.kind = 'task'; evidence.completed = !!row.value.data.todo?.completed
       } else if (row.type === QUERY_TYPE) {
@@ -92,7 +94,7 @@ export function compileRequirement(store: FosStore, cid: string, at = nodeOccurr
           const supplied = found && resolveBinding(store, null, found, [], undefined, access)
           evidence.linked = supplied?.status === 'ready'
           evidence.missing = !evidence.linked
-          if (found) source = declaration(found)
+          if (found) { origin = supplied?.binding ?? found; source = declaration(origin) }
           if (supplied?.status === 'ready' && supply.capability === 'allocation') {
             const target = valueContent(store, supplied.cid!)
             evidence.allocation = allocationEvidence(allocationValue(store, supplied.cid!, access))

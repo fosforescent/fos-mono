@@ -62,7 +62,8 @@ export * from './unify'
 export * from './parameters'
 export * from './constructor-rows'
 
-export * from './compiled-resources'
+export * from './authority'
+export * from './authority-compilation'
 export * from './resource-bindings'
 
 export * from './scope-bindings'

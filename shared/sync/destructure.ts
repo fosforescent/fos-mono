@@ -4,6 +4,8 @@ import type { FosStore } from '../dag-implementation/store'
 import { newId, importNodes, reachableNodes, commitRoot, content, demandOf, identityCid, put, refNodeContent, isRefNode, rowTypeOf, refValueCid, resolveScope, updateAtScope, valueContent, type Scope } from './graph'
 import { headCid, type Replica } from './replica'
 import { nodeOccurrence, resolveRefIdentity, type RefAccess } from './ref-paths'
+import { bindingProperties, type ScopedBinding } from './scope-bindings'
+import type { FosDataContent } from '../types'
 
 export function requirementOutputs(store: FosStore, cid: string) {
   return valueContent(store, cid).children.flatMap(edge => {
@@ -27,7 +29,7 @@ export function destructureRequirement(r: Replica, path: Scope, name: string, am
 }
 
 /** Bind the editable output and compile its evidence. Source mappings must stay outside the returned value graph. */
-export function resolveRequirementOutput(store: FosStore, cid: string, at?: Scope, access: RefAccess = {}): { cid?: string; error?: string; source?: { store: FosStore; cid: string; path: Scope } } | null {
+export function resolveRequirementOutput(store: FosStore, cid: string, at?: Scope, access: RefAccess = {}): { cid?: string; error?: string; source?: ScopedBinding; binding?: ScopedBinding } | null {
   const ref = content(store, cid)
   if (!isRefNode(store, ref) || !ref.data.ref || !ref.data.name) return null
   if (ref.data.ref.owner || ref.data.ref.peer) return { error: 'The source requirement needs an accessible handler in this scope.' }
@@ -42,7 +44,8 @@ export function resolveRequirementOutput(store: FosStore, cid: string, at?: Scop
   if (index < 0) return { error: 'The placeholder is no longer part of the source requirement.' }
   const result = checkCompiledRequirementOutput(source.store, compileRequirement(source.store, sourceCid, source.path, access), index)
   if (result.cid && source.store !== store) importNodes(store, reachableNodes(source.store, [result.cid]))
-  return { ...result, source }
+  const binding = bindingProperties(source, access).bindings.find(binding => binding.cid === outputs[index]!.cid)
+  return { ...result, source, binding }
 }
 
 /** Bind an output as a typed property; the constructor may keep this as a record field. */
@@ -52,7 +55,8 @@ export function linkRequirementOutput(r: Replica, path: Scope, outputCid: string
   const sourceCid = resolved && resolved.status === 'ready' && resolved.locations[0]?.cid
   const type = sourceCid && requirementOutputs(r.store, sourceCid).find(row => row.cid === outputCid)?.type
   if (!output?.data.ref || !type) throw new Error('Drop a requirement placeholder.')
-  if (path.includes(output.data.ref.id)) throw new Error('A requirement cannot be supplied by its own output.')
+  const sourcePath = resolved && resolved.status === 'ready' ? resolved.locations[0]!.path : []
+  if (path.length === sourcePath.length && path.every((id, index) => id === sourcePath[index])) throw new Error('A requirement cannot be supplied by its own output.')
   const cid = resolveScope(r.store, headCid(r), path)
   if (!cid) throw new Error('Destination no longer exists.')
   const allocation = valueContent(r.store, cid).data.allocation
@@ -65,13 +69,13 @@ export function linkRequirementOutput(r: Replica, path: Scope, outputCid: string
 
 const resolvingAllocations = new WeakMap<FosStore, Set<string>>()
 /** Project a compiled output back into an editable allocation; retain the source locator only in this UI/compiler projection. */
-export function allocationValue(store: FosStore, cid: string, access: RefAccess = {}) {
+export function resolveAllocationValue(store: FosStore, cid: string, access: RefAccess = {}): { value?: NonNullable<FosDataContent['allocation']>; debit?: { cid: string; binding: ScopedBinding }; error?: string } {
   const value = valueContent(store, cid), original = value.data.allocation
-  if (!original) return undefined
+  if (!original) return {}
   const argument = value.children.find(edge => edge[0] === store.primitive.allocationField.getId() && content(store, edge[1]).data.name?.content === 'amount')
-  if (!argument) return original
+  if (!argument) return { value: original }
   const active = resolvingAllocations.get(store) ?? new Set<string>(); resolvingAllocations.set(store, active)
-  if (active.has(cid)) return undefined
+  if (active.has(cid)) return { error: 'Cyclic allocation dependency.' }
   active.add(cid)
   try {
     let current: string | null = argument[1]
@@ -79,11 +83,18 @@ export function allocationValue(store: FosStore, cid: string, access: RefAccess 
     while (current && !seen.has(current) && seen.size < 100) {
       seen.add(current)
       const scope = nodeOccurrence(store, cid)?.slice(0, -1)
-      if (!scope) return undefined
+      if (!scope) return { error: 'The allocation needs its declaring scope.' }
       const output = resolveRequirementOutput(store, current, scope, access)
-      if (output) return output.cid && output.source ? { ...original, ...content(store, output.cid).data.allocation, resource: output.source.path.at(-1)! } : undefined
+      if (output) return output.cid && output.source && output.binding
+        ? { value: { ...original, ...content(store, output.cid).data.allocation, resource: output.source.path.at(-1)! }, debit: { cid: output.cid, binding: output.binding } }
+        : { error: output.error ?? 'The allocation output is unavailable.' }
       current = refValueCid(store, content(store, current))
     }
-    return undefined
+    return { error: 'The allocation output is unavailable.' }
   } finally { active.delete(cid) }
+}
+
+/** Editor projection only. Accounting must retain the debit graph returned by resolveAllocationValue. */
+export function allocationValue(store: FosStore, cid: string, access: RefAccess = {}) {
+  return resolveAllocationValue(store, cid, access).value
 }

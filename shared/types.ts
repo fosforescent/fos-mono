@@ -218,6 +218,8 @@ export type FosDataContent = {
   refHole?: { slot: number; role: 'input' | 'output' },
   /** A declaration in a compiled lexical frame. Its handler/value is the right side of its binding edge. */
   refDeclaration?: { slot: number },
+  /** Closed authority-transition graphs. Domain checking is supplied by the grant's bound handler. */
+  authorityFrame?: { role: 'state' | 'bindings' | 'grant' | 'operation' | 'operations' | 'transaction' | 'reference' | 'invocation' | 'rebindings'; revision?: number; nextSlot?: number },
   /** Rows in this node submit alternative handlers to the capability on their left. They are not equalities. */
   refAlternatives?: true,
   refCompilation?: { cid: string },

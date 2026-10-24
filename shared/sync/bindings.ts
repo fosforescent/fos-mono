@@ -25,6 +25,8 @@ export type BindingCandidate = { cid: string; type: string; name?: string; refId
 export type BindingResolution = {
   status: 'ready' | 'missing' | 'ambiguous' | 'conflict' | 'cycle'
   cid?: string
+  /** The selected declaration survives explicit forwarding; equal literal values do not establish ref identity. */
+  binding?: ScopedBinding
   /** References consulted, including both sides of an incompatible equality. */
   sources: string[]
   problems: string[]
@@ -87,7 +89,7 @@ export function resolveBinding(store: FosStore, type: string | null, target: str
     const blocked = values.find(value => value.status !== 'ready')
     if (blocked) return { ...blocked, sources: [...sources] }
     if (new Set(values.map(value => value.cid)).size !== 1) return fail('conflict', 'Incompatible bindings for the same reference')
-    return { ...values[0]!, sources: [...sources] }
+    return { ...values[0]!, binding: values[0]!.binding ?? binding, sources: [...sources] }
   }
   const follow = (cid: string, wanted: string | null, inherited = candidates.find(candidate => candidate.cid === cid)?.scope ?? (environment.scope ? { store: environment.scope.replica.store, path: environment.scope.path } : undefined), explicit = false): BindingResolution => {
     const declaration = !explicit && candidates.find(candidate => candidate.cid === cid)?.binding
@@ -118,7 +120,7 @@ export function resolveBinding(store: FosStore, type: string | null, target: str
       if (isBranchChoice(store, node)) { const selected = selectedBranchValue(store, cid); return selected ? follow(selected, wanted, scope) : fail('missing', 'Choose a supplied value branch') }
       if (node.children.some(e => isChoiceEdge(store, e))) return fail('conflict', 'Resolve conflicting values first')
       const output = resolveRequirementOutput(store, cid, scope?.path, environment)
-      if (output) return output.cid ? { status: 'ready', cid: output.cid, sources: [...sources], problems: [] } : fail('missing', output.error ?? 'Unfilled requirement')
+      if (output) return output.cid ? { status: 'ready', cid: output.cid, binding: output.binding, sources: [...sources], problems: [] } : fail('missing', output.error ?? 'Unfilled requirement')
       if (node.data.ref) {
         if (node.data.ref.peer || node.data.ref.owner) return fail('missing', 'The remote reference needs a handler in this scope')
         if (!scope) return fail('missing', 'The reference needs its lexical scope')

@@ -1,4 +1,6 @@
-import { compileResources, checkCompiledResources } from './compiled-resources'
+import { resolveAllocationValue } from './destructure'
+import { compileAuthorityInvocation } from './authority-compilation'
+import { stageAuthorityPublications } from './authority-publication'
 import { copyOuterScope } from './graph'
 /** Evaluation uses ordinary typed refs for its journal and ordinary tasks for compensation. */
 import { mergeNodes } from './merge'
@@ -131,6 +133,10 @@ export function evaluationRecord(r: Replica, path: Scope): EvaluationRecord | nu
 }
 
 export type EvaluationStep = { path: Scope; row: TaskView | null }
+const authorityInstruction = (r: Replica, step: EvaluationStep): string | undefined => {
+  const type = step.row?.typeCid
+  return type && content(r.store, type).data.authorityFrame?.role === 'invocation' ? type : undefined
+}
 export type StepExecutor = {
   /** `'pending'`: the result awaits human review (a proposal); the evaluation pauses as `awaiting-review` instead of committing. */
   effect(step: EvaluationStep, operation: string): Promise<void | 'pending'>
@@ -168,7 +174,8 @@ export function evaluationSteps(r: Replica, path: Scope): EvaluationStep[] {
     const row = at.length ? view(r, at.slice(0, -1))?.tasks.find(t => t.id === at.at(-1)) ?? null : null
     // a template's rows are a definition; references and supplies are not steps
     if (row?.type === TEMPLATE_TYPE) return
-    if (row && (row.refId !== undefined || row.supply)) return
+    const authority = authorityInstruction(r, { path: at, row })
+    if (row && (row.refId !== undefined || row.supply) && !authority) return
     const cid = resolveScope(r.store, headCid(r), at)
     if (depth > 0 && cid && settingOf(r.store, content(r.store, cid))) return
     // the execute row is the evaluator's own: its journal, not a step
@@ -183,7 +190,7 @@ export function evaluationSteps(r: Replica, path: Scope): EvaluationStep[] {
     if (node.choices.length) throw new Error('Resolve conflicting choices before evaluation.')
     // Data/argument rows still belong to the graph. Only executable left sides
     // become evaluation steps; the requested root remains the transaction boundary.
-    if (depth === 0 || row?.checkable || row?.requirement || row?.allocation || instructionPrimitives(r, { path: at, row }).length) steps.push({ path: at, row })
+    if (depth === 0 || authority || row?.checkable || row?.requirement || row?.allocation || instructionPrimitives(r, { path: at, row }).length) steps.push({ path: at, row })
     for (const child of node.tasks) walk([...at, child.id], depth + 1)
   }
   walk(path, 0)
@@ -243,6 +250,12 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
   const steps = evaluationSteps(driver.get(), path)
   if (!steps.length) throw new Error('Apply the template before evaluating it.')
   const initial = driver.get()
+  const authorityPlans = steps.flatMap(step => {
+    const type = authorityInstruction(initial, step)
+    return type ? [compileAuthorityInvocation(initial, type, step.path, driver)] : []
+  })
+  // Validate the complete publication before any native effect can run. Staging changes no live refs.
+  stageAuthorityPublications(initial, authorityPlans, driver.now())
   if (path.some((id, i) => view(initial, path.slice(0, i))?.tasks.some(t => t.id === id && t.type === TEMPLATE_TYPE))) throw new Error('Apply the template before evaluating it.')
   const issues = [...allocationProblems(initial, steps), ...steps.flatMap(step => problems(driver.get(), step, driver))]
   if (issues.length) throw new Error([...new Set(issues)].join('\n'))
@@ -305,7 +318,10 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
     const live = driver.get()
     const allocationErrors = allocationProblems(live, steps)
     if (allocationErrors.length) throw new Error(allocationErrors.join('\n'))
+    const authorityRoot = stageAuthorityPublications(live, authorityPlans, driver.now())
     let r = loadReplica(serializeReplica(live))
+    importNodes(r.store, reachableNodes(live.store, [authorityRoot]))
+    commitRoot(r.store, authorityRoot, driver.now())
     copyOuterScope(live.store, r.store)
     for (const step of steps) for (const [id, name] of Object.entries(scopeBranches(live.store, headCid(live), step.path))) selectBranch(r.store, id, name)
     for (const step of [...steps].reverse()) if (step.row?.checkable) {
@@ -349,10 +365,15 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
   return record
 }
 
-/** Compile resource references before running the CID-only accounting interpreter. */
+/** Legacy amount rows remain data; consuming authority requires an explicit graph invocation. */
 export function allocationProblems(r: Replica, steps: EvaluationStep[]): string[] {
-  const compiled = compileResources(r, steps)
-  return [...compiled.problems, ...checkCompiledResources(r.store, compiled.cid)]
+  return steps.flatMap(step => {
+    const cid = resolveScope(r.store, headCid(r), step.path)
+    if (!cid) return ['The allocation is unavailable.']
+    const allocation = resolveAllocationValue(r.store, cid)
+    if (allocation.error) return [allocation.error]
+    return allocation.debit || allocation.value?.resource ? ['Spending resources requires an explicit authority transfer or split.'] : []
+  })
 }
 
 /** Run under the same executor lock as evaluation, after confirming the old execution has stopped. */
