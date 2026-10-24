@@ -1,3 +1,5 @@
+import { invertPolarity } from '../../shared/sync/parameters'
+import { capabilityPresentation } from './capability-presentation'
 import { resourceHandlers } from '../../shared/sync/resource-bindings'
 import { resourceWindowContains } from '../../shared/sync/resource-window'
 import { setLibraryArg } from '../../shared/sync/library'
@@ -1654,7 +1656,7 @@ export class App {
   dropBlankRow(parent: Scope, id: string, store: Replica['store']): void {
     if (store !== this.state.replica.store) return
     const row = view(this.state.replica, parent)?.tasks.find((t) => t.id === id)
-    if (row && !row.title.trim() && !row.childCount && !row.childChoices) this.edit(deleteTask(this.state.replica, parent, id, this.now()))
+    if (row?.type === PLAIN_TYPE && !row.form && !row.scalar && !this.rowInputs([...parent, id]) && !row.title.trim() && !row.childCount && !row.childChoices) this.edit(deleteTask(this.state.replica, parent, id, this.now()))
   }
   rewriteRowAt(at: Scope, id: string, parsed: import('./rows').ParsedInput, draft?: { store: Replica['store']; head: string; parent: Scope }): void {
     if (this.isHome([...this.state.view, ...at, id])) return
@@ -2275,12 +2277,14 @@ export class App {
     this.savePrefs()
     this.set({ selected: null, contextMenu: null, work: undefined })
   }
-  mergeNodeBranch(at: Scope, id: string, target: string): void {
-    if (repositoryAt(this.state.replica, [...this.state.view, ...at, id])) { void this.proposeRepoMerge([...this.state.view, ...at, id], target); return }
-    const row = this.rowAt([...at, id])
+  mergeNodeBranch(at: Scope, id: string, target: string, absolute = false): void {
+    if (this.evaluating || this.state.voice || this.state.work?.busy) return
+    const path = absolute ? [...at, id] : [...this.state.view, ...at, id]
+    if (repositoryAt(this.state.replica, path)) { void this.proposeRepoMerge(path, target); return }
+    const row = view(this.state.replica, path.slice(0, -1))?.tasks.find(row => row.id === id)
     if (!row?.branches) return
     try {
-      const next = mergeBranch(this.state.replica, [...this.state.view, ...at, id], row.branches.selected, target, this.now())
+      const next = mergeBranch(this.state.replica, path, row.branches.selected, target, this.now())
       this.branchSelections[id] = target
       this.edit(next)
       this.savePrefs()
@@ -2512,27 +2516,27 @@ export class App {
     const manual = namesInLibrary(r.store, binding.library).byName.get(MANUAL_HANDLERS)
     return childRows(r.store, binding.library)
       .filter(row => row.type === TEMPLATE_TYPE && (!manual || valueCidOf(r.store, row.cid) !== valueCidOf(r.store, manual)) && isTemplateType(r.store, row.cid))
-      .map(row => ({ id: rowView(r.store, row.cid, row.edge).id, cid: row.cid, label: row.value.data.description?.content.trim() ?? '', icon: row.value.data.presentation?.icon || 'template' }))
+      .map(row => ({ id: rowView(r.store, row.cid, row.edge).id, cid: row.cid, label: row.value.data.description?.content.trim() ?? '', icon: capabilityPresentation(r.store, row.cid).icon || 'template', description: capabilityPresentation(r.store, row.cid).description }))
       .filter(row => row.label)
   }
   /**
    * The nearest library's fields a row is made from (its types and the capabilities it declares; its templates are
    * `libraryConstructors`), each the node a row made from it has on its left.
    */
-  libraryNames(path = this.constructorContext()): Array<{ name: string; node: string; label: string }> {
+  libraryNames(path = this.constructorContext()): Array<{ name: string; node: string; label: string; icon?: string; description?: string }> {
     const r = this.state.replica, binding = libraryBindingAt(r.store, path)
     if (!binding) return []
     return [...namesInLibrary(r.store, binding.library).byName].filter(([, node]) => !isTemplateType(r.store, node)).map(([name, node]) => {
       const value = valueContent(r.store, node)
-      return { name, node, label: value.data.capabilityDefinition?.label ?? value.data.description?.content ?? name }
+      return { name, node, label: value.data.capabilityDefinition?.label ?? value.data.description?.content ?? name, ...capabilityPresentation(r.store, node) }
     })
   }
   /** A row made from the node the library names `name` where the row goes (the name resolves in that scope). */
-  insertNamed(name: string, path = this.constructorContext()): Scope {
+  insertNamed(name: string, path = this.constructorContext(), inverted = false): Scope {
     const label = this.libraryNames(path).find(n => n.name === name)?.label ?? ''
-    return this.applyConstructor(path, { type: name, text: label, done: false })
+    return this.applyConstructor(path, { type: name, text: label, done: false }, false, undefined, undefined, undefined, inverted)
   }
-  insertLibraryConstructor(id: string, path = this.constructorContext(), replace = false): Scope {
+  insertLibraryConstructor(id: string, path = this.constructorContext(), replace = false, inverted = false): Scope {
     const template = this.libraryConstructors(path).find(item => item.id === id)
     if (!template) throw new Error('This standard library constructor is unavailable.')
     const queue = [template.cid], seen = new Set<string>()
@@ -2545,7 +2549,7 @@ export class App {
     }
     const current = replace && path.length ? view(this.state.replica, path.slice(0, -1))?.tasks.find(row => row.id === path.at(-1)) : undefined
     const title = current && !current.requirement && current.type !== HOME_TYPE ? current.title || template.label : template.label
-    return this.applyConstructor(path, { type: TASK_TYPE, text: title, done: false }, replace, undefined, undefined, template.cid)
+    return this.applyConstructor(path, { type: TASK_TYPE, text: title, done: false }, replace, undefined, undefined, template.cid, inverted)
   }
   publishCurrentTemplate(market = false): void {
     if (!this.canApprove() || this.currentRow()?.type !== TEMPLATE_TYPE) return
@@ -2610,7 +2614,7 @@ export class App {
     return this.applyConstructor(path, { type: ALLOCATION_TYPE, text: `Pull from ${peer.name}`, done: false, extras: { requirement: { capability: 'tool', tool: 'fos.pull', peer: peer.id } } })
   }
   /** Palette input uses the same row documents as typed input; no separate palette model. */
-  applyConstructor(path: Scope, parsed: import('./rows').ParsedInput, replace = false, repo?: string, localDirectory?: string, templateId?: string): Scope {
+  applyConstructor(path: Scope, parsed: import('./rows').ParsedInput, replace = false, repo?: string, localDirectory?: string, templateId?: string, inverted = false): Scope {
     if (!view(this.state.replica, path)) throw new Error('The destination no longer exists.')
     const template = templateId ? findRowByAlias(this.state.replica.store, headCid(this.state.replica), templateId) : null
     const templateCid = templateId && this.state.replica.store.table.has(templateId) && isTemplateType(this.state.replica.store, templateId) ? templateId : template?.row.type === TEMPLATE_TYPE ? resolveScope(this.state.replica.store, headCid(this.state.replica), [...template.path, template.row.id]) : null
@@ -2632,7 +2636,7 @@ export class App {
       // Construct before checking compatibility, in an isolated draft so a
       // rejected value cannot change the live graph or leave an extra row.
       const live = this.state.replica
-      const isolated = !!argument || !!templateCid
+      const isolated = !!argument || !!templateCid || inverted
       let r = isolated ? loadReplica(serializeReplica(live)) : live
       if (isolated) copyOuterScope(live.store, r.store)
       if (replace && current?.construction?.handler) r = this.peerRowReplica(r, target, undefined)
@@ -2641,6 +2645,11 @@ export class App {
       if (templateCid) r = instantiateTemplateValue(r, parent, id, templateCid, this.now())
       if (parsed.peer !== undefined) r = this.peerRowReplica(r, target, parsed.peer)
       if (parsed.construct) r = constructAt(r, target, libAt(r.store, target.slice(0, -1)).capabilities[parsed.construct.capability]!, parsed.construct.values, this.now())
+      if (inverted) {
+        const constructor = rowConstructor(r, target)
+        if (!constructor) throw new Error('The row has no capability to invert.')
+        r = constructAt(r, target, invertPolarity(r.store, constructor, libAt(r.store, parent).field('negative')), {}, this.now())
+      }
       if (repo) { r = bindRepository(r, target, repo, this.now()); r = this.withIntegrationPeer(r, target, 'github') }
       if (localDirectory) {
         const peer = `git:${r.meta.peerId}:${encodeURIComponent(localDirectory)}`

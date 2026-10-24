@@ -455,7 +455,8 @@ export function addRow(replica: Replica, at: Scope, type: string, text: string, 
   const parentEdge = parent ? findEdge(store, valueContent(store, parent), `a:${at.at(-1)}`) : null
   const parentType = parentEdge ? rowTypeOf(store, parentEdge) : null
   const repeated = typeId === PLAIN_TYPE && parentType && content(store, parentType).data.form?.repeat ? formFields(store, parentType)[0]?.type : null
-  if (!text.trim() && !BLANK_TYPES.includes(typeId) && !isAllocationType(typeId)) return replica
+  // Explicit graph definitions may have inputs without a title at all.
+  if (!text.trim() && !store.table.has(type) && !BLANK_TYPES.includes(typeId) && !isAllocationType(typeId)) return replica
   const template = repeated ?? resolveRowType(store, type, at)
   const body = rowBody(store, template, text)
   const id = options.id ?? newId()

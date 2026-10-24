@@ -26,6 +26,17 @@ export function isNegative(store: FosStore, node: string): boolean {
   return parameter(store, node, 'negative') !== null
 }
 
+/** Flip a node's direction using the existing negative parameter, preserving its definition. */
+export function invertPolarity(store: FosStore, node: string, negativeKey: string): string {
+  const definition = store.table.get(node)
+  if (!definition) throw new Error('The capability has not loaded yet.')
+  if (store.table.get(negativeKey)?.data.parameterDefinition?.kind !== 'negative') throw new Error('The negative parameter is unavailable in this scope.')
+  const negative = isNegative(store, node)
+  const children = definition.children.filter(([left]) => store.table.get(left)?.data.parameterDefinition?.kind !== 'negative')
+  if (!negative) children.push([negativeKey, store.create({ data: {}, children: [] }).getId()])
+  return store.create({ ...definition, children }).getId()
+}
+
 /**
  * Whether the ref `alias` in `node`'s rows is one the row receives: its row's left has a primitive and no negative
  * parameter. Received refs are filled at run time (a handler submits to them); sent ones must be assigned first.
