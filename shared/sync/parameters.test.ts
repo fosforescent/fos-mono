@@ -1,7 +1,7 @@
 import { FosStore } from '../dag-implementation/store'
 import {
   content, createReplica, commitRoot, headCid, libAt, libraryBindingAt,
-  isNegative, matchesGraph, openRefs, primitiveOf, put, receivedRef,
+  isNegative, invertPolarity, matchesGraph, openRefs, primitiveOf, put, receivedRef,
   refNodeContent, updateAtScope
 } from './index'
 
@@ -19,6 +19,9 @@ test('parameter semantics travel with the graph without any installed library or
   ] })
   expect(primitiveOf(store, input)).toBe(predicate)
   expect(isNegative(store, input)).toBe(true)
+  expect(invertPolarity(store, output, negative)).toBe(input)
+  expect(invertPolarity(store, input, negative)).toBe(output)
+  expect(invertPolarity(store, invertPolarity(store, constructor, negative), negative)).toBe(constructor)
   expect(openRefs(store, constructor).map(ref => [ref.sent, ref.received])).toEqual([[true, false], [false, true]])
   expect(receivedRef(store, constructor, 'in')).toBe(false)
   expect(receivedRef(store, constructor, 'out')).toBe(true)

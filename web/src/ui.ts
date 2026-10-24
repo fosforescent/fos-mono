@@ -15,6 +15,8 @@ import { AUDIENCE_LABEL, audiencePeer } from '../../shared/sync/sharing'
 import { SETTING_LABELS, settingKeyOf } from './settings'
 import { combobox } from './combobox'
 import { iconSvg } from './icons'
+import { isNegative } from '../../shared/sync/parameters'
+import { capabilityPresentation } from './capability-presentation'
 import { openTimeBlockPicker, type TimeBank } from './timeblocks'
 import { alternativePicker, proposalPreview, clearProposal } from './alternatives'
 /**
@@ -25,7 +27,7 @@ import { alternativePicker, proposalPreview, clearProposal } from './alternative
 
 import QRCode from 'qrcode'
 import { sharingControls } from './sharing'
-import { readNodeValue, nodeShape, NODE_PERMISSION_DEFAULT, requirementOutputs, resolveRequirementOutput, resolveScope, resolveText, put, content, headCid, viewNode, findChild, WORK_SYSTEM, isDirty, view as viewAt, type ChoiceView, homePath, type MovePosition, type NodeView, type Scope, type TaskView } from '../../shared/sync/index'
+import { readNodeValue, nodeShape, NODE_PERMISSION_DEFAULT, requirementOutputs, resolveRequirementOutput, resolveScope, resolveText, put, content, valueContent, headCid, viewNode, findChild, WORK_SYSTEM, isDirty, view as viewAt, type ChoiceView, homePath, type MovePosition, type NodeView, type Scope, type TaskView } from '../../shared/sync/index'
 import type { App, AppState, ContextPeer } from './app'
 import { hydrateDiagrams, renderMarkdown } from './markdown'
 import { RESOURCE_NAME, SYNTAX_HELP, allocationTag, describeParsed, downloadText, formatAmount, rawRowText, renderInlineText } from './rows'
@@ -656,10 +658,11 @@ type NodeLayout = 'tree'
 /** `peer`: the selected tab of the constructor panel ('device' or a context peer id); `input`: the text/media input panel under the title. */
 type WorkspacePrefs = { peer: string; layout: NodeLayout; actionTab: string; search: string; trigger?: string; open: Record<string, boolean>; input: boolean }
 const workspacePrefs = new WeakMap<App, WorkspacePrefs>()
+const composerObservers = new WeakMap<HTMLElement, ResizeObserver>()
 const workspaceSearch = new WeakMap<App, { key: string; values: Map<string, string> }>()
 function workspace(app: App): WorkspacePrefs {
   let prefs = workspacePrefs.get(app)
-  if (!prefs) { prefs = { peer: 'device', layout: 'tree', actionTab: 'main', search: '', open: {}, input: false }; workspacePrefs.set(app, prefs) }
+  if (!prefs) { prefs = { peer: 'library', layout: 'tree', actionTab: 'main', search: '', open: { context: true }, input: true }; workspacePrefs.set(app, prefs) }
   const key = JSON.stringify([app.state.atRoot, app.state.view])
   let search = workspaceSearch.get(app)
   if (!search) { search = { key, values: new Map() }; workspaceSearch.set(app, search) }
@@ -681,6 +684,7 @@ function accordion(app: App, key: string, label: string, ...children: HTMLElemen
   return d
 }
 const activeConstructorDrags = new WeakMap<App, { store: AppState['replica']['store']; path: string; source: HTMLElement; clear(): void }>()
+let capabilityDescriptionId = 0
 const CONSTRUCTOR_DRAG_TYPE = 'application/x-fos-constructor'
 const CONSTRUCTORS = [
   { id: 'integration', label: 'Integration', icon: '▦' },
@@ -690,7 +694,44 @@ const CONSTRUCTORS = [
   { id: 'bank', label: 'Resource bank', icon: 'bank' },
   { id: 'repository', label: 'Repository', icon: 'pull-request' }
 ] as const
-type ConstructorItem = { id: string; label: string; icon: string; output: string; group: string; mask?: { peer: string; key: 'fields' | 'children'; id: string }; peer?: Peer; triggerPeer?: string }
+type ConstructorItem = { id: string; label: string; icon: string; description?: string; output: string; group: string; parent?: string; mask?: { peer: string; key: 'fields' | 'children'; id: string }; peer?: Peer; triggerPeer?: string }
+const PATTERN_DRAG_TYPE = 'application/x-fos-capability-pattern'
+type CapabilityTerm = { id: string; negative: boolean }
+const capabilityPatterns = new WeakMap<App, { key: string; store: AppState['replica']['store']; selected: CapabilityTerm[]; applied: CapabilityTerm[] }>()
+function capabilityPattern(app: App) {
+  const key = JSON.stringify([app.state.view, app.state.atRoot])
+  let pattern = capabilityPatterns.get(app)
+  if (!pattern || pattern.key !== key || pattern.store !== app.state.replica.store) { pattern = { key, store: app.state.replica.store, selected: [], applied: [] }; capabilityPatterns.set(app, pattern) }
+  return pattern
+}
+function inverseConstructor(id: string): string | null {
+  const pairs: Array<[string, string]> = [['account', 'seed:-$ '], ['calendar', 'seed:-: '], ['inventory', 'seed:-# '], ['name:task', 'seed:-[ ] '], ['name:query', 'seed:-? ']]
+  for (const [positive, negative] of pairs) { if (id === positive) return negative; if (id === negative) return positive }
+  if (id.startsWith('seed:-')) return `seed:${id.slice(6)}`
+  if (id.startsWith('seed:')) return `seed:-${id.slice(5)}`
+  return null
+}
+function patternMatches(app: App, row: TaskView): boolean {
+  const terms = capabilityPattern(app).applied
+  if (!terms.length) return true
+  const options = constructorOptions(app)
+  return terms.some(term => {
+    const id = term.negative ? inverseConstructor(term.id) ?? term.id : term.id
+    if (id.startsWith('mask:children:')) return row.id === id.slice(14)
+    const item = options.find(option => option.id === id)
+    const seed = id.startsWith('seed:') ? id.slice(5) : ({ account: '$ ', calendar: ': ', inventory: '# ' } as Record<string, string>)[id]
+    if (seed) {
+      const parsed = app.parseRowInput(seed)
+      if (parsed.extras?.requirement) return row.requirement?.capability === parsed.extras.requirement.capability && (!parsed.extras.requirement.resource || row.requirement?.resource === parsed.extras.requirement.resource)
+      if (parsed.extras?.allocation) return !row.requirement && row.allocation?.type === parsed.extras.allocation.type
+      return row.type === parsed.type && !row.requirement
+    }
+    if (id.startsWith('name:')) return (row.type === id.slice(5) || row.type === `capabilities.${id.slice(5)}`) && (!!row.typeCid && isNegative(app.state.replica.store, row.typeCid)) === term.negative
+    if (id.startsWith('library:')) return row.template?.id === id.slice(8)
+    if (id.startsWith('peer-row:')) return row.construction?.handler === id.slice(9) || row.construction?.peerId === id.slice(9)
+    return !!item && [row.type, row.requirement?.capability, row.allocation?.type].includes(item.output) && (!term.negative || !!row.requirement)
+  })
+}
 /**
  * Peer rows the panel makes (`@{handler}`): connecting this node to a peer. Whatever a connection needs (a code, a
  * name, an audience) is entered in the row, and its Complete button connects. Device rows are direct (p2p)
@@ -722,16 +763,19 @@ function constructorOptions(app: App): ConstructorItem[] {
   const me = app.state.replica.meta.peerId
   const offerGroup = (peerId: string) => peerId === me ? 'device' : peerId === 'fos' || peerId.startsWith('user:') ? account : peerId
   return [
-    ...app.libraryConstructors().map(c => ({ id: `library:${c.id}`, label: c.label, icon: c.icon, output: 'task', group: 'library' })),
+    ...app.libraryConstructors().map(c => ({ id: `library:${c.id}`, label: c.label, icon: c.icon, description: c.description, output: 'task', group: 'library' })),
     // the library's names, dereferenced: each is the node a row made from it has on its left (ref declarations share the handler icon)
-    ...app.libraryNames().map(n => ({ id: `name:${n.name}`, label: n.label, icon: 'handler', output: 'row', group: 'library' })),
+    ...app.libraryNames().map(n => {
+      const parent = app.libraryNames().find(other => other.node !== n.node && valueContent(app.state.replica.store, other.node).children.some(([left]) => left === n.node))
+      return { id: `name:${n.name}`, label: n.label, icon: n.icon ?? 'handler', description: n.description, output: n.name, group: 'library', ...(parent ? { parent: `name:${parent.name}` } : {}) }
+    }),
     ...PEER_ROWS.filter(r => !r.desktop || inTauri()).map(r => ({ id: `peer-row:${r.id}`, label: r.label, icon: r.icon, output: 'peer', group: r.server ? account : 'device' })),
     // a sub-peer's own row on this node: MCP servers and integrations (agents have their launch constructors)
     ...peers.filter(p => p.mcpServer || p.integration).map(p => ({ id: `peer-row:${p.integration ? p.id.slice(12) : p.id}`, label: p.integration ? `Connect ${p.name}` : p.name, icon: peerIcon(p), output: 'peer', group: p.id })),
     { id: 'trigger:public', label: 'Public template endpoint', icon: 'broadcast', output: 'trigger', group: 'triggers' },
     { id: 'trigger:users', label: 'Fos template endpoint', icon: 'user-check', output: 'trigger', group: 'triggers' },
     ...ROW_SEEDS.map(([label, seed, icon]) => ({ id: `seed:${seed}`, label, icon, output: 'row', group: 'device' })),
-    ...app.handlerOffers().filter(o => !content(app.state.replica.store,o.type).data.triggerDefinition).map(o => ({ id: `handler:${o.cid}`, label: o.label, icon: 'handler', output: o.type === app.state.replica.store.primitive.templateField.getId() ? 'template' : o.capability ?? o.type, group: offerGroup(o.peerId) })),
+    ...app.handlerOffers().filter(o => !content(app.state.replica.store,o.type).data.triggerDefinition).map(o => { const presentation = capabilityPresentation(app.state.replica.store, o.type); return { id: `handler:${o.cid}`, label: o.label, icon: presentation.icon ?? 'handler', description: presentation.description, output: o.type === app.state.replica.store.primitive.templateField.getId() ? 'template' : o.capability ?? o.type, group: offerGroup(o.peerId) } }),
     ...(canVerifySpecifications(app,app.constructorContext()) ? [{id:'verify-specifications',label:'Verify specifications',icon:'verify',output:'tool',group:'device'}] : []),
     { id: 'feature-specification', label: 'Feature specification', icon: 'specification', output: 'note', group: 'device' },
     ...CONSTRUCTORS.map(c => ({ ...c, output: c.id === 'integration' ? 'peer' : c.id === 'repository' ? 'repo' : c.id, group: c.id === 'repository' ? github : 'device' })),
@@ -769,24 +813,54 @@ function constructorState(app: App, item: ConstructorItem) {
 }
 function constructorControl(app: App, item: ConstructorItem, target: HTMLElement): HTMLElement {
   const state = constructorState(app, item)
-  const b = iconButton(item.icon, item.label, () => { if (state.enabled) { if (!item.mask) insertConstructor(app, item.id) } })
+  const pattern = capabilityPattern(app), term = pattern.selected.find(term => term.id === item.id)
+  let held = false, descriptionTimer: ReturnType<typeof setTimeout> | undefined
+  const b = iconButton(item.icon, item.label, () => {
+    if (held) { held = false; return }
+    if (item.id.startsWith('peer:')) { insertConstructor(app, item.id); return }
+    if (!state.enabled) return
+    const index = pattern.selected.findIndex(term => term.id === item.id)
+    if (index < 0) pattern.selected.push({ id: item.id, negative: false }); else pattern.selected.splice(index, 1)
+    app.refresh()
+  })
+  b.setAttribute('aria-pressed', String(!!term)); b.classList.toggle('negative', !!term?.negative)
+  b.title = `${item.label}${term?.negative ? ' · inverse' : ''} — select; hold and drag to a row or input; drag up to invert`
+  const description = div('capability-description', '')
+  description.id = `capability-description-${++capabilityDescriptionId}`; description.setAttribute('role', 'tooltip')
+  const descriptionTitle = div('capability-description-title', '')
+  const descriptionIcon = span('capability-description-icon', '')
+  descriptionIcon.innerHTML = iconSvg(item.icon) ?? ''; if (!descriptionIcon.childElementCount) descriptionIcon.textContent = item.icon
+  descriptionTitle.append(descriptionIcon, span('', item.label))
+  description.append(descriptionTitle, div('', item.description || item.label), div('muted small', 'Drag up to invert · Drop on New row or an input'))
+  const hideDescription = () => { clearTimeout(descriptionTimer); description.remove(); b.removeAttribute('aria-describedby') }
+  const showDescription = () => { target.parentElement?.querySelector('.capability-description')?.remove(); target.parentElement?.append(description); b.setAttribute('aria-describedby', description.id) }
+  b.addEventListener('pointerdown', () => { held = false; clearTimeout(descriptionTimer); descriptionTimer = setTimeout(() => { held = true; showDescription() }, 350) })
+  b.addEventListener('pointerup', () => { if (!activeConstructorDrags.has(app)) hideDescription(); else clearTimeout(descriptionTimer) })
+  b.addEventListener('pointercancel', hideDescription)
+  b.addEventListener('pointerleave', () => { if (!activeConstructorDrags.has(app)) hideDescription() })
+  b.addEventListener('focus', showDescription); b.addEventListener('blur', () => { if (!activeConstructorDrags.has(app)) hideDescription() })
+  b.addEventListener('contextmenu', event => { event.preventDefault(); if (app.canApprove() && !proposalPreview(app)) { state.set(!state.enabled); app.refresh() } })
   b.dataset.constructorId = item.id
   if (item.peer) { b.classList.add('sub-peer', `peer-status-${app.peerStatus(item.peer)}`); b.title = `${item.label} · ${app.peerStatus(item.peer) === 'disabled' ? 'nothing granted here' : app.peerStatus(item.peer)}` }
   b.classList.toggle('constructor-disabled', !state.enabled)
   b.setAttribute('aria-disabled', String(!state.enabled))
-  constructorDrag(b, item.id)
+  constructorDrag(b, term?.negative ? inverseConstructor(item.id) ?? `inverse:${item.id}` : item.id)
   b.addEventListener('dragstart', event => {
     if (!app.canApprove() || proposalPreview(app)) return
     activeConstructorDrags.get(app)?.clear()
-    const clear = () => { target.hidden = true; target.ondrop = null; target.ondragover = null; activeConstructorDrags.delete(app) }
+    showDescription()
+    const clear = () => { hideDescription(); target.hidden = true; target.ondrop = null; target.ondragover = null; activeConstructorDrags.delete(app) }
     activeConstructorDrags.set(app, { store: app.state.replica.store, path: JSON.stringify(app.state.view), source: b, clear })
-    target.hidden = false; target.textContent = state.enabled ? 'Disable' : 'Enable'
+    target.hidden = false; target.textContent = '↑ Invert capability'
     const store = app.state.replica.store, path = JSON.stringify(app.state.view)
     target.ondragover = e => { if (e.dataTransfer?.types.includes(CONSTRUCTOR_DRAG_TYPE)) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy' } }
     target.ondrop = e => {
       e.preventDefault(); e.stopPropagation(); clear()
-      if (e.dataTransfer?.getData(CONSTRUCTOR_DRAG_TYPE) !== item.id || app.state.replica.store !== store || JSON.stringify(app.state.view) !== path || proposalPreview(app) || !app.canApprove()) return
-      constructorState(app, item).set(!state.enabled)
+      if (!e.dataTransfer?.getData(CONSTRUCTOR_DRAG_TYPE) || app.state.replica.store !== store || JSON.stringify(app.state.view) !== path || proposalPreview(app) || !app.canApprove()) return
+      const selected = pattern.selected.find(term => term.id === item.id)
+      if (selected) selected.negative = !selected.negative
+      else pattern.selected.push({ id: item.id, negative: true })
+      app.refresh()
     }
   })
   b.addEventListener('dragend', () => { activeConstructorDrags.get(app)?.clear(); app.refresh() })
@@ -843,6 +917,20 @@ function seedRow(app: App, seed: string, path: Scope, replace: boolean): void {
 }
 function insertConstructor(app: App, id: string, path = app.constructorContext(), replace = false): void {
   if (proposalPreview(app)) return
+  if (id.startsWith('inverse:')) {
+    const base = id.slice(8), item = constructorOptions(app).find(item => item.id === base)
+    if (!item || !constructorState(app, item).enabled) return
+    try {
+      if (base.startsWith('name:')) app.insertNamed(base.slice(5), path, true)
+      else if (base.startsWith('library:')) app.insertLibraryConstructor(base.slice(8), path, replace, true)
+      else {
+        const offer = base.startsWith('handler:') ? app.handlerOffers(path).find(offer => offer.cid === base.slice(8)) : undefined
+        const parsed = base.startsWith('peer-row:') ? { type: PLAIN_TYPE, text: item.label, done: false, peer: base.slice(9) } : { type: offer?.type ?? item.output, text: item.label, done: false }
+        app.applyConstructor(path, parsed, replace, undefined, undefined, undefined, true)
+      }
+    } catch (error) { app.notify('error', String(error)) }
+    return
+  }
   const item = constructorOptions(app).find(c => c.id === id)
   if (item && !constructorState(app, item).enabled) return
   if (id.startsWith('library:')) { try { app.insertLibraryConstructor(id.slice(8), path, replace) } catch (error) { app.notify('error', String(error)) }; return }
@@ -899,6 +987,48 @@ function suggestedConstructors(app: App): HTMLElement {
 function constructorDrag(el: HTMLElement, id: string): void {
   el.draggable = true
   el.addEventListener('dragstart', event => { event.stopPropagation(); event.dataTransfer?.setData(CONSTRUCTOR_DRAG_TYPE, id); if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy' })
+  installTouchDrag(el)
+}
+function composeConstructorInput(input: HTMLTextAreaElement, app: App): void {
+  input.addEventListener('dragover', event => { if (!input.readOnly && event.dataTransfer?.types.includes(CONSTRUCTOR_DRAG_TYPE)) { event.preventDefault(); event.stopPropagation() } })
+  input.addEventListener('drop', event => {
+    const id = event.dataTransfer?.getData(CONSTRUCTOR_DRAG_TYPE)
+    if (!id || input.readOnly) return
+    event.preventDefault(); event.stopImmediatePropagation(); activeConstructorDrags.get(app)?.clear()
+    const seed = id.startsWith('seed:') ? id.slice(5) : ({ account: '$ ', calendar: ': ', inventory: '# ', bank: '@money ', 'name:task': '[ ] ', 'name:note': '> ', 'name:comment': '// ', 'name:query': '? ' } as Record<string, string>)[id]
+    const named = id.startsWith('name:') ? id.slice(5) : null
+    const template = id.startsWith('library:') ? app.libraryConstructors().find(item => item.id === id.slice(8)) : null
+    const text = seed ?? (id.startsWith('peer-row:') ? `@{${id.slice(9)}} ` : template ? `[ ] \`${template.label}\` ` : named ? `${named} ` : null)
+    if (text === null) { app.notify('info', 'Drop this capability into a typed input or New row.'); return }
+    input.setRangeText(text, input.selectionStart, input.selectionEnd, 'end'); input.dispatchEvent(new window.Event('input', { bubbles: true })); input.focus()
+  })
+}
+/** Native HTML drag on desktop; a held pointer supplies the same drop contract on phones. */
+function installTouchDrag(el: HTMLElement): void {
+  el.addEventListener('pointerdown', event => {
+    if (event.pointerType !== 'touch' && event.pointerType !== 'pen') return
+    let active = false, over: Element | null = null
+    const x = event.clientX, y = event.clientY
+    const data = new Map<string, string>()
+    const transfer = { get types() { return [...data.keys()] }, setData: (key: string, value: string) => data.set(key, value), getData: (key: string) => data.get(key) ?? '', effectAllowed: 'copy', dropEffect: 'copy' }
+    const dispatch = (target: Element, type: string, pointer?: PointerEvent) => { const drag = new Event(type, { bubbles: true, cancelable: true }); Object.defineProperties(drag, { dataTransfer: { value: transfer }, clientX: { value: pointer?.clientX ?? x }, clientY: { value: pointer?.clientY ?? y } }); target.dispatchEvent(drag) }
+    const timer = window.setTimeout(() => { if (!el.isConnected) { end(); return }; active = true; el.classList.add('touch-dragging'); dispatch(el, 'dragstart') }, 350)
+    const move = (pointer: PointerEvent) => {
+      if (!active) { if (Math.hypot(pointer.clientX - x, pointer.clientY - y) > 10) end(); return }
+      pointer.preventDefault()
+      const next = document.elementFromPoint(pointer.clientX, pointer.clientY)
+      if (over !== next && over) dispatch(over, 'dragleave', pointer)
+      over = next; if (over) dispatch(over, 'dragover', pointer)
+    }
+    const stopTouchScroll = (touch: TouchEvent) => { if (active) touch.preventDefault() }
+    const end = (pointer?: PointerEvent) => {
+      window.clearTimeout(timer); document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', end); document.removeEventListener('pointercancel', end)
+      document.removeEventListener('touchmove', stopTouchScroll)
+      if (active) { if (pointer?.type === 'pointerup' && over) dispatch(over, 'drop', pointer); if (over) dispatch(over, 'dragleave', pointer); dispatch(el, 'dragend'); el.classList.remove('touch-dragging'); const suppress = (e: Event) => { e.preventDefault(); e.stopImmediatePropagation() }; el.addEventListener('click', suppress, { once: true }); window.setTimeout(() => el.removeEventListener('click', suppress), 500) }
+    }
+    document.addEventListener('pointermove', move, { passive: false }); document.addEventListener('pointerup', end); document.addEventListener('pointercancel', end)
+    document.addEventListener('touchmove', stopTouchScroll, { passive: false })
+  })
 }
 function constructorPalette(app: App, ids: string[]): HTMLElement {
   const palette = div('constructor-palette', '')
@@ -1010,6 +1140,15 @@ function openConstructor(app: App, kind: string, path: Scope = [...app.state.vie
 
 function dropTrigger(event: DragEvent, app: App, path: Scope, replace = false): boolean {
   const constructor = event.dataTransfer?.getData(CONSTRUCTOR_DRAG_TYPE)
+  if (constructor?.startsWith('inverse:')) { event.preventDefault(); event.stopPropagation(); activeConstructorDrags.get(app)?.clear(); insertConstructor(app, constructor, path, replace); return true }
+  const seed = constructor?.startsWith('seed:') ? constructor.slice(5) : ({ account: '$ ', calendar: ': ', inventory: '# ', bank: '@money ' } as Record<string, string>)[constructor ?? '']
+  if (seed && (event.target as HTMLElement).closest?.('.ghost')) {
+    event.preventDefault(); event.stopPropagation(); activeConstructorDrags.get(app)?.clear()
+    if (proposalPreview(app)) return true
+    try { const created = app.applyConstructor(path, app.parseRowInput(seed)); app.select(created.slice(app.state.view.length)) } catch (error) { app.notify('error', String(error)) }
+    return true
+  }
+  if (constructor?.startsWith('peer-row:')) { event.preventDefault(); event.stopPropagation(); activeConstructorDrags.get(app)?.clear(); insertConstructor(app, constructor, path, replace); return true }
   if (constructor?.startsWith('peer:')) {
     event.preventDefault(); event.stopPropagation(); activeConstructorDrags.get(app)?.clear()
     const peer = app.contextPeers().find(p => p.id === constructor.slice(5))
@@ -1032,11 +1171,13 @@ function dropTrigger(event: DragEvent, app: App, path: Scope, replace = false): 
  * A row made by a constructor node ([fetch, right], …): the constructor's refs are its inputs (the left decides which
  * show), the right's assignments are what is in them. A received ref lists what was submitted to it, to choose from.
  */
-function constructedRowBody(task: TaskView, inputs: NonNullable<ReturnType<App['rowInputs']>>, path: Scope, app: App): HTMLElement {
+function constructedRowBody(task: TaskView, inputs: NonNullable<ReturnType<App['rowInputs']>>, path: Scope, app: App, side?: 'left' | 'right'): HTMLElement {
   const box = div('title constructor-body constructed-row', '')
-  box.append(span('constructor-label', task.title || 'Constructor'))
+  if (side !== 'left' && task.title) box.append(span('constructor-label', task.title))
   for (const ref of inputs) {
+    if (side === 'left' && ref.received || side === 'right' && !ref.received) continue
     const line = div('row-input', '')
+    line.dataset.side = ref.received ? 'right' : 'left'
     line.append(span('muted', ref.name))
     if (ref.received) {
       if (ref.text !== null) line.append(span('row-input-value', ref.text.length > 200 ? ref.text.slice(0, 200) + '…' : ref.text))
@@ -1053,7 +1194,7 @@ function constructedRowBody(task: TaskView, inputs: NonNullable<ReturnType<App['
     box.append(line)
   }
   const run = app.deviceHandlerFor(path, task)
-  if (run) box.append(completeButton(run, () => void app.evaluateAt(path)))
+  if (run && side !== 'left') box.append(completeButton(run, () => void app.evaluateAt(path)))
   box.addEventListener('click', event => { if ((event.target as HTMLElement).closest('input, button, select')) event.stopPropagation() })
   box.addEventListener('keydown', event => { if ((event.target as HTMLElement).closest('input, select')) event.stopPropagation() })
   return box
@@ -1210,7 +1351,37 @@ function renderConstructorPanel(head: HTMLElement, grid: HTMLElement, suggestion
   head.parentElement?.querySelector('.constructor-drop-target')?.remove()
   const dropTarget = div('constructor-drop-target', ''); dropTarget.hidden = true; dropTarget.setAttribute('role', 'status')
   head.before(dropTarget)
-  for (const c of group.items) grid.append(constructorControl(app, c, dropTarget))
+  const selected = capabilityPattern(app).selected
+  const visited = new Set<string>()
+  const renderCapability = (item: ConstructorItem): HTMLElement => {
+    visited.add(item.id)
+    const node = div('capability-node', ''); node.append(constructorControl(app, item, dropTarget))
+    const children = group.items.filter(child => child.parent === item.id && !visited.has(child.id))
+    if (children.length) {
+      node.classList.add('has-subcapabilities')
+      node.firstElementChild!.setAttribute('aria-expanded', String(selected.some(term => term.id === item.id)))
+      if (selected.some(term => term.id === item.id)) { const nested = div('capability-children', ''); nested.append(...children.map(renderCapability)); node.append(nested) }
+    }
+    return node
+  }
+  for (const c of group.items.filter(item => !item.parent || !group.items.some(parent => parent.id === item.parent))) grid.append(renderCapability(c))
+  head.parentElement?.querySelector('.capability-pattern')?.remove()
+  const pattern = div('capability-pattern', '')
+  const handle = button('secondary small pattern-handle', selected.length ? `Pattern · ${selected.length}` : 'Select capabilities', () => { capabilityPattern(app).applied = selected.map(term => ({ ...term })); app.refresh() })
+  handle.draggable = !!selected.length; handle.disabled = !selected.length; handle.title = 'Drag to Filter rows, or click to apply. Selected capabilities match any of these types.'
+  handle.addEventListener('dragstart', event => {
+    event.stopPropagation(); event.dataTransfer?.setData(PATTERN_DRAG_TYPE, JSON.stringify(selected))
+    activeConstructorDrags.set(app, { store: state.replica.store, path: JSON.stringify(state.view), source: handle, clear: () => activeConstructorDrags.delete(app) })
+  })
+  handle.addEventListener('dragend', () => { activeConstructorDrags.get(app)?.clear(); app.refresh() })
+  installTouchDrag(handle); pattern.append(handle)
+  for (const term of selected) {
+    const item = options.find(item => item.id === term.id) ?? group.items.find(item => item.id === term.id)
+    const chip = button('pattern-term' + (term.negative ? ' negative' : ''), `${term.negative ? '−' : '+'} ${item?.label ?? 'Row'}`, () => { term.negative = !term.negative; app.refresh() })
+    chip.title = 'Invert capability'; pattern.append(chip)
+  }
+  pattern.append(span('muted small', 'Select · hold to drag · drag up to invert'))
+  grid.after(pattern)
   grid.hidden = false
   if (!group.items.length) grid.append(span('muted', group.id === 'library' ? 'No standard library constructors are available on this device yet.' : isTriggers ? 'No trigger handlers are active here.' : group.peer?.online === false ? 'Connect this peer to use its constructors.' : 'No constructors from this peer yet.'))
   const typed = suggestedConstructors(app); suggestions.hidden = !!preview || typed.hidden; suggestions.replaceChildren(typed)
@@ -1465,7 +1636,7 @@ function offerOrganize(app: App, text: string): void {
 }
 function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   if (!state.session && JSON.stringify(details.get(el)?.draft.path) === JSON.stringify(state.view) && el.contains(document.activeElement) && document.activeElement?.closest('.account-form')) { const error = el.querySelector('.account-form .error'); if (error) error.textContent = state.loginError ?? ''; return }
-  if (el.querySelector('.combo-panel:not([hidden])') || (el.contains(document.activeElement) && document.activeElement?.closest('.row-combobox, .argument-editor, .setting-row'))) return
+  if (JSON.stringify(details.get(el)?.draft.path) === JSON.stringify(state.view) && (el.querySelector('.combo-panel:not([hidden])') || (el.contains(document.activeElement) && document.activeElement?.closest('.row-combobox, .argument-editor, .setting-row')))) return
   const row = app.currentRow()
   el.hidden = false
   const preview = proposalPreview(app)
@@ -1478,9 +1649,12 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     const input = document.createElement('textarea'); input.className = 'edit node-title-input'; input.rows = 1
     input.setAttribute('aria-label', 'Current node text'); input.placeholder = 'Row text…'; input.value = raw
     input.readOnly = !!preview || !row || row.type === HOME_TYPE || !!row.refPeer
-    const titleRow = div('node-title-row task', ''), check = span('node-title-check', ''), after = span('node-title-after', '')
-    const editing = span('title editing', ''); editing.append(input, kindPreview(input, app), peerAutocomplete(input, app))
-    titleRow.append(check, editing, after)
+    const titleRow = document.createElement('li'), check = span('node-title-check', ''), after = span('node-title-after', '')
+    titleRow.className = 'node-title-row task current-node-row'; titleRow.style.setProperty('--depth', '0')
+    const editing = span('title editing', ''); editing.append(input, peerAutocomplete(input, app))
+    const titleLeft = div('row-left type-chip', ''), titleRight = div('row-right', '')
+    titleLeft.append(span('row-type-name', row?.scalar ? row.typeName ?? 'Value' : 'Text'), kindPreview(input, app), after); titleRight.append(check, editing)
+    titleRow.append(titleLeft, titleRight)
     const controls = div('node-actions', '')
     const entry = { key, store: state.replica.store, input, baseline: raw, draft: { store: state.replica.store, head: headCid(state.replica), path: [...state.view] }, controls, titleRow, check, after }
     const save = () => {
@@ -1492,8 +1666,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     }
     if (row?.construction || row?.template) { input.readOnly = true; input.title = 'Use Change template → Edit template to edit the constructor.' }
     if (row?.missingTemplate) { input.readOnly = true; input.title = "This row's template has not arrived from its peer yet; it can be edited once it does." }
-    input.addEventListener('dragover', event => { if (event.dataTransfer?.types.includes(CONSTRUCTOR_DRAG_TYPE)) event.preventDefault() })
-    input.addEventListener('drop', event => { if (event.dataTransfer?.types.includes(CONSTRUCTOR_DRAG_TYPE)) { save(); dropTrigger(event, app, [...state.view], true) } })
+    composeConstructorInput(input, app)
     input.addEventListener('commit-edit', save)
     input.addEventListener('blur', () => { if (!renderDepth) save() })
     input.addEventListener('keydown', event => {
@@ -1513,7 +1686,6 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     search.classList.add('node-search')
     // Title row: editable choice title, adjacent edit toggle and Run.
     const header = div('node-header', '')
-    const heading = document.createElement('h1'); heading.className = 'node-title'
     const toolbar = div('node-toolbar', '')
     const run = button('evaluate', '', () => { input.dispatchEvent(new window.Event('commit-edit')); void app.startExecution(app.currentRow()?.construction?.evaluation ? app.state.view.slice(0, -1) : [...app.state.view]) })
     run.innerHTML = `${iconSvg('▶') ?? ''}<span>Run</span>`
@@ -1523,7 +1695,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     analyze.innerHTML = `${iconSvg('analysis') ?? ''}<span>Analyze</span>`
     analyze.title = 'Analyze node'; analyze.setAttribute('aria-label', 'Analyze node')
     toolbar.append(run, analyze)
-    const titleSection = div('node-title-section', ''); titleSection.append(heading, editToggle)
+    const titleSection = div('node-title-section', ''); titleSection.append(span('workspace-label', 'Rows'), editToggle)
     // the node's choices (branches, submissions): a caret at the header's top right, whether or not it has a title
     const choices = div('node-choices', '')
     header.append(titleSection, choices, toolbar)
@@ -1535,7 +1707,17 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     // Capture: long text (pasted or typed) the account's model organizes into this node's subtree, kept as a note too
     const capture = div('capture-input', '')
     const captureText = document.createElement('textarea'); captureText.className = 'capture-text'; captureText.rows = 3
-    captureText.placeholder = 'Paste or type notes, then organize them into this node…'; captureText.setAttribute('aria-label', 'Text to organize into this node')
+    captureText.placeholder = 'Write a row, or paste notes…'; captureText.setAttribute('aria-label', 'Node input')
+    captureText.rows = 1
+    composeConstructorInput(captureText, app)
+    const send = iconButton('play', 'Add input as rows', () => {
+      if (!captureText.value.trim() || state.replica.store !== app.state.replica.store) return
+      const text = captureText.value; captureText.value = ''
+      app.pasteRows(parsePastedRows(text), [])
+      captureText.dispatchEvent(new window.Event('input')); captureText.focus()
+    })
+    send.classList.add('composer-send'); send.disabled = true
+    captureText.addEventListener('input', () => { send.disabled = !captureText.value.trim() })
     const organize = button('secondary small organize-capture', 'Organize into this node', () => {
       const at = [...state.view]
       void app.organizeText(captureText.value, at).then(filed => { if (filed) captureText.value = ''; organize.disabled = !captureText.value.trim() })
@@ -1544,7 +1726,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     captureText.addEventListener('input', () => { organize.disabled = !captureText.value.trim() || !!app.state.voice || !app.canOrganize() })
     captureText.addEventListener('keydown', event => {
       event.stopPropagation()
-      if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !organize.disabled) { event.preventDefault(); organize.click() }
+      if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && !send.disabled) { event.preventDefault(); send.click() }
     })
     // what the account organizes is a submission by fos; accepting it right away is still one local, undoable edit
     const autoAccept = document.createElement('label'); autoAccept.className = 'muted small auto-accept-captures'
@@ -1552,8 +1734,17 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     autoAcceptBox.addEventListener('change', () => app.setAutoAcceptCaptures(autoAcceptBox.checked))
     autoAccept.title = 'Otherwise each organized capture waits as a submission from fos in this node\'s Branches until you accept it'
     autoAccept.append(autoAcceptBox, ' Accept right away')
-    capture.append(captureText, organize, autoAccept)
-    const edit = div('node-input', ''); edit.append(div('input-controls', ''), voice, capture)
+    capture.append(captureText, send)
+    const inputMenu = document.createElement('details'); inputMenu.className = 'input-menu'
+    const inputSummary = document.createElement('summary'); inputSummary.innerHTML = iconSvg('+') ?? '+'; inputSummary.setAttribute('aria-label', 'More input options'); inputSummary.title = 'Images, videos, text and files'
+    const inputOptions = div('input-menu-options', ''); inputOptions.append(div('input-controls', ''), organize, autoAccept)
+    inputMenu.append(inputSummary, inputOptions)
+    const edit = div('node-input', ''); edit.setAttribute('aria-label', 'Input'); edit.append(inputMenu, div('node-input-fields', ''), capture, voice)
+    composerObservers.get(el)?.disconnect()
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(() => el.closest<HTMLElement>('#app')?.style.setProperty('--composer-height', `${edit.getBoundingClientRect().height}px`))
+      observer.observe(edit); composerObservers.set(el, observer)
+    }
     const head = div('constructor-head', ''); head.append(search)
     const grid = div('constructor-palette constructor-grid', ''); grid.setAttribute('role', 'tabpanel')
     const suggestions = div('constructor-suggestions', '')
@@ -1569,11 +1760,9 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   }
   const prefs = workspace(app)
   const header = el.querySelector<HTMLElement>('.node-header')!, toolbar = header.querySelector<HTMLElement>('.node-toolbar')!
-  const heading = header.querySelector<HTMLElement>('.node-title')!
   if (row && row.type !== HOME_TYPE) {
-    if (cached.titleRow.parentElement !== heading) heading.replaceChildren(cached.titleRow)
     const unscheduled = missingSchedule(app.currentTrigger())
-    cached.titleRow.className = 'node-title-row task type-' + typeClass(row) + (row.done ? ' done' : '') + (row.requirement && !row.requirement.satisfied || unscheduled ? ' unmet' : '')
+    cached.titleRow.className = 'node-title-row task current-node-row type-' + typeClass(row) + (row.done ? ' done' : '') + (row.requirement && !row.requirement.satisfied || unscheduled ? ' unmet' : '')
     cached.check.replaceChildren()
     if (row.checkable) {
       const box = document.createElement('input'); box.type = 'checkbox'; box.checked = row.done; box.setAttribute('aria-label', row.done ? 'Mark open' : 'Mark done')
@@ -1586,8 +1775,8 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     if (row.missingTemplate) cached.after.append(span('kind-badge unmet', 'reference error'))
     if (row.blockedBy?.length) cached.after.append(span('blocked-badge', `Needs: ${row.blockedBy.join(', ')}`))
     if (unscheduled) cached.after.append(span('blocked-badge', `Needs: ${unscheduled}`))
-  } else heading.textContent = title
-  header.querySelector<HTMLElement>('.node-choices')!.replaceChildren(...(row && row.type !== HOME_TYPE ? [alternativePicker(app, state.view, row, false, true)] : []))
+  }
+  header.querySelector<HTMLElement>('.node-choices')!.replaceChildren(alternativePicker(app, state.view, row, false, true))
   header.classList.toggle('home', row?.type === HOME_TYPE)
   header.querySelector('.shared-grants')?.remove()
   const shared = app.sharedNodeAt(state.view)
@@ -1620,7 +1809,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     if (row.requirement.capability === 'choice') for (const [choice, label] of (row.requirement.options ?? []).entries()) controls.append(choiceButton(app, state.view.slice(0, -1), row.id, choice, label, true))
   }
   const edit = el.querySelector<HTMLElement>('.node-input')!
-  edit.id = 'node-input'; edit.hidden = !prefs.input
+  edit.id = 'node-input'; edit.hidden = !prefs.input || !!preview || !!row?.refPeer
   const inputs = edit.querySelector<HTMLElement>('.input-controls')!; inputs.replaceChildren()
   for (const redo of [false, true]) {
     const control = iconButton(redo ? '↪' : '↶', redo ? 'Redo in this node' : 'Undo in this node', () => { document.activeElement?.dispatchEvent(new window.Event('commit-edit')); if (document.activeElement !== cached!.input) cached!.input.dispatchEvent(new window.Event('commit-edit')); app.undoNode(redo) })
@@ -1645,7 +1834,8 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   el.querySelector(':scope > .account-form')?.remove()
   if (!state.session && (row?.construction?.peerId === 'fos' || row?.construction?.handler === 'fos')) { const auth = div('account-form', ''); renderConnect(auth, state, app); controls.after(auth) }
   if (inTauri() && row && app.repositoryInfo() && !localRepository(state.replica, state.view)) controls.append(button('secondary small', 'Attach local checkout…', () => openConstructor(app, 'repository', [...state.view], true)))
-  inputs.append(button('secondary small', 'Export YAML', () => downloadText('fos-nodes.yaml', app.exportYaml())))
+  inputs.append(button('secondary small', 'Text dump', () => { el.querySelector<HTMLTextAreaElement>('.capture-text')!.focus() }), button('secondary small', 'Download YAML', () => downloadText('fos-nodes.yaml', app.exportYaml())))
+  inputs.append(span('muted small', 'Markdown / YAML → rows'))
   const dynamicValues = el.querySelector<HTMLElement>('.node-values-dynamic')!
   dynamicValues.replaceChildren()
   for (const arg of app.placeholders()) {
@@ -1718,9 +1908,14 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   controls.hidden = !actionBody.childElementCount && availableTabs.length <= 1
   el.querySelector<HTMLElement>('[data-slot="voice"]')!.hidden = !!preview
   const capture = el.querySelector<HTMLElement>('.capture-input')!
-  capture.hidden = !!preview || !!row?.refPeer
-  capture.querySelector<HTMLInputElement>('.auto-accept-captures input')!.checked = app.autoAcceptCaptures
-  const organize = capture.querySelector<HTMLButtonElement>('.organize-capture')!
+  const declaredInputs = row && app.rowInputs(state.view)
+  const inputFields = edit.querySelector<HTMLElement>('.node-input-fields')!
+  if (!inputFields.contains(document.activeElement)) inputFields.replaceChildren(...(row && declaredInputs ? [constructedRowBody(row, declaredInputs, [...state.view], app)] : []))
+  inputFields.hidden = !declaredInputs || !!preview
+  edit.classList.toggle('has-declared-inputs', !!declaredInputs)
+  capture.hidden = !!preview || !!row?.refPeer || !!declaredInputs
+  edit.querySelector<HTMLInputElement>('.auto-accept-captures input')!.checked = app.autoAcceptCaptures
+  const organize = edit.querySelector<HTMLButtonElement>('.organize-capture')!
   organize.disabled = !capture.querySelector<HTMLTextAreaElement>('.capture-text')!.value.trim() || !!state.voice || !app.canOrganize()
   organize.title = app.canOrganize() ? ORGANIZE_TITLE : state.session?.kind === 'user' ? 'Organizing needs a Fos peer with a language model' : 'Connect to your account to organize text'
   el.querySelector<HTMLElement>('[data-slot="repository"]')!.hidden = !!preview || !['main', 'repo'].includes(prefs.actionTab)
@@ -1736,6 +1931,19 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     filter = document.createElement('input'); filter.type = 'search'; filter.className = 'child-search'; filter.placeholder = 'Filter rows'; filter.setAttribute('aria-label', 'Filter children'); filter.value = prefs.search
     filter.addEventListener('input', () => { prefs.search = filter!.value; app.refresh() }); childToolbar.prepend(filter)
   }
+  filter.ondragover = event => { if (event.dataTransfer?.types.includes(PATTERN_DRAG_TYPE)) { event.preventDefault(); filter!.classList.add('drop-into') } }
+  filter.ondragleave = () => filter!.classList.remove('drop-into')
+  filter.ondrop = event => {
+    if (!event.dataTransfer?.types.includes(PATTERN_DRAG_TYPE)) return
+    event.preventDefault(); event.stopPropagation(); filter!.classList.remove('drop-into')
+    try {
+      const terms: unknown = JSON.parse(event.dataTransfer.getData(PATTERN_DRAG_TYPE))
+      const available = new Set(constructorOptions(app).map(item => item.id))
+      if (Array.isArray(terms) && terms.length < 200 && terms.every(term => typeof term?.id === 'string' && available.has(term.id) && typeof term.negative === 'boolean')) { capabilityPattern(app).applied = terms; app.refresh() }
+    } catch { /* Ignore an invalid drag from another application. */ }
+  }
+  const applied = capabilityPattern(app).applied
+  if (applied.length) childToolbar.append(button('secondary small active-pattern', `Pattern · ${applied.length} ×`, () => { capabilityPattern(app).applied = []; app.refresh() }))
   const suggestions = document.createElement('datalist'); suggestions.id = 'child-filter-options'
   for (const tag of tags) suggestions.append(new Option(`type:${tag}`, `type:${tag}`))
   for (const child of app.currentView()?.tasks ?? []) suggestions.append(new Option(child.title, child.title))
@@ -1745,15 +1953,15 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
 const ghostRows = new WeakMap<HTMLElement, { row: HTMLElement; store: AppState['replica']['store']; path: string }>()
 
 function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App): void {
-  if (el.querySelector('.combo-panel:not([hidden])') || (el.contains(document.activeElement) && document.activeElement?.closest('.row-combobox, .argument-editor, .setting-row, .account-form'))) return
   const cached = ghostRows.get(el)
   const path = JSON.stringify(state.view)
+  if (cached?.path === path && (el.querySelector('.combo-panel:not([hidden])') || (el.contains(document.activeElement) && document.activeElement?.closest('.row-combobox, .argument-editor, .setting-row, .account-form')))) return
   const reuse = cached && cached.store === state.replica.store && cached.path === path && cached.row.parentNode === el
   if (!reuse && !state.selected) focusGhost = true
   const ghost = reuse ? cached.row : renderGhostRow(node, state, app)
   const prefs = workspace(app)
   el.className = `list tree layout-${prefs.layout}`
-  const textMatches = (row: TaskView, path: Scope): boolean => matchesSearch(row, prefs.search) || (path.length < 64 && !!viewAt(state.replica, path)?.tasks.some(child => textMatches(child, [...path, child.id])))
+  const textMatches = (row: TaskView, path: Scope): boolean => (matchesSearch(row, prefs.search) && patternMatches(app, row)) || (path.length < 64 && !!viewAt(state.replica, path)?.tasks.some(child => textMatches(child, [...path, child.id])))
   const matches = (row: TaskView): boolean => textMatches(row, [...state.view, row.id])
   node = { ...node, tasks: node.tasks.filter(row => settingKeyOf(row) !== 'history') }
   // Home lists one of its bookkeeping rows, where this device left off; the other constructors stay in Settings.
@@ -1761,8 +1969,13 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
     const remembered = viewAt(state.replica, state.view, true)?.tasks.find(row => settingKeyOf(row) === 'view' && row.construction?.holder === state.replica.meta.peerId)
     if (remembered && !node.tasks.some(row => row.id === remembered.id)) node = { ...node, tasks: [...node.tasks, remembered] }
   }
-  const filtered = prefs.search ? { ...node, tasks: node.tasks.filter(matches) } : node
+  const filtered = prefs.search || capabilityPattern(app).applied.length ? { ...node, tasks: node.tasks.filter(matches) } : node
   let rows = renderRows(filtered, [], 0, state, app)
+  // Schema fields are already ordinary rows. Legacy text is shown in the same list,
+  // never in a separate title editor, and absent text does not invent a title input.
+  const detailElement = el.closest('#app')?.querySelector<HTMLElement>('[data-region="node"]')
+  const detail = detailElement && details.get(detailElement), current = app.currentRow()
+  if (detail && current && current.type !== HOME_TYPE && !current.form && (current.title || current.scalar) && !proposalPreview(app)) rows.unshift(detail.titleRow)
   const preview = proposalPreview(app)
   // Home shows what relays delivered to this device
   const inbox = !preview && state.view.length === 1 && app.isHome(state.view) && !state.atRoot ? renderRelayInbox(app) : null
@@ -1795,8 +2008,9 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
   }
   if (reuse) {
     // Keep the actual draft input attached: replacing it loses focus, text undo and the caret on sync.
-    for (const child of Array.from(el.children)) if (child !== ghost && child.parentNode === el) child.remove()
-    ghost.before(...rows)
+    const currentText = detail && rows.includes(detail.titleRow) && detail.titleRow.parentNode === el ? detail.titleRow : null
+    for (const child of Array.from(el.children)) if (child !== ghost && child !== currentText && child.parentNode === el) child.remove()
+    ghost.before(...rows.filter(row => row !== currentText))
   } else {
     el.replaceChildren(...rows, ghost)
     ghostRows.set(el, { row: ghost, store: state.replica.store, path })
@@ -1983,8 +2197,8 @@ function argumentEditor(app: App, at: Scope, id: string, name: string, text: str
 /** Rows for `node`'s tasks (and nested choices) at `depth`; `at` is the path relative to the view. */
 function renderRows(node: NodeView, at: Scope, depth: number, state: AppState, app: App): HTMLElement[] {
   const query = workspace(app).search
-  const matches = (row: TaskView, path: Scope): boolean => matchesSearch(row, query) || (path.length < 64 && !!viewAt(state.replica, [...state.view, ...path])?.tasks.some(child => matches(child, [...path, child.id])))
-  if (query) node = { ...node, tasks: node.tasks.filter(row => matches(row, [...at, row.id])) }
+  const matches = (row: TaskView, path: Scope): boolean => (matchesSearch(row, query) && patternMatches(app, row)) || (path.length < 64 && !!viewAt(state.replica, [...state.view, ...path])?.tasks.some(child => matches(child, [...path, child.id])))
+  if (query || capabilityPattern(app).applied.length) node = { ...node, tasks: node.tasks.filter(row => matches(row, [...at, row.id])) }
   const rows: HTMLElement[] = []
   const argumentsById = new Map((node.tasks.some(row => row.typeCid === state.replica.store.primitive.documentField.getId()) ? app.textArguments(at) : []).map(arg => [arg.id, arg]))
   // the device root is a settings page: its rows stay rows, shown in groups
@@ -2160,7 +2374,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   else if (fileReference) { body = span('title', fileReference.path.split('/').at(-1)!); body.append(renderFileReference(app, [...state.view, ...at, task.id], fileReference)) }
   else if (task.type === HOME_TYPE) { body = span('title home-node', ''); body.innerHTML = iconSvg('⌂')!; body.setAttribute('aria-label', 'Home'); body.title = 'Home' }
   else if (task.construction && !(task.construction.handler && selected)) { body = constructorBody(task, state, app, [...state.view, ...at, task.id]) }
-  else if (!selected && (inputs = app.rowInputs([...state.view, ...at, task.id]))) { body = constructedRowBody(task, inputs, [...state.view, ...at, task.id], app) }
+  else if ((inputs = app.rowInputs([...state.view, ...at, task.id]))) { body = constructedRowBody(task, inputs, [...state.view, ...at, task.id], app, 'right') }
   else if (task.form && !task.text && !task.headline) { body = renderForm(task, at, state, app) }
   else if (selected && task.refId === undefined && (!hasControls(task) || editingSpecial === task.id)) {
     body = renderEditor(task, at, state, app)
@@ -2218,9 +2432,23 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   void index; void siblingCount
 
   // a typed row shows its type raised at the left: the row's eager side, before its lazy text
-  const type = task.type && task.type !== PLAIN_TYPE && task.type !== HOME_TYPE && task.typeName ? span('type-chip', task.typeName) : null
-  if (type) type.title = `${task.typeName} row`
-  li.append(zoom, handle, toggle, checkbox, ...(type ? [type] : []), body, meta, choices)
+  const left = div('row-left type-chip', ''), right = div('row-right', '')
+  left.setAttribute('aria-label', 'Capability and inputs'); right.setAttribute('aria-label', 'Value and outputs')
+  if (task.typeCid && task.type !== PLAIN_TYPE && task.type !== HOME_TYPE) {
+    const type = span('row-type-name', task.typeName || task.template?.name || 'Capability')
+    const presentation = capabilityPresentation(state.replica.store, task.typeCid)
+    if (presentation.icon) { const icon = span('row-type-icon', ''); icon.innerHTML = iconSvg(presentation.icon) ?? ''; if (!icon.childElementCount) icon.textContent = presentation.icon; left.append(icon) }
+    type.title = presentation.description || `${type.textContent} row`; left.append(type)
+    if (isNegative(state.replica.store, task.typeCid)) { left.classList.add('negative'); left.append(span('polarity-tag', '−')) }
+  }
+  if (inputs?.some(ref => !ref.received)) left.append(constructedRowBody(task, inputs, [...state.view, ...at, task.id], app, 'left'))
+  const leftTags = span('row-left-tags', '')
+  for (const tag of Array.from(body.querySelectorAll('.kind-preview, .kind-badge'))) leftTags.append(tag)
+  for (const tag of Array.from(meta.querySelectorAll('.kind-badge, .blocked-badge'))) leftTags.append(tag)
+  if (leftTags.childElementCount) left.append(leftTags)
+  left.hidden = !left.childElementCount
+  meta.classList.add('row-right-meta'); right.append(checkbox, body, meta)
+  li.append(zoom, handle, toggle, left, right, choices)
   return li
 }
 
