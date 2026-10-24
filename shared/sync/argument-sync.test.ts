@@ -1,6 +1,6 @@
 import { createReplica, ensureHomeContext, shareHome, addRefAt, HOME_ID, put, refValueCid, content, resolveScope, headCid, argumentRefs, proposeRefAt, applyProposalAt, nodeShape, provideNode, SERVER_TRANSPORT_CAPABILITIES, writeNodeValue, addMemberAt, setNodeLinkMask, readNodeValue, type Replica } from './index'
 import { syncWith } from './test-helpers'
-import { acceptProvidedNode, resolveRefExpression, readGraphValue, inspectRef } from './index'
+import { acceptProvidedNode, resolveRefExpression, readGraphValue, bindingProperties } from './index'
 import { addRow, updateAtScope, commitRoot, valueContent, acceptsChild, rowTypeAt, isRowOfType, PATTERN_TYPE } from './index'
 
 const device = (id: string) => shareHome(ensureHomeContext(createReplica(id), 0))
@@ -64,7 +64,7 @@ test('loading a binding on demand preserves its type and name on the receiving n
   expect(property.status).toBe('ready')
   expect(readGraphValue(receiver.store, property.locations[0]!.cid)).toBe('bound text')
   const binding = resolveScope(receiver.store, headCid(receiver), [HOME_ID, child.id])!
-  expect(inspectRef(receiver.store, binding, child.template).values[0]!.refs.map(ref => ref.name)).toEqual(['text'])
+  expect(bindingProperties({ store: receiver.store, cid: binding, path: [HOME_ID, child.id] }).bindings.map(ref => ref.name)).toEqual(['text'])
 })
 test('unbound and bound row arguments retain their identity, names, types and values through account exchange', () => {
   const account = ensureHomeContext(createReplica('user:alice'), 0)

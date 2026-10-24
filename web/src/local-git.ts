@@ -1,4 +1,4 @@
-import { localRepositoryHere } from '../../shared/sync/repository'
+import { localRepositoryAt } from '../../shared/sync/repository'
 import type { App } from './app'
 import { launchAgent } from './agents'
 import { inTauri, tauriInvoke } from './project'
@@ -7,13 +7,8 @@ import { argumentRefs, libAt, content, contextMembers, headCid, refValueCid, res
 type Snapshot = { cwd: string; branch: string; head: string; revision: string; specifications: FeatureSpecification[]; branches: string[]; merged: boolean; dirty: boolean }
 type Binding = { path: string; scope: Scope; peer: string }
 function binding(app: App, path = app.state.view): Binding | null {
-  const r = app.state.replica
-  for (let depth = path.length; depth >= 0; depth--) {
-    const scope = path.slice(0,depth), data = localRepositoryHere(r, scope)
-    if (!data) continue
-    if (data.device === r.meta.peerId) return { path: data.path, scope, peer: data.peer }
-  }
-  return null
+  const r = app.state.replica, found = localRepositoryAt(r, path)
+  return found?.repository.device === r.meta.peerId ? { path: found.repository.path, scope: found.scope, peer: found.repository.peer } : null
 }
 type State = { binding: Binding; store: App['state']['replica']['store']; session: App['state']['session']; snapshot?: Snapshot; observed?: {branch:string;head:string;graph:string;disk:string}; graph?: string; disk?: string; busy: boolean; error?: string; conflict?: Snapshot; timer?: ReturnType<typeof setTimeout> }
 const states = new WeakMap<App, State>()

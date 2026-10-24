@@ -1,7 +1,7 @@
 import {
   addRefAt, addRow, addTask, applyProposalAt, choosePatternBindingAt, content, createReplica, findEdge, headCid, identityCid, loadReplica,
   patternBindings, PLAIN_TYPE, put, readProposals, refNodeContent, refValueCid, resolveScope, serializeReplica, solveAt, unify,
-  usePatternAt, valueContent, type Replica
+  usePatternAt, valueContent, compileRefGraph, type Replica
 } from './index'
 
 const cid = (r: Replica, path: string[]) => resolveScope(r.store, headCid(r), path)!
@@ -60,9 +60,11 @@ test('unify binds placeholders and requires the same placeholder to meet the sam
   const twice = put(r.store, { data: {}, children: [[key, x], [text, x]] })
   const same = put(r.store, { data: {}, children: [[key, leaf(r, 'a')], [text, leaf(r, 'a')]] })
   const different = put(r.store, { data: {}, children: [[key, leaf(r, 'a')], [text, leaf(r, 'b')]] })
-  expect(unify(r.store, twice, same)?.get('x')).toBe(leaf(r, 'a'))
-  expect(unify(r.store, twice, different)).toBeNull()
-  expect(unify(r.store, put(r.store, { data: {}, children: [[key, x]] }), put(r.store, { data: {}, children: [] }))).toBeNull()
+  const compiled = compileRefGraph(r, twice)
+  expect(unify(r.store, compiled.cid, same)?.get(compiled.holes[0]!.cid)).toBe(leaf(r, 'a'))
+  expect(unify(r.store, compiled.cid, different)).toBeNull()
+  expect(unify(r.store, compileRefGraph(r, put(r.store, { data: {}, children: [[key, x]] })).cid, put(r.store, { data: {}, children: [] }))).toBeNull()
+  expect(() => unify(r.store, twice, same)).toThrow(/Compile editor references/)
 })
 
 test('solve submits every solution in scope, ancestors included, to the placeholders as options; binding one keeps the others', () => {

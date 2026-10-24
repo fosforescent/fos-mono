@@ -4,7 +4,7 @@ import {
   libraryBindingAt, libraryInstanceEdge, libraryInstanceOf, libraryTypeAt, loadReplica, nativeRef,
   nestScope, publishNativeRef, primitiveExecutors, put, refNodeContent, resolveRefExpression,
   restoreNativeRef, rowTypeAt, serializeReplica, typeIdOf, updateAtScope, valueContent,
-  capabilityName, triggerDefinitionOf, handlerOfferId, discoverHandlers, addRefCall, evaluationSteps, findTemplateByName, TEMPLATE_TYPE, type EvaluationStep
+  capabilityName, triggerDefinitionOf, handlerOfferId, discoverHandlers, addRefCall, evaluationSteps, findTemplateByName, TEMPLATE_TYPE, enclosingScopes, lookupInScope, nearestInScope, type EvaluationStep
 } from './index'
 import { declareTestCapability } from './test-helpers'
 
@@ -164,4 +164,26 @@ test('constructor names are explicit string rows and ambiguous names fail', () =
   expect(() => typeIdOf(store, ambiguous)).toThrow('Ambiguous constructor name')
   const invalid = put(store, { data: {}, children: [[key, unnamed]] })
   expect(() => typeIdOf(store, invalid)).toThrow('must be a string')
+})
+
+test('every lookup by name stops at the nearest scope that answers: ambiguous and blocked never fall through', () => {
+  let r = addTask(createReplica(), [], 'Outer', 1, 'outer')
+  r = addTask(r, ['outer'], 'Inner', 2, 'inner')
+  const scopes = enclosingScopes(r.store, headCid(r), ['outer', 'inner'])
+  const declares = (answers: Record<string, string[] | null>) => (scope: { path: string[] }) => { const key = scope.path.join('/'); return key in answers ? answers[key]! : [] }
+  expect(lookupInScope(scopes, declares({ '': ['root'], 'outer': ['near'] }))).toMatchObject({ status: 'ready', value: 'near' })
+  expect(lookupInScope(scopes, declares({ '': ['root'], 'outer': ['a', 'b'] }))).toMatchObject({ status: 'ambiguous', values: ['a', 'b'] })
+  expect(lookupInScope(scopes, declares({ '': ['root'], 'outer': null }))).toMatchObject({ status: 'blocked', scope: { path: ['outer'] } })
+  expect(lookupInScope(scopes, declares({}))).toEqual({ status: 'missing' })
+  expect(() => nearestInScope(scopes, declares({ 'outer': ['a', 'b'] }), 'thing')).toThrow('Ambiguous thing in this scope.')
+  expect(() => nearestInScope(scopes, declares({ 'outer': null, '': ['root'] }), 'thing')).toThrow('The thing in this scope is unavailable.')
+})
+
+test('a ref path denied at a nearer scope does not resolve from an outer one', () => {
+  let r = addTask(createReplica(), [], 'Child', 1, 'child'), text = r.store.primitive.documentField.getId()
+  const literal = (value: string) => put(r.store, { data: { description: { content: value } }, children: [] })
+  r = addRefAt(r, [], 'outer', text, 2, literal('outer'), 'chosen')
+  r = addRefAt(r, ['child'], 'inner', text, 3, literal('inner'), 'chosen')
+  const inner = resolveRefExpression(r, ['child'], 'chosen').locations[0]!.cid
+  expect(resolveRefExpression(r, ['child'], 'chosen', { canRead: (_store, cid) => cid !== inner }).status).toBe('denied')
 })

@@ -3,7 +3,7 @@ import { hydrateDiagrams, renderMarkdown } from './markdown'
 import { parseShareAddress, renderSitePage, siteAnswers, SITE_CSS, type SiteAnswers } from './site'
 import type { App } from './app'
 import { sharedRequest, type ShareAddress } from './api'
-import { participants, publishedUrl, handlerResult, resolveRef, isDirty, type SharedInput, type SharedNode } from '../../shared/sync/index'
+import { participants, publishedUrl, handlerResult, findRowByAlias, headCid, isDirty, type SharedInput, type SharedNode } from '../../shared/sync/index'
 
 function element<K extends keyof HTMLElementTagNameMap>(tag: K, text = ''): HTMLElementTagNameMap[K] {
   const el = document.createElement(tag); el.textContent = text; return el
@@ -121,7 +121,7 @@ export function mountSharedNode(root: HTMLElement, app: App, baseUrl: string): v
     const search = element('input'); search.placeholder = 'Find a value in your context'; search.setAttribute('aria-label', `Find value for ${field.name}`)
     const matches = element('div'), linked = element('p', current.fields[field.key]?.source ? 'Linked to your context; saving refreshes the requested value.' : '')
     const choose = (id: string) => {
-      const match = resolveRef(app.state.replica, id)
+      const match = findRowByAlias(app.state.replica.store, headCid(app.state.replica), id)
       if (!match || (field.kind === 'allocation' && (!match.row.allocation || match.row.allocation.type !== field.type || match.row.allocation.unit !== field.unit))) { linked.textContent = 'Choose a value of the required type.'; return }
       current.fields[field.key] = { source: id }; linked.textContent = `Linked: ${match.row.title}. Only the requested value will be shared.`
     }
@@ -143,7 +143,7 @@ export function mountSharedNode(root: HTMLElement, app: App, baseUrl: string): v
       for (const [key, entry] of Object.entries(given.fields)) if (entry.source) {
         sources[key] = entry.source
         if (!currentSession()) {
-          const field = snapshot.inputs.find(f => f.key === key)!, row = resolveRef(app.state.replica, entry.source)?.row
+          const field = snapshot.inputs.find(f => f.key === key)!, row = findRowByAlias(app.state.replica.store, headCid(app.state.replica), entry.source)?.row
           if (!row) throw new Error('A linked value is no longer available in your context.')
           const allocation = row.allocation
           submitted[key] = { value: field.kind === 'text' ? row.title : allocation ? { amount: allocation.amount, type: allocation.type, unit: allocation.unit, start: allocation.start, end: allocation.end } : null }

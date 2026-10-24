@@ -106,7 +106,7 @@ export function verifyHandler(deps: VerifyDeps, key: IdentityKey, peer = 'fos'):
       const user = await resolve(name)
       if (!user) throw new Error(`No Fos user is named @${name}.`)
       let next = bindUserAt(ctx.replica(), path, user, ctx.now())
-      next = addSupply(next, path.slice(0, -1), path.at(-1)!, { capability: 'verify', by: peer, ref: user.account }, ctx.now())
+      next = addSupply(next, path.slice(0, -1), path.at(-1)!, { capability: 'verify', by: peer, receipt: user.account }, ctx.now())
       await ctx.update(next)
     }
   }

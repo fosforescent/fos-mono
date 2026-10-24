@@ -126,14 +126,14 @@ test("a visitor's approval is an approval row of the submission; it merges only 
   expect(withdrawn.body.node.counts[id]).toBe(0)
   expect(approvalsOf(s.replicas.host.store, open()[0]!.cid)).toEqual([])
 })
-test('allocation links expose only requested fields and reject mismatching sources', async () => {
+test('allocation links preserve supplied time bounds, hide private locators and reject mismatching sources', async () => {
   const s = setup('users')
   s.replicas.host = addRow(s.replicas.host, ['poll'], ALLOCATION_TYPE, 'Bring one dress', 5, { id: 'need', requirement: { capability: 'allocation', resource: 'inventory', unit: 'dress', amount: 1 } })
   s.replicas.guest = addRow(s.replicas.guest, [], ALLOCATION_TYPE, 'private inventory label', 5, { id: 'dress', allocation: { resource: 'private-bank', type: 'inventory', unit: 'dress', amount: 1, start: 123, end: 456 } })
   const visit = await s.call('visit', at, 'guest')
   const saved = await s.call('submit', input(visit.body, { fields: { need: { source: 'dress' } } }), 'guest')
   expect(saved.status).toBe(200)
-  expect(saved.body.node.mine.fields.need).toEqual({ amount: 1, type: 'inventory', unit: 'dress' })
+  expect(saved.body.node.mine.fields.need).toEqual({ amount: 1, type: 'inventory', unit: 'dress', start: 123, end: 456 })
   expect(JSON.stringify(saved.body.node.mine)).not.toContain('private-bank')
   expect((await s.call('submit', input(visit.body, { fields: { need: { source: 'source' } } }), 'guest')).status).toBe(400)
   expect(view(s.replicas.guest, [HOME_ID])!.tasks.some(t => view(s.replicas.guest, [HOME_ID, t.id])?.members.some(m => m.peerId === 'user:host'))).toBe(true)

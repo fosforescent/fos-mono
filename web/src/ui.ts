@@ -27,7 +27,6 @@ import QRCode from 'qrcode'
 import { sharingControls } from './sharing'
 import { readNodeValue, nodeShape, NODE_PERMISSION_DEFAULT, requirementOutputs, resolveRequirementOutput, resolveScope, resolveText, put, content, headCid, viewNode, findChild, WORK_SYSTEM, isDirty, view as viewAt, type ChoiceView, homePath, type MovePosition, type NodeView, type Scope, type TaskView } from '../../shared/sync/index'
 import type { App, AppState, ContextPeer } from './app'
-import { exportNote, noteContext, noteFilename, type NoteChild } from './notes'
 import { hydrateDiagrams, renderMarkdown } from './markdown'
 import { RESOURCE_NAME, SYNTAX_HELP, allocationTag, describeParsed, downloadText, formatAmount, rawRowText, renderInlineText } from './rows'
 import { consumption } from '../../shared/sync/execution-access'
@@ -911,12 +910,12 @@ function constructorPalette(app: App, ids: string[]): HTMLElement {
 }
 const HOUR_MS = 3_600_000
 /** Calendar banks with the spans already allocated from them, for the time-block picker's timeline. */
-function timeBanks(app: App): TimeBank[] {
+function timeBanks(app: App, at: Scope = app.state.view): TimeBank[] {
   const allocations = app.allocations()
-  return app.banks().filter(({ row }) => row.resource.type === 'calendar').map(({ row }) => ({
+  return app.contextBanks(at).filter(({ row }) => row.resource.type === 'calendar').map(({ row }) => ({
     id: row.id, name: row.title,
-    busy: allocations.filter(a => a.row.allocation?.resource === row.id && a.row.allocation.start !== undefined).map(a => ({
-      start: a.row.allocation!.start!, end: a.row.allocation!.end ?? a.row.allocation!.start! + a.row.allocation!.amount * HOUR_MS,
+    busy: allocations.filter(a => a.row.allocation?.resource === row.id).map(a => ({
+      start: a.row.allocation!.start ?? -Infinity, end: a.row.allocation!.end ?? Infinity,
       label: a.row.title || formatAmount(a.row.allocation!.amount, a.row.allocation!.unit), open: () => app.goTo(a.path)
     }))
   }))
@@ -925,8 +924,9 @@ function timeBanks(app: App): TimeBank[] {
 async function pickTimeForRequirement(app: App, path: Scope, task: TaskView): Promise<void> {
   const r = task.requirement; if (!r) return
   const store = app.state.replica.store
-  const bank = app.bankFor(path.slice(0, -1), 'calendar')
-  const picked = await openTimeBlockPicker({ title: task.title || 'Time requirement', text: task.title, amount: r.amount, start: r.start, end: r.end, banks: timeBanks(app), bank: bank?.id ?? '', requirement: true, cta: 'Create allocation' })
+  const candidates = app.contextBanks(path).filter(({ row }) => row.resource.type === 'calendar')
+  const bank = candidates.length === 1 ? candidates[0].row : null
+  const picked = await openTimeBlockPicker({ title: task.title || 'Time requirement', text: task.title, amount: r.amount, start: r.start, end: r.end, banks: timeBanks(app, path), bank: bank?.id ?? '', requirement: true, cta: 'Create allocation' })
   if (!picked || picked.start === undefined) return
   if (app.state.replica.store !== store) { app.notify('error', 'The data session changed. Pick the time again.'); return }
   try { app.applyConstructor(path, { type: ALLOCATION_TYPE, text: task.title, done: false, extras: { allocation: { type: 'calendar', amount: picked.amount, unit: 'h', resource: picked.bank, start: picked.start, end: picked.end } } }, true) }
@@ -958,7 +958,7 @@ function openConstructor(app: App, kind: string, path: Scope = [...app.state.vie
   // Time allocations can be placed on the zoomable timeline; the picker fills the amount, window and source bank below.
   const pickTime = div('pick-time', ''), pickSummary = document.createElement('code')
   const pickButton = button('secondary small', 'Pick time…', () => void (async () => {
-    const picked = await openTimeBlockPicker({ title: title.value || 'Time allocation', text: title.value, amount: Number(amount.value) || 1, start: start.value ? new Date(start.value).getTime() : undefined, end: end.value ? new Date(end.value).getTime() : undefined, banks: timeBanks(app), bank: bank.value })
+    const picked = await openTimeBlockPicker({ title: title.value || 'Time allocation', text: title.value, amount: Number(amount.value) || 1, start: start.value ? new Date(start.value).getTime() : undefined, end: end.value ? new Date(end.value).getTime() : undefined, banks: timeBanks(app, path), bank: bank.value })
     if (!picked) return
     amount.value = String(picked.amount); unit.value = 'h'; bank.value = picked.bank
     start.value = picked.start !== undefined ? localInputValue(picked.start) : ''; end.value = picked.end !== undefined ? localInputValue(picked.end) : ''
@@ -971,7 +971,7 @@ function openConstructor(app: App, kind: string, path: Scope = [...app.state.vie
     start.hidden = end.hidden = kind === 'bank' || !['calendar', 'inventory'].includes(select.value)
     pickTime.hidden = kind === 'bank' || select.value !== 'calendar'
     bank.replaceChildren(new Option('Unbound allocation', ''))
-    for (const entry of app.banks()) if (entry.row.resource.type === select.value) bank.append(new Option(entry.row.title, entry.row.id))
+    for (const entry of app.contextBanks(replace ? path.slice(0, -1) : path)) if (entry.row.resource.type === select.value) bank.append(new Option(entry.row.title, entry.row.id))
   }
   select.onchange = update; update()
   const error = div('error', ''), submit = button('primary', replace && !row?.requirement && row?.type !== HOME_TYPE ? 'Apply constructor' : 'Add child', () => undefined); submit.type = 'submit'
@@ -1277,7 +1277,7 @@ function constructorBody(task: TaskView, state: AppState, app: App, path: Scope 
     box.append(span('constructor-label', 'Evaluation'))
     const labels = { idle: 'Ready', opening: 'Starting', running: 'Running', committing: 'Saving', committed: 'Complete', 'rolled-back': 'Rolled back', 'awaiting-review': 'Awaiting review', 'needs-recovery': 'Needs recovery' }
     if (record) box.append(span('muted', labels[record.status] ?? record.status))
-    const run = button('secondary small', 'Run', () => void app.startExecution(parent)); run.disabled = app.evaluating || !app.executionInstructions(parent).complete
+    const run = button('secondary small', 'Run', () => void app.startExecution(parent)); run.disabled = app.evaluating || !app.executionInstructions(parent).canRun
     box.append(run)
     if (record?.error) box.append(span('error', record.error))
     if (record && !['idle', 'committed', 'rolled-back', 'awaiting-review'].includes(record.status)) {
@@ -1599,10 +1599,10 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   const run = toolbar.querySelector<HTMLButtonElement>('.evaluate')!
   run.hidden = false
   const instructions = app.executionInstructions(state.view)
-  run.disabled = app.evaluating || !instructions.complete || (!!shared && !app.sharedGrants(state.view)?.includes('execute'))
+  run.disabled = app.evaluating || !instructions.canRun || (!!shared && !app.sharedGrants(state.view)?.includes('execute'))
   run.title = app.evaluating ? 'Evaluating…' : shared && !app.sharedGrants(state.view)?.includes('execute') ? `@${shared.owner} has not granted “run evaluations” here` : row?.blockedBy?.length ? 'Blocked by unfilled requirements' : 'Evaluate this node'
   run.setAttribute('aria-label', app.evaluating ? 'Evaluating' : 'Run (evaluate this node)')
-  if (!instructions.complete) run.title = `Needs instruction refs: ${instructions.holes.map(hole => hole.id).join(', ')}`
+  if (!instructions.canRun) run.title = `Needs instruction refs: ${instructions.blocking.map(hole => hole.id).join(', ')}`
   const editToggle = header.querySelector<HTMLElement>('.input-toggle')!
   editToggle.hidden = !!preview || !row
   editToggle.setAttribute('aria-pressed', String(prefs.input)); editToggle.setAttribute('aria-controls', 'node-input')
@@ -2455,32 +2455,14 @@ function inlineFields(task: TaskView): string[] {
 }
 
 /**
- * Direct children of a note (with their sub-rows and resolved refs), for variables. A Markdown field row (a note's
- * body) reads the rows of the note it belongs to.
+ * A note block: markdown with its `{name}` references resolved from the bindings in scope (the same resolution as
+ * execution); math and diagrams fill in asynchronously.
  */
-function noteChildren(task: TaskView, at: Scope, state: AppState, app: App): NoteChild[] {
-  const own = [...state.view, ...at, task.id]
-  const notePath = task.scalar ? own.slice(0, -1) : own
-  const node = viewAt(state.replica, notePath)
-  if (!node) return []
-  const owner = task.scalar ? (notePath.length ? viewAt(state.replica, notePath.slice(0, -1))?.tasks.find(row => row.id === notePath.at(-1)) : undefined) : task
-  const fields = new Set([...(owner?.form?.fields.map(field => field.path[0]) ?? []), task.id])
-  return node.tasks.filter(row => !fields.has(row.id)).map((row) => {
-    const subRows = row.childCount ? viewAt(state.replica, [...notePath, row.id])?.tasks ?? [] : []
-    if (row.refId === undefined) return { row, subRows }
-    const target = app.refTarget(row.refId ?? '')
-    const targetSub = target && target.row.childCount ? viewAt(state.replica, [...target.path, target.row.id])?.tasks ?? [] : []
-    return { row, subRows, refTarget: target ? { row: target.row, subRows: targetSub } : null }
-  })
-}
-
-/** A note block: markdown with variables expanded; math and diagrams fill in asynchronously. */
-function renderNoteBody(task: TaskView, at: Scope, state: AppState, app: App): HTMLElement {
+function renderNoteBody(task: TaskView, at: Scope, state: AppState, _app: App): HTMLElement {
   const body = div('title note-body', '')
   body.title = 'Click or press Enter to edit (Ctrl+Enter saves)'
-  const ctx = noteContext(task.title, noteChildren(task, at, state, app))
-  const resolve = noteResolver(ctx, [...state.view, ...at, task.id], state)
-  const expanded = ctx.body.trim() ? task.text?.interpolate ? expandNoteText(ctx, resolve) : ctx.body : ''
+  const text = task.title.trim() ? task.title : ''
+  const expanded = text && task.text?.interpolate ? resolveText(state.replica, [...state.view, ...at, task.id], text).text : text
   if (!expanded) { body.append(span('muted', '(empty note)')); return body }
   const cached = noteHtml.get(expanded)
   if (cached) {
@@ -2494,22 +2476,6 @@ function renderNoteBody(task: TaskView, at: Scope, state: AppState, app: App): H
     })
   }
   return body
-}
-
-function noteResolver(ctx: ReturnType<typeof noteContext>, path: Scope, state: AppState) {
-  const store = state.replica.store
-  const defaults = Object.entries(ctx.vars).map(([name, variable]) => ({
-    name, type: store.primitive.documentField.getId(),
-    cid: put(store, { data: { description: { content: Array.isArray(variable.value) ? variable.value.map(v => `- ${v}`).join('\n') : variable.value } }, children: [] })
-  }))
-  return (name: string) => {
-    const resolved = resolveText(state.replica, path, `{{${name}}}`, defaults)
-    return resolved.bindings.every(b => b.status === 'ready') ? resolved.text : undefined
-  }
-}
-
-function expandNoteText(ctx: ReturnType<typeof noteContext>, resolve: (name: string) => string | undefined): string {
-  return exportNote(ctx, resolve).replace(/^---\n[\s\S]*?\n---\n\n?/, '')
 }
 
 function insideTemplate(state: AppState, fullPath: Scope): boolean {
@@ -2668,7 +2634,7 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
         // The time-block picker places the needed time on a calendar's timeline and creates the allocation inside this requirement.
         body.append(stop(button('secondary small pick-time', 'Pick time…', () => void pickTimeForRequirement(app, [...state.view, ...at, task.id], task))))
       }
-      if (r.capability === 'allocation' && (r.resource === 'calendar' || r.resource === 'person') && r.start !== undefined) {
+      if (r.capability === 'allocation' && (r.resource === 'calendar' || r.resource === 'person') && r.start != null && r.end != null) {
         const google = state.integrations.find((p) => p.id === 'google')
         if (google?.connected && app.capabilityAvailable('calendar', [...state.view, ...at, task.id])) body.append(stop(button('secondary small', 'Add to Google Calendar', () => void app.askPeerAt(at, task))))
       }

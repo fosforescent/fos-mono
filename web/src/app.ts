@@ -1,3 +1,5 @@
+import { resourceHandlers } from '../../shared/sync/resource-bindings'
+import { resourceWindowContains } from '../../shared/sync/resource-window'
 import { setLibraryArg } from '../../shared/sync/library'
 import { nativeRef, nodeTransportAt, offerNodeTransport, type NodeTransport } from '../../shared/sync/native-refs'
 import { primitiveImplementation } from '../../shared/sync/primitives'
@@ -10,8 +12,9 @@ import { nativeRefValues } from '../../shared/sync/native-refs'
 import { sameValue } from '../../shared/sync/merge'
 import { parseRowInput } from './rows'
 import { isHandlerStateLeft } from '../../shared/sync/capabilities'
-import { capabilityDeclarations, scopedRefs, flattenRefs, requirementHandlerTypes, sameCapabilityType, compileInstructions, executionInputs, addRefCall, primitiveValue, refSubmissions, matchesInstructionRef, templateValuePattern, solveAt, usePatternAt, patternBindings, choosePatternBindingAt, findEdge, valueCidOf, type PatternBinding, constructAt, namesInLibrary, rowConstructor, openRefs, assignedValue, assignRefAt, textOf, capabilityName, readProposals, type OpenRef } from '../../shared/sync/index'
+import { capabilityDeclarations, visibleBindings, bindingTree, bindingLayers, selectBinding, requirementHandlerTypes, sameCapabilityType, compileInstructions, executionInputs, addRefCall, primitiveValue, refSubmissions, matchesInstructionRef, templateValuePattern, solveAt, usePatternAt, patternBindings, choosePatternBindingAt, findEdge, valueCidOf, type PatternBinding, constructAt, namesInLibrary, rowConstructor, openRefs, assignedValue, assignRefAt, textOf, capabilityName, readProposals, type OpenRef } from '../../shared/sync/index'
 import { createDeviceHandlers } from './device-handlers'
+import { compileConstructorCall } from '../../shared/sync/constructor-rows'
 import { capabilityOfTarget } from '../../shared/sync/graph'
 import { workClaims, saveWorkClaims } from '../../shared/sync/work-claims'
 import { BUNDLED_LIBRARY as LIBRARY_BUNDLE } from '../../shared/sync/library'
@@ -21,7 +24,7 @@ import { libraryPath, MANUAL_HANDLERS } from '../../shared/sync/library'
 import { libraryBindingAt, childRows, rowView } from '../../shared/sync/graph'
 import { addSpecification, specificationRows, importSpecifications, queueSpecificationVerification, type FeatureSpecification } from '../../shared/sync/specifications'
 import { executionInput, executionSnapshot } from '../../shared/sync/execution-access'
-import { setConstructorEnabledAt, contextMemberRefs, discoverHandlers, contextMembers, publishTemplate, setHandlerEnabledAt, instantiateTemplateValue, copyBidRow, draftBid, rowsOfType, supplyOf } from '../../shared/sync/index'
+import { setConstructorEnabledAt, contextMemberRefs, discoverHandlers, contextMembers, publishTemplate, setHandlerEnabledAt, instantiateTemplateValue, shareRefAt, transferRefGraph, copyBidRow, draftBid, rowsOfType, supplyOf } from '../../shared/sync/index'
 import { ensureLocalMcp, stopLocalMcp } from './node-agent'
 import { capabilityLabels, MARKET_PEER } from '../../shared/sync/graph'
 import { NODE_PERMISSION_DEFAULT, isNodeProjection, nodeBranches, nodeBranchBase, validateNodeShape, exchangeNode, nodeShape, sameNodeShape, mergeNodeShape, installNodeShape, materializedNodePaths, nodePersistenceAllowed, rememberNodeSync, nodeSyncKey, nodeSyncRequest, outgoingNodeShape, establishNodeSync, provideNode, pullNode, acceptProvidedNode, acceptTemplateNodes, planNodeSync, nodeSyncPush, finishNodeSync, nodeTemplateRequests, blankNodeRequest, ownHeldChildren, isBlank as isBlankShape, finishBlankNode, nodeLinkEndpoint, nodeRequestLinkId, setNodeLinkMask, isPeerReference, acceptSubmissionRows, type NodeMask, type NodeRequest, type NodeProvider, type ProvidedNode, type ProposalView } from '../../shared/sync/index'
@@ -447,7 +450,7 @@ export class App {
       if (this.syncInFlight) throw new Error('Wait for current sync to finish before evaluating Pull.')
       await this.syncNow('evaluate pull', true)
       if (this.state.connection !== 'online') throw new Error('Pull failed; review the sync status.')
-      this.set({ replica: addSupply(this.state.replica, step.path.slice(0, -1), step.path.at(-1)!, { capability: 'tool', by: this.state.replica.meta.peerId, ref: 'unit' }, this.now()) })
+      this.set({ replica: addSupply(this.state.replica, step.path.slice(0, -1), step.path.at(-1)!, { capability: 'tool', by: this.state.replica.meta.peerId, receipt: 'unit' }, this.now()) })
     },
     agent: async ({ step, operation }) => {
       await this.saveWorkflowReplica(queueAgentEffect(this.state.replica, step.path, operation, this.now()))
@@ -459,17 +462,19 @@ export class App {
     // received, so it is submitted to the right's response ref (one submission per fetch row: fetching again replaces it)
     fetch: async ({ step }) => {
       let r = this.state.replica
-      const at = step.path, constructor = rowConstructor(r, at), refs = constructor ? openRefs(r.store, constructor) : []
-      const value = (name: string) => { const ref = refs.find(x => x.name === name); return ref ? textOf(r, assignedValue(r, at, ref.alias)) : null }
-      const url = value('url'), method = value('method') ?? 'GET', response = refs.find(x => x.received)
+      const at = step.path, call = compileConstructorCall(r, at)
+      if (!call.canRun) throw new Error('Resolve the fetch inputs before execution.')
+      const value = (name: string) => { const ref = call.args.find(x => x.name === name); return ref ? textOf(r, ref.cid) : null }
+      const url = value('url'), method = value('method') ?? 'GET', response = call.args.find(x => x.received)
       if (!url) throw new Error('Give the address to fetch.')
       if (!response) throw new Error('This fetch has no response ref.')
       const answer = await this.fetchUrl(url, method)
       if (answer.status >= 400) throw new Error(`${url} answered ${answer.status}.`)
       r = this.state.replica
-      if (!resolveScope(r.store, headCid(r), [...at, response.alias])) r = assignRefAt(r, at, response.alias, null, this.now())
+      const alias = call.edits.get(response.cid)!
+      if (!resolveScope(r.store, headCid(r), [...at, alias])) r = assignRefAt(r, at, alias, null, this.now())
       const body = put(r.store, { data: { description: { content: answer.body } }, children: [] })
-      this.set({ replica: proposeRefAt(r, [...at, response.alias], body, r.meta.peerId, this.now(), 'fetch').replica })
+      this.set({ replica: proposeRefAt(r, [...at, alias], body, r.meta.peerId, this.now(), 'fetch').replica })
     },
     solve: async ({ step }) => {
       const { replica, solutions } = solveAt(this.state.replica, step.path, this.state.replica.meta.peerId, this.now())
@@ -976,15 +981,17 @@ export class App {
     catch { this.notify('error', 'Clipboard access failed. Allow clipboard access and try again.') }
   }
   pasteNodeLink(at: Scope, id: string | null, targetId: string): void {
-    const target = resolveRef(this.state.replica, targetId)
+    const target = findRowByAlias(this.state.replica.store, headCid(this.state.replica), targetId)
     if (!target) { this.notify('error', 'This reference is not available in this workspace.'); return }
     const parent = [...this.state.view, ...at]
     if (parent.includes(targetId) || id === targetId) { this.notify('error', 'A node cannot contain a reference to itself.'); return }
-    this.together(() => {
-      let r = addRef(this.state.replica, parent, targetId, this.now(), id ? { relativeTo: id, position: 'below' } : undefined)
-      if (id) r = deleteTask(r, parent, id, this.now())
-      this.edit(r); this.select(null)
-    })
+    try {
+      this.together(() => {
+        let r = addRef(this.state.replica, parent, targetId, this.now(), id ? { relativeTo: id, position: 'below' } : undefined)
+        if (id) r = deleteTask(r, parent, id, this.now())
+        this.edit(r); this.select(null)
+      })
+    } catch (error) { this.notify('error', String(error)) }
   }
   pasteRows(rows: import('./rows').ParsedInput[], at: Scope, id?: string): void {
     this.together(() => {
@@ -1011,7 +1018,7 @@ export class App {
     const path = this.state.templatePicker?.path
     if (!path) return
     const row = view(this.state.replica, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1))
-    const template = row?.template && resolveRef(this.state.replica, row.template.id)
+    const template = row?.template && findRowByAlias(this.state.replica.store, headCid(this.state.replica), row.template.id)
     if (template) { this.closeModal(); this.goTo([...template.path, template.row.id]) }
     else if (row?.type === TEMPLATE_TYPE) { this.closeModal(); this.goTo(path) }
     else this.notify('info', 'This is a built-in constructor. Use + to create an editable template.')
@@ -1603,48 +1610,19 @@ export class App {
     if (!branch) this.edit(next)
     if (!branch) this.set({ collapsed: this.state.collapsed.filter((c) => c !== taskId) })
   }
-  /** The closest resource-bank row on the path `at` (relative to the view), if any. */
-  nearestBank(at: Scope): (TaskView & { resource: NonNullable<TaskView['resource']> }) | null {
-    for (let i = at.length; i > 0; i--) {
-      const parentAt = at.slice(0, i - 1)
-      const id = at[i - 1] as string
-      const row = view(this.state.replica, [...this.state.view, ...parentAt])?.tasks.find((t) => t.id === id)
-      if (row?.type === RESOURCE_TYPE && row.resource) return row as TaskView & { resource: NonNullable<TaskView['resource']> }
-    }
-    return null
-  }
   /** The row `at` points at (relative to the view), if any. */
   rowAt(at: Scope): TaskView | null {
     const id = at[at.length - 1]
     if (!id) return null
     return view(this.state.replica, [...this.state.view, ...at.slice(0, -1)], true)?.tasks.find((t) => t.id === id) ?? null
   }
-  /**
-   * The bank an allocation of `type` added under `at` draws from, its parent context: the nearest bank of that type
-   * above it; otherwise, under an allocation requirement, a bank of the resource the requirement names; otherwise
-   * the default pool of the type (the first bank of that type at the top level, else the first anywhere); with no
-   * type (legacy), the nearest bank above or the only bank there is.
-   */
+  /** Resolve a resource handler in the allocation's parent scope; multiple handlers require a choice. */
   bankFor(at: Scope, type?: ResourceType | null, person?: string, replica = this.state.replica): (TaskView & { resource: NonNullable<TaskView['resource']> }) | null {
-    type Bank = TaskView & { resource: NonNullable<TaskView['resource']> }
-    const fits = (b: Bank) => (!type || b.resource.type === type) && (type !== 'person' || !person || b.title.trim().toLowerCase() === person.toLowerCase())
     const path = [...this.state.view, ...at]
-    for (let i = path.length; i > 0; i--) {
-      const row = view(replica, path.slice(0, i - 1))?.tasks.find(row => row.id === path[i - 1])
-      if (row?.type === RESOURCE_TYPE && row.resource && fits(row as Bank)) return row as Bank
-    }
-    const all = this.banks(replica)
-    const parent = view(replica, [...this.state.view, ...at.slice(0, -1)])?.tasks.find(row => row.id === at[at.length - 1])
-    const req = !!parent?.requirement ? parent.requirement : undefined
-    if (req?.capability === 'allocation' && req.resource && (!type || req.resource === type)) {
-      const match = all.find(({ row }) => row.resource.type === req.resource && fits(row))
-      if (match) return match.row
-    }
-    if (type) {
-      const pool = all.find(({ row, path }) => path.length === 0 && fits(row)) ?? all.find(({ row }) => fits(row))
-      return pool ? pool.row : null
-    }
-    return all.length === 1 ? (all[0] as { row: Bank }).row : null
+    const handlers = resourceHandlers(replica, path).filter(({ row }) =>
+      (!type || row.resource.type === type) && (type !== 'person' || !person || row.title.trim().toLowerCase() === person.toLowerCase()))
+    // Distinct handlers are a choice; traversal order must not select a bank.
+    return handlers.length === 1 ? handlers[0]!.row : null
   }
   /**
    * An allocation with its bank resolved from the parent context (`bankFor`), or null (with a notice) when there is
@@ -1653,17 +1631,18 @@ export class App {
   allocationWithBank(at: Scope, allocation: NonNullable<RowExtras['allocation']> | undefined, replica = this.state.replica, person?: string): NonNullable<RowExtras['allocation']> | null {
     const by = this.state.session?.username ?? this.state.deviceName
     const base = allocation ?? { resource: '', type: 'inventory' as ResourceType, amount: 0, unit: 'unit' }
-    const windowed = base.start !== undefined || base.end !== undefined
+    const windowed = base.start != null || base.end != null
     if (base.type === 'person' && !windowed) return { ...base, by }
-    const bank = this.bankFor(at, allocation ? base.type : null, person, replica)
-    if (!bank && base.type === 'points') {
-      // fos points without a bank row draw from the account's balance (the fos peer is the pool); a payout moves them on the server's ledger when the task runs
-      if (this.state.points !== null && base.amount > this.state.points) this.notify('error', `That is more than the ${this.state.points} fos points on the account; the allocation is recorded anyway.`)
-      return { ...base, resource: 'fos:points', by }
-    }
+    const bank = base.resource
+      ? resourceHandlers(replica, [...this.state.view, ...at]).find(handler => handler.row.id === base.resource && handler.row.resource.type === base.type)?.row ?? null
+      : this.bankFor(at, allocation ? base.type : null, person, replica)
     if (!bank) {
       const names: Record<ResourceType, string> = { account: '@money Travel 500', calendar: '@calendar Week 40h', inventory: '@inventory Shelf 12', person: `@person ${person ?? 'name'} 40h`, points: '@points Pool 500', location: '@location Places' }
-      this.notify('error', base.type === 'person' ? `A person allocation with a window needs ${person ?? 'their'}'s calendar: add "${names.person}" at the top level.` : `No ${base.type === 'account' ? 'money' : base.type} bank in this context: add one at the top level as the default pool ("${names[base.type]}"), or above this row.`)
+      this.notify('error', base.type === 'person' ? `A person allocation with a window needs ${person ?? 'their'}'s calendar: add "${names.person}" at the top level.` : `No ${base.type === 'account' ? 'money' : base.type} bank in this context: declare one in an enclosing scope ("${names[base.type]}"), or above this row.`)
+      return null
+    }
+    if (!resourceWindowContains(bank.resource, base)) {
+      this.notify('error', 'The allocation must stay within the selected resource’s time bounds.')
       return null
     }
     return { ...base, resource: bank.id, type: bank.resource.type, unit: base.unit === 'unit' ? bank.resource.unit : base.unit, by }
@@ -1748,11 +1727,11 @@ export class App {
     walk([])
     return out
   }
-  /** Banks visible from the current view: those above it (the context) plus those at this level. */
-  contextBanks(): Array<{ row: TaskView & { resource: NonNullable<TaskView['resource']> }; path: Scope }> {
-    const here = this.state.view
-    return this.banks().filter(({ path }) => path.length <= here.length && path.every((p, i) => here[i] === p))
+  /** Resource handlers available through the same enclosing declarations as other capabilities. */
+  contextBanks(at: Scope = this.state.view): Array<{ row: TaskView & { resource: NonNullable<TaskView['resource']> }; path: Scope }> {
+    return resourceHandlers(this.state.replica, at).map(handler => ({ row: handler.row, path: handler.scope?.path ?? at }))
   }
+
   /**
    * Peers in the context of the viewed node: the account server ("fos") with what it registered on the last sync
    * (the transport facts until then), the node's members with the capability rows this node's owner exposes to each
@@ -2489,8 +2468,7 @@ export class App {
     const own = templateIconAt(this.state.replica, path)
     if (own) return own
     const row = view(this.state.replica, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1))
-    const template = row?.template && resolveRef(this.state.replica, row.template.id)
-    return template ? templateIconAt(this.state.replica, [...template.path, template.row.id]) ?? '' : ''
+    return row?.typeCid ? content(this.state.replica.store, row.typeCid).data.presentation?.icon ?? '' : ''
   }
   openTemplatePicker(path: Scope): void {
     document.activeElement?.dispatchEvent(new window.Event('commit-edit'))
@@ -2518,8 +2496,8 @@ export class App {
     })
   }
   parseRowInput(text: string, path = this.constructorContext()) {
-    const declarations = flattenRefs(scopedRefs(this.state.replica, path)).filter(ref => !!ref.name).map(ref => ({
-      name: capabilityOfTarget(this.state.replica.store, ref.type) ?? ref.type, syntax: [ref.name!]
+    const declarations = visibleBindings(this.state.replica, path).flatMap(binding => bindingTree(binding)).filter(ref => !!ref.name).map(ref => ({
+      name: capabilityOfTarget(ref.store, ref.pattern) ?? ref.pattern, syntax: [ref.name!]
     }))
     const offers = this.handlerOffers(path).map(offer => ({ name: offer.capability ?? offer.type, syntax: [offer.label] }))
     return parseRowInput(text, [...declarations, ...offers, ...capabilityDeclarations(this.state.replica.store, path)])
@@ -2634,7 +2612,7 @@ export class App {
   /** Palette input uses the same row documents as typed input; no separate palette model. */
   applyConstructor(path: Scope, parsed: import('./rows').ParsedInput, replace = false, repo?: string, localDirectory?: string, templateId?: string): Scope {
     if (!view(this.state.replica, path)) throw new Error('The destination no longer exists.')
-    const template = templateId ? resolveRef(this.state.replica, templateId) : null
+    const template = templateId ? findRowByAlias(this.state.replica.store, headCid(this.state.replica), templateId) : null
     const templateCid = templateId && this.state.replica.store.table.has(templateId) && isTemplateType(this.state.replica.store, templateId) ? templateId : template?.row.type === TEMPLATE_TYPE ? resolveScope(this.state.replica.store, headCid(this.state.replica), [...template.path, template.row.id]) : null
     if (templateId && !templateCid) throw new Error('This template is unavailable.')
     const current = path.length ? view(this.state.replica, path.slice(0, -1))?.tasks.find(row => row.id === path.at(-1)) : undefined
@@ -2646,7 +2624,7 @@ export class App {
       if (cid && localRepositoryHere(this.state.replica, target)) throw new Error('This node already has a local repository; edit its argument to change the path.')
     }
     const allocation = parsed.extras?.allocation
-    if (allocation?.resource && !this.banks().some(b => b.row.id === allocation.resource && b.row.resource.type === allocation.type)) throw new Error('The source bank is unavailable or has a different resource type.')
+    if (allocation?.resource && !this.contextBanks(parent).some(b => b.row.id === allocation.resource && b.row.resource.type === allocation.type)) throw new Error('The source bank is unavailable in this scope or has a different resource type.')
     const parentCid = path.length && resolveScope(this.state.replica.store, headCid(this.state.replica), path.slice(0, -1))
     const argument = parentCid && argumentRefs(this.state.replica.store, parentCid).find(a => content(this.state.replica.store, a.cid).data.alias?.id === path.at(-1) && !refValueCid(this.state.replica.store, content(this.state.replica.store, a.cid)))
     if (repo && repositoryAt(this.state.replica, target) && repositoryAt(this.state.replica, target) !== repo) throw new Error('Edit the existing repository argument to change its repository.')
@@ -2654,8 +2632,9 @@ export class App {
       // Construct before checking compatibility, in an isolated draft so a
       // rejected value cannot change the live graph or leave an extra row.
       const live = this.state.replica
-      let r = argument ? loadReplica(serializeReplica(live)) : live
-      if (argument) copyOuterScope(live.store, r.store)
+      const isolated = !!argument || !!templateCid
+      let r = isolated ? loadReplica(serializeReplica(live)) : live
+      if (isolated) copyOuterScope(live.store, r.store)
       if (replace && current?.construction?.handler) r = this.peerRowReplica(r, target, undefined)
       r = replace ? setRowContentAt(r, parent, id, parsed.type, parsed.text, parsed.extras ?? {}, this.now()) : addRow(r, parent, parsed.type, parsed.text, this.now(), { id, done: parsed.done, ...parsed.extras })
       this.resolveUser(parsed.extras?.user)
@@ -2682,6 +2661,8 @@ export class App {
         }
         if (!matchesGraph(r.store, argument.type, value)) throw new Error('Choose a constructor matching this input pattern.')
         r = setRefValueAt(r, path, value, this.now())
+      }
+      if (isolated) {
         for (const [cid, node] of r.store.table) if (!live.store.table.has(cid)) live.store.table.set(cid, node)
         live.store.rootNodeId = r.store.rootNodeId
         r = { ...r, store: live.store }
@@ -2711,7 +2692,7 @@ export class App {
     walk([]); return found.slice(0, 50)
   }
   canLinkNode(id: string, destination = this.state.view): boolean {
-    const target = resolveRef(this.state.replica, id)?.row
+    const target = findRowByAlias(this.state.replica.store, headCid(this.state.replica), id)?.row
     if (!target || destination.includes(id)) return false
     const req = destination.length ? view(this.state.replica, destination.slice(0, -1))?.tasks.find(row => row.id === destination.at(-1))?.requirement : null
     if (!req) return true
@@ -2724,7 +2705,9 @@ export class App {
   linkNode(id: string, destination = this.state.view): void {
     if (!this.canLinkNode(id, destination)) { this.notify('error', 'This value does not match the destination requirement.'); return }
     const req = destination.length ? view(this.state.replica, destination.slice(0, -1))?.tasks.find(row => row.id === destination.at(-1))?.requirement : null
-    this.edit(req ? addSupply(this.state.replica, destination.slice(0, -1), destination.at(-1)!, { capability: req.capability, by: this.actorName(), ref: id }, this.now()) : addRef(this.state.replica, destination, id, this.now()))
+    try {
+      this.edit(req ? addSupply(this.state.replica, destination.slice(0, -1), destination.at(-1)!, { capability: req.capability, by: this.actorName(), ref: id }, this.now()) : addRef(this.state.replica, destination, id, this.now()))
+    } catch (error) { this.notify('error', String(error)) }
   }
   private evaluationBranches(path: Scope): Record<string, string> {
     const r = this.state.replica
@@ -2772,7 +2755,7 @@ export class App {
       this.edit(r); path = [...parent, id]
     }
     const compiled = this.executionInstructions(path)
-    if (!compiled.complete) { this.notify('error', `Fill instruction refs before running: ${compiled.holes.map(hole => hole.id).join(', ')}`); return }
+    if (!compiled.canRun) { this.notify('error', `Fill instruction refs before running: ${compiled.blocking.map(hole => hole.id).join(', ')}`); return }
     this.goTo(path)
     this.execution = { path: [...this.state.view], store: this.state.replica.store }
     this.refresh()
@@ -2943,17 +2926,17 @@ export class App {
       const record = await evaluateNode(path, {
         get: () => { valid(); return this.state.replica },
         save: async replica => { valid(); this.set({ replica }); await this.config.storage.flush?.(); valid(); this.scheduleSync() },
-        now: () => this.now(), isPeerActive: id => this.isOnline(id), handles: step => this.deviceHandlers.executors(this.state.replica, step, this.state.replica.meta.peerId).length > 0,
-        opensRefs: step => this.deviceHandlers.executors(this.state.replica, step, this.state.replica.meta.peerId).some(executor => executor.opensRefs),
+        now: () => this.now(), isPeerActive: id => this.isOnline(id),
         check: step => localPull(step) && !this.pullPeers().some(p => p.id === step.row?.requirement?.peer) ? ['The Pull peer is not connected.'] : [],
-        effect: async (step, operation) => {
-          const executors = this.deviceHandlers.executors(this.state.replica, step, this.state.replica.meta.peerId)
-          if (executors.length !== 1) throw new Error('Choose one available device handler for this constructor.')
-          valid()
-          const result = await executors[0]!.effect!({ step, operation })
-          valid()
-          return result
-        }
+        executors: step => this.deviceHandlers.executors(this.state.replica, step, this.state.replica.meta.peerId).map(executor => ({
+          ...(executor.opensRefs ? { opensRefs: true } : {}),
+          effect: async (current, operation) => {
+            valid()
+            const result = await executor.effect!({ step: current, operation })
+            valid()
+            return result
+          }
+        }))
       })
       if (record.status !== 'committed' && record.status !== 'awaiting-review') throw new Error(record.error ?? 'Evaluation needs recovery.')
     } catch (error) { if (triggered) throw error; this.notify('error', error instanceof Error ? error.message : String(error)) }
@@ -3127,8 +3110,24 @@ export class App {
   addPlaceholder(name: string, typeName: string, destination = this.state.view): void {
     if (!/^[A-Za-z_][\w.-]*$/.test(name) || !typeName.trim()) { this.notify('error', 'Give the placeholder a name and type.'); return }
     const r = this.state.replica
-    const template = typeName.startsWith('template:') ? resolveRef(r, typeName.slice(9)) : null
-    const type = template ? templateValuePattern(r.store, resolveScope(r.store, headCid(r), [...template.path, template.row.id])!) : typeName === 'text' ? r.store.primitive.documentField.getId() : flattenRefs(scopedRefs(r, destination)).find(ref => ref.name === typeName.trim())?.type ?? libAt(r.store, destination).capabilities[typeName.trim()]!
+    let type: string
+    if (typeName.startsWith('template:')) {
+      const id = typeName.slice(9), library = this.libraryConstructors(destination).find(item => item.id === id)
+      const local = library ? null : resolveRef(r, id, destination)
+      const cid = library?.cid ?? (local && resolveScope(r.store, headCid(r), [...local.path, local.row.id]))
+      if (!cid) throw new Error('This template is unavailable in the enclosing scope.')
+      type = templateValuePattern(r.store, cid)
+    } else if (typeName === 'text') type = r.store.primitive.documentField.getId()
+    else {
+      // A declaration's pattern is available even when its value is still an unfilled parameter.
+      const found = selectBinding(bindingLayers(r, destination), typeName.trim(), false, true)
+      if (found.status !== 'ready' && found.status !== 'missing') throw new Error('Choose an available, unambiguous placeholder type.')
+      if (found.status === 'ready') {
+        const binding = found.locations[0]!
+        if (new Set(binding.assignments.map(assignment => assignment.pattern)).size !== 1) throw new Error('The placeholder declarations have incompatible patterns.')
+        type = binding.pattern
+      } else type = libAt(r.store, destination).capabilities[typeName.trim()]!
+    }
     this.edit(addRefAt(r, destination, newId(), type, this.now(), null, name))
   }
   placeholders(at: Scope = []) {
@@ -3172,10 +3171,11 @@ export class App {
   usePattern(templateId: string): void {
     const path = this.state.templatePicker?.path
     if (!path?.length) return
-    const r = this.state.replica, template = resolveRef(r, templateId, path.slice(0, -1))
+    const r = this.state.replica, template = findRowByAlias(r.store, headCid(r), templateId)
     const cid = template && resolveScope(r.store, headCid(r), [...template.path, templateId])
     if (!cid) { this.notify('error', 'That pattern is unavailable.'); return }
-    const used = usePatternAt(r, path.slice(0, -1), path.at(-1)!, valueCidOf(r.store, cid), r.meta.peerId, this.now())
+    const copied = transferRefGraph(r, cid, [...template!.path, templateId], path, true)
+    const used = usePatternAt(r, path.slice(0, -1), path.at(-1)!, valueCidOf(r.store, copied), r.meta.peerId, this.now())
     this.edit(used.replica); this.closeModal()
     this.notify('info', `${used.submitted} value${used.submitted === 1 ? '' : 's'} submitted to the pattern${used.skipped ? `; ${used.skipped} did not fit` : ''}.`)
   }
@@ -3197,13 +3197,22 @@ export class App {
     const store = this.state.replica.store
     const candidate = arg.candidates.find(c => c.cid === sourceId || content(store, c.cid).data.alias?.id === sourceId)
     if (candidate) { this.bindPlaceholder(id, candidate.cid, at); return }
-    const source = resolveRef(this.state.replica, sourceId)
+    const source = findRowByAlias(store, headCid(this.state.replica), sourceId)
     if (source) {
       const cid = resolveScope(store, headCid(this.state.replica), [...source.path, source.row.id])
       const parent = resolveScope(store, headCid(this.state.replica), [...this.state.view, ...at])
       const declaration = parent && argumentRefs(store, parent).find(a => content(store, a.cid).data.alias?.id === id)
       if (cid && declaration && matchesGraph(store, declaration.type, cid)) {
-        this.setArgumentValue(at, id, cid)
+        try {
+          const destination = [...this.state.view, ...at]
+          this.together(() => {
+            const shared = shareRefAt(this.state.replica, [...source.path, source.row.id], destination, this.now())
+            const visible = resolveRef(shared, sourceId, destination)
+            if (!visible) throw new Error('Declare this ref in a shared scope first.')
+            const value = resolveScope(store, headCid(shared), [...visible.path, visible.row.id])!
+            this.edit(setRefValueAt(shared, [...destination, id], value, this.now()))
+          })
+        } catch (error) { this.notify('error', String(error)) }
         return
       }
     }
@@ -3498,12 +3507,14 @@ export class App {
   }
   /** Alt+drag: a reference to `targetId` placed at `position` under `toAt`. */
   addRefAt(toAt: Scope, targetId: string, position?: MovePosition): void {
-    this.edit(addRef(this.state.replica, [...this.state.view, ...toAt], targetId, this.now(), position))
+    try { this.edit(addRef(this.state.replica, [...this.state.view, ...toAt], targetId, this.now(), position)) }
+    catch (error) { this.notify('error', String(error)) }
   }
   /** Ctrl+drag: a copy of the row `id` (with its subtree) at `position` under `toAt`. */
   copyRowAt(fromAt: Scope, id: string, toAt: Scope, position: MovePosition): void {
     const base = this.state.view
-    this.edit(copyNode(this.state.replica, [...base, ...fromAt], id, [...base, ...toAt], position, this.now()))
+    try { this.edit(copyNode(this.state.replica, [...base, ...fromAt], id, [...base, ...toAt], position, this.now())) }
+    catch (error) { this.notify('error', String(error)) }
   }
   // -------------------------------------------------------------------------
   // Voice notes: record in the browser, let the account transcribe and organize
@@ -3685,7 +3696,7 @@ export class App {
   }
   /** The shared address of the row `id` as seen from `at` (refs resolve by nearest ancestor; default: the current view). */
   sharedLink(id: string, at: Scope = this.state.view): SharedAddress | null {
-    const found = resolveRef(this.state.replica, id, at)
+    const found = findRowByAlias(this.state.replica.store, headCid(this.state.replica), id)
     return found ? sharedAddressAt(this.state.replica, [...found.path, found.row.id]) : null
   }
   receiveSharedLink(address: SharedAddress, title: string): Scope {
@@ -3698,7 +3709,7 @@ export class App {
     this.edit(writeHandlerResult(this.state.replica, path, { sources }, this.now()))
   }
   openSharedLink(id: string, at: Scope = this.state.view): void {
-    const address = this.sharedLink(id, at), found = resolveRef(this.state.replica, id, at)
+    const address = this.sharedLink(id, at), found = findRowByAlias(this.state.replica.store, headCid(this.state.replica), id)
     if (!address || !found) return
     location.hash = `share=${encodeURIComponent(JSON.stringify(address))}`
     this.goTo([...found.path, found.row.id])
@@ -3970,7 +3981,7 @@ export class App {
       const row = view(this.state.replica, path.slice(0, -1), true)?.tasks.find(row => row.id === path.at(-1))
       if (!row?.refId || row.refOwner || seen.has(row.refId)) break
       seen.add(row.refId)
-      const target = resolveRef(this.state.replica, row.refId)
+      const target = resolveRef(this.state.replica, row.refId, path.slice(0, -1))
       if (!target) break
       path = [...target.path, target.row.id]
     }

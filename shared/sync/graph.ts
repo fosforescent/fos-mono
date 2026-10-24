@@ -1,4 +1,5 @@
 import { capabilityDeclarations } from './capability-catalog'
+import { compileRequirement, checkCompiledRequirement } from './compiled-requirements'
 import { readGraphValue } from './node-values'
 /**
  * Graph helpers for sync, written against the hash-consed FosStore.
@@ -43,7 +44,7 @@ import { readGraphValue } from './node-values'
  */
 
 import { allocationValue } from './destructure'
-import { standardRequirementSatisfied } from './standard-requirements'
+import { resourceWindow, resourceWindowSatisfies } from './resource-window'
 
 import { capabilityName, sameCapabilityType, isExecuteLeft, isTriggerLeft } from './capabilities'
 import * as COMPILED_LIBRARY from './library.generated.json'
@@ -266,8 +267,8 @@ export function libraryRowOf(store: FosStore, cid: string): { id: string; cid: s
   }
   return null
 }
-/** The library instance among the rows of the node `cid`, if it has one: its id there, its `lib` ref and the library it pins. */
-export function libraryInstanceOf(store: FosStore, cid: string): { id: string; cid: string; library: string } | null {
+/** The library instances among the rows of the node `cid`: each one's id there, its `lib` ref and the library it pins. */
+function libraryInstancesOf(store: FosStore, cid: string): Array<{ id: string; cid: string; library: string }> {
   const instances: Array<{ id: string; cid: string; library: string }> = []
   for (const edge of valueContent(store, cid).children) {
     const plain = plainEdge(store, edge)
@@ -275,6 +276,11 @@ export function libraryInstanceOf(store: FosStore, cid: string): { id: string; c
     const node = content(store, plain[1]), id = aliasIdOf(node)
     if (isLibraryInstance(store, node)) instances.push({ id: id ?? plain[1], cid: plain[1], library: plain[0] })
   }
+  return instances
+}
+/** The library instance among the rows of the node `cid`, if it has one: its id there, its `lib` ref and the library it pins. */
+export function libraryInstanceOf(store: FosStore, cid: string): { id: string; cid: string; library: string } | null {
+  const instances = libraryInstancesOf(store, cid)
   if (instances.length > 1) throw new Error('Ambiguous library binding in this scope.')
   const instance = instances[0] ?? null
   if (instance && !isLibraryValue(store, instance.library)) throw new Error('The library binding is unavailable.')
@@ -467,15 +473,14 @@ export function libraryTypeAt(store: FosStore, typeId: string, at: Scope = [], r
 
 /** The nearest directly declared library instance. A namespace shadows as a whole. */
 export function libraryBindingAt(store: FosStore, at: Scope = [], root: string = rootTargetCid(store)): { library: string; cid: string; id: string; path: Scope; source: FosStore } | null {
-  for (const scope of enclosingScopes(store, root, at)) {
-    const instance = libraryInstanceOf(scope.store, scope.cid)
-    if (!instance) continue
-    const fields = namesInLibrary(scope.store, instance.library)
-    if (fields.ambiguous.size) throw new Error(`Ambiguous library field ${[...fields.ambiguous][0]}.`)
-    if (scope.store !== store) importNodes(store, reachableNodes(scope.store, [instance.library, instance.cid]))
-    return { ...instance, path: scope.path, source: scope.store }
-  }
-  return null
+  const found = nearestInScope(enclosingScopes(store, root, at), scope => libraryInstancesOf(scope.store, scope.cid), 'library binding')
+  if (!found) return null
+  const { value: instance, ...scope } = found
+  if (!isLibraryValue(scope.store, instance.library)) throw new Error('The library binding is unavailable.')
+  const fields = namesInLibrary(scope.store, instance.library)
+  if (fields.ambiguous.size) throw new Error(`Ambiguous library field ${[...fields.ambiguous][0]}.`)
+  if (scope.store !== store) importNodes(store, reachableNodes(scope.store, [instance.library, instance.cid]))
+  return { ...instance, path: scope.path, source: scope.store }
 }
 
 /** Code-facing fields of the library instance at this graph position. No implicit installation or synthesized fields. */
@@ -513,9 +518,10 @@ export function copyOuterScope(source: FosStore, target: FosStore): void {
   if (outer) nestScope(target, outer)
 }
 
+export type EnclosingScope = { store: FosStore; cid: string; path: Scope }
 /** Lexical ancestors, nearest first, continuing through a nested document's device root. */
-export function enclosingScopes(store: FosStore, root: string, at: Scope): Array<{ store: FosStore; cid: string; path: Scope }> {
-  const result: Array<{ store: FosStore; cid: string; path: Scope }> = [], visited = new Set<FosStore>()
+export function enclosingScopes(store: FosStore, root: string, at: Scope): EnclosingScope[] {
+  const result: EnclosingScope[] = [], visited = new Set<FosStore>()
   while (!visited.has(store)) {
     visited.add(store)
     for (let depth = at.length; depth >= 0; depth--) {
@@ -529,6 +535,38 @@ export function enclosingScopes(store: FosStore, root: string, at: Scope): Array
   return result
 }
 
+/**
+ * What a lookup by name or kind sees from a position. `blocked`: the scope that answers holds the declaration, but it
+ * cannot be used here (unavailable, denied, cyclic); that is the answer, never a reason to look further out.
+ */
+export type ScopeLookup<T> =
+  | { status: 'ready'; scope: EnclosingScope; value: T }
+  | { status: 'ambiguous'; scope: EnclosingScope; values: T[] }
+  | { status: 'blocked'; scope: EnclosingScope }
+  | { status: 'missing' }
+/**
+ * The scope rule every lookup by name or kind follows. `find` reads one scope's direct declarations: none (`[]`)
+ * passes the lookup outward; the nearest scope that declares anything answers it, several there being ambiguous, and
+ * `null` (it declares the name but cannot provide it) blocking it. Outer scopes are never consulted once a nearer one
+ * answers. Collecting every alternative of a type (handler discovery) is not a lookup by name: it reads every visible
+ * declaration, and only the same declaration identity shadows.
+ */
+export function lookupInScope<T>(scopes: EnclosingScope[], find: (scope: EnclosingScope) => T[] | null): ScopeLookup<T> {
+  for (const scope of scopes) {
+    const values = find(scope)
+    if (values === null) return { status: 'blocked', scope }
+    if (values.length === 1) return { status: 'ready', scope, value: values[0]! }
+    if (values.length > 1) return { status: 'ambiguous', scope, values }
+  }
+  return { status: 'missing' }
+}
+/** `lookupInScope` for code that needs one declaration: ambiguous and blocked declarations are errors, not absence. */
+export function nearestInScope<T>(scopes: EnclosingScope[], find: (scope: EnclosingScope) => T[] | null, what: string): (EnclosingScope & { value: T }) | null {
+  const found = lookupInScope(scopes, find)
+  if (found.status === 'ambiguous') throw new Error(`Ambiguous ${what} in this scope.`)
+  if (found.status === 'blocked') throw new Error(`The ${what} in this scope is unavailable.`)
+  return found.status === 'ready' ? { ...found.scope, value: found.value } : null
+}
 
 /**
  * The library row a device root ships is local to that device: node exchange of a root leaves it out on both sides,
@@ -756,7 +794,15 @@ export function rowContent(typeId: string, id: string, text: string, now: number
     else data.allocation = extra.allocation ?? DEFAULT_ALLOCATION
   }
   if (typeId === QUERY_TYPE) data.query = extra.query ?? {}
-  if (typeId === RESOURCE_TYPE) data.resource = extra.resource ?? { type: 'inventory', unit: 'unit' }
+  if (typeId === RESOURCE_TYPE) {
+    data.resource = { ...(extra.resource ?? { type: 'inventory', unit: 'unit' }), ...resourceWindow(extra.resource ?? {}) }
+    // Resource banks supply ordinary named bindings, just like other capability handlers.
+    data.name = { content: text }
+    if (extra.store) {
+      const { alias, name, updated, ...value } = data
+      return refNodeContent(extra.store, { alias, name, updated }, put(extra.store, { data: value, children: [] }))
+    }
+  }
   if (typeId === REF_TYPE) {
     data.ref = { id: extra.refId ?? '', ...(extra.refOwner ? { owner: extra.refOwner } : {}), ...(extra.refScope ? { scope: extra.refScope } : {}) }
     // a reference row is itself a ref node: TARGETPOINTER holds a snapshot of the row it stands for
@@ -778,6 +824,8 @@ export function canonicalRowData(data: FosNodeContent['data']): FosNodeContent['
     data.allocation = { ...supply, resource: '', type: 'inventory', amount: 1, unit: 'unit' }
     delete data.supply
   }
+  if (data.allocation) data.allocation = { ...data.allocation, ...resourceWindow(data.allocation) }
+  if (data.resource) data.resource = { ...data.resource, ...resourceWindow(data.resource) }
   return data
 }
 
@@ -835,7 +883,10 @@ export function convertRowContent(value: FosNodeContent, typeId: string, now: nu
     else data.allocation = extra.allocation ?? value.data.allocation ?? (value.data.requirement || value.data.supply ? canonicalRowData({ requirement: value.data.requirement, supply: value.data.supply }).allocation : DEFAULT_ALLOCATION)
   }
   if (typeId === QUERY_TYPE) data.query = value.data.query ?? {}
-  if (typeId === RESOURCE_TYPE) data.resource = value.data.resource ?? { type: 'inventory', unit: 'unit' }
+  if (typeId === RESOURCE_TYPE) {
+    data.resource = extra.resource ?? value.data.resource ?? { type: 'inventory', unit: 'unit' }
+    data.name = { content: value.data.description?.content ?? '' }
+  }
   return { ...value, data: canonicalRowData(data) }
 }
 
@@ -1062,6 +1113,11 @@ export function withChildValue(store: FosStore, edge: FosPathElem, nextValue: Fo
   }
   if (isRefNode(store, identity) && !isHandle(identity)) {
     return withIdentity(store, edge, put(store, relinkContent(store, identity, idCid, nextValue, now)))
+  }
+  if (nextValue.data.name && !isRefNode(store, nextValue)) {
+    const { alias, name, ...data } = nextValue.data
+    return withIdentity(store, edge, put(store, refNodeContent(store, { alias: alias ?? identity.data.alias, name },
+      put(store, { ...nextValue, data }))))
   }
   return withIdentity(store, edge, put(store, nextValue))
 }
@@ -1510,7 +1566,7 @@ export function flowOf(typeId: string, value: FosNodeContent): { requirement?: N
   const requirement = demandOf(value)
   if (requirement) return { requirement }
   const a = value.data.allocation
-  if (typeId === MONEY_TYPE) return a && a.amount > 0 ? { supply: { capability: 'allocation', by: a.by ?? '', at: a.at ?? 0, ...(a.ref ? { ref: a.ref } : {}) }, allocation: true } : {}
+  if (typeId === MONEY_TYPE) return a && a.amount > 0 ? { supply: { capability: 'allocation', by: a.by ?? '', at: a.at ?? 0, ...(a.ref ? { ref: a.ref } : {}), ...(a.receipt ? { receipt: a.receipt } : {}) }, allocation: true } : {}
   const supply = supplyOf(value)
   return supply ? { supply } : a ? { allocation: true } : {}
 }
@@ -1519,7 +1575,7 @@ export function flowOf(typeId: string, value: FosNodeContent): { requirement?: N
 export function supplyOf(value: FosNodeContent): FosDataContent['supply'] {
   if (value.data.supply) return value.data.supply
   const a = value.data.allocation
-  return a?.capability && a.amount > 0 ? { capability: a.capability, by: a.by ?? '', at: a.at ?? 0, ...(a.ref ? { ref: a.ref } : {}), ...(a.choice !== undefined ? { choice: a.choice } : {}) } : undefined
+  return a?.capability && a.amount > 0 ? { capability: a.capability, by: a.by ?? '', at: a.at ?? 0, ...(a.ref ? { ref: a.ref } : {}), ...(a.receipt ? { receipt: a.receipt } : {}), ...(a.choice !== undefined ? { choice: a.choice } : {}) } : undefined
 }
 
 /** A demand and a contribution are signed entries of the same resource. Legacy demand records still read. */
@@ -1565,21 +1621,11 @@ export function childRows(store: FosStore, cid: string): ChildRow[] {
 }
 /** Allocation rows that hold an amount of a resource (positive entries, money payments included). */
 const allocationEntry = (row: ChildRow): boolean => isAllocationType(row.type) && !!flowOf(row.type, row.value).allocation
-/** Allocation rows that supply a requirement (a handler's answer, or a money payment). */
-const supplyEntry = (row: ChildRow) => isAllocationType(row.type) ? flowOf(row.type, row.value).supply : undefined
 /** Rows that are requirements of their parent (negative allocation entries). */
 const requirementEntry = (row: ChildRow) => isAllocationType(row.type) ? flowOf(row.type, row.value).requirement : undefined
 
-/** Does an allocation fill an allocation requirement (resource type and amount)? */
-function allocationFills(req: NonNullable<FosDataContent['requirement']>, a: FosDataContent['allocation'] | undefined, users?: RequiredUser): boolean {
-  return allocationMatches(req, a, users) && (req.amount === undefined || a!.amount >= req.amount)
-}
-
-/** The user a requirement names (its `user` field) and the one an allocation is for, when the requirement names one. */
+/** The user constraint on a requirement and its supplied allocation. */
 export type RequiredUser = { required: UserRecord | null; given: UserRecord | null | undefined }
-function requiredUser(store: FosStore, requirementCid: string, allocationCid: string): RequiredUser {
-  return { required: userOf(store, valueContent(store, requirementCid)), given: userOf(store, valueContent(store, allocationCid)) }
-}
 
 /**
  * Does an allocation count towards an allocation requirement at all (resource type matches), whatever its amount?
@@ -1587,8 +1633,7 @@ function requiredUser(store: FosStore, requirementCid: string, allocationCid: st
  */
 export function allocationMatches(req: NonNullable<FosDataContent['requirement']>, a: FosDataContent['allocation'] | undefined, users?: RequiredUser): boolean {
   return !!a && (!req.resource || a.type === req.resource) && (!req.unit || a.unit?.toUpperCase() === req.unit.toUpperCase()) &&
-    (req.start === undefined || (a.start !== undefined && a.start <= req.start)) &&
-    (req.end === undefined || a.end === undefined || a.end >= req.end) &&
+    resourceWindowSatisfies(a, req) &&
     (!users?.required || (!!users.given && sameUser(users.required, users.given))) &&
     // a named place is met by an allocation at that place by name, or by a position (a device's location) with no name
     (!req.place || !a.location?.name || a.location.name.trim().toLowerCase() === req.place.trim().toLowerCase())
@@ -1599,20 +1644,8 @@ export function allocationMatches(req: NonNullable<FosDataContent['requirement']
  * payments among them) and of the allocations its supplies reference, against the amount it asks for. Null for other
  * requirements or when the requirement names no amount.
  */
-export function requirementProgress(store: FosStore, requirementCid: string, root?: string): { have: number; need: number } | null {
-  const req = demandOf(valueContent(store, requirementCid))
-  if (!req || req.capability !== 'allocation' || req.amount === undefined) return null
-  let have = 0
-  for (const row of childRows(store, requirementCid)) {
-    if (allocationEntry(row)) { const allocation = allocationValue(store, row.cid); if (allocationMatches(req, allocation, requiredUser(store, requirementCid, row.cid))) have += allocation?.amount ?? 0; continue }
-    const supply = supplyEntry(row)
-    if (supply?.capability === 'allocation' && supply.ref) {
-      const found = findRowByAlias(store, root ?? rootTargetCid(store), supply.ref)
-      if (!found) have += req.amount // supplied from outside this replica: trusted in full
-      else if (allocationMatches(req, found.row.allocation, { required: userOf(store, valueContent(store, requirementCid)), given: found.row.user })) have += found.row.allocation?.amount ?? 0
-    }
-  }
-  return { have, need: req.amount }
+export function requirementProgress(store: FosStore, requirementCid: string): { have: number; need: number } | null {
+  return checkCompiledRequirement(store, compileRequirement(store, requirementCid)).progress
 }
 
 /**
@@ -1620,29 +1653,25 @@ export function requirementProgress(store: FosStore, requirementCid: string, roo
  * amount (`allocation`; for money, payments), a query that has been run (`search`); or by a supply row under it that
  * matches its capability (confirmation, choice, a peer's answer, or a reference to an allocation/query row elsewhere).
  */
-export function requirementSatisfied(store: FosStore, requirementCid: string, root?: string): boolean {
+export function requirementSatisfied(store: FosStore, requirementCid: string): boolean {
   const node = content(store, requirementCid)
   if (isRefNode(store, node) && !refValueCid(store, node)) return false
-  if (isRefNode(store, node) && node.data.name) return true
   const req = demandOf(valueContent(store, requirementCid))
   if (!req) return true
   // Signed resource rows are a standard-library adapter. A handler input is not a result.
-  return standardRequirementSatisfied(store, requirementCid, req, root)
+  return checkCompiledRequirement(store, compileRequirement(store, requirementCid)).satisfied
 }
 
 /** Resolve templates from direct enclosing declarations, then the bound library's fields. */
 export function findTemplate(store: FosStore, rootCid: string, name: string, at: Scope = []): { row: TaskView; cid: string } | null {
   const wanted = name.trim().toLowerCase()
   if (!wanted) return null
-  for (const scope of enclosingScopes(store, rootCid, at)) {
-    const matches = childRows(scope.store, scope.cid).filter(row => isRowOfType(scope.store, row.edge, TEMPLATE_TYPE) &&
-      (valueContent(scope.store, row.cid).data.description?.content ?? '').trim().toLowerCase() === wanted)
-    if (matches.length > 1) throw new Error('Ambiguous template declaration in this scope.')
-    const found = matches[0]
-    if (found) {
-      if (scope.store !== store) importNodes(store, reachableNodes(scope.store, [found.cid, found.edge[0]]))
-      return { row: rowView(store, found.cid, found.edge), cid: found.cid }
-    }
+  const local = nearestInScope(enclosingScopes(store, rootCid, at), scope => childRows(scope.store, scope.cid).filter(row => isRowOfType(scope.store, row.edge, TEMPLATE_TYPE) &&
+    (valueContent(scope.store, row.cid).data.description?.content ?? '').trim().toLowerCase() === wanted), 'template declaration')
+  if (local) {
+    const { store: source, value: found } = local
+    if (source !== store) importNodes(store, reachableNodes(source, [found.cid, found.edge[0]]))
+    return { row: rowView(store, found.cid, found.edge), cid: found.cid }
   }
   const binding = libraryBindingAt(store, at, rootCid)
   if (!binding) return null
@@ -2048,7 +2077,7 @@ export function advertisedRows(store: FosStore, cid: string): FosPathElem[] {
   return content(store, cid).children.filter(edge => isRowEdge(store, edge) && isRefNode(store, content(store, edge[1])) && !!content(store, edge[1]).data.alias)
 }
 export function advertisement(store: FosStore, pattern: string, ref: string): string {
-  return put(store, { data: {}, children: [[pattern, ref]] })
+  return put(store, { data: { refAlternatives: true }, children: [[pattern, ref]] })
 }
 
 /** The capability a [CAPABILITY, x] edge grants (the `to` direction), or null for any other edge. */
@@ -2490,7 +2519,7 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
       return
     }
     // A row's argument refers to its value; it does not take ownership of it.
-    if (isRefNode(store, identity) && (argumentsToCopy.has(cid) || identity.data.name || !refValueCid(store, identity) || refBranches(store, identity))) { argumentsToCopy.add(cid); return }
+    if (isRefNode(store, identity) && (argumentsToCopy.has(cid) || !refValueCid(store, identity) || refBranches(store, identity))) { argumentsToCopy.add(cid); return }
     for (const edge of childEdges(stripLink(store, identity), definitions.has(cid), cid === nodeCid)) {
       const child = identityCid(store, edge)
       const left = content(store, edge[0])

@@ -6,7 +6,7 @@ import { discoverHandlers } from './handlers'
 import { contextBindings, resolveBinding, resolveText, type BindingEnvironment } from './bindings'
 import { constructForm, formText, formTitle } from './forms'
 import {
-  demandOf, libAt, commitRoot, content, findRowByAlias, identityCid, newId, put,
+  demandOf, libAt, commitRoot, content, identityCid, newId, put,
   readProposals, refArguments, refNodeContent, refValueCid, resolveScope,
   rowEdgeAt, rowTypeAt, rowTypeOf, typeIdOf, isRowEdge, isRowOfType, isAllocationRow, flowOf, updateAtScope, valueContent, type Scope
 } from './graph'
@@ -18,7 +18,7 @@ import { acceptSubmission } from './approvals'
 export const PLANNING_TEMPLATE = 'implementAndVerify'
 export const SUBTASKS_TEMPLATE = 'generateSubtasks'
 import {
-  addRefAt, addRow, addTask, addSupply, setRefValueAt, headCid, instantiateTemplate,
+  addRefAt, addRow, addTask, addSupply, setRefValueAt, headCid, instantiateTemplate, resolveRef,
   proposeRefAt, rejectProposalAt, view, type Replica
 } from './replica'
 
@@ -80,10 +80,11 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
     lines.push(`${'  '.repeat(depth)}${label}: ${rendered.text}`)
     const ref = identity.data.ref
     if (ref) {
-      const found = !ref.owner ? findRowByAlias(store, headCid(r), ref.id) : null
+      const found = !ref.owner && !ref.peer ? resolveRef(r, ref.id, at.slice(0, -1)) : null
       if (!found) blockers.add(`Input unavailable: ${value.data.description?.content || ref.id}`)
       else {
         const target = resolveScope(store, headCid(r), [...found.path, found.row.id])!
+        if (target === request.cid) { active.delete(cid); return }
         if (!!found.row.requirement && !found.row.requirement?.satisfied) blockers.add(`Input not accepted: ${found.row.title}`)
         if (found.row.checkable && !found.row.done) blockers.add(`Input task unfinished: ${found.row.title}`)
         emit(target, 'Referenced input', depth + 1, true, false, [...found.path, found.row.id])
@@ -103,7 +104,7 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
       if (settingOf(store, content(store, child)) || isHandlerStateLeft(store, edge[0])) continue
       if (headline && content(store, child).data.name?.content === headline) continue
       // Other work requests are context only once accepted, when explicitly referenced.
-      if (isAllocationRow(store, edge) && demandOf(valueContent(store, child))?.capability === 'llm' && child !== request.cid && !external) continue
+      if (!content(store, child).data.ref && isAllocationRow(store, edge) && demandOf(valueContent(store, child))?.capability === 'llm' && child !== request.cid && !external) continue
       emit(child, typeLabel(edge), depth + 1, external, ancestorNotes, [...at, content(store, child).data.alias!.id])
     }
     active.delete(cid)

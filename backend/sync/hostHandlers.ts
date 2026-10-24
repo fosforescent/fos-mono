@@ -1,4 +1,5 @@
-import { requirementInput } from '@fosforescent/shared/sync/index'
+import { requirementInput, findRowByAlias } from '@fosforescent/shared/sync/index'
+import { addRefAt, constructNodeValue, newId, nodeValueType, setRefValueAt, bindingProperties, selectBinding } from '@fosforescent/shared/sync/index'
 import { QUERY_TYPE } from '@fosforescent/shared/sync/index'
 import { standardHostRef } from './host-runtime'
 import { cronObserver } from '@fosforescent/shared/sync/trigger-primitives'
@@ -35,7 +36,7 @@ export function githubRepoHandler(deps: GitHubIssueDeps): HostHandler {
       const issue = await deps.createIssue(ctx.userId, { repo: requirement.repo, title: ctx.step.row!.title || 'from fos', ...(task ? { body: 'From a fos task.' } : {}) })
       let r = ctx.replica()
       r = addRow(r, ctx.step.path, PLAIN_TYPE, `${requirement.repo}#${issue.number} ${issue.url}`, ctx.now())
-      r = addSupply(r, ctx.step.path.slice(0, -1), ctx.step.path.at(-1)!, { capability: 'repo', by: 'integration:github', ref: String(issue.number) }, ctx.now())
+      r = addSupply(r, ctx.step.path.slice(0, -1), ctx.step.path.at(-1)!, { capability: 'repo', by: 'integration:github', receipt: String(issue.number) }, ctx.now())
       await ctx.update(r)
     }
   }
@@ -53,12 +54,14 @@ export type CalendarDeps = {
 export function calendarHandler(deps: CalendarDeps): HostHandler {
   return {
     peerId: 'integration:google', ref: standardHostRef('integration:google', 'calendar'),
-    handles: step => { const r = step.row?.requirement; return !!r && r.capability === 'allocation' && (r.resource === 'calendar' || r.resource === 'person') && r.start !== undefined },
+    handles: step => { const r = step.row?.requirement; return !!r && r.capability === 'allocation' && (r.resource === 'calendar' || r.resource === 'person') && r.start != null && r.end != null },
     available: userId => deps.connected(userId),
     async effect(ctx) {
       if (!await deps.connected(ctx.userId)) throw new Error('Google disconnected before the effect.')
       const req = ctx.step.row!, r = req.requirement!
-      const start = r.start!, end = r.end ?? start + Math.round((r.amount ?? 1) * 3_600_000)
+      const { start, end } = r
+      if (start == null || end == null || !Number.isFinite(start) || !Number.isFinite(end) || end <= start)
+        throw new Error('Choose a concrete start and end before creating a calendar event.')
       const task = ctx.step.path.length > 1 ? null : null
       const event = await deps.createEvent(ctx.userId, { summary: req.title || 'fos', description: req.title, start, end })
       const allocation = { resource: '', type: r.resource as ResourceType, amount: r.amount ?? (end - start) / 3_600_000, unit: 'h', start, end, ...(r.peer ? { person: r.peer } : {}) }
@@ -123,15 +126,35 @@ export type MarketDeps = {
  * in the server's name.
  */
 export function marketHandler(deps: MarketDeps): HostHandler {
+  const resultBinding = (ctx: EffectContext) => {
+    const r = ctx.replica(), path = ctx.step.path, cid = resolveScope(r.store, headCid(r), path)!
+    return selectBinding([bindingProperties({ store: r.store, cid, path })], 'listing', false, true)
+  }
   return {
     peerId: 'fos', ref: standardHostRef('fos', 'market'),
+    async prepare(ctx) {
+      let result = resultBinding(ctx)
+      if (result.status === 'missing') {
+        const r = ctx.replica()
+        await ctx.update(addRefAt(r, ctx.step.path, newId(), nodeValueType(r.store, 'record'), ctx.now(), null, 'listing'))
+        result = resultBinding(ctx)
+      }
+      if (result.status !== 'ready') throw new Error('The listing result must have one accessible declaration.')
+      return { outputs: result.locations[0]!.assignments.map(assignment => assignment.path.at(-1)!) }
+    },
     async effect(ctx) {
       const path = ctx.step.path
       if (path.length < 2) throw new Error('Market requirements go under a task; the task is what gets listed.')
       const taskPath = path.slice(0, -1)
       await ctx.update(setMarketAt(ctx.replica(), taskPath, true, ctx.now()))
       await deps.index({ id: ctx.userId, username: ctx.username }, ctx.replica().store)
-      await ctx.update(addSupply(ctx.replica(), taskPath, path.at(-1)!, { capability: 'market', by: 'fos', ref: taskPath.at(-1)! }, ctx.now()))
+      // Fulfillment must not depend on the task whose requirements include this request.
+      const r = ctx.replica(), binding = resultBinding(ctx)
+      if (binding.status !== 'ready') throw new Error('The listing result declaration is unavailable.')
+      const result = constructNodeValue(r.store, { listed: true, indexed: true, owner: ctx.username })
+      let next = r
+      for (const assignment of binding.locations[0]!.assignments) next = setRefValueAt(next, assignment.path, result.cid, ctx.now())
+      await ctx.update(addSupply(next, taskPath, path.at(-1)!, { capability: 'market', by: 'fos', ref: binding.locations[0]!.id }, ctx.now()))
     }
   }
 }
@@ -162,7 +185,7 @@ export function searchHandler(deps: SearchDeps): HostHandler {
       for (const ref of rowsOfType(r.store, cid, REF_TYPE)) next = deleteTask(next, path, ref.id, ctx.now())
       for (const hit of hits) {
         if (hit.aliasId === path.at(-1) || hit.aliasId === query?.id) continue
-        if (!hit.owner) { if (resolveRef(next, hit.aliasId)) next = addRef(next, path, hit.aliasId, ctx.now()) }
+        if (!hit.owner) { if (findRowByAlias(next.store, headCid(next), hit.aliasId)) next = addRef(next, path, hit.aliasId, ctx.now()) }
         else next = addRow(next, path, REF_TYPE, hit.title, ctx.now(), { refId: hit.aliasId, refOwner: hit.owner })
       }
       next = addSupply(next, path.slice(0, -1), path.at(-1)!, { capability: 'search', by: 'fos', ref: query?.id ?? path.at(-1)! }, ctx.now())
@@ -227,7 +250,7 @@ export function pointsHandler(deps: PointsDeps, identity: VerifyHandler): HostHa
       const memo = `${ctx.step.row!.title || 'fos points'} (${taskPath.join('/')})`
       await deps.transfer({ id: ctx.userId, username: ctx.username }, recipient.username, amount, memo, `points:${ctx.username}:${path.join('/')}`)
       const id = `points:${ctx.now().toString(36)}`
-      let next = addRow(ctx.replica(), path, ALLOCATION_TYPE, `${amount} fos points to ${recipient.name}`, ctx.now(), { id, allocation: { resource: 'fos:points', type: 'points', amount, unit: 'ff', by: 'fos' }, user: recipient })
+      let next = addRow(ctx.replica(), path, ALLOCATION_TYPE, `${amount} fos points to ${recipient.name}`, ctx.now(), { id, allocation: { resource: '', type: 'points', amount, unit: 'ff', by: 'fos' }, user: recipient })
       next = addSupply(next, taskPath, path.at(-1)!, { capability: 'allocation', by: 'fos', ref: id }, ctx.now())
       await ctx.update(next)
     }

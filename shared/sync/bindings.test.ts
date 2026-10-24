@@ -1,5 +1,6 @@
 import { userView, installTestHandler } from './test-helpers'
-import { setHandlerEnabledAt, discoverHandlers, setMemberCapabilitiesAt, proposeRefAt, applyProposalAt, argumentRefs, renameTask, setRowContentAt, libAt, addMemberAt, addRefAt, addRow, addTask, addSubtasksTemplate, beginTaskWork, content, contextBindings, createReplica, decideTaskResult, headCid, instantiateTemplate, proposeTaskResult, put, refNodeContent, resolveBinding, resolveScope, resolveText, taskWorkContext, view, workAttempts, workHandler } from './index'
+import { setHandlerEnabledAt, discoverHandlers, setMemberCapabilitiesAt, proposeRefAt, applyProposalAt, argumentRefs, renameTask, setRowContentAt, libAt, addMemberAt, addRefAt, addRow, addTask, addSubtasksTemplate, beginTaskWork, content, contextBindings, createReplica, decideTaskResult, headCid, instantiateTemplate, proposeTaskResult, put, refNodeContent, resolveBinding, resolveScope, resolveText, taskWorkContext, view, workAttempts, workHandler, nestScope } from './index'
+import { FosStore } from '../dag-implementation/store'
 import { PLAIN_TYPE, NOTE_TYPE, ALLOCATION_TYPE, TEMPLATE_TYPE } from './library-types'
 
 const literal = (r: ReturnType<typeof createReplica>, text: string) => put(r.store, { data: { description: { content: text } }, children: [] })
@@ -24,6 +25,19 @@ test('explicit bindings stay pinned and multiple providers are a choice', () => 
   expect(resolveBinding(r.store, type, null, candidates).status).toBe('ambiguous')
   expect(resolveBinding(r.store, type, a, candidates).cid).toBe(a)
   expect(resolveBinding(r.store, type, 'missing', candidates).status).toBe('missing')
+})
+
+test('following a binding uses its declaration scope, not a caller override', () => {
+  let r = createReplica(), type = r.store.primitive.documentField.getId()
+  r = addRefAt(r, [], 'outer-value', type, 1, literal(r, 'Outer'), 'value')
+  const expression = put(r.store, { data: { refExpression: { up: 0, path: ['value'], lexical: true } }, children: [] })
+  r = addRefAt(r, [], 'source', type, 2, expression, 'source')
+  r = addTask(r, [], 'Child', 3, 'child')
+  r = addRefAt(r, ['child'], 'inner-value', type, 4, literal(r, 'Inner'), 'value')
+  expect(resolveText(r, ['child'], '{source} / {value}').text).toBe('Outer / Inner')
+  const nested = createReplica()
+  nestScope(nested.store, { store: r.store, root: headCid(r), at: ['child'] })
+  expect(resolveText(nested, [], '{source} / {value}').text).toBe('Outer / Inner')
 })
 
 test('named text arguments substitute through templates; duplicate assertions report both sources', () => {
@@ -57,12 +71,31 @@ test('generate subtasks derives readiness from the LLM dependency and creates ro
   expect(view(r, ['project'])!.tasks.filter(row => row.checkable).map(row => row.title)).toEqual(['Define inventory schema','Test overlapping bookings'])
 })
 
-test('legacy note variables and frontmatter use the shared resolver without changing precedence', () => {
+test('text names bind only to declarations: key-value titles and frontmatter are text, not bindings', () => {
   let r = addRow(createReplica(), [], NOTE_TYPE, '---\nmytext: default\n---\nHello {{mytext}}', 1, { id: 'note' })
   r = addRow(r, ['note'], PLAIN_TYPE, 'mytext: child', 2, { id: 'child' })
-  expect(resolveText(r, ['note'], 'Hello {{mytext}}').text).toBe('Hello child')
-  r = addRow(r, ['note'], PLAIN_TYPE, 'mytext: incompatible', 3, { id: 'other' })
-  expect(resolveText(r, ['note'], '{{mytext}}').bindings[0]!.status).toBe('conflict')
+  expect(resolveText(r, ['note'], 'Hello {{mytext}}').bindings[0]!.status).toBe('missing')
+  r = addRefAt(r, ['note'], 'declared', r.store.primitive.documentField.getId(), 3, literal(r, 'declared'), 'mytext')
+  expect(resolveText(r, ['note'], 'Hello {{mytext}}').text).toBe('Hello declared')
+})
+
+test('a nearer name hides an outer one of another type; an unfilled nearer one is a hole bound from further out', () => {
+  let r = addTask(createReplica(), [], 'Child', 1, 'child')
+  const text = r.store.primitive.documentField.getId(), other = put(r.store, { data: { description: { content: 'other type' } }, children: [] })
+  r = addRefAt(r, [], 'outer', text, 2, literal(r, 'Ada'), 'who')
+  expect(resolveText(r, ['child'], '{{who}}').text).toBe('Ada')
+  r = addRefAt(r, ['child'], 'hole', text, 3, null, 'who')
+  expect(resolveText(r, ['child'], '{{who}}').text).toBe('Ada')
+  r = addRefAt(r, ['child'], 'inner', other, 4, literal(r, 'Grace'), 'who')
+  expect(resolveText(r, ['child'], '{{who}}').text).toBe('Grace')
+})
+
+test('nested stores bind names through their enclosing scope, like library and handler lookups', () => {
+  let outer = addTask(createReplica(), [], 'Context', 1, 'context')
+  outer = addRefAt(outer, ['context'], 'name', outer.store.primitive.documentField.getId(), 2, literal(outer, 'Ada'), 'who')
+  const inner = createReplica('draft', new FosStore())
+  nestScope(inner.store, { store: outer.store, root: headCid(outer), at: ['context'] })
+  expect(resolveText(inner, [], 'Hello {{who}}').text).toBe('Hello Ada')
 })
 
 test('handler requirements participate in readiness without executing anything', () => {

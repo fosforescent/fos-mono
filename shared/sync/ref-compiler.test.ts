@@ -4,7 +4,8 @@ import {
   headCid, putBranches, loadReplica, matchesRefPattern, parseRefExpression, proposeRefAt, put, refNodeContent,
   resolveRefExpression, resolveScope, resolveText, serializeReplica, updateAtScope, commitRoot, refValueCompatible,
   saveRefCompilation, valueContent, executionInputs, executionInput, executionSnapshot, evaluateNode,
-  resolveRefIdentity
+  resolveRefIdentity, assertCompiledGraph, reachableNodes, setRefValueAt,
+  compileConstructorCall, constructAt, assignRefAt, openRefs, textOf
 } from './index'
 
 const at = (r: ReturnType<typeof createReplica>, path: string[]) => resolveScope(r.store, headCid(r), path)!
@@ -36,27 +37,31 @@ test('row shorthand constructs expression refs without flattening property names
   expect(content(r.store, at(r, ['direct'])).data.refExpression).toEqual(parseRefExpression('.name'))
 })
 
-test('UUID links compile accessible declarations outside their lexical scope', () => {
+test('UUID links use enclosing declarations and cannot search sibling subtrees', () => {
   let r = addTask(createReplica(), [], 'Folder', 1, 'folder')
   const id = '550e8400-e29b-41d4-a716-446655440000', type = r.store.primitive.documentField.getId()
   r = addRefAt(r, ['folder'], id, type, 2, text(r, 'Nested value'), 'value')
   const link = put(r.store, { data: { ref: { id } }, children: [] })
-  expect(resolveRefIdentity(r, [], id).locations[0]?.path).toEqual(['folder', id])
-  expect(compileRefGraph(r, link).complete).toBe(true)
-  const denied = compileRefGraph(r, link, [], { canRead: (_store, _cid, path) => path[0] !== 'folder' })
+  expect(resolveRefIdentity(r, [], id).status).toBe('missing')
+  expect(compileRefGraph(r, link).complete).toBe(false)
+  expect(resolveRefIdentity(r, ['folder'], id).locations[0]?.path).toEqual(['folder', id])
+  expect(compileRefGraph(r, link, ['folder', 'consumer']).complete).toBe(true)
+  const denied = compileRefGraph(r, link, ['folder', 'consumer'], { canRead: (_store, _cid, path) => path.at(-1) !== id })
   expect(denied.complete).toBe(false)
   expect(denied.holes[0]).toMatchObject({ id, reason: 'denied' })
 })
 
-test('compilation produces a stable partial CID and retains outstanding UUID identities', () => {
+test('compilation produces a stable partial CID and retains editor locations only in diagnostics', () => {
   let r = createReplica(), type = r.store.primitive.documentField.getId()
   r = addRefAt(r, [], '550e8400-e29b-41d4-a716-446655440000', type, 1, null, 'input')
   const partial = compileRefGraph(r, at(r, ['550e8400-e29b-41d4-a716-446655440000']))
   expect(partial.holes).toEqual(expect.arrayContaining([expect.objectContaining({ id: '550e8400-e29b-41d4-a716-446655440000', reason: 'unbound' })]))
   expect(partial.complete).toBe(false)
+  expect(() => assertCompiledGraph(r.store, [partial.cid])).not.toThrow()
+  expect(JSON.stringify(reachableNodes(r.store, [partial.cid]))).not.toContain('550e8400-e29b-41d4-a716-446655440000')
   const saved = saveRefCompilation(r, [], 'compiled-snapshot', partial, 1)
   const reloaded = loadReplica(serializeReplica(saved))
-  expect(valueContent(reloaded.store, at(reloaded, ['compiled-snapshot'])).data.refCompilation).toEqual({ cid: partial.cid, holes: partial.holes })
+  expect(valueContent(reloaded.store, at(reloaded, ['compiled-snapshot'])).data.refCompilation).toEqual({ cid: partial.cid })
   expect(reloaded.store.table.has(partial.cid)).toBe(true)
   const restored = loadReplica(serializeReplica(r))
   expect(compileRefGraph(restored, at(restored, ['550e8400-e29b-41d4-a716-446655440000'])).cid).toBe(partial.cid)
@@ -65,6 +70,45 @@ test('compilation produces a stable partial CID and retains outstanding UUID ide
   const full = compileRefGraph(r, at(r, ['550e8400-e29b-41d4-a716-446655440000']))
   expect(full.holes).toEqual([])
   expect(full.cid).not.toBe(partial.cid)
+})
+
+test('compiled dependencies and holes do not depend on editor UUIDs; edits require recompilation', () => {
+  const build = (id: string) => {
+    let r = createReplica(), type = r.store.primitive.documentField.getId()
+    r = addRefAt(r, [], id, type, 1, text(r, 'Before'), 'source')
+    const link = put(r.store, { data: { alias: { id: `${id}-use` }, ref: { id } }, children: [] })
+    const compiled = compileRefGraph(r, link, ['consumer'])
+    const open = put(r.store, refNodeContent(r.store, { alias: { id: `${id}-output` }, name: { content: 'result' } }, null))
+    return { r, link, compiled, partial: compileRefGraph(r, open) }
+  }
+  const a = build('550e8400-e29b-41d4-a716-446655440000'), b = build('ab078f34-6048-42cb-bf33-8b1c49e823da')
+  expect(a.compiled.cid).toBe(b.compiled.cid)
+  expect(a.partial.cid).toBe(b.partial.cid)
+  expect(a.partial.holes[0]!.id).not.toBe(b.partial.holes[0]!.id)
+  expect(() => assertCompiledGraph(a.r.store, [a.compiled.cid, a.partial.cid])).not.toThrow()
+  a.r = setRefValueAt(a.r, ['550e8400-e29b-41d4-a716-446655440000'], text(a.r, 'After'), 2)
+  expect(content(a.r.store, a.compiled.cid).data.description?.content).toBe('Before')
+  expect(content(a.r.store, compileRefGraph(a.r, a.link, ['consumer'], { selected: true }).cid).data.description?.content).toBe('After')
+})
+
+test('constructor calls compile references and explicit overrides while keeping output locations out of the graph', () => {
+  let r = addTask(createReplica(), [], 'Fetch', 1, 'call')
+  const constructor = libAt(r.store).capabilities.fetch!, type = r.store.primitive.documentField.getId()
+  r = addRefAt(r, [], '550e8400-e29b-41d4-a716-446655440000', type, 2, text(r, 'https://example.com'), 'endpoint')
+  r = constructAt(r, ['call'], constructor, { method: 'POST' }, 3)
+  const url = openRefs(r.store, constructor).find(ref => ref.name === 'url')!
+  r = assignRefAt(r, ['call'], url.alias, put(r.store, { data: { ref: { id: '550e8400-e29b-41d4-a716-446655440000' } }, children: [] }), 4)
+  const call = compileConstructorCall(r, ['call'])
+  expect(call.canRun).toBe(true)
+  expect(textOf(r, call.args.find(arg => arg.name === 'url')!.cid)).toBe('https://example.com')
+  expect(textOf(r, call.args.find(arg => arg.name === 'method')!.cid)).toBe('POST')
+  expect(call.args.some(arg => arg.received && call.edits.has(arg.cid))).toBe(true)
+  expect(JSON.stringify(reachableNodes(r.store, [call.cid]))).not.toContain('550e8400-e29b-41d4-a716-446655440000')
+  const left = compileRow(r, ['call']).left
+  expect(left.holes.every(hole => hole.reason === 'unbound')).toBe(true)
+  expect(JSON.stringify(reachableNodes(r.store, [left.cid]))).toContain('POST')
+  r = assignRefAt(r, ['call'], url.alias, put(r.store, { data: { scalar: { type: 'number', value: 17 } }, children: [] }), 5)
+  expect(compileConstructorCall(r, ['call']).holes.some(hole => hole.reason === 'type')).toBe(true)
 })
 
 test('nested product holes are execute inputs and may be filled without replacing sibling properties', async () => {
@@ -79,7 +123,7 @@ test('nested product holes are execute inputs and may be filled without replacin
   r = executionInput(r, ['work'], { revision: headCid(r), key: field.key, value: 'Supplied' }, 'owner', 3)
   expect(resolveText(r, ['work'], '{.record.answer} {.record.sibling}').text).toBe('Supplied Keep')
   expect(executionInputs(r, ['work'])).toEqual([])
-  const completed = await evaluateNode(['work'], { get: () => r, save: next => { r = next }, now: () => 4, handles: () => false, check: () => [] })
+  const completed = await evaluateNode(['work'], { get: () => r, save: next => { r = next }, now: () => 4, executors: () => [], check: () => [] })
   expect(completed.status).toBe('committed')
 })
 
@@ -87,7 +131,7 @@ test('a nested output may remain open during execution', async () => {
   let r = addTask(createReplica(), [], 'Work', 1, 'work'), type = r.store.primitive.documentField.getId()
   const output = put(r.store, refNodeContent(r.store, { alias: { id: 'result' }, name: { content: 'Result' }, refRole: 'output' }, null, []))
   r = addRefAt(r, ['work'], 'record', put(r.store, { data: {}, children: [] }), 2, put(r.store, { data: {}, children: [[type, output]] }), 'record')
-  const completed = await evaluateNode(['work'], { get: () => r, save: next => { r = next }, now: () => 3, handles: () => false, check: () => [] })
+  const completed = await evaluateNode(['work'], { get: () => r, save: next => { r = next }, now: () => 3, executors: () => [], check: () => [] })
   expect(completed.status).toBe('committed')
   expect(compileRow(r, ['work']).right.holes.some(hole => hole.id === 'result')).toBe(true)
 })

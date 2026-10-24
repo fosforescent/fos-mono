@@ -2,7 +2,7 @@ import { installTestHandler } from './test-helpers'
 import {
   addMemberAt, addPlanningTemplate, addRef, addRow, addSupply, addTask, beginTaskWork,
   createReplica, decideTaskResult, loadReplica, proposeTaskResult,
-  renameTask, serializeReplica, setTaskDone, taskWorkContext, view, workAttempts
+  renameTask, serializeReplica, addRefAt, put, setTaskDone, taskWorkContext, view, workAttempts
 } from './index'
 import { PLAIN_TYPE } from './library-types'
 import { NOTE_TYPE, ALLOCATION_TYPE } from './library-types'
@@ -61,6 +61,7 @@ test('accepted work becomes an explicit input to another task; missing or unacce
   let { r, path } = setup()
   r = addTask(r, ['home', 'project'], 'Implement reservation', 7, 'dependent')
   r = addRef(r, ['home', 'project', 'dependent'], 'request', 8)
+  path = ['home', 'project', 'request']
   r = addRow(r, ['home', 'project', 'dependent'], ALLOCATION_TYPE, 'Refine implementation steps.', 9, { id: 'next', requirement: { capability: 'llm' } })
   const dependent = ['home', 'project', 'dependent', 'next']
   expect(taskWorkContext(r, dependent).blockers.join()).toMatch(/not accepted/)
@@ -110,10 +111,10 @@ test('the sent context stays pinned even if someone edits the visible snapshot n
   expect(workAttempts(r, path)[0]!.system).toBe(run.system)
 })
 
-test('planning uses a note’s own variable context as well as passed text arguments', () => {
+test('planning resolves a note’s names from its declarations, as passed text arguments', () => {
   let { r, path } = setup()
   r = addRow(r, path.slice(0, -1), NOTE_TYPE, 'Required: {{subject}}', 7, { id: 'templated-note' })
-  r = addRow(r, [...path.slice(0, -1), 'templated-note'], PLAIN_TYPE, 'subject: prevent double bookings', 8)
+  r = addRefAt(r, [...path.slice(0, -1), 'templated-note'], 'subject', r.store.primitive.documentField.getId(), 8, put(r.store, { data: { description: { content: 'prevent double bookings' } }, children: [] }), 'subject')
   const preview = taskWorkContext(r, path)
   expect(preview.blockers).toEqual([])
   expect(preview.prompt).toContain('Required: prevent double bookings')

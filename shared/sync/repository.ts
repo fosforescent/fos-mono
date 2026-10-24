@@ -3,7 +3,8 @@ import { sameCapabilityType } from './capabilities'
 import { contextMembers } from './handlers'
 import { argumentRefs } from './bindings'
 import { addRefAt, addMemberAt, setMemberCapabilitiesAt, headCid, type Replica } from './replica'
-import { libAt, content, newId, put, refValueCid, resolveScope, type Scope } from './graph'
+import { libAt, content, newId, put, refValueCid, resolveScope, enclosingScopes, nearestInScope, type Scope } from './graph'
+import type { FosStore } from '../dag-implementation/store'
 import { constructNodeValue, readGraphValue } from './node-values'
 export type RepositoryPull = { number: number; title: string; url: string; head: string; sha: string; base: string; headRepo: string; state: 'open' | 'closed' | 'merged' }
 export type RepositorySnapshot = { repo: string; defaultBranch: string; canPush: boolean; branches: Array<{ name: string; sha: string }>; pulls: RepositoryPull[] }
@@ -22,18 +23,33 @@ export function repositoryAt(r: Replica, at: Scope): string | null {
 }
 /** The values of the node's repo arguments (rows of the repo capability). */
 function repoValues(r: Replica, cid: string, at: Scope): string[] {
-  const type = libAt(r.store, at).capabilities.repo!
-  return argumentRefs(r.store, cid).filter(arg => sameCapabilityType(r.store, arg.type, type)).map(arg => refValueCid(r.store, content(r.store, arg.cid))).filter((value): value is string => !!value)
+  return repoValuesIn(r.store, cid, libAt(r.store, at).capabilities.repo!)
+}
+function repoValuesIn(store: FosStore, cid: string, type: string): string[] {
+  return argumentRefs(store, cid).filter(arg => sameCapabilityType(store, arg.type, type)).map(arg => refValueCid(store, content(store, arg.cid))).filter((value): value is string => !!value)
 }
 export type LocalRepository = { path: string; device: string; peer: string }
-/** A local checkout bound at the node: a repo argument whose value says which device's directory it is. */
+/** The local checkouts bound at the node `cid`: repo arguments whose value says which device's directory it is. */
+function localRepositoriesIn(store: FosStore, cid: string, type: string): LocalRepository[] {
+  return repoValuesIn(store, cid, type).flatMap(value => {
+    const data = readGraphValue(store, value) as Partial<LocalRepository> | undefined
+    return data && typeof data === 'object' && typeof data.path === 'string' && typeof data.device === 'string' ? [{ path: data.path, device: data.device, peer: typeof data.peer === 'string' ? data.peer : '' }] : []
+  })
+}
+/** The local checkout bound at the node itself; two there are ambiguous. */
 export function localRepositoryHere(r: Replica, at: Scope): LocalRepository | null {
   const cid = resolveScope(r.store, headCid(r), at)
-  for (const value of cid ? repoValues(r, cid, at) : []) {
-    const data = readGraphValue(r.store, value) as Partial<LocalRepository> | undefined
-    if (data && typeof data === 'object' && typeof data.path === 'string' && typeof data.device === 'string') return { path: data.path, device: data.device, peer: typeof data.peer === 'string' ? data.peer : '' }
-  }
-  return null
+  const found = cid ? localRepositoriesIn(r.store, cid, libAt(r.store, at).capabilities.repo!) : []
+  if (found.length > 1) throw new Error('Ambiguous local repository in this scope.')
+  return found[0] ?? null
+}
+/**
+ * The local checkout bound nearest `at` (`nearestInScope`) and the node that binds it. A nearer binding for another
+ * device hides an outer one for this device: whose checkout a subtree uses is the nearest binding's to say.
+ */
+export function localRepositoryAt(r: Replica, at: Scope): { repository: LocalRepository; scope: Scope } | null {
+  const found = nearestInScope(enclosingScopes(r.store, headCid(r), at), scope => localRepositoriesIn(scope.store, scope.cid, libAt(scope.store, scope.path).capabilities.repo!), 'local repository')
+  return found && found.store === r.store ? { repository: found.value, scope: found.path } : null
 }
 /** Bind a local checkout at the node: a repo argument whose value is the directory, the device and its Git peer. */
 export function bindLocalRepository(r: Replica, at: Scope, local: LocalRepository, now: number): Replica {

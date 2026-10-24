@@ -1,99 +1,73 @@
 /** Shared, read-only resolution for data arguments and callable values. */
 import { discoverHandlers, type HandlerEnvironment } from './handlers'
 import { resolveRequirementOutput } from './destructure'
-import { keyValueOf, splitFrontmatter } from './notes'
-import { formText, formTitle } from './forms'
+import { formText } from './forms'
 import type { FosStore } from '../dag-implementation/store'
 import {
-  isBranchChoice, selectedBranchValue, libraryTypeAt, type Capability, put, childRows, flowOf, requirementSatisfied, content, identityCid, isChoiceEdge, isRefNode, refValueCid,
-  resolveScope, valueContent, importNodes, reachableNodes, typeIdOf, isTemplateType, isLibraryRef, type Scope
+  isBranchChoice, selectedBranchValue, libraryTypeAt, type Capability, childRows, flowOf, requirementSatisfied, content, isChoiceEdge, isRefNode, refValueCid,
+  valueContent, importNodes, reachableNodes, type Scope
 } from './graph'
-import { PLAIN_TYPE, isAllocationType } from './library-types'
-import { headCid, type Replica } from './replica'
-import { refProperties } from './refs'
-import { sameCapabilityType, isHandlerStateLeft } from './capabilities'
+import { isAllocationType } from './library-types'
+import { type Replica } from './replica'
+import { sameCapabilityType } from './capabilities'
+import { bindingProperties, visibleBindings, bindingTree, bindingAvailable, bindingAssignments, submissionRef, type ScopedBinding } from './scope-bindings'
 import { matchesGraph } from './structural'
-import { parseRefExpression, resolveRefExpression, textRefExpressions, type RefAccess } from './ref-paths'
+import { parseRefExpression, resolveRefExpression, resolveRefIdentity, nodeOccurrence, textRefExpressions, type RefAccess } from './ref-paths'
 
-export type BindingEnvironment = HandlerEnvironment & RefAccess & { scope?: { replica: Replica; path: Scope } }
+export type BindingEnvironment = HandlerEnvironment & RefAccess & {
+  scope?: { replica: Replica; path: Scope }
+  /** Discovery reads callable values without invoking their bodies. Invocation must check their dependencies. */
+  checkDependencies?: boolean
+}
 
-export type BindingCandidate = { cid: string; type: string; name?: string; alternativeOf?: string; refIds?: string[] }
+type BindingScope = { store: FosStore; path: Scope }
+export type BindingCandidate = { cid: string; type: string; name?: string; refIds?: string[]; scope?: BindingScope; binding?: ScopedBinding }
 export type BindingResolution = {
   status: 'ready' | 'missing' | 'ambiguous' | 'conflict' | 'cycle'
   cid?: string
+  /** The selected declaration survives explicit forwarding; equal literal values do not establish ref identity. */
+  binding?: ScopedBinding
   /** References consulted, including both sides of an incompatible equality. */
   sources: string[]
   problems: string[]
 }
+/** The node's declarations as binding candidates: named ones bind by name, the others only as explicit arguments. */
 export function argumentRefs(store: FosStore, cid: string): BindingCandidate[] {
-  // Named properties and explicit ref declarations are lexical bindings. Other
-  // rows still have a right-hand argument, but do not declare an implicit name.
-  return refProperties(store, cid, 'arguments').filter(ref => {
-    const node = content(store, ref.cid)
-    if (isLibraryRef(store, node)) return false
-    // an execute row holds the evaluator's journal of this node: its state, never an argument
-    if (isHandlerStateLeft(store, ref.type)) return false
-    const pattern = ref.type && content(store, ref.type)
-    return node.data.name || valueContent(store, ref.cid).data.name || isRefNode(store, node) &&
-      !!ref.type && !isTemplateType(store, ref.type) && (!typeIdOf(store, ref.type) || !!pattern && (pattern.data.capabilityDefinition || pattern.data.form?.primitive))
-  }).map(ref => ({ cid: ref.cid, type: ref.type!, ...(content(store, ref.cid).data.name || valueContent(store, ref.cid).data.name ? { name: ref.name } : {}) }))
+  return bindingProperties({ store, cid, path: nodeOccurrence(store, cid) ?? [] }).bindings.filter(binding => binding.ambient)
+    .map(binding => ({ cid: binding.cid, type: binding.pattern, binding, ...(binding.name ? { name: binding.name } : {}) }))
 }
 
-/** Only explicitly passed arguments and advertised peer handlers enter the context. */
+/** A presentation of shared scoped declarations, retaining the complete binding for all consumers. */
 export function contextBindings(r: Replica, at: Scope, environment: BindingEnvironment = {}): BindingCandidate[] {
-  const named = new Map<string, BindingCandidate[]>()
-  for (let i = 0; i <= at.length; i++) {
-    const cid = resolveScope(r.store, headCid(r), at.slice(0, i))
-    if (!cid) continue
-    const local = new Map<string, BindingCandidate[]>()
-    // Legacy note variables are adapters into the same typed candidate set.
-    const textType = r.store.primitive.documentField.getId()
-    const addText = (name: string, text: string) => {
-      const key = `${textType}/${name}`
-      const value = put(r.store, { data: { description: { content: text } }, children: [] })
-      local.set(key, [...(local.get(key) ?? []), { cid: value, type: textType, name }])
-    }
-    const frontmatter = splitFrontmatter(formText(r.store, valueContent(r.store, cid))).frontmatter
-    for (const [name, text] of Object.entries(frontmatter)) addText(name, text)
-    const childNames = new Set<string>()
-    for (const child of childRows(r.store, cid).filter(c => c.type === PLAIN_TYPE)) {
-      // Product fields are values, not legacy "key: value" declarations.
-      if (child.value.data.scalar || child.value.data.presentation) continue
-      const kv = keyValueOf(formTitle(r.store, child.value))
-      if (!kv) continue
-      if (!childNames.has(kv.key)) { local.delete(`${textType}/${kv.key}`); childNames.add(kv.key) }
-      addText(kv.key, kv.value)
-    }
-    for (const arg of argumentRefs(r.store, cid)) {
-      // Unnamed rows are explicit arguments of their own parent, not ambient
-      // name bindings in every descendant (e.g. the linked Home document).
-      if (!arg.name) continue
-      // Unfilled local arguments are consumers, not providers.
-      if (refValueCid(r.store, content(r.store, arg.cid)) || content(r.store, arg.cid).data.ref) local.set(`${arg.type}/${arg.name}`, [...(local.get(`${arg.type}/${arg.name}`) ?? []), arg])
-    }
-    for (const [key, values] of local) named.set(key, values)
-  }
-  const namedValues = [...named.values()].flat()
-  return [...namedValues, ...discoverHandlers(r, at, environment).filter(o => o.enabled && o.active && !namedValues.some(value => value.cid === o.cid)).map(({ id, cid, type, refPath, refIds }) => {
-    const name = refPath?.join('.') ?? content(r.store, cid).data.name?.content
-    const declaration = namedValues.find(value => content(r.store, value.cid).data.alias?.id === id) ??
-      (name ? namedValues.find(value => value.name === name && sameCapabilityType(r.store, value.type, type)) : undefined)
-    return { cid, type, ...(name ? { name } : {}), ...(refIds ? { refIds } : {}), ...(declaration ? { alternativeOf: declaration.cid } : {}) }
-  })]
+  return visibleBindings(r, at, environment).flatMap(binding => bindingTree(binding, environment)).flatMap(binding => {
+    if (!bindingAvailable(binding)) return []
+    const node = content(binding.store, binding.cid)
+    if (!binding.submissions.length && !node.data.ref && !node.data.refExpression) return []
+    const named = !!binding.name, name = binding.refPath.join('.')
+    const targets = named || !binding.submissions.length ? [binding.cid] : binding.submissions.map(value => submissionRef(binding, value))
+    return targets.map(cid => {
+      if (binding.store !== r.store) importNodes(r.store, reachableNodes(binding.store, [cid, binding.pattern]))
+      return { cid, type: binding.pattern, name, refIds: binding.refIds, scope: binding.scope, binding }
+    })
+  })
 }
 
-/** Explicit targets win. Multiple candidates remain choices; no first-provider wins. */
-export function resolveBinding(store: FosStore, type: string, target: string | null, candidates: BindingCandidate[] = [], name?: string, environment: BindingEnvironment = {}): BindingResolution {
+/** Explicit targets win. A caller may supply a value pattern; a row instruction is not implicitly a result predicate. */
+export function resolveBinding(store: FosStore, type: string | null, target: string | ScopedBinding | null, candidates: BindingCandidate[] = [], name?: string, environment: BindingEnvironment = {}): BindingResolution {
   const sources = new Set<string>(), active = new Set<string>()
   const fail = (status: BindingResolution['status'], message: string): BindingResolution => ({ status, sources: [...sources], problems: [message] })
-  const compatible = (_actual: string, wanted: string, cid: string): boolean => matchesGraph(store, wanted, cid)
-  const choose = (wanted: string, label?: string, excluded?: string, anonymous = false): BindingResolution => {
-    const matches = [...new Set(candidates.filter(c => c.cid !== excluded && !(label && c.alternativeOf) && compatible(c.type, wanted, c.cid) && (!label || c.name === label || (anonymous && (!c.name || !!c.refIds)))).map(c => c.cid))]
+  const compatible = (_actual: string, wanted: string | null, cid: string): boolean => wanted !== null && matchesGraph(store, wanted, cid)
+  const choose = (wanted: string | null, label?: string, excluded?: string, anonymous = false): BindingResolution => {
+    const matches = [...new Set(candidates.filter(c => c.cid !== excluded && (!label || c.binding?.nameVisible !== false) &&
+      (label && c.name === label || compatible(c.type, wanted, c.cid) && (!label || anonymous && (!c.name || !!c.refIds)))).map(c => c.cid))]
     if (!matches.length) return fail('missing', `Missing binding${label ? `: ${label}` : ''}`)
     if (matches.length > 1) {
       matches.forEach(cid => sources.add(cid))
-      if (label && matches.every(cid => candidates.some(c => c.cid === cid && c.name === label))) {
-        const resolved = matches.map(cid => follow(cid, wanted))
+      if (label && matches.every(cid => candidates.some(c => c.cid === cid && c.name === label && !c.binding?.capability))) {
+        const resolved = matches.map(cid => {
+          const binding = candidates.find(candidate => candidate.cid === cid)?.binding
+          return binding ? followDeclaration(binding, wanted) : follow(cid, wanted)
+        })
         const blocked = resolved.find(value => value.status !== 'ready')
         if (blocked) return { ...blocked, sources: [...sources] }
         if (new Set(resolved.map(value => value.cid)).size === 1) return { ...resolved[0]!, sources: [...sources] }
@@ -101,57 +75,90 @@ export function resolveBinding(store: FosStore, type: string, target: string | n
       }
       return fail('ambiguous', `Choose a binding${label ? ` for ${label}` : ''}`)
     }
-    return follow(matches[0]!, wanted)
+    const binding = candidates.find(candidate => candidate.cid === matches[0])?.binding
+    return binding ? followDeclaration(binding, wanted) : follow(matches[0]!, wanted)
   }
-  const follow = (cid: string, wanted: string): BindingResolution => {
-    if (environment.canRead && !environment.canRead(store, cid, environment.scope?.path ?? [])) return fail('missing', 'The bound value is not accessible')
+  const followDeclaration = (binding: ScopedBinding, wanted: string | null): BindingResolution => {
+    if (!bindingAvailable(binding)) return fail('missing', 'The reference is unavailable in this scope')
+    const assignments = bindingAssignments(binding)
+    if (!assignments.length) return fail('missing', 'The explicitly referenced declaration has no supplied value')
+    const values = assignments.map(location => {
+      if (location.store !== store) importNodes(store, reachableNodes(location.store, [location.cid]))
+      return follow(location.cid, wanted, { store: location.store, path: location.path.slice(0, -1) }, true)
+    })
+    const blocked = values.find(value => value.status !== 'ready')
+    if (blocked) return { ...blocked, sources: [...sources] }
+    if (new Set(values.map(value => value.cid)).size !== 1) return fail('conflict', 'Incompatible bindings for the same reference')
+    return { ...values[0]!, binding: values[0]!.binding ?? binding, sources: [...sources] }
+  }
+  const follow = (cid: string, wanted: string | null, inherited = candidates.find(candidate => candidate.cid === cid)?.scope ?? (environment.scope ? { store: environment.scope.replica.store, path: environment.scope.path } : undefined), explicit = false): BindingResolution => {
+    const declaration = !explicit && candidates.find(candidate => candidate.cid === cid)?.binding
+    if (declaration && bindingAssignments(declaration).length) return followDeclaration(declaration, wanted)
+    const occurrence = nodeOccurrence(store, cid)
+    const scope: BindingScope | undefined = inherited ?? (occurrence ? { store, path: occurrence.slice(0, -1) } : undefined)
+    if (environment.canRead && !environment.canRead(store, cid, scope?.path ?? [])) return fail('missing', 'The bound value is not accessible')
     sources.add(cid)
     if (!store.table.has(cid)) return fail('missing', 'The bound value is unavailable')
     if (active.has(cid) || active.size >= 100) return fail('cycle', 'Unresolved dependency cycle')
     active.add(cid)
     try {
       const node = content(store, cid)
+      if (node.data.refAlternatives) {
+        const alternatives = [...new Set(node.children.map(([, value]) => value))]
+        if (alternatives.length !== 1) return fail(alternatives.length ? 'ambiguous' : 'missing', 'Choose a handler for this capability')
+        return follow(alternatives[0]!, wanted, scope, true)
+      }
       if (node.data.refExpression) {
-        if (!environment.scope) return fail('missing', 'Ref expression needs its lexical scope')
-        const found = resolveRefExpression(environment.scope.replica, environment.scope.path, node.data.refExpression, environment)
+        if (!scope) return fail('missing', 'Ref expression needs its lexical scope')
+        const found = resolveRefExpression({ store: scope.store }, scope.path, node.data.refExpression, environment)
         if (found.status !== 'ready') return fail(found.status === 'denied' ? 'missing' : found.status, `Unresolved ref property: ${node.data.name?.content ?? node.data.alias?.id}`)
         const location = found.locations[0]!
+        if ('assignments' in location) return followDeclaration(location as ScopedBinding, wanted)
         if (location.store !== store) importNodes(store, reachableNodes(location.store, [location.cid]))
-        return follow(location.cid, wanted)
+        return follow(location.cid, wanted, { store: location.store, path: location.path.slice(0, -1) })
       }
-      if (isBranchChoice(store, node)) { const selected = selectedBranchValue(store, cid); return selected ? follow(selected, wanted) : fail('missing', 'Choose a supplied value branch') }
+      if (isBranchChoice(store, node)) { const selected = selectedBranchValue(store, cid); return selected ? follow(selected, wanted, scope) : fail('missing', 'Choose a supplied value branch') }
       if (node.children.some(e => isChoiceEdge(store, e))) return fail('conflict', 'Resolve conflicting values first')
-      const output = resolveRequirementOutput(store, cid)
-      if (output) return output.cid ? { status: 'ready', cid: output.cid, sources: [...sources], problems: [] } : fail('missing', output.error ?? 'Unfilled requirement')
+      const output = resolveRequirementOutput(store, cid, scope?.path, environment)
+      if (output) return output.cid ? { status: 'ready', cid: output.cid, binding: output.binding, sources: [...sources], problems: [] } : fail('missing', output.error ?? 'Unfilled requirement')
+      if (node.data.ref) {
+        if (node.data.ref.peer || node.data.ref.owner) return fail('missing', 'The remote reference needs a handler in this scope')
+        if (!scope) return fail('missing', 'The reference needs its lexical scope')
+        const found = resolveRefIdentity({ store: scope.store }, scope.path, node.data.ref.id, environment)
+        if (found.status !== 'ready') return fail(found.status === 'ambiguous' ? 'ambiguous' : 'missing', 'The reference is unavailable in this scope')
+        const location = found.locations[0]!
+        return followDeclaration(location, wanted)
+      }
       if (isRefNode(store, node)) {
         const targets = [...new Set(node.children.filter(e => e[0] === store.primitive.targetPointerConstructor.getId()).map(e => e[1]))]
-        if (!targets.length) return choose(wanted, node.data.name?.content, cid, true)
-        const values = targets.map(t => follow(t, wanted))
+        if (!targets.length) return explicit ? fail('missing', 'The explicitly referenced declaration has no supplied value') : choose(wanted, node.data.name?.content, cid, true)
+        const values = targets.map(t => follow(t, wanted, scope))
         const blocked = values.find(v => v.status !== 'ready')
         if (blocked) return { ...blocked, sources: [...sources] }
         if (new Set(values.map(v => v.cid)).size > 1) return fail('conflict', 'Incompatible bindings for the same reference')
         return { ...values[0]!, sources: [...sources] }
       }
-      if (!matchesGraph(store, wanted, cid)) return fail('conflict', 'The value does not match the row pattern')
+      if (wanted && !matchesGraph(store, wanted, cid)) return fail('conflict', 'The value does not match the row pattern')
       const peer = node.data.peerId?.content
       if (peer && environment.isPeerActive && !environment.isPeerActive(peer)) return fail('missing', `Peer ${peer} is not active`)
+      if (environment.checkDependencies === false) return { status: 'ready', cid, sources: [...sources], problems: [] }
       for (const child of childRows(store, cid).filter(c => isAllocationType(c.type) && flowOf(c.type, c.value).requirement)) {
         if (!requirementSatisfied(store, child.cid)) { sources.add(child.cid); return fail('missing', 'A required resource or confirmation is unresolved') }
       }
       for (const arg of argumentRefs(store, cid)) {
         if (content(store, arg.cid).data.refRole === 'output') continue
-        const result = follow(arg.cid, arg.type)
+        const result = arg.binding && bindingAssignments(arg.binding).length ? followDeclaration(arg.binding, arg.type) : follow(arg.cid, arg.type, scope)
         if (result.status !== 'ready') return { ...result, sources: [...sources] }
       }
       return { status: 'ready', cid, sources: [...sources], problems: [] }
     } finally { active.delete(cid) }
   }
-  return target ? follow(target, type) : choose(type, name)
+  return target ? typeof target === 'string' ? follow(target, type) : followDeclaration(target, type) : choose(type, name)
 }
 
 /** Substitution uses the same argument resolution as a handler invocation. */
 export function resolveText(r: Replica, at: Scope, text: string, defaults: BindingCandidate[] = [], environment: BindingEnvironment = {}): { text: string; bindings: BindingResolution[] } {
-  const candidates = contextBindings(r, at), bindings: BindingResolution[] = []
+  const candidates = contextBindings(r, at, environment), bindings: BindingResolution[] = []
   for (const candidate of defaults) if (!candidates.some(c => c.type === candidate.type && c.name === candidate.name)) candidates.push(candidate)
   const type = r.store.primitive.documentField.getId()
   let rendered = '', previous = 0
@@ -163,7 +170,7 @@ export function resolveText(r: Replica, at: Scope, text: string, defaults: Bindi
       const location = found.locations[0]
       if (found.status === 'ready' && location) {
         if (location.store !== r.store) importNodes(r.store, reachableNodes(location.store, [location.cid]))
-        result = resolveBinding(r.store, type, location.cid, candidates, undefined, { ...environment, scope: { replica: r, path: location.path.slice(0, -1) } })
+        result = resolveBinding(r.store, type, 'assignments' in location ? location as ScopedBinding : location.cid, candidates, undefined, { ...environment, scope: { replica: r, path: location.path.slice(0, -1) } })
       } else result = { status: found.status === 'denied' ? 'missing' : found.status === 'ready' ? 'missing' : found.status, sources: [], problems: [`Unresolved ref property: ${name}`] }
     } else result = resolveBinding(r.store, type, null, candidates, name, { ...environment, scope: { replica: r, path: at } })
     bindings.push(result)

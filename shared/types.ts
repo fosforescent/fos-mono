@@ -153,8 +153,8 @@ export type FosDataContent = {
     resource?: 'calendar' | 'account' | 'inventory' | 'person' | 'points' | 'location'
     amount?: number
     unit?: string
-    start?: number
-    end?: number
+    start?: number | null
+    end?: number | null
     options?: string[]
     /**
      * `peer` requirements: a peer id the task is assigned to (a shared host, a device). A user named with `-@name`
@@ -168,12 +168,14 @@ export type FosDataContent = {
     /** `tool` requirements: the tool (of an MCP peer attached above) to run; the text is its input. */
     tool?: string
   },
-  /** A supply row under a requirement: who/what satisfied it. `ref` names an allocation or query row by alias id. */
+  /** Editable supply syntax. Compile `ref` through parent scope into a declaration CID before validation. */
   supply?: {
     capability: string
     by: string
     at: number
     ref?: string
+    /** Opaque receipt from an external service; never a graph reference. */
+    receipt?: string
     choice?: number
   },
   /** On a member reference: granted capabilities (CAPABILITY edges) the owner has switched off; the member still sees them, as offline. */
@@ -212,9 +214,15 @@ export type FosDataContent = {
   nativeDefaults?: { sources: string[] },
   /** Output refs may remain mutable or unfilled when the instruction starts. */
   refRole?: 'input' | 'output',
-  /** A compiled residual: its stable ref identity survives next to the partial CID. */
-  refHole?: { id: string },
-  refCompilation?: { cid: string; holes: import('./sync/ref-compiler').RefHole[] },
+  /** A compiler-local binder. References to it use this node's CID, never an editing alias. */
+  refHole?: { slot: number; role: 'input' | 'output' },
+  /** A declaration in a compiled lexical frame. Its handler/value is the right side of its binding edge. */
+  refDeclaration?: { slot: number },
+  /** Closed authority-transition graphs. Domain checking is supplied by the grant's bound handler. */
+  authorityFrame?: { role: 'state' | 'bindings' | 'grant' | 'operation' | 'operations' | 'transaction' | 'reference' | 'invocation' | 'rebindings'; revision?: number; nextSlot?: number },
+  /** Rows in this node submit alternative handlers to the capability on their left. They are not equalities. */
+  refAlternatives?: true,
+  refCompilation?: { cid: string },
   /** A type error node ([TYPE_ERROR, error]): the alias ids of the row's children its type does not accept. */
   typeError?: {
     rejected: string[]
@@ -234,8 +242,10 @@ export type FosDataContent = {
     type: 'calendar' | 'account' | 'inventory' | 'person' | 'points' | 'location'
     unit: string
     capacity?: number
+    start?: number | null
+    end?: number | null
   },
-  /** An allocation row: locks `amount` of a resource bank (alias id `resource`), optionally for a time window. */
+  /** An allocation locks `amount` for an optional time window. Compile its editor locator to a declaration CID before accounting. */
   allocation?: {
     /** Handler demands use the same signed entry as resource allocations. */
     capability?: NonNullable<FosDataContent['requirement']>['capability']
@@ -245,14 +255,16 @@ export type FosDataContent = {
     tool?: string
     at?: number
     ref?: string
+    /** Opaque receipt from an external service; never a graph reference. */
+    receipt?: string
     choice?: number
     resource: string
     type: 'calendar' | 'account' | 'inventory' | 'person' | 'points' | 'location'
     amount: number
     unit: string
-    /** Window the allocation holds for: start = now when absent, end = forever when absent. Every resource has its own calendar. */
-    start?: number
-    end?: number
+    /** Null means no lower/upper time bound, including money and other non-calendar resources. */
+    start?: number | null
+    end?: number | null
     by?: string
     /** Location allocations ("at Paris"): the place, by name and/or coordinates (a device's position). */
     location?: { name?: string; lat?: number; lng?: number }

@@ -1,7 +1,8 @@
 import { sameCapabilityType } from './capabilities'
 import { refValueCompatible } from './scoped-refs'
 import { matchesGraph } from './structural'
-import { parseRefExpression, textRefExpressions, resolveRefIdentity } from './ref-paths'
+import { transferRefGraph } from './ref-transfer'
+import { parseRefExpression, textRefExpressions, resolveRefIdentity, nodeOccurrence } from './ref-paths'
 import { contextMemberRefs, discoverHandlers, marketplaceOffers } from './handlers'
 import { nodeBranches, materializedNodePaths, nodeShape, sameNodeShape, nodeSyncKey, nodePersistenceAllowed } from './node-sync'
 /**
@@ -254,7 +255,7 @@ export function shareHome(replica: Replica): Replica {
   return { ...replica, meta: { ...replica.meta, localScope: homePath(replica) } }
 }
 
-export function headCid(replica: Replica): string {
+export function headCid(replica: Pick<Replica, 'store'>): string {
   return rootTargetCid(replica.store)
 }
 
@@ -501,7 +502,10 @@ export function setRowContentAt(replica: Replica, at: Scope, aliasId: string, ty
     const converted = convertRow(replica.store, node, type, now, extras)
     const data: FosNodeContent['data'] = { ...converted.data, description: { content: body } }
     if (type === TASK_TYPE) data.todo = { completed: !!extras.done, time: node.data.todo?.time ?? now }
-    if (type === RESOURCE_TYPE && extras.resource) data.resource = extras.resource
+    if (type === RESOURCE_TYPE) {
+      data.name = { content: body }
+      if (extras.resource) data.resource = extras.resource
+    }
     if (type === QUERY_TYPE && extras.query) data.query = { ...(node.data.query ?? {}), ...extras.query }
     const next = withChildValue(replica.store, edge, userBound(replica, at, withTextParameters(replica.store, { ...converted, data: canonicalRowData(data) }), extras), now)
     const changed = identityCid(replica.store, next)
@@ -543,13 +547,51 @@ export function setRowType(replica: Replica, at: Scope, aliasId: string, type: s
   })
 }
 
-/** Insert a reference row pointing at `targetAliasId` (any row in the replica) under `at`, optionally at `position`. */
+/** Explicitly expose a declaration in the lowest shared scope; leave a ref at its original occurrence. */
+export function shareRefAt(replica: Replica, source: Scope, destination: Scope, now: number): Replica {
+  const s = replica.store, parent = source.slice(0, -1), id = source.at(-1)
+  if (!id) throw new Error('Choose a declaration to share.')
+  let depth = 0
+  while (depth < parent.length && depth < destination.length && parent[depth] === destination[depth]) depth++
+  const shared = parent.slice(0, depth)
+  const root = headCid(replica), sourceParent = resolveScope(s, root, parent)
+  const edge = sourceParent && findEdge(s, valueContent(s, sourceParent), `a:${id}`)
+  if (!edge || !resolveScope(s, root, destination)) throw new Error('Source or destination is unavailable.')
+  const cid = identityCid(s, edge)
+  transferRefGraph(replica, cid, source, [...shared, id], false)
+  const type = rowTypeOf(s, edge)
+  if (!type) throw new Error('Only a typed declaration can be shared.')
+  transferRefGraph(replica, type, source, [...shared, id], false)
+  const linked = makeLink(s, content(s, cid), now)
+  const declaration = put(s, { ...linked, data: { ...linked.data, name: linked.data.name ?? { content: formTitle(s, valueContent(s, cid)) || id } } })
+  if (shared.length === parent.length) {
+    if (declaration === cid) return replica
+    commitRoot(s, updateAtScope(s, root, parent, value => replaceEdge(s, value, `a:${id}`, rowEdge(s, declaration, type))), now)
+    return { ...replica }
+  }
+  const handle = put(s, rowContent(REF_TYPE, newId(), '', now, { refId: id, targetCid: declaration, store: s }))
+  const replacement = rowEdgeAt(s, REF_TYPE, handle, parent)
+  let next = updateAtScope(s, root, parent, value => replaceEdge(s, value, `a:${id}`, replacement))
+  next = updateAtScope(s, next, shared, value => ({ ...value, children: [...value.children, rowEdge(s, declaration, type)] }))
+  commitRoot(s, next, now)
+  return { ...replica }
+}
+
+/** Linking across subtrees must create an explicit declaration in their shared frame. */
 export function addRef(replica: Replica, at: Scope, targetAliasId: string, now: number, position?: MovePosition): Replica {
-  // the referenced row becomes a mutable reference (ref node) so the handle can point at it
-  const found = resolveRef(replica, targetAliasId)
+  const destination = position && 'into' in position ? [...at, position.into] : at
   let r = replica
-  if (found && !found.row.isLink) r = makeLinkAt(r, [...found.path, targetAliasId], now)
-  const targetPath = found ? [...found.path, targetAliasId] : null
+  let found = resolveRef(r, targetAliasId, destination)
+  if (!found) {
+    // Editor selection locates the source; evaluation never uses this tree search.
+    const selected = findRowByAlias(r.store, headCid(r), targetAliasId)
+    if (!selected) throw new Error('The reference source is unavailable.')
+    r = shareRefAt(r, [...selected.path, targetAliasId], destination, now)
+    found = resolveRef(r, targetAliasId, destination)
+  }
+  if (!found) throw new Error('Declare the reference in a shared enclosing scope first.')
+  r = shareRefAt(r, [...found.path, targetAliasId], destination, now)
+  const targetPath = [...found.path, targetAliasId]
   const targetCid = targetPath ? resolveScope(r.store, headCid(r), targetPath) : null
   const options = { refId: targetAliasId, targetCid: targetCid ?? undefined }
   if (position && 'into' in position) return addRow(r, [...at, position.into], REF_TYPE, '', now, options)
@@ -557,7 +599,12 @@ export function addRef(replica: Replica, at: Scope, targetAliasId: string, now: 
 }
 
 /** Satisfy a requirement row at `at`/`requirementId` with a supply (who, and for search/allocation which row by alias id). */
-export function addSupply(replica: Replica, at: Scope, requirementId: string, supply: { capability: string; by: string; ref?: string; choice?: number }, now: number, id?: string): Replica {
+export function addSupply(replica: Replica, at: Scope, requirementId: string, supply: { capability: string; by: string; ref?: string; receipt?: string; choice?: number }, now: number, id?: string): Replica {
+  if (supply.ref && !resolveRef(replica, supply.ref, [...at, requirementId])) {
+    const source = findRowByAlias(replica.store, headCid(replica), supply.ref)
+    if (!source) throw new Error('The supplied reference is unavailable.')
+    replica = shareRefAt(replica, [...source.path, source.row.id], [...at, requirementId], now)
+  }
   const labels: Record<string, string> = {
     confirmation: `confirmed by ${supply.by}`,
     choice: `chose option ${(supply.choice ?? 0) + 1}`,
@@ -589,7 +636,8 @@ export function findTemplateByName(replica: Replica, name: string, at: Scope = [
  * Copy and instantiation share the same traversal and internal-reference remapping.
  */
 export function instantiateTemplate(replica: Replica, at: Scope, taskId: string, templateId: string, now: number): Replica {
-  const template = resolveRef(replica, templateId, at)
+  // An explicit editor selection copies this definition; transferRefGraph closes its private dependencies.
+  const template = findRowByAlias(replica.store, headCid(replica), templateId)
   if (!template || template.row.type !== TEMPLATE_TYPE) return replica
   const templateCid = resolveScope(replica.store, headCid(replica), [...template.path, templateId])
   if (!templateCid || taskId === templateId || !resolveScope(replica.store, headCid(replica), [...at, taskId])) return replica
@@ -617,6 +665,8 @@ export function instantiateTemplateValue(replica: Replica, at: Scope, taskId: st
   const taskCid = resolveScope(replica.store, headCid(replica), [...at, taskId])
   if (!taskCid) throw new Error('Template destination is unavailable.')
   if (!isTemplateType(replica.store, templateCid)) throw new Error('Only template rows can be instantiated.')
+  const sourcePath = nodeOccurrence(replica.store, templateCid)
+  if (sourcePath) templateCid = transferRefGraph(replica, templateCid, sourcePath, [...at, taskId], true)
   const copied = content(replica.store, copyRowContent(replica.store, templateCid, now, newId, { instantiate: true, rootId: taskId }))
   // The task is made from the template: the template becomes its row edge's instruction (pinned to this version).
   return edit(replica, at, now, (value) => {
@@ -715,10 +765,17 @@ export function copyNode(replica: Replica, fromPath: Scope, aliasId: string, toP
   if (!from) return replica
   const found = findEdge(replica.store, valueContent(replica.store, from), `a:${aliasId}`)
   if (!found) return replica
-  const type = rowTypeOf(replica.store, found)
+  let type = rowTypeOf(replica.store, found)
   if (!type) return replica
-  const copied = copyRowContent(replica.store, identityCid(replica.store, found), now, newId)
   const target = 'into' in position ? [...toPath, position.into] : toPath
+  const original = content(replica.store, identityCid(replica.store, found))
+  if (original.data.ref && isLibraryType(replica.store, type, REF_TYPE)) {
+    const referred = resolveRefIdentity(replica, fromPath, original.data.ref.id)
+    if (referred.status === 'ready' && referred.locations[0]?.pattern) type = referred.locations[0].pattern
+  }
+  const source = transferRefGraph(replica, identityCid(replica.store, found), [...fromPath, aliasId], [...target, aliasId], true)
+  type = transferRefGraph(replica, type, [...fromPath, aliasId], [...target, aliasId], true)
+  const copied = copyRowContent(replica.store, source, now, newId)
   // a copy is a row of the same type (the same pinned version)
   const edge = rowEdge(replica.store, copied, type)
   return edit(replica, target, now, (value) => {
@@ -932,6 +989,16 @@ export function addRefAt(replica: Replica, at: Scope, id: string, typeCid: strin
     const ref = put(replica.store, refNodeContent(replica.store, { alias: { id }, ...(name ? { name: { content: name } } : {}), updated: { time: now } }, defaultCid, []))
     return { ...value, children: [...value.children, [typeCid, ref]] }
   })
+}
+
+/** Pass a visible capability as an ordinary typed ref. A recipient supplies its own handler to this declaration. */
+export function passRefAt(replica: Replica, at: Scope, id: string, sourceId: string, now: number, name?: string): Replica {
+  const resolved = resolveRefIdentity(replica, at, sourceId)
+  const source = resolved.status === 'ready' ? resolved.locations[0] : undefined
+  if (!source?.pattern) throw new Error('Pass a reference declared in an enclosing scope.')
+  if (source.store !== replica.store) importNodes(replica.store, reachableNodes(source.store, [source.cid, source.pattern]))
+  const forwarded = put(replica.store, { data: { ref: { id: sourceId } }, children: [] })
+  return addRefAt(replica, at, id, source.pattern, now, forwarded, name)
 }
 
 /**

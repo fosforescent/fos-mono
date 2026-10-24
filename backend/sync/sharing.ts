@@ -2,6 +2,8 @@ import { createHash, createHmac, randomUUID } from 'node:crypto'
 import * as jsonwebtoken from 'jsonwebtoken'
 import type { Request, Response } from 'express'
 import { executionInput, servedTo } from '@fosforescent/shared/sync/index'
+import { resourceWindow, resourceWindowContains, resourceWindowSatisfies } from '@fosforescent/shared/sync/index'
+import { findRowByAlias } from '@fosforescent/shared/sync/index'
 import { setRefValueAt, visitorExecution, consume, proposeVisitorValues, nodeAuthorityAt, nodeLinkMaskAt, evaluationSteps, addMemberAt, ensureHomeContext, evaluateNode, evaluationRecord, writeEvaluationRecord, executionInputs, addRow, addSupply, proposeRefAt, applyProposalAt, addTask, instantiateTemplate, ensureSharedLink, sharedLinkAt, sharedProposalCid, writeParticipation, handlerResult, writeHandlerResult, acceptSubmission, approvalsOf, withdrawApproval, argumentRefs, content, createReplica, readNodeValue, headCid, participation, put, resolveRef, resolveScope, sharedProjection, publication, publishedTo, markExecution, mayParticipate, valueContent, view, writeNodeValue, audiencePeer, type Participation, type Replica, type Scope, type SharedInput, type SharedAddress } from '@fosforescent/shared/sync/index'
 import { withUserLock, type AccountStoreDeps } from './accountStore'
 import { ALLOCATION_TYPE, TEMPLATE_TYPE } from '@fosforescent/shared/sync/library-types'
@@ -72,9 +74,10 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
       if (typeof value !== 'string' || value.length > 8000) throw new Failure(400, `Invalid text for ${field.name}.`)
       return value
     }
-    if (!value || typeof value.amount !== 'number' || !Number.isFinite(value.amount) || value.amount < 0 || value.type !== field.type || value.unit !== field.unit || (field.start !== undefined && (typeof value.start !== 'number' || !Number.isFinite(value.start) || value.start > field.start)) || (field.end !== undefined && (typeof value.end !== 'number' || !Number.isFinite(value.end) || value.end < field.end))) throw new Failure(400, `The supplied allocation does not match ${field.name}.`)
+    if (!value || typeof value.amount !== 'number' || !Number.isFinite(value.amount) || value.amount < 0 || value.type !== field.type || value.unit !== field.unit ||
+      !(field.direction === 'consume' ? resourceWindowContains(field, value) : resourceWindowSatisfies(value, field))) throw new Failure(400, `The supplied allocation does not match ${field.name}.`)
     if (field.direction === 'consume' && value.amount > (field.amount ?? 0)) throw new Failure(400, 'The requested amount exceeds this allocation.')
-    return { amount: value.amount, type: field.type!, unit: field.unit!, ...(field.start !== undefined ? { start: field.start } : {}), ...(field.end !== undefined ? { end: field.end } : {}) }
+    return { amount: value.amount, type: field.type!, unit: field.unit!, ...resourceWindow(value) }
   }
   return {
     visit: run(async (req, res) => {
@@ -182,7 +185,8 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
           let value: unknown = submitted?.value
           if (submitted?.source !== undefined) {
             if (!guestReplica || typeof submitted.source !== 'string' || submitted.source.length > 256) throw new Failure(400, 'Linked values must belong to your signed-in context.')
-            const source = resolveRef(guestReplica, submitted.source)?.row
+            // The user explicitly selects a source for this submission's masked value copy.
+            const source = findRowByAlias(guestReplica.store, headCid(guestReplica), submitted.source)?.row
             if (!source) throw new Failure(400, 'The linked value is unavailable.')
             value = field.kind === 'text' ? source.title : source.allocation
             links[key] = submitted.source
@@ -247,7 +251,7 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
       if (outcome.complete) {
         try {
           if (evaluate) await evaluate(at.owner, { path: at.path, branches: {}, expected: outcome.expected })
-          else await withUserLock(`user:${at.owner}`, async () => { const loaded = (await deps.loadStore(at.owner))!; let r = createReplica(`user:${at.owner}`, loaded.store); await evaluateNode(at.path, { get: () => r, save: async next => { r = next; await save(loaded.user, r) }, now, check: () => [], handles: () => false }) })
+          else await withUserLock(`user:${at.owner}`, async () => { const loaded = (await deps.loadStore(at.owner))!; let r = createReplica(`user:${at.owner}`, loaded.store); await evaluateNode(at.path, { get: () => r, save: async next => { r = next; await save(loaded.user, r) }, now, check: () => [], executors: () => [] }) })
         } catch (error) {
           await withUserLock(`user:${at.owner}`, async () => {
             const loaded = (await deps.loadStore(at.owner))!, r = createReplica(`user:${at.owner}`, loaded.store)

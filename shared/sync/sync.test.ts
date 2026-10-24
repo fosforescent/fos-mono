@@ -593,7 +593,7 @@ describe('row types', () => {
     expect(userView(r)!.tasks.map((t) => t.id)).toEqual(['p', 't', 'c'])
   })
 
-  it('references point at rows anywhere in the tree and resolve to their path; copies get fresh ids', () => {
+  it('cross-subtree links declare their source in the shared scope; copies get fresh ids', () => {
     let r = createReplica('d')
     r = addTask(r, [], 'project', 1, 'proj')
     r = addTask(r, ['proj'], 'design', 2, 'des')
@@ -603,24 +603,25 @@ describe('row types', () => {
     const refRow = view(r, ['today'])!.tasks[0]!
     expect(refRow.type).toBe(REF_TYPE)
     expect(refRow.refId).toBe('sk')
-    expect(resolveRef(r, 'sk')).toMatchObject({ path: ['proj', 'des'], row: { id: 'sk', title: 'sketch' } })
+    expect(resolveRef(r, 'sk')).toMatchObject({ path: [], row: { id: 'sk', title: 'sketch' } })
+    expect(view(r, ['proj', 'des'])!.tasks[0]!.refId).toBe('sk')
     expect(resolveRef(r, 'nope')).toBeNull()
     // a ref placed above a sibling
     r = addRef(r, [], 'des', 6, { relativeTo: 'today', position: 'above' })
-    expect(userView(r)!.tasks.map((t) => t.type)).toEqual([TASK_TYPE, REF_TYPE, TASK_TYPE])
+    expect(userView(r)!.tasks.map((t) => t.type)).toEqual([TASK_TYPE, REF_TYPE, TASK_TYPE, TASK_TYPE, TASK_TYPE])
     // copying the project subtree next to it: same titles, new ids, independent afterwards
     r = copyNode(r, [], 'proj', [], { relativeTo: 'proj', position: 'below' }, 7)
     const top = userView(r)!.tasks
-    expect(top.map((t) => t.title)).toEqual(['project', 'project', '', 'today'])
+    expect(top.map((t) => t.title)).toEqual(['project', 'project', '', 'today', 'sketch', 'design'])
     const copyId = top[1]!.id
     expect(copyId).not.toBe('proj')
     expect(view(r, [copyId])!.tasks.map((t) => t.title)).toEqual(['design'])
     const copiedDesign = view(r, [copyId])!.tasks[0]!.id
     expect(copiedDesign).not.toBe('des')
     r = renameTask(r, [copyId], copiedDesign, 'design v2', 8)
-    expect(view(r, ['proj'])!.tasks[0]!.title).toBe('design')
+    expect(resolveRef(r, 'des')!.row.title).toBe('design')
     // copy into a node
-    r = copyNode(r, ['proj', 'des'], 'sk', [], { into: 'today' }, 9)
+    r = copyNode(r, [], 'sk', [], { into: 'today' }, 9)
     expect(view(r, ['today'])!.tasks.map((t) => [t.type, t.title])).toEqual([[REF_TYPE, ''], [TASK_TYPE, 'sketch']])
   })
 
@@ -694,9 +695,9 @@ describe('mutable references: root, link rows and reference rows are one node sh
     // a reference row to a plain row turns that row into a ref node and snapshots it
     r = addTask(r, [], 'today', 5, 'today')
     r = addRef(r, ['today'], 'des', 6)
-    const des = resolveScope(store, headCid(r), ['proj', 'des'])!
+    const des = resolveScope(store, headCid(r), ['des'])!
     expect(isRefNode(store, content(store, des))).toBe(true)
-    expect(view(r, ['proj'])!.tasks[0]).toMatchObject({ id: 'des', isLink: true, type: TASK_TYPE })
+    expect(view(r, ['proj'])!.tasks[0]).toMatchObject({ refId: 'des', type: REF_TYPE })
     const handleRow = view(r, ['today'])!.tasks[0]!
     expect(handleRow.type).toBe(REF_TYPE)
     const handleCid = resolveScope(store, headCid(r), ['today', handleRow.id])!
@@ -704,7 +705,7 @@ describe('mutable references: root, link rows and reference rows are one node sh
     expect(isRefNode(store, handle) && isHandle(handle)).toBe(true)
     expect(refValueCid(store, handle)).toBe(des)
     // the handle resolves live: renaming the target shows through
-    r = renameTask(r, ['proj'], 'des', 'design v2', 7)
+    r = renameTask(r, [], 'des', 'design v2', 7)
     expect(resolveRef(r, 'des')?.row.title).toBe('design v2')
     expect(view(r, ['today'])!.tasks[0]!.type).toBe(REF_TYPE) // the handle's own value is never followed as content
   })
@@ -843,7 +844,8 @@ describe('requirements, supplies, resource banks and market listings', () => {
     r = addSupply(r, ['t'], 'rp', { capability: 'peer', by: 'bob' }, 5)
     expect(userView(r)!.tasks[0]!.blockedBy).toEqual(['market'])
     r = addSupply(r, ['t'], 'rm', { capability: 'market', by: 'fos', ref: 't' }, 6)
-    expect(userView(r)!.tasks[0]!.blockedBy).toBeUndefined()
+    // Referring back to a task that depends on this requirement is cyclic evidence.
+    expect(userView(r)!.tasks[0]!.blockedBy).toEqual(['market'])
     expect(view(r, ['t', 'rm'])!.tasks[0]).toMatchObject({ type: ALLOCATION_TYPE, title: 'listed on the market by fos' })
   })
 

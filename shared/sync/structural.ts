@@ -64,6 +64,8 @@ export function matchesGraph(store: FosStore, pattern: string, value: string, op
         return !!options.length && options.every(option => !!option.edge && match(expected, branchValue(option.edge, v), key, depth + 1))
       }
       if (isBranchChoice(store, p)) return readChoice(store, expected).options.some(option => !!option.edge && match(branchValue(option.edge, p), actual, key, depth + 1))
+      if (v.data.refAlternatives) return v.children.length > 0 && v.children.every(([, value]) => match(expected, value, key, depth + 1))
+      if (p.data.refAlternatives) return p.children.some(([, value]) => match(value, actual, key, depth + 1))
       if (key && p.data.form?.primitive && p.data.form.primitive !== v.data.form?.primitive) return false
       if (!key) {
         if (isRefNode(store, p) && rows(p).every(edge => edge[0] === store.primitive.aliasConstructor.getId())) return true

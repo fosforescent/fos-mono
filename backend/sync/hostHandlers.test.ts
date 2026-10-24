@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express'
 import { createHash } from 'node:crypto'
 import { TITLE_SYSTEM, handlerResult, requestTitle } from '@fosforescent/shared/sync/index'
+import { readGraphValue, deleteTask, compileRequirement, checkCompiledRequirement } from '@fosforescent/shared/sync/index'
 import { MARKET_PEER, addMemberAt, addRow, addSupply, addTask, content, createReplica, decideTaskResult, ensureHomeContext, evaluationRecord, headCid, HOME_ID, loadReplica, readMembers, resolveScope, serializeReplica, setMemberCapabilitiesAt, sharedProjection, view, workAttempts, writeParticipation, type Replica } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
@@ -90,6 +91,17 @@ test('an effect whose peer is not connected blocks instead of running', async ()
   void addMemberAt; void setMemberCapabilitiesAt
 })
 
+test.each([{ start: null, end: 20 }, { start: 10, end: null }, { start: null, end: null }])('calendar effects do not guess open endpoints: %j', async bounds => {
+  let r = ensureHomeContext(createReplica('user:owner'), 1, { integrations: { google: ['calendar'] } })
+  r = addTask(r, [HOME_ID], 'Offsite', 2, 'offsite')
+  r = addRow(r, [HOME_ID, 'offsite'], ALLOCATION_TYPE, 'Slot', 3, { id: 'slot', requirement: { capability: 'allocation', resource: 'calendar', amount: 1, unit: 'h', ...bounds } })
+  const createEvent = jest.fn()
+  const h = host(r, createHostRuntime([calendarHandler({ connected: async () => true, createEvent })]))
+  const result = await h.complete([HOME_ID, 'offsite'], ['slot'])
+  expect(result.status).toBe(400)
+  expect(createEvent).not.toHaveBeenCalled()
+})
+
 
 test('the market effect lists the task, indexes the account, and records the supply as the server (the client writes neither)', async () => {
   let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['market'] })
@@ -107,7 +119,15 @@ test('the market effect lists the task, indexes the account, and records the sup
   expect(after.market).toBe(true)
   expect(after.done).toBe(false) // listing a task does not complete it; only its listing requirement is filled
   const supplies = view(h.get(), [HOME_ID, 'logo', 'list'])!.tasks.filter(t => !!t.supply)
-  expect(supplies.map(s => [s.supply!.capability, s.supply!.by, s.supply!.ref])).toEqual([['market', 'fos', 'logo']])
+  expect(supplies).toHaveLength(1)
+  expect(supplies[0]!.supply).toMatchObject({ capability: 'market', by: 'fos' })
+  const resultId = supplies[0]!.supply!.ref!
+  expect(resultId).not.toBe('logo')
+  const resultPath = [HOME_ID, 'logo', 'list', resultId]
+  expect(readGraphValue(h.get().store, resolveScope(h.get().store, headCid(h.get()), resultPath)!)).toEqual({ listed: true, indexed: true, owner: 'owner' })
+  const withdrawn = deleteTask(h.get(), resultPath.slice(0, -1), resultId, 200)
+  const request = resolveScope(withdrawn.store, headCid(withdrawn), [HOME_ID, 'logo', 'list'])!
+  expect(checkCompiledRequirement(withdrawn.store, compileRequirement(withdrawn.store, request)).satisfied).toBe(false)
   // the listing is the market peer as a member of the task
   expect(readMembers(h.get().store, content(h.get().store, resolveScope(h.get().store, headCid(h.get()), [HOME_ID, 'logo'])!)).map(m => m.peerId)).toContain(MARKET_PEER)
 })
@@ -152,7 +172,7 @@ test('a fos-points payout moves points on the ledger to the respondent and recor
   expect(pay.requirement!.satisfied).toBe(true)
   const rows = view(h.get(), [HOME_ID, 'survey', 'pay'])!.tasks
   const payout = rows.find(t => !!t.allocation)!
-  expect(payout.allocation).toMatchObject({ resource: 'fos:points', type: 'points', amount: 5, unit: 'ff', by: 'fos' })
+  expect(payout.allocation).toMatchObject({ resource: '', type: 'points', amount: 5, unit: 'ff', by: 'fos' })
   expect(payout.user).toMatchObject({ account: '2', username: 'bob', name: 'Bob' })
   expect(payout.title).toBe('5 fos points to Bob')
   expect(rows.find(t => !!t.supply)!.supply).toMatchObject({ capability: 'allocation', by: 'fos' })

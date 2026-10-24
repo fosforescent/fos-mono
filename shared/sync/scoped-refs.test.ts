@@ -1,8 +1,8 @@
 import { declareTestCapability } from './test-helpers'
 import {
   addMemberAt, addRefAt, addRow, addSupply, ALLOCATION_TYPE, addTask, applyProposalAt, libAt, content, contextBindings, nativeRef, publishNativeRef, primitiveExecutors,
-  createReplica, discoverHandlers, headCid, inspectRef, matchesRefPattern, parsePolicy, proposeRefAt, put,
-  refNodeContent, refSubmissions, requirementSatisfied, resolveBinding, resolveScope, resolveText, scopedRefs,
+  createReplica, discoverHandlers, headCid, matchesRefPattern, parsePolicy, proposeRefAt, put,
+  refNodeContent, refSubmissions, requirementSatisfied, resolveBinding, resolveScope, resolveText, visibleBindings,
   serializeReplica, loadReplica, nestScope, setHandlerEnabledAt, type EvaluationStep
 } from './index'
 
@@ -29,7 +29,7 @@ test('custom ref declarations work in scope without a capability enum, member, o
   expect(resolveBinding(r.store, type, null, contextBindings(r, ['project'])).cid).toBe(value)
   expect(parsePolicy({ from: ['custom-extension'], to: [] })?.from).toEqual(['custom-extension'])
   r = addRefAt(r, ['project'], 'custom', type, 3)
-  expect(scopedRefs(r, ['project']).find(ref => ref.id === 'custom')!.values).toEqual([])
+  expect(visibleBindings(r, ['project']).find(ref => ref.id === 'custom')!.submissions).toEqual([])
   expect(discoverHandlers(r, ['project']).some(offer => offer.id === 'custom')).toBe(false)
   expect(discoverHandlers(r, []).some(offer => offer.id === 'custom')).toBe(true)
 })
@@ -62,12 +62,14 @@ test('declarations in sibling documents are not ambient capabilities', () => {
   expect(discoverHandlers(r, ['private']).some(offer => offer.id === 'hidden')).toBe(true)
 })
 
-test('named text bindings use the nearest declaration while type lookups aggregate alternatives', () => {
+test('nearest names shadow for value and type lookup; distinct declarations remain alternatives', () => {
   let r = addTask(createReplica(), [], 'Child', 1, 'child')
   const text = r.store.primitive.documentField.getId()
   r = addRefAt(r, [], 'outer', text, 2, leaf(r, 'Ada'), 'recipient')
   r = addRefAt(r, ['child'], 'inner', text, 3, leaf(r, 'Grace'), 'recipient')
   expect(resolveText(r, ['child'], 'Hello {recipient}').text).toBe('Hello Grace')
+  expect(resolveBinding(r.store, text, null, contextBindings(r, ['child'])).status).toBe('ready')
+  r = addRefAt(r, ['child'], 'another', text, 4, leaf(r, 'Lin'), 'another recipient')
   expect(resolveBinding(r.store, text, null, contextBindings(r, ['child'])).status).toBe('ambiguous')
 })
 

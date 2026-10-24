@@ -23,11 +23,11 @@ export function isNodeValueType(store: FosStore, cid: string): boolean {
   return VALUE_SHAPES.some(shape => nodeValueType(store, shape) === cid)
 }
 
-/** Stable field refs preserve identity across edits; unchanged fields keep their exact CID. */
+/** An editor identity creates mutable field refs. Without one, construct an immutable invocation value. */
 export function constructNodeValue(
   store: FosStore,
   input: unknown,
-  id: string,
+  id?: string,
   previous?: string,
   depth = 0,
   active = new Set<object>()
@@ -61,7 +61,7 @@ export function constructNodeValue(
     throw new Error('Expected a plain record.')
   active.add(input as object)
   try {
-    const old = previous && store.table.has(previous) ? valueContent(store, previous) : null
+    const old = id !== undefined && previous && store.table.has(previous) ? valueContent(store, previous) : null
     const entries = Array.isArray(input)
       ? Array.from(input, (value, index) => [String(index), value ?? null] as const)
       : Object.entries(input as object)
@@ -71,18 +71,18 @@ export function constructNodeValue(
     const children: FosPathElem[] = entries.map(([name, value]) => {
       const prior = old?.children.find(([, cid]) => (content(store, cid).data.name?.content ?? valueContent(store, cid).data.name?.content) === name)?.[1]
       if (name.length > 1024) throw new Error('A field name exceeds 1,024 characters.')
-      const pathId = `${id}/field/${encodeURIComponent(name)}`
+      const pathId = id === undefined ? undefined : `${id}/field/${encodeURIComponent(name)}`
       const fieldId =
         (prior && content(store, prior).data.alias?.id) ||
-        (pathId.length <= 240
+        (pathId === undefined ? undefined : pathId.length <= 240
           ? pathId
-          : `field:${hashContent({ data: { name: { content: id }, description: { content: name } }, children: [] })}`)
+          : `field:${hashContent({ data: { name: { content: id! }, description: { content: name } }, children: [] })}`)
       const next = constructNodeValue(store, value, fieldId, prior, depth + 1, active)
-      const data: FosNodeContent['data'] = { alias: { id: fieldId }, name: { content: name } }
+      const data: FosNodeContent['data'] = { ...(fieldId ? { alias: { id: fieldId } } : {}), name: { content: name } }
       // Match form constructors: the row's left edge supplies its type; the right ref owns its value.
       const target = content(store, next.cid)
       const cid = put(store, { ...target, data: { ...target.data, name: { content: name }, ...(Array.isArray(input) ? { position: { value: Number(name) } } : {}) } })
-      return [next.type, put(store, refNodeContent(store, data, cid))]
+      return [next.type, fieldId ? put(store, refNodeContent(store, data, cid)) : cid]
     })
     return { type, cid: put(store, { data: { presentation: scalar === 'sequence' ? { sequence: true } : {} }, children }) }
   } finally {
@@ -90,7 +90,7 @@ export function constructNodeValue(
   }
 }
 
-/** Reads only graph structure and scalar leaves. Old JSON-text records are a read-only migration boundary. */
+/** Read typed fields and scalar leaves. Editor identities have no meaning to value interpretation. */
 export function readGraphValue(store: FosStore, cid: string, depth = 0, active = new Set<string>()): NodeValue | undefined {
   if (depth > 64 || active.size > 256 || active.has(cid) || !store.table.has(cid)) return undefined
   active.add(cid)
@@ -121,7 +121,7 @@ export function readGraphValue(store: FosStore, cid: string, depth = 0, active =
         if (type === store.primitive.linkField.getId() || !isRowEdge(store, [type, child])) continue
         const field = content(store, child),
           name = field.data.name?.content ?? valueContent(store, child).data.name?.content
-        if (name === undefined || !field.data.alias || !isRowEdge(store, [type, child])) return undefined
+        if (name === undefined) return undefined
         if (names.has(name)) return undefined
         names.add(name)
         const value = readGraphValue(store, child, depth + 1, active)
@@ -139,13 +139,6 @@ export function readGraphValue(store: FosStore, cid: string, depth = 0, active =
       return node.data.presentation.sequence
         ? entries.sort((a, b) => a[2] - b[2]).map(([, value]) => value)
         : Object.fromEntries(entries.map(([name, value]) => [name, value]))
-    }
-    if (node.data.description && !node.data.scalar) {
-      try {
-        return JSON.parse(node.data.description.content) as NodeValue
-      } catch {
-        return undefined
-      }
     }
     return undefined
   } finally {

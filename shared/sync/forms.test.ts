@@ -89,7 +89,7 @@ test('a note pinned to a retired type with no graph identity reads as a plain ro
 test('a graph note inherits shared context after node exchange and supports remote editing', () => {
   let a = createReplica('a'), server = createReplica('server'), b = createReplica('b')
   a = addRow(a, [], NOTE_TYPE, '# Hello {name}', 1, { id: 'document' })
-  a = addRow(a, [], PLAIN_TYPE, 'name: Ada', 2, { id: 'name' })
+  a = addRefAt(a, [], 'name', a.store.primitive.documentField.getId(), 2, put(a.store, { data: { description: { content: 'Ada' } }, children: [] }), 'name')
   a = syncWith(a, server)
   b = syncWith(b, server)
   const row = () => view(b, [])!.tasks.find(row => row.id === 'document')!

@@ -1,8 +1,8 @@
 /** Property paths and their parenthesized spelling share one small, serializable grammar. */
 import type { FosStore } from '../dag-implementation/store'
-import { content, advertisedRows, enclosingScopes, identityCid, isBranchChoice, isLibraryInstance, isHandle, isRowEdge, isMemberEdge, memberPeerOf, isGrantEdge, refValueCid, selectedBranchValue, type Scope } from './graph'
-import { fieldNode } from '../library-names'
+import { content, enclosingScopes, identityCid, isBranchChoice, isHandle, isLibraryRef, rootTargetCid, valueContent, isRowEdge, isMemberEdge, refValueCid, type Scope } from './graph'
 import { headCid, type Replica } from './replica'
+import { bindingLayers, bindingProperties, selectBinding, type BindingAccess, type BindingLocation, type ScopedBinding } from './scope-bindings'
 
 export type RefExpression = { up: number; path: string[]; lexical: boolean }
 export function parseRefExpression(source: string): RefExpression {
@@ -35,95 +35,69 @@ export function parseRefExpression(source: string): RefExpression {
   return result
 }
 export const formatRefExpression = (expression: RefExpression) => `${'.'.repeat(expression.up + 1)}${expression.path.join('.')}`
-export type RefAccess = { canRead?(store: FosStore, cid: string, path: Scope): boolean }
-export type RefLocation = { store: FosStore; cid: string; path: Scope; pattern?: string; libraryField?: true }
+export type RefAccess = BindingAccess
+export type RefLocation = BindingLocation
 export type RefPathResult = { status: 'ready' | 'missing' | 'ambiguous' | 'denied' | 'cycle'; locations: RefLocation[]; message?: string }
 
 /** Resolve only actual properties, never descendants or peers elsewhere in the graph. */
-export function resolveRefExpression(r: Replica, at: Scope, expression: string | RefExpression, access: RefAccess = {}): RefPathResult {
-  const parsed = typeof expression === 'string' ? parseRefExpression(expression) : expression
+export function resolveRefExpression(r: Pick<Replica, 'store'>, at: Scope, expression: string | RefExpression, access: RefAccess = {}): RefPathResult {
+  return resolvePath(r, at, typeof expression === 'string' ? parseRefExpression(expression) : expression, access)
+}
+
+function resolvePath(r: Pick<Replica, 'store'>, at: Scope, parsed: RefExpression, access: RefAccess): RefPathResult {
   const scopes = enclosingScopes(r.store, headCid(r), at).slice(parsed.up)
   if (!scopes.length) return { status: 'missing', locations: [], message: 'Ref path climbs beyond the available scope.' }
-  let failure: RefPathResult['status'] = 'missing'
-  const properties = (location: RefLocation, name: string): RefLocation[] => {
-    const { store, path } = location
-    const instance = store.table.get(location.cid)
-    const libraryField = location.libraryField || !!instance && isLibraryInstance(store, instance)
-    let cid = instance && isLibraryInstance(store, instance) && location.pattern ? location.pattern : location.cid
-    const seen = new Set<string>()
-    while (true) {
-      if (access.canRead && !access.canRead(store, cid, path)) { failure = 'denied'; return [] }
-      if (!store.table.has(cid)) return []
-      if (seen.has(cid) || seen.size >= 128) { failure = 'cycle'; return [] }
-      seen.add(cid)
-      const node = content(store, cid)
-      // Remote snapshots never confer permission to follow a peer's private graph.
-      if (node.data.ref?.peer || node.data.ref?.owner) return []
-      const target = isBranchChoice(store, node) ? selectedBranchValue(store, cid) : refValueCid(store, node)
-      const matches = node.children.flatMap(edge => isGrantEdge(store, edge) ? advertisedRows(store, edge[1]) : [edge]).flatMap(edge => {
-        if (!store.table.has(edge[1])) return []
-        const childCid = identityCid(store, edge), child = content(store, childCid)
-        if (!(isRowEdge(store, edge) || isMemberEdge(store, edge) || isGrantEdge(store, edge))) return []
-        const rowName = child.data.name?.content ?? content(store, refValueCid(store, child) ?? childCid).data.name?.content
-        if (child.data.alias?.id !== name && rowName !== name && (isMemberEdge(store, edge) ? memberPeerOf(store, edge) : child.data.peerId?.content) !== name) return []
-        const childPath = [...path, child.data.alias?.id ?? name]
-        if (access.canRead && !access.canRead(store, childCid, childPath)) { failure = 'denied'; return [] }
-        const field = libraryField
-          ? fieldNode(id => store.table.get(id), edge, store.primitive.targetPointerConstructor.getId(), store.primitive.aliasConstructor.getId()) : null
-        return [{ store, cid: field?.node ?? childCid, path: childPath, pattern: edge[0], ...(libraryField ? { libraryField: true as const } : {}) }]
-      })
-      if (matches.length) return matches
-      if (target) { cid = target; continue }
-      return []
-    }
-  }
   if (!parsed.path.length) {
     const scope = scopes[0]!, location = { store: scope.store, cid: scope.cid, path: scope.path }
     return access.canRead && !access.canRead(location.store, location.cid, location.path) ? { status: 'denied', locations: [] } : { status: 'ready', locations: [location] }
   }
-  let locations: RefLocation[] = []
-  for (const scope of parsed.lexical ? scopes : scopes.slice(0, 1)) {
-    locations = properties(scope, parsed.path[0]!)
-    if (locations.length || (failure as string) === 'denied' || (failure as string) === 'cycle') break
+  const layers = bindingLayers(r, at, access).slice(parsed.up)
+  let result = selectBinding(parsed.lexical ? layers : layers.slice(0, 1), parsed.path[0]!)
+  for (const name of parsed.path.slice(1)) {
+    if (result.status !== 'ready') return result
+    result = selectBinding([bindingProperties(result.locations[0]!, access)], name)
   }
-  for (const name of parsed.path.slice(1)) locations = locations.flatMap(location => properties(location, name))
-  return { status: locations.length === 1 ? 'ready' : locations.length > 1 ? 'ambiguous' : failure, locations }
+  return result
 }
 
-/** UUID links name declarations anywhere in the accessible local tree, unlike property paths. */
-export function resolveRefIdentity(r: Replica, at: Scope, id: string, access: RefAccess = {}): RefPathResult {
-  const roots = new Map<FosStore, RefLocation>()
-  for (const scope of enclosingScopes(r.store, headCid(r), at)) roots.set(scope.store, scope)
-  let budget = 20000, denied = false, cycle = false
-  for (const root of roots.values()) {
-    const locations: RefLocation[] = [], active = new Set<string>()
-    const walk = (location: RefLocation, depth = 0): void => {
-      const { store, cid, path } = location
-      if (--budget < 0 || depth > 128 || active.has(cid)) { cycle = true; return }
-      if (access.canRead && !access.canRead(store, cid, path)) { denied = true; return }
-      if (!store.table.has(cid)) return
-      const node = content(store, cid)
-      if (node.data.alias?.id === id) {
-        if (!locations.some(found => found.cid === cid && JSON.stringify(found.path) === JSON.stringify(path))) locations.push(location)
-        return
+/** Identity and name lookup have the same lexical boundary. A cached sibling is not a declaration here. */
+export function resolveRefIdentity(r: Pick<Replica, 'store'>, at: Scope, id: string, access: RefAccess = {}): { status: 'ready' | 'missing' | 'ambiguous' | 'denied'; locations: ScopedBinding[] } {
+  return selectBinding(bindingLayers(r, at, access), id, true)
+}
+
+const occurrences = new WeakMap<FosStore, { root: string; paths: Map<string, Scope[]> }>()
+/** Recover a unique evaluation occurrence by graph containment, never by a referenced UUID. */
+export function nodeOccurrence(store: FosStore, cid: string): Scope | null {
+  const root = rootTargetCid(store)
+  let index = occurrences.get(store)
+  if (index?.root !== root) {
+    index = { root, paths: new Map() }
+    const active = new Set<string>()
+    let branches = false
+    let budget = 20000
+    const visit = (current: string, path: Scope) => {
+      if (--budget < 0 || active.size > 128) throw new Error('Graph containment exceeds its traversal limit.')
+      if (!store.table.has(current) || active.has(current)) return
+      const paths = index!.paths.get(current) ?? []
+      paths.push(path); index!.paths.set(current, paths)
+      const node = content(store, current)
+      const target = refValueCid(store, node)
+      if (isBranchChoice(store, node) || target && store.table.has(target) && isBranchChoice(store, content(store, target))) branches = true
+      if (isHandle(node) || isLibraryRef(store, node)) return
+      active.add(current)
+      for (const edge of valueContent(store, current).children) {
+        if (!isRowEdge(store, edge) && !isMemberEdge(store, edge)) continue
+        const child = identityCid(store, edge), id = store.table.get(child)?.data.alias?.id
+        if (id) visit(child, [...path, id])
       }
-      if (isHandle(node)) return
-      active.add(cid)
-      try {
-        const target = isBranchChoice(store, node) ? selectedBranchValue(store, cid) : refValueCid(store, node)
-        if (target) walk({ ...location, cid: target }, depth + 1)
-        for (const edge of node.children.flatMap(edge => isGrantEdge(store, edge) ? advertisedRows(store, edge[1]) : [edge])) {
-          if (!store.table.has(edge[1])) continue
-          const childCid = identityCid(store, edge), child = content(store, childCid)
-          if (!(isRowEdge(store, edge) || isMemberEdge(store, edge) || isGrantEdge(store, edge)) || !child.data.alias) continue
-          walk({ store, cid: childCid, path: [...path, child.data.alias.id], pattern: edge[0] }, depth + 1)
-        }
-      } finally { active.delete(cid) }
+      active.delete(current)
     }
-    walk(root)
-    if (locations.length) return { status: locations.length === 1 ? 'ready' : 'ambiguous', locations }
+    visit(root, [])
+    // Branch selection can change without changing the immutable root.
+    if (!branches) occurrences.set(store, index)
   }
-  return { status: cycle ? 'cycle' : denied ? 'denied' : 'missing', locations: [] }
+  const paths = index.paths.get(cid)
+  return paths?.length === 1 ? paths[0]! : null
 }
 
 /** Single braces declare inputs; double braces reference existing context. */

@@ -164,9 +164,8 @@ row         [type, rowNode]              rowNode.data: alias{id}, description{co
               Task        lib.task        + todo{completed,time}   (checkbox; "[ ]"/"[x]" prefix in the add bar)
               Row         lib.plain       the default row: text with links/embeds; rows of a type this peer does not know
                                      render like it
-              Note        lib.note        a graph form: a Markdown body field (">" prefix); child rows are variables (key: value,
-                                     or a row's title → its body / sub-rows as a list; ref children link other blocks); {{key}} / {key}
-                                     expand; "Export note" downloads merged frontmatter + expanded body; KaTeX and Mermaid render
+              Note        lib.note        a graph form: a Markdown body field (">" prefix); {{name}} / {name} resolve from the
+                                     bindings in scope, like any text; KaTeX and Mermaid render
               Comment     lib.comment     a graph form: body, person, texts ("//" prefix or the menu; replies are child comments)
               Reference   lib.ref         + ref{id, owner?}: stands for the row whose alias id is `id` (Alt+drag); Ctrl+drag places a deep
                                      copy; `owner` marks a market result (the row lives in another account; click opens the listing)
@@ -494,6 +493,25 @@ siblings' descendants must not leak into scope. Explicit identity links may
 address nodes elsewhere through the shared ref resolver. They must not create
 a second name-lookup mechanism. A nested store must retain its enclosing graph
 scope, including when it is copied for evaluation or exchange.
+
+Every lookup by name or by kind (a library instance, a named binding, a ref
+path's first name, a template by name, a peer's nearest member entry, the market
+grant, a local checkout) follows one rule (`lookupInScope` in
+`shared/sync/graph.ts`): the nearest enclosing scope that declares anything
+answers; several declarations there are ambiguous; a declaration there that
+cannot be used (unavailable, denied, cyclic) blocks the lookup. None of these
+fall through to an outer scope. A nearer name hides an outer one whatever its
+type. An unfilled declaration is a hole, bound from further out, and hides
+nothing. Collecting the alternatives of a type (handler discovery) is not a
+lookup by name: it reads every visible declaration, only the same declaration
+identity shadows, and more than one candidate is a choice for the owner.
+Bindings are declarations; text such as `key: value` titles or frontmatter is
+text, never a binding.
+
+**Executor selection.** A step runs through exactly one executor. Every host
+lists the executors it has for a step and the shared evaluator selects
+(`selectExecutor`): one runs, several are a problem the owner resolves in the
+graph, none leaves the step to its requirement. No host may pick by ordering.
 
 **Stores on one machine (desktop).** Every `.fos` store is a device root of its
 own: Home's (`~/.fos`, the home context, the only one with Home) and each
@@ -994,11 +1012,74 @@ Sync itself needs no schema change; nodes land in `FosNodeModel` like any other.
 
 ## The standard library (`shared/sync/library.ts`)
 
+### Shared frames and refs
+
+A group should be the common lexical ancestor of its members' participation.
+Peers may keep separate private roots and separate replicas of the group. Shared
+refs should be declared in that group, so its graph exposes the relationships
+between participants. Membership must not make a peer's private tree searchable.
+
+Bindings, links, and peer services must use typed refs and handler assignments.
+Identity lookup must obey the same parent-scope rule as name lookup. An editor may
+locate a source anywhere it can read, but creating a live cross-subtree link must
+put its declaration in the lowest common scope and reference it from both sides.
+Moving that declaration must preserve its dependencies; otherwise require the
+dependencies to be declared and passed explicitly, or offer an independent copy.
+
+UUIDs should serve only local editing and UI identity. Typechecking and compilation
+must turn graph references into CID references before evaluation. Compiler source
+maps and diagnostics may identify editable rows; they must not enter executable
+graph content or act as a runtime lookup service. Open parameters must have
+content-addressed binders, and mutable access must go through graph capabilities
+and their handlers. Changing only editor UUIDs must preserve compiled meaning.
+
+A ref declared outside a group may be passed as an ordinary typed argument.
+The receiving participant must supply its own handler when the value requires
+remote execution or message passing. Cached remote content must not substitute
+for that handler or for permission checks. A nearer handler of the same ref may
+override it locally; it must not mutate the group's accepted value. Multiple
+handlers at the same level remain alternatives requiring a choice.
+
+Copies and published template values must not retain hidden links into a source's
+private scope. External references must become closed values or remain explicit
+inputs requiring a handler. Internal references must retain their relationships
+under fresh copy identities. A missing source must never count as a fulfilled
+requirement merely because its UUID was supplied.
+
 Both instruction and argument lookup must start at the row's parent scope.
 Declarations inside a row belong to its children. Search only direct declarations
 in each ancestor; never siblings or descendants. Multiple library instances in
 one scope must be reported as ambiguous. Library fields and capabilities must
 resolve through the selected instance, including in nested stores and drafts.
+
+An explicitly supplied argument must take precedence over ambient name lookup.
+A structural path to an ancestor selects that ancestor's declaration; a nearer
+declaration with the same name must not redirect the argument. Unqualified names
+should use the nearest provided declaration. An unfilled parameter may request
+fulfillment from outside, but an explicit reference to an unfilled declaration
+must remain unfilled rather than borrow a different same-name provider.
+
+Resources, supply evidence, ordinary arguments, and advertised handlers must
+share declaration resolution, source scopes, submissions, and availability
+checks. Member advertisements belong to their declaring group. Disabled or
+inaccessible declarations must not expose an outer provider as a fallback.
+Preserve every assignment to the same ref for conflict checking; never resolve
+contradictions by traversal order.
+
+Several peers providing Tools must submit explicit alternatives to one shared
+capability node in the group. Local handlers must use that same graph
+relationship (`refAlternatives`). Repeated names alone denote assignments to
+one ref, not alternatives. Withdrawing one explicit alternative may leave
+others available; it must not expose an outer same-name assignment as fallback.
+
+Spendable requirement slices still need graph-bound reservation results with
+resource provenance and conservation constraints. During declaration
+consolidation, the shortcut that manufactured a bank from a satisfied requirement
+was removed. Amount and choice projections may supply values; an amount alone
+must not authorize spending. Restore that functionality through the explicit
+handler/result relationship, not another special resource lookup. Likewise,
+workflow fulfillment must supply independent evidence, not a circular reference
+to the task whose completion depends on that requirement.
 
 Pinned definitions must survive library upgrades and reloads. Native offers must
 be addressed by their capability node. Restoring a native implementation must
