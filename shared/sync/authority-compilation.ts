@@ -1,7 +1,7 @@
 /** Bind authority operands through ordinary declarations before interpreting a closed transaction. */
 import { contextBindings, resolveBinding, type BindingEnvironment } from './bindings'
 import { authorityGrant, authorityReferenceParts, authorityStateGrant, authorityNextSlot,
-  authorityInvocation, authorityInvocationParts, checkAuthorityInvocation, authorityOperation, authorityTransaction } from './authority'
+  authorityInvocation, authorityInvocationParts, checkAuthorityInvocation, authorityOperation, authorityTransaction, type AuthorityGrant } from './authority'
 import { compileRefGraph } from './ref-compiler'
 import { content, importNodes, reachableNodes, put, type Scope } from './graph'
 import type { Replica } from './replica'
@@ -43,28 +43,73 @@ export function resolveAuthorityReference(r: Replica, source: ScopedBinding, env
   return { owner: ownerValue.binding ?? ownerSelection, state: ownerValue.cid!, grant }
 }
 
-/** Author a transition from explicit live handles. Domain values and all rebindings are supplied by the graph author. */
-export function planAuthorityTransfer(r: Replica, at: Scope, inputs: ScopedBinding[],
-  outputs: Array<{ binding: ScopedBinding; value: string }>, environment: BindingEnvironment = {}): string {
-  if (!inputs.length) throw new Error('A transfer needs input authority.')
-  const sources = inputs.map(input => resolveAuthorityReference(r, input, environment)), first = sources[0]!
-  if (sources.some(source => !sameBinding(source.owner, first.owner) || source.state !== first.state))
-    throw new Error('Compose transfers within each explicit authority owner; unrelated owners cannot commit atomically.')
-  if (sources.some(source => source.grant.checker !== first.grant.checker)) throw new Error('Compose the checking contracts explicitly before joining different authorities.')
+/** Editor coordinates select a particular operation output; compilation replaces them with grant declaration edges. */
+export type AuthorityResult = { operation: number; output: number }
+export type AuthorityPlan = {
+  operations: Array<{
+    inputs: Array<{ binding: ScopedBinding } | { result: AuthorityResult }>
+    outputs: string[]
+  }>
+  rebindings: Array<{ binding: ScopedBinding; result: AuthorityResult }>
+}
+
+/** Plan the entire invocation without publishing intermediate grants. All splits, remainders,
+ * dependencies and final destinations are explicit; domain handlers check their validity.
+ */
+export function planAuthorityTransfer(r: Replica, at: Scope, plan: AuthorityPlan, environment: BindingEnvironment = {}): string {
   const expression = (binding: ScopedBinding) => {
     const ref = put(r.store, { data: { ref: { id: binding.id } }, children: [] })
     if (!sameBinding(declaration(r, ref, at.slice(0, -1), environment), binding)) throw new Error('Pass the selected authority ref into the invocation scope explicitly.')
     return ref
   }
-  const next = authorityNextSlot(r.store, first.state)
-  const grants = outputs.map((output, index) => {
-    const value = compileRefGraph(r, output.value, at, { ...environment, selected: true })
-    if (!value.complete) throw new Error('Compile every authority output value before planning the transfer.')
-    return [put(r.store, { data: { refDeclaration: { slot: next + index } }, children: [] }),
-      authorityGrant(r.store, first.grant.checker, value.cid)] as [string, string]
+  const sources = plan.operations.flatMap(operation => operation.inputs.flatMap(input => {
+    if ('result' in input) return []
+    expression(input.binding)
+    return [resolveAuthorityReference(r, input.binding, environment)]
+  }))
+  if (!sources.length) throw new Error('A transfer needs input authority.')
+  const first = sources[0]!
+  if (sources.some(source => !sameBinding(source.owner, first.owner) || source.state !== first.state))
+    throw new Error('Compose transfers within each explicit authority owner; unrelated owners cannot commit atomically.')
+  // Resolve every live input through the same binding path, once. Later inputs may instead
+  // select exact outputs already declared in this graph, never a matching value or name.
+  let sourceIndex = 0, nextSlot = authorityNextSlot(r.store, first.state)
+  const results: AuthorityGrant[][] = []
+  const result = (selected: AuthorityResult): AuthorityGrant => {
+    if (!Number.isSafeInteger(selected.operation) || !Number.isSafeInteger(selected.output) || selected.operation < 0 || selected.output < 0)
+      throw new Error('Select an explicit authority operation output.')
+    const grant = results[selected.operation]?.[selected.output]
+    if (!grant) throw new Error('The selected authority output is missing or depends on a later operation.')
+    return grant
+  }
+  const operations = plan.operations.map(operation => {
+    const inputs = operation.inputs.map(input => {
+      if ('result' in input) return result(input.result)
+      const source = sources[sourceIndex++]!
+      // Authoring an invocation cannot capture an inaccessible live grant's owner.
+      expression(source.owner)
+      return source.grant
+    })
+    if (!inputs.length) throw new Error('A transfer needs input authority.')
+    const checker = inputs[0]!.checker
+    if (inputs.some(input => input.checker !== checker)) throw new Error('Compose the checking contracts explicitly before joining different authorities.')
+    const outputs = operation.outputs.map(payload => {
+      const value = compileRefGraph(r, payload, at, { ...environment, selected: true })
+      if (!value.complete) throw new Error('Compile every authority output value before planning the transfer.')
+      if (!Number.isSafeInteger(nextSlot + 1)) throw new Error('Authority state exceeds its counter limit.')
+      return { ref: put(r.store, { data: { refDeclaration: { slot: nextSlot++ } }, children: [] }),
+        cid: authorityGrant(r.store, checker, value.cid), checker, value: value.cid }
+    })
+    results.push(outputs)
+    return authorityOperation(r.store, inputs.map(grant => [grant.ref, grant.cid]), outputs.map(grant => [grant.ref, grant.cid]))
   })
-  const transaction = authorityTransaction(r.store, first.state, [authorityOperation(r.store, sources.map(source => [source.grant.ref, source.grant.cid]), grants)])
-  return authorityInvocation(r.store, expression(first.owner), transaction, outputs.map((output, index) => [expression(output.binding), grants[index]![0]]))
+  const transaction = authorityTransaction(r.store, first.state, operations)
+  const invocation = authorityInvocation(r.store, expression(first.owner), transaction,
+    plan.rebindings.map(output => [expression(output.binding), result(output.result).ref]))
+  // Use the execution compiler's checks, including consumed output selection and contradictory
+  // destination assignments. A planner must not have a weaker, parallel validation path.
+  compileAuthorityInvocation(r, invocation, at, environment)
+  return invocation
 }
 
 export function compileAuthorityInvocation(r: Replica, cid: string, at: Scope, environment: BindingEnvironment = {}): AuthorityCompilation {
