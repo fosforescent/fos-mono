@@ -898,10 +898,17 @@ function readPointer(store: FosStore, cid: string): { peerId: string | null; edg
   }
 }
 
-/** Both local and received branches request approval through this ordinary typed child ref. */
-/** A branch's flag asking for it to be merged: a row of the approve action on the option (what it is, its left). */
-export function mergeRequestEdge(store: FosStore, id: string): FosPathElem {
-  return [store.primitive.approveAction.getId(), put(store, refNodeContent(store, { alias: { id: hashContent({ data: { description: { content: id } }, children: [] }) } }, null))]
+/**
+ * A branch's flag asking for it to be merged: a row of the approve action on the option (what it is, its left). Both
+ * local and received branches request approval through this ordinary typed child ref. Its text names the branch it
+ * merges into; its identity is the request's, so a retargeted request stays the same request under merge.
+ */
+export function mergeRequestEdge(store: FosStore, id: string, target?: string): FosPathElem {
+  return [store.primitive.approveAction.getId(), put(store, refNodeContent(store, { alias: { id: hashContent({ data: { description: { content: id } }, children: [] }) }, ...(target ? { description: { content: target } } : {}) }, null))]
+}
+/** The branch a merge request merges into: the one it names, else the choice's default. */
+export function mergeRequestTarget(store: FosStore, request: string, fallback: string): string {
+  return store.table.has(request) ? content(store, request).data.description?.content ?? fallback : fallback
 }
 
 /** Build and insert a choice node; the alternatives are sorted so the cid is deterministic. */
@@ -1319,7 +1326,8 @@ export type TaskView = {
   /** `name` and `holder`: a setting (`settingOf`), its key and the device holding it. */
   construction?: { name?: string; holder?: string; peerId?: string; handler?: string; evaluation?: true }
 
-  branches?: { selected: string; names: string[]; mergeRequests?: string[] }
+  /** `mergeTargets`: for each branch with a merge request, the branch it merges into. */
+  branches?: { selected: string; names: string[]; mergeRequests?: string[]; mergeTargets?: Record<string, string> }
   id: string
   title: string
   /**
@@ -1503,7 +1511,10 @@ export function rowView(store: FosStore, nodeCid: string, edge?: FosPathElem): T
   const missing = edge ? missingTemplateOf(store, edge) : null
   if (missing) view.missingTemplate = { cid: missing.cid }
   if (task) { const blockers = taskBlockers(store, nodeCid); if (blockers.length) view.blockedBy = blockers }
-  if (isBranchChoice(store, identity)) view.branches = { selected: branchSelection(store, nodeCid), names: readChoice(store, nodeCid).options.map(o => o.peerId), mergeRequests: readChoice(store, nodeCid).options.filter(o => o.requestMerge).map(o => o.peerId) }
+  if (isBranchChoice(store, identity)) {
+    const record = readChoice(store, nodeCid), requests = record.options.filter(o => o.requestMerge)
+    view.branches = { selected: branchSelection(store, nodeCid), names: record.options.map(o => o.peerId), mergeRequests: requests.map(o => o.peerId), mergeTargets: Object.fromEntries(requests.map(o => [o.peerId, mergeRequestTarget(store, o.requestMerge!, record.defaultName ?? 'main')])) }
+  }
   // a requirement's @user is part of its declaration; an answer that carries one (an attested user) refines it
   const user = asks ? userOf(store, value) ?? userOf(store, identity) : userOf(store, value)
   if (user) view.user = user

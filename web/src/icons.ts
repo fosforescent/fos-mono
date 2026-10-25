@@ -12,6 +12,10 @@ const custom: Record<string, string> = {
   // fos / language model: the four-point sparkle from the design canvas (replaces the magic wand)
   '✦': stroke('M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2z'),
   'template': stroke('M8 4H5v16h3M16 4h3v16h-3'),
+  'compare': stroke('M9 4H5v16h4M15 4h4v16h-4M12 2v20'),
+  'send': stroke('M12 19V5M5 12l7-7 7 7'),
+  'branch': stroke('M6 3v12m0 6a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm12-12a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm0 0a9 9 0 0 1-9 9'),
+  'merge-request': stroke('M6 3v18M6 9a9 9 0 0 0 9 9h3m3 0a3 3 0 1 1-6 0 3 3 0 0 1 6 0z'),
   '◉': '<svg class="svg-inline--fa" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.3"></circle><circle cx="8" cy="8" r="2.4" fill="currentColor"></circle></svg>'
 }
 export function iconSvg(symbol: string, label = ''): string | null {

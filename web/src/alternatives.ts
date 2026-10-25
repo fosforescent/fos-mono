@@ -33,11 +33,19 @@ export function alternativePicker(app: App, path: Scope, row: TaskView | null, t
   // on a row a peer holds, marking a branch for merge sends it there as a pull request
   const held = !!row?.branches && !!app.pullRequestTarget(path)
   const requestLabel = (name: string) => held ? `Pull request: ${name}` : `Request merge: ${name}`
+  // a branch's merge-request icon: asks to merge it into the branch on screen, or opens the request it already has
+  // read when the list opens: the picker can outlive a render skipped while it has focus
+  const live = () => (path.length ? view(app.state.replica, path.slice(0, -1))?.tasks.find(r => r.id === path.at(-1)) : null) ?? row
+  const requestAction = (name: string) => {
+    const row = live(), target = row?.branches?.mergeTargets?.[name]
+    if (held || !target || !row?.branches?.mergeRequests?.includes(name)) return { label: requestLabel(name), icon: 'merge-request', pressed: !!row?.branches?.mergeRequests?.includes(name), run: () => app.toggleBranchMergeRequest(path, name) }
+    return { label: `Open merge request: ${name} into ${target}`, icon: 'merge-request', pressed: true, tone: 'pending' as const, run: () => compareBranches(app, path, name, target, true) }
+  }
   const current = selected.get(app)
   const active = current?.path === JSON.stringify(path) ? proposals().find(p => p.id === current.id) : undefined
   const previewing = !!active
   const options = (): ComboOption[] => [
-    ...(row?.branches?.names ?? ['Current']).map(name => ({ label: name, group: 'Branches', accessories: row?.branches && name !== row.branches.selected ? [{ label: `Compare ${row.branches.selected} with ${name}`, icon: 'analysis', pressed: false, run: () => compareBranches(app, path, row.branches!.selected, name) }] : [], accessory: row?.branches && !(held && name === 'main') ? { label: requestLabel(name), pressed: !!row.branches.mergeRequests?.includes(name), run: () => app.toggleBranchMergeRequest(path, name) } : undefined, selected: !previewing && name === (row?.branches?.selected ?? 'Current'), run: () => {
+    ...(row?.branches?.names ?? ['Current']).map(name => ({ label: name, group: 'Branches', accessories: row?.branches && name !== row.branches.selected ? [{ label: `Compare ${row.branches.selected} with ${name}`, icon: 'compare', pressed: false, run: () => compareBranches(app, path, row.branches!.selected, name) }] : [], accessory: row?.branches && !(held && name === 'main') ? requestAction(name) : undefined, selected: !previewing && name === (row?.branches?.selected ?? 'Current'), run: () => {
       clearProposal(app)
       if (row?.branches) app.selectNodeBranch(path.slice(0, -1), row.id, name, true)
       else app.refresh()
@@ -45,21 +53,23 @@ export function alternativePicker(app: App, path: Scope, row: TaskView | null, t
     ...proposals().map(p => {
       // a peer's named branch is a pull request; its main submission is its edits
       const branch = p.name || null
-      return { label: proposalLabel(p), group: 'Branches', accessory: { label: branch ? `Pull request from ${p.peerId}` : 'Merge requested by ' + p.peerId, pressed: p.status === 'open', disabled: true, ...(branch && p.status === 'open' ? { tone: 'pending' as const } : {}), run: () => {} }, selected: active?.id === p.id, run: () => showProposal(app, path, p.id) }
+      return { label: proposalLabel(p), group: 'Branches', accessory: { label: branch ? `Pull request from ${p.peerId}` : 'Merge requested by ' + p.peerId, icon: 'merge-request', pressed: p.status === 'open', disabled: true, ...(branch && p.status === 'open' ? { tone: 'pending' as const } : {}), run: () => {} }, selected: active?.id === p.id, run: () => showProposal(app, path, p.id) }
     }),
 
   ]
-  const box = combobox(`Branches of ${row?.title ?? 'Device root'}`, titleMode ? (proposalPreview(app)?.node.name ?? row?.title ?? 'Device root') : active ? proposalLabel(active) : row?.branches?.selected ?? 'Branches', options, query => {
+  const box = combobox(`Branches of ${row?.title ?? 'Device root'}`, titleMode ? (proposalPreview(app)?.node.name ?? row?.title ?? 'Device root') : active ? proposalLabel(active) : row?.branches?.selected ?? (header ? 'main' : 'Branches'), options, query => {
     if (app.state.voice || app.state.work?.busy) return []
     if (previewing) return row && query ? [{ label: `Copy to branch “${query}”`, group: 'Create', run: () => { if (app.copyProposalToBranch(active!.id, query)) { clearProposal(app); app.refresh() } } }] : []
     const actions: ComboOption[] = []
-    if (row && !query) actions.push({ label: 'New branch…', group: 'Create', run: () => { const name = window.prompt('Branch name'); if (name?.trim()) void app.createNodeBranch(path.slice(0, -1), row.id, name.trim(), true) } })
+    if (row && !query) actions.push({ label: `New branch from ${row.branches?.selected ?? 'main'}…`, group: 'Create', run: () => { const name = window.prompt('Branch name'); if (name?.trim()) void app.createNodeBranch(path.slice(0, -1), row.id, name.trim(), true) } })
     if (row && query && !row.branches?.names.includes(query)) actions.push({ label: `Create branch “${query}”`, group: 'Create', run: () => { void app.createNodeBranch(path.slice(0, -1), row.id, query, true) } })
     if (titleMode && row && row.type !== HOME_TYPE && !row.refPeer && !row.construction && !row.template && query && query !== row.title) actions.push({ label: `Set node text to “${query}”`, group: 'Edit', run: () => app.editCurrentText(query, draft) })
     if ((titleMode || header) && row && row.type !== HOME_TYPE && !row.refPeer) actions.push({ label: 'Change template', group: 'Edit', run: () => app.openTemplatePicker(path) })
     return actions
   })
   box.classList.add('alternative-picker')
+  // the branch bar's picker reads as the branch you are on
+  if (header) { const icon = document.createElement('span'); icon.className = 'branch-icon'; icon.innerHTML = iconSvg('branch') ?? ''; box.querySelector('.combo-trigger')!.prepend(icon) }
   box.querySelector('button')!.disabled = !!app.state.voice || !!app.state.work?.busy
   // looking into a pull request: approve it beside the picker (the server signs the approval; the group's rule merges)
   const pulled = active && active.status === 'open' && active.name ? active.name : null

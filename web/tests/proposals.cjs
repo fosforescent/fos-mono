@@ -7,6 +7,8 @@ const { JSDOM } = require('jsdom')
 const dir = mkdtempSync(path.join(tmpdir(), 'fos-proposal-ui-'))
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'Node', 'Option', 'navigator', 'localStorage', 'sessionStorage', 'location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
+window.HTMLDialogElement.prototype.showModal = function () { this.open = true }
+window.HTMLDialogElement.prototype.close = function () { this.open = false; this.dispatchEvent(new window.Event('close')) }
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid', 'katex', 'katex/*'] })
 const { App, mountUi, createMemoryStorage, addTask, headCid, resolveScope, content, put, putStripped, proposalContent, readProposal, withProposal, makeLink, commitRoot, updateAtScope, view, rowEdgeAt, LIBRARY_ID } = require(path.join(dir, 'app.cjs'))
 async function main() {
@@ -60,8 +62,11 @@ async function main() {
   const request = document.querySelector('button[aria-label="Request merge: scratch"]')
   request.click()
   assert(a.currentRow().branches.mergeRequests.includes('scratch'))
+  assert.equal(a.currentRow().branches.mergeTargets.scratch, 'main', 'a request of the branch on screen merges into the default branch')
   document.querySelector('.node-choices .combo-trigger').click()
-  document.querySelector('button[aria-label="Request merge: scratch"]').click()
+  document.querySelector('button[aria-label="Open merge request: scratch into main"]').click()
+  assert(document.querySelector('dialog.branch-compare .merge-request'), 'an open request opens its review')
+  ;[...document.querySelectorAll('dialog.branch-compare button')].find(b => b.textContent === 'Close request').click()
   assert(!a.currentRow().branches.mergeRequests.includes('scratch'))
   document.querySelector('.node-choices .combo-trigger').click()
   input = pick(); input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))

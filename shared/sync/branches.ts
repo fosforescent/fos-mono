@@ -52,13 +52,18 @@ export function copyProposalBranch(r: Replica, at: Scope, proposalId: string, na
   return { ...r }
 }
 
-/** A merge request is an approval argument on the branch constructor, not a second copy of its value. */
-export function setBranchMergeRequest(r: Replica, at: Scope, name: string, requested: boolean, now: number): Replica {
+/**
+ * A merge request is an approval argument on the branch constructor, not a second copy of its value. It names the
+ * branch `name` merges into (`target`, the default branch when omitted); asking again with another target retargets it.
+ */
+export function setBranchMergeRequest(r: Replica, at: Scope, name: string, requested: boolean, now: number, target?: string): Replica {
   const store = r.store, cid = resolveScope(store, headCid(r), at)
   if (!cid || !isBranchChoice(store, content(store, cid))) throw new Error('Select a branched node.')
   const record = readChoice(store, cid)
   if (!record.options.some(o => o.peerId === name)) throw new Error('Branch no longer available.')
-  const nextChoice = putBranches(store, record.id, record.base, record.options.map(o => o.peerId === name ? { ...o, requestMerge: requested ? o.requestMerge ?? mergeRequestEdge(store, `${record.id}:${name}`)[1] : undefined } : o), record.defaultName)
+  if (target !== undefined && (target === name || !record.options.some(o => o.peerId === target))) throw new Error('Choose another branch to merge into.')
+  const request = (o: ChoiceOption) => !requested ? undefined : target === undefined && o.requestMerge ? o.requestMerge : mergeRequestEdge(store, `${record.id}:${name}`, target)[1]
+  const nextChoice = putBranches(store, record.id, record.base, record.options.map(o => o.peerId === name ? { ...o, requestMerge: request(o) } : o), record.defaultName)
   const next = updateAtScope(store, headCid(r), at.slice(0, -1), value => ({ ...value, children: value.children.map(edge => identityCid(store, edge) === cid ? [store.primitive.choiceTarget.getId(), nextChoice] : edge) }))
   commitRoot(store, next, now)
   return { ...r }

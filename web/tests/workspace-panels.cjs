@@ -15,7 +15,9 @@ const tick = () => new Promise(resolve => setImmediate(resolve))
 const a = new App({ baseUrl: 'http://localhost', autoLogin: null, storage: createMemoryStorage() }); a.scheduleSync = () => {}
 function drag(source, destination) {
   const values = new Map(), transfer = { get types() { return [...values.keys()] }, setData: (key, value) => values.set(key, value), getData: key => values.get(key) ?? '' }
-  for (const [target, type] of [[source, 'dragstart'], [destination, 'dragover'], [destination, 'drop'], [source, 'dragend']]) {
+  for (let [target, type] of [[source, 'dragstart'], [destination, 'dragover'], [destination, 'drop'], [source, 'dragend']]) {
+    // a destination that only appears once the drag starts (the sign zones) is passed as a selector
+    if (typeof target === 'string') target = document.querySelector(target)
     const event = new window.Event(type, { bubbles: true, cancelable: true }); Object.defineProperty(event, 'dataTransfer', { value: transfer }); target.dispatchEvent(event)
   }
 }
@@ -41,7 +43,7 @@ async function main() {
   document.querySelector('.constructor-grid [aria-label="Money allocation"]').click()
   assert.equal(headCid(a.state.replica), before, 'choosing a capability does not mutate rows')
   assert.equal(document.querySelector('.constructor-grid [aria-label="Money allocation"]').getAttribute('aria-pressed'), 'true')
-  drag(document.querySelector('.constructor-grid [aria-label="Money allocation"]'), document.querySelector('.constructor-drop-target'))
+  drag(document.querySelector('.constructor-grid [aria-label="Money allocation"]'), '.constructor-drop-target [data-zone="negative"]')
   assert(document.querySelector('.constructor-grid [aria-label="Money allocation"]').classList.contains('negative'))
   drag(document.querySelector('.constructor-grid [aria-label="Money allocation"]'), document.querySelector('.ghost'))
   assert(a.currentView().tasks.some(row => row.requirement?.resource === 'account'), 'dropping inverted money creates a request row')
@@ -61,7 +63,7 @@ async function main() {
   assert.equal(invertPolarity(a.state.replica.store, invertPolarity(a.state.replica.store, unnamed, negative), negative), unnamed, 'unregistered capabilities invert too')
   document.querySelector('.peer-tabs [aria-label="Standard library"]').click()
   const customButton = document.querySelector('[data-constructor-id="name:comment"]'); assert(customButton)
-  drag(customButton, document.querySelector('.constructor-drop-target'))
+  drag(customButton, '.constructor-drop-target [data-zone="negative"]')
   drag(document.querySelector('[data-constructor-id="name:comment"]'), document.querySelector('.ghost'))
   assert(a.currentView().tasks.some(row => row.typeCid === inverted), 'dragging creates the negative form without an inverse registration')
   await a.createNodeBranch(a.state.view.slice(0, -1), parent, 'experiment', true)
@@ -117,6 +119,60 @@ async function main() {
   iconButton.click()
   assert.equal(iconButton.getAttribute('aria-pressed'), 'false', 'releasing a hold does not also select the icon')
   a.libraryNames = libraryNames
-  console.log('PASS: row title, composer, capability selection/inversion/filtering, branch diff and reviewed merge')
+  // the pattern is AND over its terms, a branch is either of its terms; a row matches through what it holds
+  const scopeNode = a.addRowAtTop(a.parseRowInput('[ ] Patterns')); a.zoomTo([scopeNode]); await tick()
+  const both = a.addRowAtTop(a.parseRowInput('[ ] Needs both')), money = a.addRowAtTop(a.parseRowInput('[ ] Needs money'))
+  a.applyConstructor([...a.state.view, both], a.parseRowInput('-$ 100 deposit')); a.applyConstructor([...a.state.view, both], a.parseRowInput('-: 1h setup'))
+  a.applyConstructor([...a.state.view, money], a.parseRowInput('-$ 5 tip')); await tick()
+  document.querySelector('.peer-tabs [aria-label="This device"]').click(); await tick()
+  const shown = () => [...document.querySelectorAll('.tree .task[data-id]')].map(row => row.dataset.id)
+  document.querySelector('.constructor-grid [aria-label="Money requirement"]').click(); await tick()
+  document.querySelector('.constructor-grid [aria-label="Time requirement"]').click(); await tick()
+  assert.deepEqual([...document.querySelectorAll('.capability-pattern .pattern-term')].map(chip => chip.textContent), ['· Money requirement', '· Time requirement'], 'a tap adds a neutral term')
+  document.querySelector('.pattern-handle').click(); await tick()
+  assert(shown().includes(both) && !shown().includes(money), 'every term must be held: AND')
+  drag(document.querySelector('.constructor-grid [aria-label="Time requirement"]'), '.constructor-drop-target [data-zone="branch"]'); await tick()
+  assert(document.querySelector('.capability-pattern .pattern-branch'), 'a branch shows its terms together')
+  document.querySelector('.pattern-handle').click(); await tick()
+  assert(shown().includes(both) && shown().includes(money), 'a branch is either term: OR')
+  document.querySelector('.active-pattern').click(); await tick()
+  // search: a name nothing offers is declared here as a capability, and the palette offers it
+  document.querySelector('.node-search .combo-trigger').click()
+  const searchBox = document.querySelector('.node-search input'); searchBox.value = 'Catering'; searchBox.dispatchEvent(new window.Event('input'))
+  const declare = [...document.querySelectorAll('.node-search [role="option"]')].find(option => option.textContent.includes('Add “Catering” as a capability here')); assert(declare)
+  declare.click(); await tick()
+  assert(a.scopeCapabilities().some(c => c.name === 'Catering'), 'declared in this scope')
+  document.querySelector('.peer-tabs [aria-label="Standard library"]').click(); await tick()
+  assert(document.querySelector('.constructor-grid [data-constructor-id^="scope:"][aria-label="Catering"]'), 'the palette offers the declared capability')
+  a.zoomOut(); await tick()
+  // a merge request asks to merge a branch into the branch on screen; the branch bar opens it, approving merges it
+  const reviewed = a.addRowAtTop(a.parseRowInput('[ ] Reviewed')); a.zoomTo([reviewed]); await tick()
+  await a.createNodeBranch(a.state.view.slice(0, -1), reviewed, 'draft', true)
+  a.addRowAtTop(a.parseRowInput('Drafted row')); await tick()
+  a.selectNodeBranch(a.state.view.slice(0, -1), reviewed, 'main', true); await tick()
+  assert(document.querySelector('.branch-bar .merge-requests').hidden, 'no requests yet')
+  document.querySelector('.node-choices .combo-trigger').click()
+  document.querySelector('button[aria-label="Request merge: draft"]').click(); await tick()
+  assert.equal(a.currentRow().branches.mergeTargets.draft, 'main', 'into the branch on screen')
+  const requests = document.querySelector('.branch-bar .merge-requests'); assert(!requests.hidden); assert.equal(requests.querySelector('.count').textContent, '1')
+  requests.click()
+  assert(document.querySelector('dialog.branch-compare .merge-request'))
+  assert(document.querySelector('dialog.branch-compare .branch-diff-row.added').textContent.includes('Drafted row'))
+  ;[...document.querySelectorAll('dialog.branch-compare .compare-layout button')].find(b => b.textContent === 'Split').click()
+  assert(document.querySelector('dialog.branch-compare .branch-diff-split'), 'side by side')
+  document.querySelector('dialog.branch-compare .merge-request .primary').click(); await tick()
+  assert(a.currentView().tasks.some(row => row.title === 'Drafted row'), 'approved: merged into main')
+  assert.deepEqual(a.currentRow().branches.mergeRequests, [], 'and the request is settled')
+  a.zoomOut(); await tick()
+  // a row dropped on a breadcrumb goes to the end of that node
+  const outer = a.addRowAtTop(a.parseRowInput('[ ] Outer')); a.zoomTo([outer]); await tick()
+  const inner = a.addRowAtTop(a.parseRowInput('[ ] Inner')); a.zoomTo([inner]); await tick()
+  const moving = a.addRowAtTop(a.parseRowInput('Moves up')); await tick()
+  const crumbs = [...document.querySelectorAll('.crumb-path .crumb')]
+  drag(document.querySelector(`.task[data-id="${moving}"]`), crumbs.find(crumb => crumb.textContent.includes('Outer')))
+  assert(!a.currentView().tasks.some(row => row.title === 'Moves up'), 'the row left the node on screen')
+  a.zoomOut(); await tick()
+  assert.equal(a.currentView().tasks.at(-1).title, 'Moves up', 'and is the last row of the crumb’s node')
+  console.log('PASS: row title, composer, capability selection/inversion/filtering, branch diff and reviewed merge, breadcrumb drop')
 }
 main().then(() => { dom.window.close(); rmSync(dir, { recursive: true, force: true }); process.exit(0) }, error => { console.error(error); dom.window.close(); rmSync(dir, { recursive: true, force: true }); process.exit(1) })
