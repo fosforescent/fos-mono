@@ -1,4 +1,4 @@
-import { constructPlainRow, constructRow, constructTextRow, fieldEdge, fieldText, fieldValue, fieldValues, isFieldRow, isTextField, rebuildRow, rowRecord, titleField, withFieldValue, withFieldValues, withRowText, labelRow, refTitle, withLabel, withRefTitle } from './fields'
+import { constructPlainRow, constructRow, constructTextRow, fieldEdge, fieldText, fieldValue, fieldValues, isFieldRow, isTextField, rebuildRow, rowRecord, titleField, withFieldValue, withFieldValues, withRowText, labelRow, refTitle, withLabel, withRefTitle, isLeafType, textValue } from './fields'
 import { createStore, completes, rowTitle, rowVocabulary, withDone } from './graph'
 import { primitive } from './primitives'
 import { sameCapabilityType } from './capabilities'
@@ -752,7 +752,8 @@ export function renameTask(replica: Replica, at: Scope, taskId: string, title: s
   if (edge && isRequirementRow(replica.store, edge)) return editNode(replica, [...at, taskId], now, node => refTitle(replica.store, node) === trimmed ? node : { ...withRefTitle(replica.store, node, trimmed), data: { ...node.data, updated: { time: now } } })
   return updateTask(replica, at, taskId, now, (task) => {
     if (edge && rowTitle(replica.store, identityCid(replica.store, edge), rowTypeOf(replica.store, edge)) === trimmed) return null
-    // a row that holds text (a field, or its own) takes the new text there; one still on its description keeps it there
+    // a row of a leaf type (a string) holds the text itself; one that holds text (a field, or its own) takes it there
+    if (edge && isLeafType(replica.store, edge[0])) return content(replica.store, textValue(replica.store, trimmed))
     return withRowText(replica.store, task, trimmed, now) ?? withLabel(replica.store, task, trimmed)
   })
 }

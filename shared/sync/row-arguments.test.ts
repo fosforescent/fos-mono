@@ -1,3 +1,4 @@
+import { textOf } from './index'
 import { primitive } from './primitives'
 import {
   createReplica, ensureHomeContext, shareHome, HOME_ID, addRefAt, put, content, refNodeContent,
@@ -17,7 +18,7 @@ test('a primitive constructor and its unfilled right argument are an ordinary ed
   r = renameTask(r, [], 'input', 'Filled through the row editor', 2)
   const right = content(r.store, resolveScope(r.store, headCid(r), ['input'])!)
   expect(refValueCid(r.store, right)).toBeTruthy()
-  expect(valueContent(r.store, refValueCid(r.store, right)!).data.description?.content).toBe('Filled through the row editor')
+  expect(textOf(r.store, refValueCid(r.store, right)!)).toBe('Filled through the row editor')
 })
 
 test('submitting to an ordinary property ref uses the row left and preserves value alternatives', () => {

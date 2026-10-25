@@ -1,8 +1,9 @@
+import { rowTitle, textValue, textOf } from './index'
 import {
   refBranches, readChoice, branchEdge, selectBranch, createBranch, resolveBinding, addRefAt, addRow, addRequirement, supplyRequirement, addTask, applyProposalAt, libAt, content,
   copyRowContent, createReplica, headCid, instantiateTemplate, mergeNodes, newId,
   proposeRefAt, put, refArguments, refNodeContent, refValueCid, resolveScope,
-  valueContent, formTitle, view, serializeReplica, loadReplica, type Replica
+  valueContent, view, serializeReplica, loadReplica, type Replica
 } from './index'
 import { PLAIN_TYPE, NOTE_TYPE, REF_TYPE, TEMPLATE_TYPE } from './library-types'
 
@@ -15,7 +16,7 @@ function bind(r: Replica, path: string[], target: string, time: number) {
 test('typed arguments accept ref values without flattening; replay and stale proposals cannot change the binding', () => {
   let r = createReplica('owner')
   const type = put(r.store, { data: {}, children: [] })
-  const value = put(r.store, { data: { description: { content: 'weather' } }, children: [] })
+  const value = textValue(r.store, 'weather')
   const handler = put(r.store, refNodeContent(r.store, { alias: { id: 'provider' } }, value, []))
   r = addRefAt(r, [], 'argument', type, 1)
   expect(refValueCid(r.store, node(r, ['argument']))).toBeNull()
@@ -45,7 +46,7 @@ test('copying remaps internal typed-ref targets and retains external defaults', 
   const copied = copyRowContent(r.store, resolveScope(r.store, headCid(r), ['parent'])!, 5, newId)
   const args = refArguments(r.store, content(r.store, copied), type)
   expect(args[0]!.targetCid).not.toBe(document)
-  expect(formTitle(r.store, valueContent(r.store, args[0]!.targetCid!))).toBe('Document')
+  expect(rowTitle(r.store, args[0]!.targetCid!, null)).toBe('Document')
   expect(args[1]!.targetCid).toBe(external)
 })
 
@@ -54,7 +55,7 @@ test('concurrent different handler bindings become a choice instead of merging p
   const slot = (target: string | null) => put(store, refNodeContent(store, { alias: { id: 'slot' } }, target, []))
   const parent = (cid: string) => put(store, { data: {}, children: [[type, cid]] })
   const a = put(store, { data: { peerId: { content: 'a' } }, children: [] })
-  const b = put(store, { data: { description: { content: 'b' } }, children: [] })
+  const b = textValue(store, 'b')
   const result = mergeNodes(store, parent(slot(null)), parent(slot(a)), parent(slot(b)), { ours: 'a', theirs: 'b' })
   expect(result.newChoiceCids).toHaveLength(0)
   const ref = content(store, resolveScope(store, result.cid, ['slot'])!)
@@ -68,14 +69,14 @@ test('concurrent different handler bindings become a choice instead of merging p
 test('binding offers are tied to a version, including when a ref moves away and back to its old value', () => {
   let r = createReplica('owner')
   const type = put(r.store, { data: {}, children: [] })
-  const a = put(r.store, { data: { description: { content: 'a' } }, children: [] })
-  const b = put(r.store, { data: { description: { content: 'b' } }, children: [] })
+  const a = textValue(r.store, 'a')
+  const b = textValue(r.store, 'b')
   r = addRefAt(r, [], 'arg', type, 1, a)
   const old = proposeRefAt(r, ['arg'], b, 'old', 2)
   r = bind(old.replica, ['arg'], b, 3)
   r = bind(r, ['arg'], a, 4)
   r = applyProposalAt(r, ['arg'], old.proposalCid, 'owner', 5)
-  expect(valueContent(r.store, resolveScope(r.store, headCid(r), ['arg'])!).data.description?.content).toBe('a')
+  expect(textOf(r.store, resolveScope(r.store, headCid(r), ['arg'])!)).toBe('a')
 })
 
 
@@ -83,8 +84,8 @@ test('distinct supplied values branch with shared incoming identity and content;
   let r = addRow(createReplica('owner'), [], PLAIN_TYPE, 'Project', 1, { id: 'project' })
   r = createBranch(r, ['project'], 'feature', 2)
   const type = put(r.store, { data: {}, children: [] })
-  const a = put(r.store, { data: { description: { content: 'a' } }, children: [] })
-  const b = put(r.store, { data: { description: { content: 'b' } }, children: [] })
+  const a = textValue(r.store, 'a')
+  const b = textValue(r.store, 'b')
   const path = ['project', 'arg']
   r = addRefAt(r, ['project'], 'arg', type, 3, a)
   r = bind(r, path, b, 4)
@@ -111,5 +112,5 @@ test('distinct supplied values branch with shared incoming identity and content;
   expect([...copiedBranches.names].sort()).toEqual([...refBranches(r.store, node(r, path))!.names].sort())
   const restored = loadReplica(serializeReplica(r)); selectBranch(restored.store, 'project', 'feature')
   const resolved = resolveBinding(restored.store, type, refValueCid(restored.store, node(restored, path)))
-  expect(content(restored.store, resolved.cid!).data.description?.content).toBe('b')
+  expect(textOf(restored.store, resolved.cid!)).toBe('b')
 })

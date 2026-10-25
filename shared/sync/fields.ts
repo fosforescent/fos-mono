@@ -5,10 +5,11 @@
  * field, so a row's own fields are told apart from child rows with the same left. A plain row is its title: the title
  * field is its type, and its value holds the text.
  */
+import { markdownTitle } from './title'
 import type { FosStore } from '../dag-implementation/store'
 import type { FosNodeContent, FosPathElem } from '../types'
 import { hashContent } from '../dag-implementation/cid'
-import { content, libraryNode, put, refNodeContent, refValueCid, isRefNode } from './graph'
+import { content, libraryNode, put, refNodeContent, refValueCid, isRefNode, isBranchChoice, selectedBranchValue } from './graph'
 import { primitive, primitiveName } from './primitives'
 
 const leafPrimitives = new Set(['string', 'number', 'boolean'])
@@ -28,10 +29,14 @@ export function typeRows(store: FosStore, type: string): FosPathElem[] {
 export function fieldRefId(field: string): string {
   return hashContent({ data: { name: { content: 'field' } }, children: [[field, field]] })
 }
-/** The value a ref (or a plain node) stands for. */
-function valueOf(store: FosStore, cid: string): string {
+/** The value a ref (or a plain node) stands for: void while it is a hole; a choice's selected option. */
+function valueOf(store: FosStore, cid: string, depth = 0): string {
   const node = store.table.get(cid)
-  return node && isRefNode(store, node) ? refValueCid(store, node) ?? primitive(store, 'void') : cid
+  if (!node || depth > 32) return cid
+  if (isBranchChoice(store, node)) { const selected = selectedBranchValue(store, cid); return selected ? valueOf(store, selected, depth + 1) : cid }
+  if (!isRefNode(store, node)) return cid
+  const target = refValueCid(store, node)
+  return target ? (store.table.has(target) && isBranchChoice(store, content(store, target)) ? valueOf(store, target, depth + 1) : target) : primitive(store, 'void')
 }
 /** The node a value's leaves are read from: none for a primitive (void, string, …), whose own rows are its name. */
 function leafHolder(store: FosStore, cid: string): FosNodeContent | undefined {
@@ -129,8 +134,12 @@ export function constructPlainRow(store: FosStore, title: string, id: string, te
 /** A row of `type` holding `text`: a plain row of a text field, else a row whose title field holds it (left open when empty). */
 export function constructTextRow(store: FosStore, type: string, id: string, text: string, now: number, values = new Map<string, string>()): FosNodeContent {
   if (isTextField(store, type)) return constructPlainRow(store, type, id, text, now)
-  const title = titleField(store, type)
-  if (title && text) values.set(title, fieldText(store, title, text))
+  const title = titleField(store, type), fields = textFields(store, type)
+  // text of several lines in a row with a body (a note): the whole text is the body, its heading the title
+  if (title && fields.length > 1 && text.includes('\n')) {
+    values.set(fields.at(-1)!, fieldText(store, fields.at(-1)!, text))
+    values.set(title, fieldText(store, title, markdownTitle(text)))
+  } else if (title && text) values.set(title, fieldText(store, title, text))
   return constructRow(store, type, id, values, now)
 }
 

@@ -368,7 +368,9 @@ export function rowVocabulary(store: FosStore): Vocabulary | null {
   const cached = vocabularies.get(store)
   if (cached?.library === binding.library) return cached
   const byName = namesInLibrary(store, binding.library).byName, names = new Map<string, string>()
-  for (const [name, cid] of byName) if (!names.has(cid)) names.set(cid, name)
+  // the empty node is the wildcard (folder types are it): it is never a type's name
+  const unit = put(store, { data: {}, children: [] })
+  for (const [name, cid] of byName) if (!names.has(cid) && cid !== unit) names.set(cid, name)
   const vocabulary = { library: binding.library, names, nodes: byName, done: byName.get('done') ?? null }
   vocabularies.set(store, vocabulary)
   return vocabulary
