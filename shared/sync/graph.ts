@@ -1,6 +1,6 @@
 import { allocationOf, allocationShapeOf, withAllocation, type Allocation, type BankResource } from './allocations'
 import { primitive, primitiveName } from './primitives'
-import { fieldEdge, fieldValue, fieldViews, isFieldRow, isTextField, leafText, rowBody, titleField, typeRows, type FieldView, fieldRefId, withFieldValue, refTitle, textOf, textValue, withRefTitle, labelRow, withLabel, leafValue, fieldText, constructRow } from './fields'
+import { fieldEdge, fieldValue, fieldViews, isFieldRow, isTextField, leafText, rowBody, titleField, typeRows, type FieldView, fieldRefId, withFieldValue, refTitle, textOf, textValue, withRefTitle, labelRow, withLabel, leafValue, fieldText, constructRow, bodyField } from './fields'
 import { capabilityDeclarations } from './capability-catalog'
 import { resolveBinding } from './bindings'
 import { bindingProperties, type ScopedBinding } from './scope-bindings'
@@ -1506,7 +1506,7 @@ export function rowView(store: FosStore, nodeCid: string, edge?: FosPathElem): T
   if (typeCid && !held && !isTextField(store, typeCid)) {
     // the title, the body and done are shown by the row itself
     const body = rowBody(store, nodeCid, typeCid), texts = typeRows(store, typeCid).map(([field]) => field).filter(field => isTextField(store, field))
-    const shown = new Set([titleField(store, typeCid), rowVocabulary(store)?.done, ...(body !== null ? [texts.at(-1)] : [])])
+    const shown = new Set([titleField(store, typeCid), rowVocabulary(store)?.done, bodyField(store, typeCid)])
     const fields = fieldViews(store, typeCid, value).filter(field => !shown.has(field.field))
     if (fields.length) view.fields = fields
     if (body !== null) view.body = body

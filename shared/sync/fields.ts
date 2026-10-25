@@ -88,6 +88,14 @@ export function leafOfType(store: FosStore, type: string, text: string): string 
   }
   return textValue(store, text)
 }
+/** A text field named `name`: the library's stringAlias constructor with its alias filled, holding a string. */
+export function textField(store: FosStore, name: string): string {
+  const constructor = libraryNode(store, 'stringAlias')
+  if (!constructor) throw new Error('The library in this scope has no stringAlias constructor.')
+  const alias = put(store, { data: { scalar: { type: 'text', value: name } }, children: [] }), text = primitive(store, 'string')
+  const named = put(store, { data: {}, children: content(store, constructor).children.map(([left, right]): FosPathElem => right === text ? [left, alias] : [left, right]) })
+  return put(store, { data: {}, children: [[named, text]] })
+}
 /** A text value: a string leaf. */
 export function textValue(store: FosStore, text: string): string {
   return put(store, { data: { scalar: { type: 'text', value: text } }, children: [] })
@@ -148,10 +156,10 @@ export function constructPlainRow(store: FosStore, title: string, id: string, te
 /** A row of `type` holding `text`: a plain row of a text field, else a row whose title field holds it (left open when empty). */
 export function constructTextRow(store: FosStore, type: string, id: string, text: string, now: number, values = new Map<string, string>()): FosNodeContent {
   if (isTextField(store, type)) return constructPlainRow(store, type, id, text, now)
-  const title = titleField(store, type), fields = textFields(store, type)
+  const title = titleField(store, type), body = bodyField(store, type)
   // text of several lines in a row with a body (a note): the whole text is the body, its heading the title
-  if (title && fields.length > 1 && text.includes('\n')) {
-    values.set(fields.at(-1)!, fieldText(store, fields.at(-1)!, text))
+  if (title && body && text.includes('\n')) {
+    values.set(body, fieldText(store, body, text))
     values.set(title, fieldText(store, title, markdownTitle(text)))
   } else if (title && text) values.set(title, fieldText(store, title, text))
   return constructRow(store, type, id, values, now)
@@ -269,11 +277,16 @@ export function rowText(store: FosStore, nodeCid: string, type: string | null): 
 }
 /** The body of a row: its last text field when the type has a title field before it (a note's body), else null. */
 export function rowBody(store: FosStore, nodeCid: string, type: string): string | null {
-  const fields = textFields(store, type)
-  if (fields.length < 2) return null
+  const field = bodyField(store, type)
+  if (!field) return null
   const value = content(store, valueOf(store, nodeCid))
-  const held = fieldValue(store, value, fields.at(-1)!)
+  const held = fieldValue(store, value, field)
   return held ? leafText(store, held) ?? '' : ''
+}
+/** The field a row of `type` keeps its body in (a note's): the library's body field, when the type has it besides a title. */
+export function bodyField(store: FosStore, type: string): string | null {
+  const body = libraryNode(store, 'body')
+  return body && titleField(store, type) !== body && typeRows(store, type).some(([field]) => field === body) ? body : null
 }
 /** The value a single-value row holds in its first text field (a message's addressee, an acknowledged message id). */
 export function rowLeaf(store: FosStore, edge: FosPathElem): string | number | null {

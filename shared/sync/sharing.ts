@@ -5,8 +5,8 @@
  * execute view (`sharedProjection`), and their inputs are stored in typed refs on it. A published template is an
  * endpoint: each visitor who starts it gets a private execution, a node of which only that visitor is a member.
  */
-import { textValue } from './fields'
-import { createStore } from './graph'
+import { textValue, fieldText, isTextField } from './fields'
+import { createStore, findEdge } from './graph'
 import { primitive } from './primitives'
 import { libraryNode, settingOf } from './graph'
 import { nodeLinkMaskAt, TEXT_MASK } from './node-provider'
@@ -258,7 +258,10 @@ export function proposeVisitorValues(r: Replica, path: Scope, peer: string, valu
     const targetCid = resolveScope(r.store, headCid(r), target)
     const ref = targetCid && content(r.store, targetCid)
     if (!(ref && isRefNode(r.store, ref) && !refValueCid(r.store, ref))) { rows.push({ path: relative, value }); continue }
-    r = proposeRefAt(r, target, textValue(r.store, value), peer, now).replica
+    // a value of what the hole is: a field's text for a field, else the text itself
+    const parent = resolveScope(r.store, headCid(r), target.slice(0, -1))
+    const left = parent && findEdge(r.store, valueContent(r.store, parent), `a:${target.at(-1)}`)?.[0]
+    r = proposeRefAt(r, target, left && isTextField(r.store, left) ? fieldText(r.store, left, value) : textValue(r.store, value), peer, now).replica
   }
   if (!rows.length) return r
   const store = r.store, root = headCid(r), cid = resolveScope(store, root, path)!
@@ -344,7 +347,7 @@ export function sharedProjection(r: Replica, path: Scope, revision: (value: unkn
     return { title: '', type, body, ...(body.length < title.length ? { truncated: true as const } : {}) }
   }
   const store = r.store
-  const page = present(current?.body ?? current?.title ?? node.name ?? 'Shared node', libraryType(current), textVisible(path), current?.body !== undefined)
+  const page = present(current?.title ?? node.name ?? 'Shared node', libraryType(current), textVisible(path), false)
   const walk = (at: Scope, depth: number) => {
     if (depth > 8 || hashed.length >= 200) return
     const parent = resolveScope(store, headCid(r), at)
@@ -357,20 +360,22 @@ export function sharedProjection(r: Replica, path: Scope, revision: (value: unkn
       // The execute projection offers declared inputs separately. Their private
       // bindings and runtime state are graph rows, but are not published page content.
       if (edge && content(store, identityCid(store, edge)).data.name) continue
-      hashed.push({ id: row.id, title: shown ? row.title.slice(0, 8000) : '', type: row.type, depth, fields: row.fields, body: row.body })
+      hashed.push({ id: row.id, title: shown ? row.title.slice(0, 8000) : '', type: row.type, depth })
       rows.push({ id: row.id, depth, ...present(row.title, type, shown, false) })
       if (row.body) rows.push({ id: `${row.id}:body`, depth: depth + 1, ...present(row.body, MARKDOWN_TYPE, shown, true) })
       for (const field of row.fields ?? []) {
         // a field of the row: a filled one is shown; an open one is asked of the visitor, who submits a candidate value
         const relative = [...childPath.slice(path.length), field.id], label = field.key ?? ''
-        if (!field.open) rows.push({ id: field.id, depth: depth + 1, type: typeof field.value === 'number' ? NUMBER_TYPE : TEXT_TYPE, title: label, ...(shown ? { body: String(field.value ?? '').slice(0, 8000) } : {}) })
-        else if (shown) fields.push({ key: JSON.stringify(relative), path: relative, name: label || 'Value', kind: 'text' })
+        rows.push({ id: field.id, depth: depth + 1, type: typeof field.value === 'number' ? NUMBER_TYPE : TEXT_TYPE, title: label, ...(shown ? { body: String(field.value ?? '').slice(0, 8000) } : {}) })
+        if (field.open && shown) fields.push({ key: JSON.stringify(relative), path: relative, name: label || 'Value', kind: 'text' })
       }
       const definition = edge && store.table.has(edge[0]) ? content(store, edge[0]) : null
       // Reference targets, arguments, membership, previous versions and private inputs are never exported.
       if (row.refId === undefined) walk([...at, row.id], depth + 1)
     }
   }
+  // the page's own body (a note's) is its first row
+  if (current?.body) rows.push({ id: `${current.id}:body`, depth: 0, ...present(current.body, MARKDOWN_TYPE, textVisible(path), true) })
   walk(path, 0)
   // what a visitor submits (a member who may run the node but not edit it) is the owner's to review, not an option other visitors vote on
   const identity = content(r.store, resolveScope(r.store, headCid(r), path)!)
