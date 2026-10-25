@@ -1,12 +1,12 @@
 /**
- * Standard constructor names used by native adapters. A constructor must carry its own name as a string row;
+ * Standard constructor names used by host adapters. A constructor must carry its own name as a string row;
  * library field names are lookup bindings and must not assign meaning to the node they expose. Structural
  * compatibility must be checked against graph predicates, not these strings or a reverse library index.
  */
 export const TASK_TYPE = 'task'
-/** The plain row: a row that is its text. Rows of a type this peer does not know render like it. */
-export const PLAIN_TYPE = 'plain'
-/** A note: one title line, a Markdown body row (`MARKDOWN_TYPE`, its `body` field) and open child rows. */
+/** The plain row: a row of the string primitive, whose value is its text. Rows of a type this peer does not know render like it. */
+export const PLAIN_TYPE = 'string'
+/** A note: a title and a Markdown body. */
 /** Rows that are feature specifications (notes a verifier checks after a merge). */
 export const SPECIFICATION_TYPE = 'specification'
 export const NOTE_TYPE = 'note'
@@ -19,13 +19,11 @@ export const RESOURCE_TYPE = 'resource'
 /** A template row: the type of the tasks made from it. */
 export const TEMPLATE_TYPE = 'template'
 /** What a type accepts as children (sync/patterns.ts). */
-export const PATTERN_TYPE = 'pattern'
 export const HOME_TYPE = 'home'
 export const DEVICE_ROOT_TYPE = 'deviceRoot'
 /** A library ref's row type: a ref whose value is a library (a library defines it, so a library is told by what it holds). */
 export const LIBRARY_TYPE = 'library'
 export const DOCUMENT_ROOT_TYPE = 'documentRoot'
-export const TEXT_TYPE = 'text'
 /** Text rendered as Markdown (math, diagrams) with `{{name}}` bindings: a note's body. */
 export const MARKDOWN_TYPE = 'markdown'
 export const NUMBER_TYPE = 'number'

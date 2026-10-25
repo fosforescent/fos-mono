@@ -1,3 +1,5 @@
+import { textValue, textOf, putBranches } from './index'
+import { primitive } from './primitives'
 import {
   addMemberAt, addRefAt, addRequirement, addTask, demandPattern, supplyRequirement, supplyValue,
   compileRefGraph, content, contextBindings, createReplica, discoverHandlers, headCid, put, refNodeContent,
@@ -6,10 +8,10 @@ import {
 } from './index'
 
 const at = (r: ReturnType<typeof createReplica>, path: string[]) => resolveScope(r.store, headCid(r), path)!
-const literal = (r: ReturnType<typeof createReplica>, value: string) => put(r.store, { data: { description: { content: value } }, children: [] })
+const literal = (r: ReturnType<typeof createReplica>, value: string) => textValue(r.store, value)
 
 test('explicit arguments and structural ancestor paths retain their target while bare names resolve locally', () => {
-  let r = createReplica(), type = r.store.primitive.documentField.getId()
+  let r = createReplica(), type = primitive(r.store, 'string')
   r = addRefAt(r, [], 'outer', type, 1, literal(r, 'Outer tools'), 'Tools')
   r = addTask(r, [], 'Child', 2, 'child')
   r = addRefAt(r, ['child'], 'inner', type, 3, literal(r, 'Inner tools'), 'Tools')
@@ -20,7 +22,7 @@ test('explicit arguments and structural ancestor paths retain their target while
     expect(resolveText(r, ['child'], '{argument} / {Tools}').text).toBe('Outer tools / Inner tools')
     const compiled = compileRefGraph(r, at(r, ['child', 'argument']), ['child', 'argument'])
     expect(compiled.complete).toBe(true)
-    expect(content(r.store, compiled.cid).data.description?.content).toBe('Outer tools')
+    expect(textOf(r.store, compiled.cid)).toBe('Outer tools')
   }
   const declaration = resolveRefIdentity(r, ['child'], 'outer').locations[0]!
   expect(declaration.scope).toEqual({ store: r.store, path: [] })
@@ -28,7 +30,7 @@ test('explicit arguments and structural ancestor paths retain their target while
 })
 
 test('all reference consumers retain conflicting same-ref assignments instead of selecting by traversal order', () => {
-  let r = createReplica(), type = r.store.primitive.documentField.getId()
+  let r = createReplica(), type = primitive(r.store, 'string')
   r = addRefAt(r, [], 'one', type, 1, literal(r, 'Same'), 'Tools')
   r = addRefAt(r, [], 'two', type, 2, literal(r, 'Same'), 'Tools')
   const reference = put(r.store, { data: { ref: { id: 'one' } }, children: [] })
@@ -70,7 +72,7 @@ test('supplies, arguments and handler discovery share a peer declaration and its
 })
 
 test('empty explicit refs never borrow a different same-name provider', () => {
-  let r = createReplica(), type = r.store.primitive.documentField.getId()
+  let r = createReplica(), type = primitive(r.store, 'string')
   r = addRefAt(r, [], 'outer', type, 1, literal(r, 'Outer'), 'Tools')
   r = addTask(r, [], 'Child', 2, 'child')
   r = addRefAt(r, ['child'], 'unfilled', type, 3, null, 'Tools')
@@ -82,7 +84,7 @@ test('empty explicit refs never borrow a different same-name provider', () => {
 })
 
 test('denied nearer declarations block outer providers across lookup and compilation', () => {
-  let r = createReplica(), type = r.store.primitive.documentField.getId()
+  let r = createReplica(), type = primitive(r.store, 'string')
   r = addRefAt(r, [], 'outer', type, 1, literal(r, 'Outer'), 'Tools')
   r = addTask(r, [], 'Child', 2, 'child')
   r = addRefAt(r, ['child'], 'inner', type, 3, literal(r, 'Secret'), 'Tools')
@@ -131,7 +133,8 @@ test('peer submissions explicitly offer alternatives to one capability node, eve
 test('explicit alternatives have the same graph meaning without any peer membership', () => {
   let r = createReplica(), capability = put(r.store, { data: {}, children: [] })
   const handlers = ['alice', 'bob'].map(id => put(r.store, refNodeContent(r.store, { alias: { id }, name: { content: 'Tools' } }, literal(r, id))))
-  const alternatives = put(r.store, { data: { refAlternatives: true }, children: handlers.map(handler => [capability, handler]) })
+  // a sum: the alternatives as a choice with none chosen yet
+  const alternatives = putBranches(r.store, 'Tools', null, handlers.map((handler, i) => ({ peerId: ['alice', 'bob'][i]!, edge: [capability, handler] as [string, string] })), '')
   r = addRefAt(r, [], 'Tools', capability, 1, alternatives, 'Tools')
   expect(discoverHandlers(r, []).filter(offer => offer.enabled)).toHaveLength(2)
   expect(resolveBinding(r.store, capability, resolveRefIdentity(r, [], 'Tools').locations[0]!).status).toBe('ambiguous')

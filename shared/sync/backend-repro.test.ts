@@ -1,5 +1,5 @@
 /** Minimal shared-only repros of flows the backend handlers rely on (see backend/sync/hostHandlers.ts). */
-import { addAllocation, addBank, addRequirement, addRow, addTask, allocateCapability, allocateNative, allocationPattern, argumentSupplier, bindIssuedAuthority, createReplica, ensureHomeContext, evaluateNode, grantValue, handlerResult, headCid, HOME_ID, issueGrant, libAt, nativeRef, ownerGrants, resolveScope, supplyRequirement, view, writeHandlerResult, type EvaluationDriver, type Replica } from './index'
+import { addAllocation, addBank, addRequirement, addRow, addTask, allocateCapability, allocatePrimitive, allocationPattern, argumentSupplier, bindIssuedAuthority, createReplica, ensureHomeContext, evaluateNode, grantValue, handlerResult, headCid, HOME_ID, issueGrant, libAt, primitiveRef, ownerGrants, resolveScope, supplyRequirement, view, writeHandlerResult, type EvaluationDriver, type Replica } from './index'
 import { NOTE_TYPE, PLAIN_TYPE } from './library-types'
 
 const driverOf = (get: () => Replica, set: (r: Replica) => void, executors: EvaluationDriver['executors'] = () => []): EvaluationDriver =>
@@ -10,19 +10,19 @@ test('rows and the handler result written inside an open requirement survive sup
   r = addRequirement(r, ['find'], 'logo designers', 2, { capability: 'search' }, 'ask')
   r = addRow(r, ['find', 'ask'], PLAIN_TYPE, 'a hit', 3, { id: 'hit' })
   r = writeHandlerResult(r, ['find', 'ask'], { answer: 42 }, 4)
-  expect(view(r, ['find', 'ask'])!.tasks.map(t => t.title)).toEqual(['a hit'])
+  expect(view(r, ['find', 'ask'])!.tasks.map(t => t.title)).toEqual(['logo designers', 'a hit'])
   expect(handlerResult(r, ['find', 'ask'])).toEqual({ answer: 42 })
   r = supplyRequirement(r, ['find'], 'ask', { by: 'fos', receipt: '1 hit' }, 5)
   expect(view(r, ['find'])!.tasks.find(t => t.id === 'ask')!.requirement!.satisfied).toBe(true)
   expect(argumentSupplier(r, ['find', 'ask'])).toBe('fos')
   // what the UI shows inside the requirement after it is filled (the evaluator's own execute row aside)
-  expect(view(r, ['find', 'ask'])!.tasks.filter(t => t.type !== 'capabilities.execute').map(t => t.title)).toEqual(['a hit'])
+  expect(view(r, ['find', 'ask'])!.tasks.filter(t => t.type !== 'capabilities.execute').map(t => t.title)).toEqual(['logo designers', 'a hit'])
   expect(handlerResult(r, ['find', 'ask'])).toEqual({ answer: 42 })
 })
 
-// a return ref declared inside a requirement: drove a legacy executor; natives answer values (arguments.test.ts, evaluation.test.ts)
+// a return ref declared inside a requirement: drove a legacy executor; primitives answer values (arguments.test.ts, evaluation.test.ts)
 
-// a task whose choice requirement is answered: drove a legacy executor; natives answer values (arguments.test.ts, evaluation.test.ts)
+// a task whose choice requirement is answered: drove a legacy executor; primitives answer values (arguments.test.ts, evaluation.test.ts)
 
 test('supplying a requirement by reference to a row inside it satisfies it (an accepted model answer)', () => {
   let r = addTask(createReplica('owner'), [], 'Plan', 1, 'plan')
@@ -43,17 +43,17 @@ test('a host-minted grant bound with bindIssuedAuthority names its issuer as the
   expect(argumentSupplier(r, ['offsite', 'slot'])).toBe('fos')
 })
 
-// a requirement with named inputs (mail to/subject): drove a legacy executor; natives answer values (arguments.test.ts, evaluation.test.ts)
+// a requirement with named inputs (mail to/subject): drove a legacy executor; primitives answer values (arguments.test.ts, evaluation.test.ts)
 
 test('a bank inside Home is credited by an invocation evaluated there', async () => {
   // the host offers the allocate contract's handler, as the backend's `allocateHandler` does through `hostOffers()`
   const catalogue = createReplica().store
-  const definition = { id: 'allocate', label: 'allocate', type: (store: typeof catalogue, at: string[] = []) => libAt(store, at).capabilities.allocate! }
-  const type = definition.type(catalogue), ref = nativeRef(catalogue, 'fos', definition)
-  let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['allocate'], native: { peers: { fos: [[type, ref]] }, nodes: Object.fromEntries([...catalogue.table.entries()].map(([cid, node]) => [cid, node])) } } as any)
+  const definition = { id: 'allocate', label: 'allocate', capability: (store: typeof catalogue, at: string[] = []) => libAt(store, at).capabilities.allocate! }
+  const type = definition.capability(catalogue), ref = primitiveRef(catalogue, 'fos', definition)
+  let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['allocate'], run: { peers: { fos: [[type, ref]] }, nodes: Object.fromEntries([...catalogue.table.entries()].map(([cid, node]) => [cid, node])) } } as any)
   r = addBank(r, [HOME_ID], 'Budget', 2, { type: 'account', unit: 'USD' }, 'bank')
   r = issueGrant(r, [HOME_ID, 'bank'], { type: 'account', unit: 'USD', amount: 10 }, 3, 'Initial', 'g0')
-  const driver = driverOf(() => r, next => { r = next }, () => [{ native: allocateNative }])
+  const driver = driverOf(() => r, next => { r = next }, () => [{ run: allocatePrimitive, primitive: 'allocate' }])
   const result = await evaluateNode([HOME_ID, 'g0'], driver)
   expect(result.error).toBeUndefined()
   expect(result.status).toBe('committed')
@@ -62,16 +62,16 @@ test('a bank inside Home is credited by an invocation evaluated there', async ()
 
 test('a host offering a legacy handler for the allocation capability runs a points requirement without ambiguity', async () => {
   const catalogue = createReplica().store
-  const definition = { id: 'points', label: 'allocation', type: (store: typeof catalogue, at: string[] = []) => libAt(store, at).capabilities.allocation! }
-  const type = definition.type(catalogue), ref = nativeRef(catalogue, 'fos', definition)
-  let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['allocation'], native: { peers: { fos: [[type, ref]] }, nodes: Object.fromEntries([...catalogue.table.entries()].map(([cid, node]) => [cid, node])) } } as any)
+  const definition = { id: 'points', label: 'allocation', capability: (store: typeof catalogue, at: string[] = []) => libAt(store, at).capabilities.allocation! }
+  const type = definition.capability(catalogue), ref = primitiveRef(catalogue, 'fos', definition)
+  let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['allocation'], run: { peers: { fos: [[type, ref]] }, nodes: Object.fromEntries([...catalogue.table.entries()].map(([cid, node]) => [cid, node])) } } as any)
   r = addTask(r, [HOME_ID], 'Survey', 2, 'survey')
   r = addRequirement(r, [HOME_ID, 'survey'], 'reward', 2, { capability: 'allocation', resource: 'points', amount: 5, unit: 'ff' }, 'pay')
-  const driver = driverOf(() => r, next => { r = next }, step => step.row?.requirement?.resource === 'points' ? [{ native: async (operands, context) => {
+  const driver = driverOf(() => r, next => { r = next }, step => step.row?.requirement?.resource === 'points' ? [{ run: async (operands, context) => {
     const allocation = { resource: '', type: 'points' as const, amount: 5, unit: 'ff', by: 'fos' }
     const at = context.step.slice(0, -1)
     return { outputs: { self: grantValue(context.store, allocationPattern(context.store, at, allocation, true), allocateCapability(context.store, at), allocation, { description: { content: '5 ff' }, peerId: { content: 'fos' } }) } }
-  } }] : [])
+  }, primitive: 'points' }] : [])
   const result = await evaluateNode([HOME_ID, 'survey'], driver)
   expect(result.error).toBeUndefined()
   expect(result.status).toBe('committed')
@@ -79,35 +79,35 @@ test('a host offering a legacy handler for the allocation capability runs a poin
   void addAllocation; void resolveScope; void headCid
 })
 
-// a handler result written inside the requirement by: drove a legacy executor; natives answer values (arguments.test.ts, evaluation.test.ts)
+// a handler result written inside the requirement by: drove a legacy executor; primitives answer values (arguments.test.ts, evaluation.test.ts)
 
-// a legacy executor binding a host-minted grant: drove a legacy executor; natives answer values (arguments.test.ts, evaluation.test.ts)
+// a legacy executor binding a host-minted grant: drove a legacy executor; primitives answer values (arguments.test.ts, evaluation.test.ts)
 
 test('a bank inside Home is still credited after the account context is ensured again (as every request does)', async () => {
   const catalogue = createReplica().store
-  const definition = { id: 'allocate', label: 'allocate', type: (store: typeof catalogue, at: string[] = []) => libAt(store, at).capabilities.allocate! }
-  const type = definition.type(catalogue), ref = nativeRef(catalogue, 'fos', definition)
-  const offers = { server: ['allocate'], native: { peers: { fos: [[type, ref]] }, nodes: Object.fromEntries([...catalogue.table.entries()].map(([cid, node]) => [cid, node])) } } as any
+  const definition = { id: 'allocate', label: 'allocate', capability: (store: typeof catalogue, at: string[] = []) => libAt(store, at).capabilities.allocate! }
+  const type = definition.capability(catalogue), ref = primitiveRef(catalogue, 'fos', definition)
+  const offers = { server: ['allocate'], run: { peers: { fos: [[type, ref]] }, nodes: Object.fromEntries([...catalogue.table.entries()].map(([cid, node]) => [cid, node])) } } as any
   let r = ensureHomeContext(createReplica('user:owner'), 1, offers)
   r = addBank(r, [HOME_ID], 'Budget', 2, { type: 'account', unit: 'USD' }, 'bank')
   r = issueGrant(r, [HOME_ID, 'bank'], { type: 'account', unit: 'USD', amount: 10 }, 3, 'Initial', 'g0')
   r = ensureHomeContext(r, 0, offers)
-  const driver = driverOf(() => r, next => { r = next }, () => [{ native: allocateNative }])
+  const driver = driverOf(() => r, next => { r = next }, () => [{ run: allocatePrimitive, primitive: 'allocate' }])
   const result = await evaluateNode([HOME_ID, 'g0'], driver)
   expect(result.error).toBeUndefined()
   expect(result.status).toBe('committed')
   expect(ownerGrants(r, [HOME_ID, 'bank']).map(g => g.allocation.amount)).toEqual([10])
 })
 
-test('a native runs under a driver that declares `outputs(step)` (the backend driver shape): the compiler must not read it as a list', async () => {
+test('a primitive runs under a driver that declares `outputs(step)` (the backend driver shape): the compiler must not read it as a list', async () => {
   const catalogue = createReplica().store
-  const definition = { id: 'allocate', label: 'allocate', type: (store: typeof catalogue, at: string[] = []) => libAt(store, at).capabilities.allocate! }
-  const type = definition.type(catalogue), ref = nativeRef(catalogue, 'fos', definition)
-  const offers = { server: ['allocate'], native: { peers: { fos: [[type, ref]] }, nodes: Object.fromEntries([...catalogue.table.entries()].map(([cid, node]) => [cid, node])) } } as any
+  const definition = { id: 'allocate', label: 'allocate', capability: (store: typeof catalogue, at: string[] = []) => libAt(store, at).capabilities.allocate! }
+  const type = definition.capability(catalogue), ref = primitiveRef(catalogue, 'fos', definition)
+  const offers = { server: ['allocate'], run: { peers: { fos: [[type, ref]] }, nodes: Object.fromEntries([...catalogue.table.entries()].map(([cid, node]) => [cid, node])) } } as any
   let r = ensureHomeContext(createReplica('user:owner'), 1, offers)
   r = addBank(r, [HOME_ID], 'Budget', 2, { type: 'account', unit: 'USD' }, 'bank')
   r = issueGrant(r, [HOME_ID, 'bank'], { type: 'account', unit: 'USD', amount: 10 }, 3, 'Initial', 'g0')
-  const driver: EvaluationDriver = { ...driverOf(() => r, next => { r = next }, () => [{ native: allocateNative }]), isPeerActive: () => true }
+  const driver: EvaluationDriver = { ...driverOf(() => r, next => { r = next }, () => [{ run: allocatePrimitive, primitive: 'allocate' }]), isPeerActive: () => true }
   const result = await evaluateNode([HOME_ID, 'g0'], driver)
   expect(result.error).toBeUndefined()
   expect(result.status).toBe('committed')
@@ -118,13 +118,13 @@ test('a driver whose isPeerActive knows only the host peers (the backend driver)
   // backend/sync/evaluation.ts answers `isPeerActive` for `fos` and the integration peers it checked; the owner's own
   // rows (peer `user:owner`) are not peers it asks about, yet the resolver treats the bank as unavailable when it says no
   const catalogue = createReplica().store
-  const definition = { id: 'allocate', label: 'allocate', type: (store: typeof catalogue, at: string[] = []) => libAt(store, at).capabilities.allocate! }
-  const type = definition.type(catalogue), ref = nativeRef(catalogue, 'fos', definition)
-  const offers = { server: ['allocate'], native: { peers: { fos: [[type, ref]] }, nodes: Object.fromEntries([...catalogue.table.entries()].map(([cid, node]) => [cid, node])) } } as any
+  const definition = { id: 'allocate', label: 'allocate', capability: (store: typeof catalogue, at: string[] = []) => libAt(store, at).capabilities.allocate! }
+  const type = definition.capability(catalogue), ref = primitiveRef(catalogue, 'fos', definition)
+  const offers = { server: ['allocate'], run: { peers: { fos: [[type, ref]] }, nodes: Object.fromEntries([...catalogue.table.entries()].map(([cid, node]) => [cid, node])) } } as any
   let r = ensureHomeContext(createReplica('user:owner'), 1, offers)
   r = addBank(r, [HOME_ID], 'Budget', 2, { type: 'account', unit: 'USD' }, 'bank')
   r = issueGrant(r, [HOME_ID, 'bank'], { type: 'account', unit: 'USD', amount: 10 }, 3, 'Initial', 'g0')
-  const driver: EvaluationDriver = { ...driverOf(() => r, next => { r = next }, () => [{ native: allocateNative }]), isPeerActive: peer => peer === 'fos' }
+  const driver: EvaluationDriver = { ...driverOf(() => r, next => { r = next }, () => [{ run: allocatePrimitive, primitive: 'allocate' }]), isPeerActive: peer => peer === 'fos' }
   const result = await evaluateNode([HOME_ID, 'g0'], driver)
   expect(result.error).toBeUndefined()
   expect(result.status).toBe('committed')

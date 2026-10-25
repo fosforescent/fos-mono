@@ -1,4 +1,5 @@
-/** Native values at the API boundary; records and sequences are ordinary typed ref rows in the graph. */
+/** Host values at the API boundary; records and sequences are ordinary typed ref rows in the graph. */
+import { primitive, primitiveName } from './primitives'
 import type { FosStore } from '../dag-implementation/store'
 import { hashContent } from '../dag-implementation/cid'
 import type { FosNodeContent, FosPathElem } from '../types'
@@ -8,17 +9,11 @@ export type NodeValue = null | boolean | number | string | NodeValue[] | { [key:
 type ValueShape = 'text' | 'number' | 'boolean' | 'null' | 'record' | 'sequence'
 
 export function nodeValueType(store: FosStore, shape: ValueShape): string {
-  return put(store, {
-    data: {
-      name: { content: `fos:value:${shape}` },
-      form: shape === 'record' ? { open: true } : shape === 'sequence' ? { open: true, repeat: true } : { primitive: shape }
-    },
-    children: []
-  })
+  return primitive(store, shape === 'text' ? 'string' : shape)
 }
 
 const VALUE_SHAPES: ValueShape[] = ['text', 'number', 'boolean', 'null', 'record', 'sequence']
-/** Whether `cid` is one of the native value types (`nodeValueType`): told by identity. */
+/** Whether `cid` is one of the host value types (`nodeValueType`): told by identity. */
 export function isNodeValueType(store: FosStore, cid: string): boolean {
   return VALUE_SHAPES.some(shape => nodeValueType(store, shape) === cid)
 }
@@ -76,12 +71,12 @@ export function constructNodeValue(
         (prior && content(store, prior).data.alias?.id) ||
         (pathId === undefined ? undefined : pathId.length <= 240
           ? pathId
-          : `field:${hashContent({ data: { name: { content: id! }, description: { content: name } }, children: [] })}`)
+          : `field:${hashContent({ data: { name: { content: JSON.stringify([id, name]) } }, children: [] })}`)
       const next = constructNodeValue(store, value, fieldId, prior, depth + 1, active)
       const data: FosNodeContent['data'] = { ...(fieldId ? { alias: { id: fieldId } } : {}), name: { content: name } }
       // Match form constructors: the row's left edge supplies its type; the right ref owns its value.
       const target = content(store, next.cid)
-      const cid = put(store, { ...target, data: { ...target.data, name: { content: name }, ...(Array.isArray(input) ? { position: { value: Number(name) } } : {}) } })
+      const cid = put(store, { ...target, data: { ...target.data, name: { content: name } } })
       return [next.type, fieldId ? put(store, refNodeContent(store, data, cid)) : cid]
     })
     return { type, cid: put(store, { data: { presentation: scalar === 'sequence' ? { sequence: true } : {} }, children }) }
@@ -118,7 +113,8 @@ export function readGraphValue(store: FosStore, cid: string, depth = 0, active =
         names = new Set<string>()
       for (const [type, child] of node.children) {
         // Literal constraints and links are not mutable record fields.
-        if (type === store.primitive.linkField.getId() || !isRowEdge(store, [type, child])) continue
+        // a record's fields are its named rows (an immutable one's have no identity of their own)
+        if (type === primitive(store, 'link') || (!isRowEdge(store, [type, child]) && !store.table.get(child)?.data.name)) continue
         const field = content(store, child),
           name = field.data.name?.content ?? valueContent(store, child).data.name?.content
         if (name === undefined) return undefined
@@ -126,18 +122,14 @@ export function readGraphValue(store: FosStore, cid: string, depth = 0, active =
         names.add(name)
         const value = readGraphValue(store, child, depth + 1, active)
         if (value === undefined) return undefined
-        const primitive = content(store, type).data.form?.primitive
-        if (
-          primitive &&
-          (primitive === 'null'
-            ? value !== null
-            : typeof value !== (primitive === 'number' || primitive === 'time' ? 'number' : primitive === 'boolean' ? 'boolean' : 'string'))
-        )
+        const leaf = primitiveName(store, type)
+        if ((leaf === 'null' && value !== null) || (leaf === 'string' && typeof value !== 'string') || ((leaf === 'number' || leaf === 'boolean') && typeof value !== leaf))
           return undefined
-        entries.push([name, value, valueContent(store, child).data.position?.value ?? field.data.position?.value ?? Number(name)])
+        entries.push([name, value, entries.length])
       }
       return node.data.presentation.sequence
-        ? entries.sort((a, b) => a[2] - b[2]).map(([, value]) => value)
+        // a sequence's order is its rows' order
+        ? entries.map(([, value]) => value)
         : Object.fromEntries(entries.map(([name, value]) => [name, value]))
     }
     return undefined

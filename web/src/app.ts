@@ -1,21 +1,23 @@
+import { askAt } from '../../shared/sync/arguments'
+import { textValue, textOf as fieldTextOf } from '../../shared/sync/fields'
+import { primitive } from '../../shared/sync/primitives'
 import { resourceHandlers } from '../../shared/sync/resource-bindings'
-import { invertPolarity } from '../../shared/sync/parameters'
 import { capabilityPresentation } from './capability-presentation'
 import { setLibraryArg } from '../../shared/sync/library'
-import { nodeTransportAt, offerNodeTransport, type NodeTransport } from '../../shared/sync/native-refs'
-import { nativeOffer } from '../../shared/sync/natives'
+import { nodeTransportAt, offerNodeTransport, type NodeTransport } from '../../shared/sync/primitives'
+import { primitiveRef } from '../../shared/sync/primitives'
 import type { FosStore } from '../../shared/dag-implementation/store'
 import { primitiveImplementation } from '../../shared/sync/primitives'
 import { handlerOfferId } from '../../shared/sync/graph'
-/** A device's location reader: the native it passes its library for `requires.deviceLocation`. */
+/** A device's location reader: the primitive it passes its library for `requires.deviceLocation`. */
 type DeviceLocation = { available(): boolean; locate(): Promise<{ lat: number; lng: number }> }
 import { settingOf, isTemplateType } from '../../shared/sync/graph'
 import { hashContent } from '../../shared/dag-implementation/cid'
-import { nativeRefValues } from '../../shared/sync/native-refs'
+import { primitiveValues } from '../../shared/sync/primitives'
 import { sameValue } from '../../shared/sync/merge'
 import { parseRowInput } from './rows'
 import { isHandlerStateLeft } from '../../shared/sync/capabilities'
-import { capabilityDeclarations, visibleBindings, bindingTree, bindingLayers, selectBinding, sameCapabilityType, compileInstructions, executionInputs, addRefCall, primitiveValue, refSubmissions, matchesInstructionRef, templateValuePattern, solveAt, usePatternAt, patternBindings, choosePatternBindingAt, findEdge, valueCidOf, type PatternBinding, constructAt, namesInLibrary, rowConstructor, openRefs, assignedValue, assignRefAt, textOf, capabilityName, readProposals, type OpenRef } from '../../shared/sync/index'
+import { capabilityDeclarations, visibleBindings, bindingTree, bindingLayers, selectBinding, sameCapabilityType, compileInstructions, executionInputs, addRefCall, primitiveValue, refSubmissions, matchesInstructionRef, templateValuePattern, solveAt, usePatternAt, patternBindings, choosePatternBindingAt, findEdge, valueCidOf, type PatternBinding, constructAt, namesInLibrary, rowConstructor, openRefs, assignedValue, assignRefAt, capabilityName, rowTitle, readProposals, type OpenRef, isLibraryType } from '../../shared/sync/index'
 import { createDeviceHandlers } from './device-handlers'
 import { compileConstructorCall } from '../../shared/sync/constructor-rows'
 import { capabilityOfTarget } from '../../shared/sync/graph'
@@ -35,7 +37,7 @@ import { requestPeerNode } from './api'
 import { membershipSyncContext, sendPullRequest, UNKNOWN_PROVIDER, type NodeSyncContext } from '../../shared/sync/node-sync'
 import { parsePastedRows } from './paste'
 import { ORGANIZE_PEER, captureNoteText, requestOrganize, organizedRowCount, typeAt } from '../../shared/sync/organize'
-import { valueOfPattern } from '../../shared/sync/structural'
+import { valueOfPattern, tagNode } from '../../shared/sync/structural'
 import { NOTE_TYPE } from '../../shared/sync/published-types'
 import { microphoneError, recordedType, recordingMimeType, recordingUnsupported } from './recording'
 import { SETTING_LABELS, settingKeyOf } from './settings'
@@ -111,6 +113,7 @@ import {
   setQueryOptionsAt,
   addFileReference,
   setFileReferenceAt,
+  setRowFieldsAt,
   fileReferenceAt,
   type FileReference,
   setRowType,
@@ -404,7 +407,7 @@ export class App {
   titleFromText(path: Scope): void {
     const row = () => view(this.state.replica, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1))
     const session = this.state.session, key = JSON.stringify(path)
-    if (!row()?.headline || !session || session.kind !== 'user' || this.virtualIdentity || !this.isOnline('fos') || !this.capabilityAvailable('title', path) || this.titling.has(key)) return
+    if (row()?.body === undefined || !session || session.kind !== 'user' || this.virtualIdentity || !this.isOnline('fos') || !this.capabilityAvailable('title', path) || this.titling.has(key)) return
     this.titling.add(key)
     void (async () => {
       const store = this.state.replica.store, before = row()!.title
@@ -461,14 +464,14 @@ export class App {
       await this.saveWorkflowReplica(queueAgentEffect(this.state.replica, path, `${evaluation}:${JSON.stringify(path)}`, this.now()))
       this.notify('info', 'Execution queued for the configured desktop. Track its status in the project workflow.')
     },
-    // A network request made by this device (the desktop shell natively, the browser with fetch); the native binds the body to the row's `response` output.
+    // A network request made by this device (the desktop shell natively, the browser with fetch); the primitive binds the body to the row's `response` output.
     fetch: (url, method) => this.fetchUrl(url, method)
   })
   /** One request from this device. The desktop shell makes it natively (no browser CORS); the browser uses fetch. */
   async fetchUrl(url: string, method: string): Promise<{ status: number; body: string }> {
     if (!/^https?:\/\//i.test(url)) throw new Error('Only http and https addresses can be fetched.')
-    const native = tauriInvoke<{ status: number; body: string }>('fetch_url', { url, method })
-    if (native) return native
+    const desktop = tauriInvoke<{ status: number; body: string }>('fetch_url', { url, method })
+    if (desktop) return desktop
     const response = await fetch(url, { method })
     return { status: response.status, body: (await response.text()).slice(0, 1_000_000) }
   }
@@ -624,20 +627,20 @@ export class App {
    * root; it is nested in the browser's and resolves its rows through it.
    */
   private withRootContext(replica: Replica): Replica {
-    if (!this.config.deviceRoot && !this.config.scopedDocument) return this.deviceHandlers.publish(this.passDeviceNatives(ensureDeviceLibrary(replica, LIBRARY_BUNDLE as LibraryBundle, Date.now())), [], replica.meta.peerId, 0, undefined, 'this-device')
+    if (!this.config.deviceRoot && !this.config.scopedDocument) return this.deviceHandlers.publish(this.passDevicePrimitives(ensureDeviceLibrary(replica, LIBRARY_BUNDLE as LibraryBundle, Date.now())), [], replica.meta.peerId, 0, undefined, 'this-device')
     if (!this.deviceRoot) {
       const stored = this.config.deviceRoot?.serialized
-      this.deviceRoot = this.passDeviceNatives(ensureDeviceLibrary(stored ? loadReplica(stored) : createReplica(), LIBRARY_BUNDLE as LibraryBundle, Date.now()))
+      this.deviceRoot = this.passDevicePrimitives(ensureDeviceLibrary(stored ? loadReplica(stored) : createReplica(), LIBRARY_BUNDLE as LibraryBundle, Date.now()))
     }
     this.deviceRoot = this.deviceHandlers.publish(this.deviceRoot, [], replica.meta.peerId, 0, undefined, 'this-device')
     nestScope(replica.store, { store: this.deviceRoot.store, root: headCid(this.deviceRoot), at: [] })
     return replica
   }
   /**
-   * What this device passes the standard library it uses (its `lib` instance on the device root): the natives the
+   * What this device passes the standard library it uses (its `lib` instance on the device root): the primitives the
    * library requires, registered here. The library never calls device code itself; it uses what it is passed.
    */
-  private passDeviceNatives(r: Replica): Replica {
+  private passDevicePrimitives(r: Replica): Replica {
     const peer = r.meta.peerId
     const reader: DeviceLocation = {
       available: () => typeof navigator !== 'undefined' && !!navigator.geolocation,
@@ -647,13 +650,13 @@ export class App {
         geolocation.getCurrentPosition(position => resolve({ lat: Math.round(position.coords.latitude * 1e5) / 1e5, lng: Math.round(position.coords.longitude * 1e5) / 1e5 }), reject, { timeout: 15_000, maximumAge: 60_000 })
       })
     }
-    const native = nativeOffer(r.store, peer, { id: 'location', label: 'This device', type: (store: FosStore, at: Scope) => libAt(store, at).capabilities.allocation! }, reader as never)
-    try { return setLibraryArg(r, [], 'deviceLocation', native, 0) } catch { return r }
+    const location = primitiveRef(r.store, peer, { id: 'location', label: 'This device', capability: (store: FosStore, at: Scope) => libAt(store, at).capabilities.allocation! }, reader as never)
+    try { return setLibraryArg(r, [], 'deviceLocation', location, 0) } catch { return r }
   }
-  /** The native a device fallback runs (what this device passed its library), when the device can run it now. */
-  deviceNative(handler: ManualHandler): DeviceLocation | null {
-    if (!handler.native) return null
-    const value = primitiveImplementation<DeviceLocation>(this.state.replica.store, valueCidOf(this.state.replica.store, handler.native))?.value
+  /** The primitive a device fallback runs (what this device passed its library), when the device can run it now. */
+  devicePrimitive(handler: ManualHandler): DeviceLocation | null {
+    if (!handler.primitive) return null
+    const value = primitiveImplementation<DeviceLocation>(this.state.replica.store, valueCidOf(this.state.replica.store, handler.primitive))?.value
     return value && value.available() ? value : null
   }
   /** The device root a virtual peer's document is nested in (read only). */
@@ -1275,8 +1278,11 @@ export class App {
     const push = !pullOnly && (transport === 'account' ? this.state.policy.to.includes('autopush') : transport === 'virtual' ? this.virtualCapabilities.includes('edit') : true)
     // Member entries are children of their node: an entry syncs with a node that syncs (it is policy, small), and this
     // device's own entries sync with everything in them (what peers left for it, its relay queues). Other rows stay
-    // lazy until they are on screen.
+    // lazy until they are on screen: the node in view and its ancestors, the rows it lists, and each such row's own
+    // parts (its fields, its declarations), which it is shown with.
     const onScreen = (path: Scope) => path.length === localRoot.length || (path.length <= this.state.view.length && path.every((id, i) => id === this.state.view[i]))
+    const listed = (path: Scope) => path.length === this.state.view.length + 1 && this.state.view.every((id, i) => id === path[i])
+    const parts = new Set<string>()
     // a path into one of this device's own memberships, at any node
     const own = (path: Scope) => path.some((_, i) => memberEntryPeerAt(this.state.replica.store, headCid(this.state.replica), path.slice(0, i + 1)) === initial.meta.peerId)
     const eager = (path: Scope) => own(path) || (memberEntryPeerAt(this.state.replica.store, headCid(this.state.replica), path) !== null && onScreen(path.slice(0, -1)))
@@ -1305,7 +1311,7 @@ export class App {
         continue
       }
       const plan = planNodeSync(r, path, { peer, scope, remoteRoot, localRoot, branches, push })
-      const visible = onScreen(path) || eager(path) || state.has(JSON.stringify(path))
+      const visible = onScreen(path) || listed(path) || eager(path) || state.has(JSON.stringify(path)) || parts.has(JSON.stringify(path))
       if (!visible && !(push && plan.dirty)) continue
       const remote = await send(plan.first)
       if (!valid()) return
@@ -1329,7 +1335,9 @@ export class App {
         const next = [...path, child.id]
         const held = isHandlerStateLeft(this.state.replica.store, child.template) && (visible || plan.dirty)
         if (held) state.add(JSON.stringify(next))
-        if (child.peer !== undefined ? visible || child.peer === initial.meta.peerId : eager(next) || held) queue.push(next)
+        const part = visible && !!child.right
+        if (part) parts.add(JSON.stringify(next))
+        if (child.peer !== undefined ? visible || child.peer === initial.meta.peerId : eager(next) || held || part || listed(next)) queue.push(next)
       }
     }
     // an owner's device attached at Home takes its server's own entry above it (its offers, its published key)
@@ -1653,7 +1661,7 @@ export class App {
   dropBlankRow(parent: Scope, id: string, store: Replica['store']): void {
     if (store !== this.state.replica.store) return
     const row = view(this.state.replica, parent)?.tasks.find((t) => t.id === id)
-    if (row?.type === PLAIN_TYPE && !row.form && !row.scalar && !this.rowInputs([...parent, id]) && !row.title.trim() && !row.childCount && !row.childChoices) this.edit(deleteTask(this.state.replica, parent, id, this.now()))
+    if (row?.type === PLAIN_TYPE && !row.fields && !row.scalar && !this.rowInputs([...parent, id]) && !row.title.trim() && !row.childCount && !row.childChoices) this.edit(deleteTask(this.state.replica, parent, id, this.now()))
   }
   rewriteRowAt(at: Scope, id: string, parsed: import('./rows').ParsedInput, draft?: { store: Replica['store']; head: string; parent: Scope }): void {
     if (this.isHome([...this.state.view, ...at, id])) return
@@ -2169,7 +2177,7 @@ export class App {
       const { name: _name, ...data } = identity.data
       const typed = content(r.store, valueOfPattern(r.store, pattern, value.data))
       return refNodeContent(r.store, { ...data, ...(handler !== undefined ? { name: { content: handler || 'peer' } } : {}) },
-        put(r.store, handler === undefined ? value : { ...typed, children: [...typed.children, ...value.children.filter(edge => !typed.children.some(row => row[0] === edge[0] && row[1] === edge[1]))] }), [...bookkeepingOf(r.store, identity), [r.store.primitive.previousVersion.getId(), cid]])
+        put(r.store, handler === undefined ? value : { ...typed, children: [...typed.children, ...value.children.filter(edge => !typed.children.some(row => row[0] === edge[0] && row[1] === edge[1]))] }), [...bookkeepingOf(r.store, identity), [primitive(r.store, 'previous'), cid]])
     }, 'node')
     const root = handler !== undefined && path.length ? updateAtScope(r.store, next, path.slice(0, -1), node => ({ ...node, children: node.children.map(edge => content(r.store, edge[1]).data.alias?.id === path.at(-1) ? [pattern, edge[1]] : edge) })) : next
     commitRoot(r.store, root, this.now()); return { ...r }
@@ -2182,7 +2190,7 @@ export class App {
   setPeerRow(path: Scope, handler: string | undefined): void { this.edit(this.peerRowReplica(this.state.replica, path, handler)) }
   /** The device root's Peer constructor row: choosing a handler on it makes a new peer row instead of changing it. */
   /** The id of this device's declared Peer constructor row on the device root: a content address. */
-  peerConstructorId(): string { return hashContent({ data: { peerId: { content: this.state.replica.meta.peerId }, description: { content: 'Peer constructor' } }, children: [] }) }
+  peerConstructorId(): string { return hashContent({ data: { peerId: { content: this.state.replica.meta.peerId }, name: { content: 'Peer constructor' } }, children: [] }) }
   newBranchAt(path: Scope): void {
     const row = view(this.state.replica, path.slice(0, -1))?.tasks.find(r => r.id === path.at(-1))
     if (!row) return
@@ -2191,12 +2199,14 @@ export class App {
       if (JSON.stringify(path.slice(0, this.state.view.length)) === JSON.stringify(this.state.view)) this.select(path.slice(this.state.view.length))
     })
   }
+  /** Ask for `name` to be merged into the branch on screen (the default branch when that is `name`), or withdraw the request. */
   toggleBranchMergeRequest(path: Scope, name: string): void {
     if (this.state.voice || this.state.work?.busy || this.evaluating) return
     const row = view(this.state.replica, path.slice(0, -1))?.tasks.find(r => r.id === path.at(-1))
     if (!row?.branches) return
     const requested = !row.branches.mergeRequests?.includes(name)
-    this.edit(setBranchMergeRequest(this.state.replica, path, name, requested, this.now()))
+    const target = requested && row.branches.selected !== name ? row.branches.selected : undefined
+    try { this.edit(setBranchMergeRequest(this.state.replica, path, name, requested, this.now(), target)) } catch (error) { this.notify('error', String(error)); return }
     // a branch of a row a peer holds goes to that peer as a pull request
     if (requested && this.pullRequestTarget(path)) void this.sendPullRequest(path, name)
   }
@@ -2274,14 +2284,20 @@ export class App {
     this.savePrefs()
     this.set({ selected: null, contextMenu: null, work: undefined })
   }
-  mergeNodeBranch(at: Scope, id: string, target: string, absolute = false): void {
+  /** Merge `source` (the selected branch when omitted) into `target`; a merge request of `source` is settled by it. */
+  mergeNodeBranch(at: Scope, id: string, target: string, absolute = false, source?: string): void {
     if (this.evaluating || this.state.voice || this.state.work?.busy) return
     const path = absolute ? [...at, id] : [...this.state.view, ...at, id]
-    if (repositoryAt(this.state.replica, path)) { void this.proposeRepoMerge(path, target); return }
     const row = view(this.state.replica, path.slice(0, -1))?.tasks.find(row => row.id === id)
+    if (repositoryAt(this.state.replica, path)) {
+      if (source && source !== row?.branches?.selected) { this.notify('info', `Switch to ${source} to merge its repository branch.`); return }
+      void this.proposeRepoMerge(path, target); return
+    }
     if (!row?.branches) return
+    const from = source ?? row.branches.selected
     try {
-      const next = mergeBranch(this.state.replica, path, row.branches.selected, target, this.now())
+      let next = mergeBranch(this.state.replica, path, from, target, this.now())
+      if (row.branches.mergeRequests?.includes(from)) next = setBranchMergeRequest(next, path, from, false, this.now())
       this.branchSelections[id] = target
       this.edit(next)
       this.savePrefs()
@@ -2502,7 +2518,7 @@ export class App {
     const manual = namesInLibrary(r.store, binding.library).byName.get(MANUAL_HANDLERS)
     return childRows(r.store, binding.library)
       .filter(row => row.type === TEMPLATE_TYPE && (!manual || valueCidOf(r.store, row.cid) !== valueCidOf(r.store, manual)) && isTemplateType(r.store, row.cid))
-      .map(row => ({ id: rowView(r.store, row.cid, row.edge).id, cid: row.cid, label: row.value.data.description?.content.trim() ?? '', icon: capabilityPresentation(r.store, row.cid).icon || 'template', description: capabilityPresentation(r.store, row.cid).description }))
+      .map(row => ({ id: rowView(r.store, row.cid, row.edge).id, cid: row.cid, label: rowTitle(r.store, row.cid, null).trim(), icon: capabilityPresentation(r.store, row.cid).icon || 'template', description: capabilityPresentation(r.store, row.cid).description }))
       .filter(row => row.label)
   }
   /**
@@ -2514,7 +2530,7 @@ export class App {
     if (!binding) return []
     return [...namesInLibrary(r.store, binding.library).byName].filter(([, node]) => !isTemplateType(r.store, node)).map(([name, node]) => {
       const value = valueContent(r.store, node)
-      return { name, node, label: value.data.capabilityDefinition?.label ?? value.data.description?.content ?? name, ...capabilityPresentation(r.store, node) }
+      return { name, node, label: name, ...capabilityPresentation(r.store, node) }
     })
   }
   /** A row made from the node the library names `name` where the row goes (the name resolves in that scope). */
@@ -2565,7 +2581,7 @@ export class App {
   insertHandler(cid: string, path = this.constructorContext()): void {
     const offer = this.handlerOffers(path).find(o => o.cid === cid && o.enabled && o.active)
     if (!offer) throw new Error('This handler is unavailable.')
-    if (offer.type !== this.state.replica.store.primitive.templateField.getId()) {
+    if (!isLibraryType(this.state.replica.store, offer.type, TEMPLATE_TYPE)) {
       const r = this.state.replica, cid = resolveScope(r.store, headCid(r), path)
       if (cid && matchesGraph(r.store, offer.type, cid)) {
         this.edit(setRefValueAt(r, path, offer.cid, this.now()))
@@ -2632,9 +2648,8 @@ export class App {
       if (parsed.peer !== undefined) r = this.peerRowReplica(r, target, parsed.peer)
       if (parsed.construct) r = constructAt(r, target, libAt(r.store, target.slice(0, -1)).capabilities[parsed.construct.capability]!, parsed.construct.values, this.now())
       if (inverted) {
-        const constructor = rowConstructor(r, target)
-        if (!constructor) throw new Error('The row has no capability to invert.')
-        r = constructAt(r, target, invertPolarity(r.store, constructor, libAt(r.store, parent).field('negative')), {}, this.now())
+        // the inverse of supplying a capability is asking for it: the row's ref a hole
+        r = askAt(r, target, this.now())
       }
       if (repo) { r = bindRepository(r, target, repo, this.now()); r = this.withIntegrationPeer(r, target, 'github') }
       if (localDirectory) {
@@ -2938,7 +2953,7 @@ export class App {
         save: async replica => { valid(); this.set({ replica }); await this.config.storage.flush?.(); valid(); this.scheduleSync() },
         now: () => this.now(), isPeerActive: id => this.isOnline(id),
         check: step => localPull(step) && !this.pullPeers().some(p => p.id === step.row?.requirement?.peer) ? ['The Pull peer is not connected.'] : [],
-        // every device native answers values; the evaluator writes them. A native that reads this app does so through its closure, never the tree.
+        // every device primitive answers values; the evaluator writes them. A primitive that reads this app does so through its closure, never the tree.
         executors: step => this.deviceHandlers.executors(this.state.replica, step, this.state.replica.meta.peerId)
       })
       if (record.status !== 'committed' && record.status !== 'awaiting-review') throw new Error(record.error ?? 'Evaluation needs recovery.')
@@ -3021,9 +3036,9 @@ export class App {
       if (schedule && value !== undefined)
         trigger[schedule.field] = schedule.input === 'datetime-local' ? (value ? Date.parse(value) : undefined) : value
       if (missingSchedule({ ...trigger, definition: offer.definition })) trigger.enabled = false
-      nativeRefValues(source, destination, offer.peerId)
+      primitiveValues(source, destination, offer.peerId)
         .find((v) => v.ref === offer.cid)
-        ?.native.trigger?.validate?.({ replica: source, path, config: trigger, now: this.now(), previous: null })
+        ?.implementation.trigger?.validate?.({ replica: source, path, config: trigger, now: this.now(), previous: null })
       if (id) r = addRow(r, destination, TEMPLATE_TYPE, offer.definition.label, this.now(), { id })
       r = setNodeTrigger(r, path, trigger, this.now())
       if (arg) {
@@ -3087,7 +3102,7 @@ export class App {
     const path = [...this.state.view, ...at], r = this.state.replica
     const cid = resolveScope(r.store, headCid(r), path)
     if (!cid) return []
-    return argumentRefs(r.store, cid).filter(arg => arg.type === r.store.primitive.documentField.getId() && !content(r.store, arg.cid).data.ref && content(r.store, arg.cid).data.name?.content && !settingOf(r.store, content(r.store, arg.cid))).map(arg => {
+    return argumentRefs(r.store, cid).filter(arg => arg.type === primitive(r.store, 'string') && !content(r.store, arg.cid).data.ref && content(r.store, arg.cid).data.name?.content && !settingOf(r.store, content(r.store, arg.cid))).map(arg => {
       const result = resolveText(r, path, `{{${arg.name}}}`)
       return { id: content(r.store, arg.cid).data.alias!.id, name: arg.name!, text: result.bindings[0]?.status === 'ready' ? result.text : '', problems: result.bindings.flatMap(b => b.problems) }
     })
@@ -3101,13 +3116,13 @@ export class App {
     this.edit(next); this.savePrefs()
   }
   setTextArgument(at: Scope, id: string, text: string): void {
-    this.setArgumentValue(at, id, put(this.state.replica.store, { data: { description: { content: text } }, children: [] }))
+    this.setArgumentValue(at, id, textValue(this.state.replica.store, text))
   }
   addTextArgument(at: Scope, name: string, text: string): void {
     if (!/^[A-Za-z_][\w.-]*$/.test(name)) { this.notify('error', 'Use letters, digits, underscores, dots or hyphens for the argument name.'); return }
     const store = this.state.replica.store
-    const value = text ? put(store, { data: { description: { content: text } }, children: [] }) : null
-    this.edit(addRefAt(this.state.replica, [...this.state.view, ...at], newId(), store.primitive.documentField.getId(), this.now(), value, name))
+    const value = text ? textValue(store, text) : null
+    this.edit(addRefAt(this.state.replica, [...this.state.view, ...at], newId(), primitive(store, 'string'), this.now(), value, name))
     this.notify('info', `Text argument ${name} added. Use {{${name}}} in notes in this context.`)
   }
   addPlaceholder(name: string, typeName: string, destination = this.state.view): void {
@@ -3121,7 +3136,7 @@ export class App {
       const cid = library?.cid ?? (local && resolveScope(r.store, headCid(r), [...local.path, local.row.id]))
       if (!cid) throw new Error('This template is unavailable in the enclosing scope.')
       type = templateValuePattern(r.store, cid)
-    } else if (typeName === 'text') type = r.store.primitive.documentField.getId()
+    } else if (typeName === 'text') type = primitive(r.store, 'string')
     else {
       // A declaration's pattern is available even when its value is still an unfilled parameter.
       const found = selectBinding(bindingLayers(r, destination), typeName.trim(), false, true)
@@ -3134,6 +3149,29 @@ export class App {
     }
     this.edit(addRefAt(r, destination, newId(), type, this.now(), null, name))
   }
+  /**
+   * A capability by name, declared here as a named ref with nothing behind it yet (an open hole): rows of it can be
+   * required in this scope, and a handler or a peer can fill it later.
+   */
+  declareCapability(name: string, at: Scope = this.state.view): void {
+    const label = name.trim()
+    if (!label || label.length > 200) { this.notify('error', 'Give the capability a name (at most 200 characters).'); return }
+    if (this.scopeCapabilities(at).some(c => c.name === label)) { this.notify('info', `“${label}” is already declared here.`); return }
+    const type = put(this.state.replica.store, { data: {}, children: [[tagNode(this.state.replica.store, label), put(this.state.replica.store, { data: {}, children: [] })]] })
+    this.edit(addRefAt(this.state.replica, at, newId(), type, this.now(), null, label))
+  }
+  /** Capabilities declared by name in the scope of `at` (not the library's): what `declareCapability` made, here or above. */
+  scopeCapabilities(at: Scope = this.state.view): Array<{ name: string; type: string }> {
+    const store = this.state.replica.store
+    // the library's capabilities have their own constructors: only names declared beside them are new here
+    const seen = new Set<string>([...this.libraryNames(at).map(n => n.node), ...capabilityDeclarations(store, at).map(d => d.cid)])
+    // declarations, filled or not: a capability nothing provides yet is still one rows can ask for
+    return bindingLayers(this.state.replica, at).flatMap(layer => layer.bindings).flatMap(binding => {
+      if (capabilityName(binding.store, binding.pattern) === null || !binding.name || seen.has(binding.pattern)) return []
+      seen.add(binding.pattern)
+      return [{ name: binding.name, type: binding.pattern }]
+    })
+  }
   placeholders(at: Scope = []) {
     const path = [...this.state.view, ...at]
     const r = this.state.replica, cid = resolveScope(r.store, headCid(r), path)
@@ -3145,9 +3183,9 @@ export class App {
       id: content(r.store, a.cid).data.alias!.id, name: a.name ?? 'Value',
       branches: refBranches(r.store, content(r.store, a.cid)),
       child: (() => { const target = refValueCid(r.store, content(r.store, a.cid)); return target && isRefNode(r.store, content(r.store, target)) ? content(r.store, target).data.name?.content ?? 'Value' : null })(),
-      type: a.type === r.store.primitive.documentField.getId() ? 'text' : capabilityOfTarget(r.store, a.type) ?? content(r.store, a.type).data.name?.content ?? 'Named type',
+      type: a.type === primitive(r.store, 'string') ? 'text' : capabilityOfTarget(r.store, a.type) ?? content(r.store, a.type).data.name?.content ?? 'Named type',
       status: resolveBinding(r.store, a.type, content(r.store, a.cid).data.refExpression ? a.cid : refValueCid(r.store, content(r.store, a.cid)), candidates, a.name, { isPeerActive: id => this.isOnline(id), scope: { replica: r, path } }).status,
-      candidates: candidates.filter(c => c.cid !== a.cid && matchesGraph(r.store, a.type, c.cid)).map(c => ({ cid: c.cid, label: c.name ?? content(r.store, c.cid).data.description?.content ?? 'Matching handler' }))
+      candidates: candidates.filter(c => c.cid !== a.cid && matchesGraph(r.store, a.type, c.cid)).map(c => ({ cid: c.cid, label: c.name ?? fieldTextOf(r.store, c.cid) ?? 'Matching handler' }))
     }))
   }
   selectArgumentBranch(at: Scope, id: string, name: string): void {
@@ -3166,7 +3204,7 @@ export class App {
   }
   valueLabel(cid: string): string {
     const node = valueContent(this.state.replica.store, cid)
-    return node.data.description?.content ?? node.data.name?.content ?? (node.data.scalar ? String(node.data.scalar.value) : cid.slice(-8))
+    return fieldTextOf(this.state.replica.store, cid) ?? node.data.name?.content ?? (node.data.scalar ? String(node.data.scalar.value) : cid.slice(-8))
   }
   choosePatternBinding(alias: string, proposal: string, path: Scope = this.state.view): void {
     this.edit(choosePatternBindingAt(this.state.replica, path.slice(0, -1), path.at(-1)!, alias, proposal, this.now()))
@@ -3297,13 +3335,13 @@ export class App {
     const node = resolveScope(r.store, headCid(r), path)
     return refs.map(ref => {
       const assignment = node && findEdge(r.store, valueContent(r.store, node), `a:${ref.alias}`)
-      const options = assignment ? readProposals(r.store, content(r.store, identityCid(r.store, assignment))).filter(p => p.status === 'open').map(p => ({ proposal: p.cid, text: textOf(r, p.contentCid) ?? '' })) : []
-      return { ...ref, text: textOf(r, assignedValue(r, path, ref.alias)), options }
+      const options = assignment ? readProposals(r.store, content(r.store, identityCid(r.store, assignment))).filter(p => p.status === 'open').map(p => ({ proposal: p.cid, text: fieldTextOf(r.store, p.contentCid) ?? '' })) : []
+      return { ...ref, text: (() => { const held = assignedValue(r, path, ref.alias); return held ? fieldTextOf(r.store, held) : null })(), options }
     })
   }
   assignRowInput(path: Scope, alias: string, text: string): void {
     const r = this.state.replica
-    this.edit(assignRefAt(r, path, alias, text ? put(r.store, { data: { description: { content: text } }, children: [] }) : null, this.now()))
+    this.edit(assignRefAt(r, path, alias, text ? textValue(r.store, text) : null, this.now()))
   }
   chooseRowInput(path: Scope, alias: string, proposal: string): void {
     this.acceptHere([...path, alias], proposal)
@@ -3639,6 +3677,8 @@ export class App {
     return id
   }
   /** Re-pin a reference to the checksum its file has now. */
+  /** Fill row `rowId`'s named fields (at the absolute path `at`). */
+  setRowFields(at: Scope, rowId: string, input: Record<string, string | number>): void { this.edit(setRowFieldsAt(this.state.replica, at, rowId, input, this.now())) }
   setFileReference(at: Scope, rowId: string, file: FileReference): void { this.edit(setFileReferenceAt(this.state.replica, at, rowId, file, this.now())) }
   fileReference(path: Scope): FileReference | null { return fileReferenceAt(this.state.replica, path) }
   attachment(at: Scope) { return attachmentAt(this.state.replica, at) }
@@ -3722,6 +3762,19 @@ export class App {
     this.edit(moveNode(this.state.replica, [...base, ...fromAt], id, [...base, ...toAt], position, this.now()), this.state.atRoot, [...base, ...fromAt, id])
   }
 
+  /** A row dragged from `fromAt` (under the view) dropped on the node at the absolute path `target` (a breadcrumb): moved, referenced or copied to its end. */
+  dropRowInto(fromAt: Scope, id: string, target: Scope, mode: 'move' | 'ref' | 'copy'): void {
+    const from = [...this.state.view, ...fromAt], own = [...from, id]
+    if (!target.length) return
+    if (mode === 'move' && target.length >= own.length && own.every((step, i) => target[i] === step)) { this.notify('error', 'A row cannot move into itself.'); return }
+    const into: MovePosition = { into: target.at(-1)! }, parent = target.slice(0, -1), now = this.now()
+    try {
+      if (mode === 'ref') this.edit(addRef(this.state.replica, parent, id, now, into))
+      else if (mode === 'copy') this.edit(copyNode(this.state.replica, from, id, parent, into, now))
+      else this.edit(moveNode(this.state.replica, from, id, parent, into, now), this.state.atRoot, [...target, id])
+    } catch (error) { this.notify('error', String(error)) }
+  }
+
   toggleCollapsed(id: string): void {
     const collapsed = this.state.collapsed.includes(id) ? this.state.collapsed.filter((c) => c !== id) : [...this.state.collapsed, id]
     this.set({ collapsed })
@@ -3758,6 +3811,8 @@ export class App {
       replica = acceptProvidedNode(replica, relative, request, node, this.now())
       this.proposalPreviews.set(id, { replica, path, request, store, generation })
       this.refresh()
+      // a row is shown with its own parts (its fields, its declarations): they load with it
+      for (const child of node.children) if (child.right?.bound && !child.pinned) await this.loadProposalPreview(path, id, [...relative, child.id])
     } catch (error) { this.notify('error', error instanceof Error ? error.message : String(error)) }
   }
 
@@ -3930,6 +3985,8 @@ export class App {
       if (this.config.localStores && localStores(next).some(s => s.peerId === holder) && !path.some(id => next.meta.heldNodes?.[id]))
         next = { ...next, meta: { ...next.meta, heldNodes: { ...next.meta.heldNodes, [path.at(-1)!]: { peer: holder, scope: address } } } }
       this.set({ replica: next }, !background)
+      // a row is shown with its own parts (its fields, its declarations): they load with it
+      await Promise.all(node.children.filter(child => child.right?.bound && !child.pinned).map(child => this.loadPeerNode([...path, child.id], background)))
     } catch (error) { this.notify('error', error instanceof Error ? error.message : String(error)) }
   }
   goTo(path: Scope): void {

@@ -20,7 +20,7 @@ async function main() {
   const parse = text => c.parseRowInput(text, c.capabilityDeclarations(app.state.replica.store, app.state.view))
   const me = app.state.replica.meta.peerId
   const offers = app.handlerOffers([]).filter(offer => offer.peerId === me)
-  assert(offers.some(offer => offer.capability === 'fetch') && !offers.some(offer => offer.capability === 'solve'), 'fetch is a native; solve awaits an explicit scope operand')
+  assert(offers.some(offer => offer.capability === 'fetch') && !offers.some(offer => offer.capability === 'solve'), 'fetch is a primitive; solve awaits an explicit scope operand')
   const parsed = parse('-fetch POST https://example.com/hook ping')
   assert.deepEqual(parsed.construct, { capability: 'fetch', values: { url: 'https://example.com/hook', method: 'POST' } })
   assert.equal(parsed.extras, undefined, 'nothing about the request is row data')
@@ -55,7 +55,7 @@ async function main() {
   const response = c.resolveScope(app.state.replica.store, c.headCid(app.state.replica), [...fetchRow, refAlias(fetchRow, 'response')])
   assert(response, 'the right has the response ref')
   assert.equal(c.evaluationRecord(app.state.replica, fetchRow).status, 'committed')
-  assert.equal(c.textOf(app.state.replica, c.assignedValue(app.state.replica, fetchRow, refAlias(fetchRow, 'response'))), 'hello from the network', 'the native answer is bound at transaction commit')
+  assert.equal(c.textOf(app.state.replica, c.assignedValue(app.state.replica, fetchRow, refAlias(fetchRow, 'response'))), 'hello from the network', 'the primitive answer is bound at transaction commit')
   let r = c.addTask(app.state.replica, home, 'Trip', 1, 'trip')
   const trip = [...home, 'trip']
   r = c.addTask(r, trip, 'alice', 1, 'alice')
@@ -64,7 +64,7 @@ async function main() {
 
   // a template used as a pattern: the row's values are submitted to the template's refs, and its view lists them
   r = c.addRow(app.state.replica, home, c.TEMPLATE_TYPE, 'Destination', 4, { id: 'destination' })
-  r = c.addRefAt(r, [...home, 'destination'], 'where', r.store.primitive.documentField.getId(), 5, null, 'where')
+  r = c.addRefAt(r, [...home, 'destination'], 'where', c.primitive(r.store, 'string'), 5, null, 'where')
   app.set({ replica: r, view: trip, templatePicker: { path: [...trip, 'alice'] } })
   app.usePattern('destination'); await tick()
   app.set({ view: [...trip, 'alice'] }); await tick()

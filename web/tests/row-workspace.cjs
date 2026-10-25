@@ -10,7 +10,7 @@ for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTM
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export {parsePastedRows} from './src/paste'; export {parseRowInput,rawRowText} from './src/rows'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid', 'katex', 'katex/*'] })
 const { libAt, put, content, rowTypeAt, addConstructedRow, parsePastedRows, rawRowText, App, mountUi, createMemoryStorage, parseRowInput, view, HOME_ID, resolveScope, headCid, requirementOutputs, argumentRefs, createReplica, ensureHomeContext, exchangeNode, SERVER_TRANSPORT_CAPABILITIES, addMemberAt } = require(path.join(dir, 'app.cjs'))
 const TASK_TYPE = 'task'
-const PLAIN_TYPE = 'plain'
+const PLAIN_TYPE = 'title'
 const COMMENT_TYPE = 'comment'
   // what a real account server advertises with the default handler registry (backend/sync/hostHandlers.ts)
   const SERVER_CAPABILITIES = [...SERVER_TRANSPORT_CAPABILITIES, 'search', 'market', 'llm']
@@ -91,11 +91,12 @@ async function main() {
     const target = document.querySelector('.constructor-drop-target'); assert(!target.hidden)
     return { control, target, drop(destination = target) { const event = new window.Event('drop', { bubbles: true, cancelable: true }); Object.defineProperty(event, 'dataTransfer', { value: transfer }); destination.dispatchEvent(event); control.dispatchEvent(new window.Event('dragend')) } }
   }
-  let drag = dragConstructor('Decision'); assert.equal(drag.target.textContent, '↑ Invert capability'); drag.drop(); await tick()
+  let drag = dragConstructor('Decision'); assert.deepEqual([...drag.target.querySelectorAll('[data-zone]')].map(z => z.dataset.zone), ['positive', 'negative', 'branch'], 'a neutral capability offers + and − and Branch')
+  drag.drop(drag.target.querySelector('[data-zone="negative"]')); await tick()
   assert(document.querySelector('.constructor-grid [aria-label="Decision"]').classList.contains('negative'))
   assert.equal(a.constructorEnabled(a.state.replica.meta.peerId, 'seed:-choice: '), true)
   a.refresh(); await tick()
-  drag = dragConstructor('Decision'); drag.drop(); await tick()
+  drag = dragConstructor('Decision'); drag.drop(drag.target.querySelector('[data-zone="neutral"]')); await tick()
   assert(!document.querySelector('.constructor-grid [aria-label="Decision"]').classList.contains('negative'))
   assert.equal(a.constructorEnabled(a.state.replica.meta.peerId, 'seed:-choice: '), true)
   assert(document.querySelector('.constructor-drop-target').hidden)
@@ -260,13 +261,11 @@ async function main() {
   assert.notEqual(a.currentRow().title, 'Do not rename')
   const context = document.querySelector('[data-accordion="context"]')
   context.open = true; context.dispatchEvent(new window.Event('toggle'))
-  if (document.querySelector('[aria-label="Input / edit"]').getAttribute('aria-pressed') !== 'true') document.querySelector('[aria-label="Input / edit"]').click()
   a.goTo([HOME_ID, second]); await tick()
   assert(document.querySelector('[data-accordion="context"]').open)
-  assert.equal(document.querySelector('[aria-label="Input / edit"]').getAttribute('aria-pressed'), 'true')
   assert.equal(document.querySelector('.node-input').hidden, false)
-  assert(document.querySelector('.node-input [aria-label="Picture input"]'))
-  assert(document.querySelector('.node-input [aria-label="Video input"]'))
+  assert(document.querySelector('.node-input [aria-label="Image"]'))
+  assert(document.querySelector('.node-input [aria-label="Video"]'))
   assert(!document.querySelector('.node-actions [aria-label="Undo in this node"]'))
   const destination = [...a.state.view]
   a.goTo([])

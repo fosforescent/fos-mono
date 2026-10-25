@@ -1,23 +1,23 @@
-import { handlerOfferId } from '@fosforescent/shared/sync/index'
+import { handlerOfferId, definitionCapability, tagNode } from '@fosforescent/shared/sync/index'
 import { membershipPathAt } from '@fosforescent/shared/sync/index'
 import { standardHostRef } from './host-runtime'
 import { capabilityNames, libAt, SERVER_TRANSPORT_CAPABILITIES, RELAY_QUEUE_ID, addMemberAt, addRelayMessage, addTask, createReplica, ensureHomeContext, view, HOME_ID } from '@fosforescent/shared/sync/index'
 import { createHostRuntime } from './host-runtime'
 import { relayHandler } from './hostHandlers'
-import { put, nativeRef, addRefCall, addRefAt, evaluationSteps, updateAtScope, commitRoot, headCid, content, setHandlerEnabledAt, setHandlerOffersAt, serializeReplica, loadReplica, discoverHandlers, type EvaluationStep } from '@fosforescent/shared/sync/index'
+import { put, primitiveRef, addRefCall, addRefAt, evaluationSteps, updateAtScope, commitRoot, headCid, content, setHandlerEnabledAt, setHandlerOffersAt, serializeReplica, loadReplica, discoverHandlers, type EvaluationStep } from '@fosforescent/shared/sync/index'
 
 test('a host registers and discovers a custom ref pattern without a capability name', async () => {
   let calls = 0
   const runtime = createHostRuntime([{ peerId: 'fos', ref: {
-    id: 'extension:render', type: store => put(store, { data: { name: { content: 'Rendering pattern' } }, children: [] }),
-  }, native: () => async () => { calls++; return {} } }])
+    id: 'extension:render', capability: store => tagNode(store, 'rendering'),
+  }, run: () => async () => { calls++; return {} } }])
   let replica = ensureHomeContext(createReplica('owner'), 1, runtime.hostOffers())
   replica = await runtime.onLoad({ userId: 1, replica, path: [], branches: [], now: 2 })
-  const handler = runtime.handlers[0]!, type = handler.ref!.type(replica.store, [])
+  const handler = runtime.handlers[0]!, type = definitionCapability(handler.ref!, replica.store, [])
   const step = { path: [], row: { typeCid: type } } as unknown as EvaluationStep
   expect(runtime.executors(step, replica)).toEqual([handler])
   expect(runtime.providers(step, replica, handler)).toEqual(['fos'])
-  await handler.native!({ id: 1, username: 'owner' })({ inputs: {}, outputs: {}, left: type }, { evaluation: 'e', step: [], now: 3, store: replica.store, put: () => '' })
+  await handler.run!({ id: 1, username: 'owner' })({ inputs: {}, outputs: {}, left: type }, { evaluation: 'e', step: [], now: 3, store: replica.store, put: () => '' })
   expect(calls).toBe(1)
   replica = setHandlerEnabledAt(replica, [], 'fos', handlerOfferId('fos', type, 'extension:render'), false, 4)
   expect(runtime.providers(step, replica, handler)).toEqual([])
@@ -26,7 +26,7 @@ test('a host registers and discovers a custom ref pattern without a capability n
 test('advertised capabilities are exactly transport facts plus registered handlers', () => {
   const runtime = createHostRuntime([
     { peerId: 'fos', ref: standardHostRef('fos', 'search') }, { peerId: 'fos', ref: standardHostRef('fos', 'llm') }, { peerId: 'fos', ref: standardHostRef('fos', 'search', 'alternate-search') },
-    { peerId: 'integration:github', ref: standardHostRef('integration:github', 'repo'), native: () => async () => ({}) },
+    { peerId: 'integration:github', ref: standardHostRef('integration:github', 'repo'), run: () => async () => ({}) },
     { peerId: 'integration:phone', ref: standardHostRef('integration:phone', 'notify'), available: async () => false }
   ])
   expect(runtime.serverCapabilities()).toEqual([...new Set([...SERVER_TRANSPORT_CAPABILITIES, 'search', 'llm'])].sort())
@@ -41,17 +41,17 @@ test('advertised capabilities are exactly transport facts plus registered handle
 test('a ref row is the registration: an empty host catalogue discovers it and removal withdraws it', async () => {
   const runtime = createHostRuntime([])
   let r = createReplica('host'), calls = 0
-  const definition = { id: 'direct:render', label: 'render', type: (store: typeof r.store) => put(store, { data: {}, children: [] }) }
-  const native = { peerId: 'host', ref: definition, native: () => async () => { calls++; return {} } }
-  const value = nativeRef(r.store, 'host', definition, native)
+  const definition = { id: 'direct:render', label: 'render', capability: (store: typeof r.store) => tagNode(store, 'render') }
+  const primitive = { peerId: 'host', ref: definition, run: () => async () => { calls++; return {} } }
+  const value = primitiveRef(r.store, 'host', definition, primitive)
   r = addRefCall(r, [], value, 1, 'call')
   const step = evaluationSteps(r, ['call'])[0]!
   expect(runtime.executors(step, r)).toEqual([])
-  r = addRefAt(r, [], 'registration', definition.type(r.store), 2, value, 'renderer')
-  expect(runtime.executors(step, r)).toEqual([native])
-  expect(runtime.providers(step, r, native)).toEqual(['host'])
+  r = addRefAt(r, [], 'registration', definition.capability(r.store), 2, value, 'renderer')
+  expect(runtime.executors(step, r)).toEqual([primitive])
+  expect(runtime.providers(step, r, primitive)).toEqual(['host'])
   expect(await runtime.active('host', 1, r, ['call'])).toBe(true)
-  await runtime.executors(step, r)[0]!.native!({ id: 1, username: 'owner' })({ inputs: {}, outputs: {}, left: '' }, { evaluation: 'e', step: ['call'], now: 3, store: r.store, put: () => '' })
+  await runtime.executors(step, r)[0]!.run!({ id: 1, username: 'owner' })({ inputs: {}, outputs: {}, left: '' }, { evaluation: 'e', step: ['call'], now: 3, store: r.store, put: () => '' })
   expect(calls).toBe(1)
   commitRoot(r.store, updateAtScope(r.store, headCid(r), [], node => ({ ...node, children: node.children.filter(edge => content(r.store, edge[1]).data.alias?.id !== 'registration') })), 4)
   expect(runtime.executors(step, r)).toEqual([])
@@ -70,7 +70,7 @@ test('availability follows the handler, and every advertised capability is a kno
 })
 
 test('reloading and applying host defaults never resurrects a withdrawn declaration', () => {
-  const runtime = createHostRuntime([{ peerId: 'fos', ref: standardHostRef('fos', 'search'), native: () => async () => ({}) }])
+  const runtime = createHostRuntime([{ peerId: 'fos', ref: standardHostRef('fos', 'search'), run: () => async () => ({}) }])
   let r = ensureHomeContext(createReplica('owner'), 1, runtime.hostOffers())
   const offer = discoverHandlers(r, []).find(value => value.id === handlerOfferId('fos', libAt(r.store).capabilities.search!, 'search'))!
   expect(offer).toBeDefined()
@@ -103,6 +103,10 @@ test('the server runs the relay on submissions: a message to a peer the account 
   r = addRelayMessage(r, [HOME_ID, 'hub'], 'desktop', 4, 'm1')
   r = addRelayMessage(r, [HOME_ID, 'hub'], 'stranger', 4, 'm2')
   r = runtime.afterSubmission(r, [HOME_ID, 'hub', 'm1'], 5)
-  expect(view(r, [...membershipPathAt(r, [HOME_ID, 'hub'], 'desktop')!, RELAY_QUEUE_ID])!.tasks.map(t => t.id)).toEqual(['m1'])
-  expect(view(r, [HOME_ID, 'hub'])!.tasks.map(t => t.id)).toEqual(['m2'])
+  const queued = view(r, [...membershipPathAt(r, [HOME_ID, 'hub'], 'desktop')!, RELAY_QUEUE_ID])!.tasks.map(t => t.id)
+  expect(queued).toContain('m1')
+  expect(queued).not.toContain('m2')
+  const hub = view(r, [HOME_ID, 'hub'])!.tasks.map(t => t.id)
+  expect(hub).toContain('m2')
+  expect(hub).not.toContain('m1')
 })

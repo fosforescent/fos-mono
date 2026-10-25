@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express'
-import { LIBRARY_ID, addMemberAt, setMemberCapabilitiesAt, addRequirement, addTask, createReplica, evaluationRecord, headCid, put, resolveScope, valueContent, view, nativeRef, setNodeTrigger, triggerState, serializeReplica, loadReplica, removeMemberAt } from '@fosforescent/shared/sync/index'
+import { LIBRARY_ID, tagNode, addMemberAt, setMemberCapabilitiesAt, addRequirement, addTask, createReplica, evaluationRecord, headCid, put, resolveScope, valueContent, view, primitiveRef, setNodeTrigger, triggerState, serializeReplica, loadReplica, removeMemberAt } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
@@ -11,10 +11,10 @@ import { githubRepoHandler } from './hostHandlers'
 test('the scheduler discovers custom observer refs in nested scopes after reload and respects removal', async () => {
   let r = addTask(addTask(createReplica('owner'), [], 'Container', 1, 'container'), ['container'], 'Listen', 1, 'listener')
   let observed = 0
-  const handler = { peerId: 'custom-host', ref: { id: 'custom-observer', type: (store: typeof r.store) => put(store, { data: { triggerDefinition: { label: 'Custom', icon: 'clock', mode: 'resume' } }, children: [] }), trigger: { observe: () => { observed++; return { id: 'one' } } } } }
+  const handler = { peerId: 'custom-host', ref: { id: 'custom-observer', capability: (store: typeof r.store) => { const unit = put(store, { data: {}, children: [] }); return put(store, { data: {}, children: [[tagNode(store, 'custom'), unit], [tagNode(store, 'trigger'), unit], [tagNode(store, 'resume'), unit]] }) }, trigger: { observe: () => { observed++; return { id: 'one' } } } } }
   const runtime = createHostRuntime([handler])
   r = runtime.declare(r, ['container'], 'custom-host', 1)
-  const selected = nativeRef(r.store, 'custom-host', handler.ref)
+  const selected = primitiveRef(r.store, 'custom-host', handler.ref)
   r = setNodeTrigger(r, ['container', 'listener'], { kind: 'custom', handler: selected, peer: 'custom-host', enabled: true, created: 1 }, 1)
   r = loadReplica(serializeReplica(r))
   const service = createEvaluationService({ loadStore: async () => ({ user: { id: 1, username: 'owner' }, store: r.store }), saveStore: async (_user, store) => { r = { ...r, store } }, now: () => 10 }, runtime)

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This guide covers deploying Fosforescent to iOS App Store and Google Play Store using GitHub Actions CI/CD - **no Mac required**.
+This guide covers deploying Fosforescent to iOS App Store and Google Play Store using GitHub Actions CI/CD.
 
 ## GitHub Secrets Required
 
@@ -124,8 +124,6 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-This triggers the signed iOS build which uploads to App Store Connect.
-
 ### Step 7: Submit for Review
 
 1. Go to App Store Connect → Your App
@@ -135,7 +133,7 @@ This triggers the signed iOS build which uploads to App Store Connect.
    - Keywords
    - Support URL
    - Privacy Policy URL
-3. Select the build (uploaded by CI)
+3. Select the build
 4. Submit for Review
 
 **Review typically takes 24-48 hours.** First submissions may take longer.
@@ -194,7 +192,7 @@ base64 -w 0 fosforescent.keystore > keystore.txt
 
 ### Step 5: Build & Upload
 
-The GitHub Action builds an APK/AAB automatically. For signed release:
+For signed release:
 
 1. Download the AAB artifact from GitHub Actions
 2. Upload to Play Console → Release → Production → Create new release

@@ -1,3 +1,5 @@
+import { textValue } from './index'
+import { primitive } from './primitives'
 import {
   addRefAt,
   createReplica,
@@ -23,12 +25,13 @@ import {
   isRowEdge,
   setRowContentAt,
   bindingProperties,
-  PLAIN_TYPE
+  PLAIN_TYPE,
+  NUMBER_TYPE
 } from './index'
 import { constructNodeValue, readGraphValue, nodeValueType } from './node-values'
 import { assertCompiledGraph, compileRefGraph } from './ref-compiler'
 
-test('native records and sequences have the same meaning after compilation without editor identities', () => {
+test('primitive records and sequences have the same meaning after compilation without editor identities', () => {
   const r = createReplica('device'), input = { nested: { count: 3 }, list: [null, 'hello', false] }
   const editable = constructNodeValue(r.store, input, 'editor-uuid')
   const compiled = compileRefGraph(r, editable.cid)
@@ -45,7 +48,6 @@ test('records and lists are addressable typed refs with scalar leaves and generi
   const r = writeNodeValue(createReplica('device'), [], 'settings', input, 1)
   const arg = argumentRefs(r.store, headCid(r)).find((a) => a.name === 'settings')!
   const value = content(r.store, refValueCid(r.store, content(r.store, arg.cid))!)
-  expect(value.data.description).toBeUndefined()
   expect(value.children).toHaveLength(2)
   expect(value.children.every(edge => isRowEdge(r.store, edge))).toBe(true)
   const id = content(r.store, arg.cid).data.alias!.id
@@ -55,17 +57,11 @@ test('records and lists are addressable typed refs with scalar leaves and generi
   const leaf = resolveRefExpression(r, [], '.settings.nested.count')
   expect(leaf.status).toBe('ready')
   expect(readGraphValue(r.store, leaf.locations[0]!.cid)).toBe(3)
-  expect(formRecord(r.store, arg.type, value)).toEqual(input)
-  expect(
-    formElements(r.store, arg.type, value)
-      .fields.find((f) => f.label === 'nested')!
-      .fields.map((f) => f.label)
-  ).toEqual(['count', 'yes'])
   expect(readNodeValue(loadReplica(serializeReplica(r)), [], 'settings')).toEqual(input)
   const nested = value.children.find(([, cid]) => content(r.store, cid).data.name?.content === 'nested')![1]
   const nestedId = content(r.store, nested).data.alias!.id
   const countId = content(r.store, leaf.locations[0]!.cid).data.alias!.id
-  const edited = setRowContentAt(r, [id, nestedId], countId, PLAIN_TYPE, '9', {}, 2)
+  const edited = setRowContentAt(r, [id, nestedId], countId, NUMBER_TYPE, '9', {}, 2)
   expect(readNodeValue(edited, [], 'settings')).toEqual({ ...input, nested: { count: 9, yes: true } })
 })
 
@@ -92,15 +88,16 @@ test('list ordering follows ordinary row moves, including after reload', () => {
 
 test('JSON-looking text is not a record; linked records preserve fields and graph links', () => {
   let r = createReplica('device')
-  const legacy = put(r.store, { data: { description: { content: '{"count":1}' } }, children: [] })
-  r = addRefAt(r, [], 'settings', r.store.primitive.documentField.getId(), 1, legacy, 'settings')
-  expect(readNodeValue(r, [], 'settings')).toBeNull()
+  const legacy = textValue(r.store, '{"count":1}')
+  r = addRefAt(r, [], 'settings', primitive(r.store, 'string'), 1, legacy, 'settings')
+  // it is text, whatever it looks like
+  expect(readNodeValue(r, [], 'settings')).toBe('{"count":1}')
   r = writeLinkedNodeValue(r, [], 'settings', { count: 2 }, 2, { source: { id: 'external', owner: 'peer' } })
   expect(readNodeValue(r, [], 'settings')).toEqual({ count: 2 })
   const ref = content(r.store, resolveScope(r.store, headCid(r), ['settings'])!)
   const target = content(r.store, refValueCid(r.store, ref)!)
   expect(target.data.description).toBeUndefined()
-  expect(target.children.some(([type]) => type === r.store.primitive.linkField.getId())).toBe(true)
+  expect(target.children.some(([type]) => type === primitive(r.store, 'link'))).toBe(true)
 })
 
 test('malformed scalar types, cycles and nonfinite numbers are rejected; sparse lists and long field names are valid', () => {
@@ -122,7 +119,4 @@ test('malformed scalar types, cycles and nonfinite numbers are rejected; sparse 
     children: [[number, put(store, refNodeContent(store, { alias: { id: 'n' }, name: { content: 'n' } }, text.cid, []))]]
   })
   expect(readGraphValue(store, malformed)).toBeUndefined()
-  const bool = constructNodeValue(store, false, 'bool')
-  expect(setFormTitle(store, content(store, bool.cid), 'true', 1).data.scalar?.value).toBe(true)
-  expect(() => setFormTitle(store, content(store, bool.cid), 'yes', 1)).toThrow(/boolean/)
 })

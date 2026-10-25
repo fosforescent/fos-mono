@@ -92,15 +92,15 @@ export async function connectNodeAgent(app: App, transport: 'desktop' | 'server'
   if (transport === 'desktop') {
     const endpoint = await tauriInvoke<{ id: string; url: string; token: string }>('node_agent_start')
     if (!endpoint) throw new Error('Desktop app required.')
-    const stopNative = async () => { await tauriInvoke('node_agent_stop', { id: endpoint.id }) }
-    if (!selected()) { await stopNative(); throw new Error('Selected node changed.') }
-    try { if (!options.peerId) app.attachAgentPeer(scope, peer, name) } catch (error) { await stopNative(); throw error }
+    const stopDesktopAgent = async () => { await tauriInvoke('node_agent_stop', { id: endpoint.id }) }
+    if (!selected()) { await stopDesktopAgent(); throw new Error('Selected node changed.') }
+    try { if (!options.peerId) app.attachAgentPeer(scope, peer, name) } catch (error) { await stopDesktopAgent(); throw error }
     const controller = new AbortController()
     let stopped = false, timer: ReturnType<typeof setTimeout> | undefined
     connection = { transport, peer, scope, url: endpoint.url, token: endpoint.token, async stop() {
       if (stopped) return
       stopped = true; controller.abort(); clearTimeout(timer)
-      try { await stopNative() } finally { connection.token = ''; if (current() && !options.peerId) app.removeAgentPeer(scope, peer) }
+      try { await stopDesktopAgent() } finally { connection.token = ''; if (current() && !options.peerId) app.removeAgentPeer(scope, peer) }
     } }
     const poll = async () => {
       if (stopped) return

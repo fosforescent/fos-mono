@@ -44,9 +44,9 @@ import { readNodeValue } from './evaluation'
 import { membershipPathAt } from './replica'
 import { LIBRARY_VERSION, ensureDeviceLibrary, exportLocalLibrary } from './library'
 import { libAt, libraryInstanceOf, libraryRowOf, content, importNodes, put, resolveScope, valueContent, valueCidOf } from './graph'
-import { registerNatives } from './natives'
+import { registerPrimitives } from './primitives'
 import { discoverHandlers } from './handlers'
-import { writeGraphNode, nativeDefaultsApplied, markNativeDefaultsApplied } from './replica'
+import { writeGraphNode, primitiveDefaultsApplied, markPrimitiveDefaultsApplied } from './replica'
 import type { FosNodeContent, FosNodesData } from '../types'
 import { accountContextAbove, exchangeNode, nodeTreeSync } from './node-sync'
 import { addRelayAck, relayInbox, relayQueues } from './relay'
@@ -81,11 +81,11 @@ export const api = {
   open(handle: string, serialized: string | null, peerId: string, home = true): void {
     let loaded = serialized ? loadReplica(JSON.parse(serialized)) : createReplica(peerId)
     loaded = ensureDeviceLibrary(loaded, undefined, Date.now())
-    const seeded = nativeDefaultsApplied(loaded, [], `desktop:${peerId}`)
-    // the desktop's own services, registered the one way every host registers natives
-    const definitions = ['provideNode', 'sync'].map(name => ({ id: `desktop:${name}`, label: name, type: (store: FosStore, at: Scope) => libAt(store, at).capabilities[name]! }))
-    if (!seeded) loaded = registerNatives(loaded, [], peerId, definitions, 0)
-    loaded = markNativeDefaultsApplied(loaded, [], `desktop:${peerId}`, 0)
+    const seeded = primitiveDefaultsApplied(loaded, [], `desktop:${peerId}`)
+    // the desktop's own services, registered the one way every host registers primitives
+    const definitions = ['provideNode', 'sync'].map(name => ({ id: `desktop:${name}`, label: name, capability: (store: FosStore, at: Scope) => libAt(store, at).capabilities[name]! }))
+    if (!seeded) loaded = registerPrimitives(loaded, [], peerId, definitions, 0)
+    loaded = markPrimitiveDefaultsApplied(loaded, [], `desktop:${peerId}`, 0)
     if (home) loaded = ensureHomeContext(loaded, Date.now())
     set(handle, { store: loaded.store, meta: { ...loaded.meta, peerId } })
     if (home) homes.add(handle); else homes.delete(handle)

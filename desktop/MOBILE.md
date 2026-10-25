@@ -1,7 +1,5 @@
 # Mobile Development Setup
 
-Fosforescent supports iOS and Android via Tauri 2.0 mobile.
-
 ## iOS Setup (macOS only)
 
 ### Prerequisites
@@ -14,8 +12,6 @@ Fosforescent supports iOS and Android via Tauri 2.0 mobile.
 cd desktop
 npm run ios:init
 ```
-
-This creates the Xcode project in `src-tauri/gen/apple/`.
 
 ### Development
 ```bash
@@ -70,8 +66,6 @@ cd desktop
 npm run android:init
 ```
 
-This creates the Android project in `src-tauri/gen/android/`.
-
 ### Development
 ```bash
 npm run android:dev              # Run on connected device/emulator
@@ -98,7 +92,7 @@ Edit `src-tauri/tauri.conf.json`:
 ## Mobile-Specific Considerations
 
 ### WebRTC / Peer Connection
-WebRTC works on mobile but may require:
+WebRTC on mobile may require:
 - Camera/microphone permissions (if using media)
 - Network permissions
 - STUN/TURN server configuration for NAT traversal
@@ -109,7 +103,7 @@ Mobile has different file system constraints:
 - Android: Scoped storage on Android 10+
 
 ### Deep Linking
-The app is configured for `fosforescent://` URL scheme for authentication callbacks.
+The app should use the `fosforescent://` URL scheme for authentication callbacks.
 
 ## Troubleshooting
 

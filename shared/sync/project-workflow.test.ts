@@ -7,7 +7,7 @@ import { agentRequest, validateAgentRequest } from './index'
 
 test('agent requests are bound graph data; adapter constraints are checked before dispatch', () => {
   let { r, config } = fixture()
-  // A different graph-authored request needs no new workflow kind or native handler.
+  // A different graph-authored request needs no new workflow kind or primitive handler.
   r = addTask(r, config.project, 'Explain this project', 4, 'explain')
   r = writeExecutionRequest(r, [...config.project, 'explain'], { provider: '{{coding-agent}}', prompt: '{{verification-instructions}}', readOnly: true, branch: '{{main-branch}}' }, 5)
   const request = agentRequest(r, config, [...config.project, 'explain'])

@@ -1,3 +1,4 @@
+import { createStore } from '@fosforescent/shared/sync/graph'
 import { Request, Response } from 'express'
 import bcrypt from 'bcrypt'
 import type { Confirmation } from './confirmation'
@@ -37,7 +38,7 @@ export const postRegister = (confirmation: Confirmation) => async (req: Request,
   try {
 
     // Create a new FosStore and insert its nodes into the database first
-    const newStore = new FosStore()
+    const newStore = createStore()
 
     // Get the node IDs from the new store
     const newStoreNodeIds = Array.from(newStore.table.keys())

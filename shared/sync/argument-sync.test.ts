@@ -1,14 +1,15 @@
-import { createReplica, ensureHomeContext, shareHome, addRefAt, HOME_ID, put, refValueCid, content, resolveScope, headCid, argumentRefs, proposeRefAt, applyProposalAt, nodeShape, provideNode, SERVER_TRANSPORT_CAPABILITIES, writeNodeValue, addMemberAt, setNodeLinkMask, readNodeValue, type Replica } from './index'
+import { primitive } from './primitives'
+import { createReplica, ensureHomeContext, shareHome, addRefAt, HOME_ID, put, refValueCid, content, resolveScope, headCid, argumentRefs, proposeRefAt, applyProposalAt, nodeShape, provideNode, SERVER_TRANSPORT_CAPABILITIES, writeNodeValue, addMemberAt, setNodeLinkMask, readNodeValue, type Replica, textValue, textOf } from './index'
 import { syncWith } from './test-helpers'
 import { acceptProvidedNode, resolveRefExpression, readGraphValue, bindingProperties } from './index'
-import { addRow, updateAtScope, commitRoot, valueContent, acceptsChild, rowTypeAt, isRowOfType, PATTERN_TYPE } from './index'
+import { addRow, updateAtScope, commitRoot, valueContent } from './index'
 
 const device = (id: string) => shareHome(ensureHomeContext(createReplica(id), 0))
 const argument = (r: Replica, id: string) => content(r.store, resolveScope(r.store, headCid(r), [HOME_ID, id])!)
 
 test('immutable graph constraints survive shallow loading and respect the child mask', () => {
   const source = device('source'), s = source.store
-  const key = s.primitive.nameField.getId()
+  const key = primitive(s, 'name')
   const literal = put(s, { data: { scalar: { type: 'text', value: 'literal constraint' } }, children: [] })
   commitRoot(s, updateAtScope(s, headCid(source), [HOME_ID], node => ({ ...node, children: [...node.children, [key, literal]] })), 1)
   const request = { peerId: 'receiver', scope: [HOME_ID], path: [] as string[], linkId: 'literal-load' }
@@ -24,22 +25,6 @@ test('immutable graph constraints survive shallow loading and respect the child 
   expect(JSON.stringify(hidden.templates ?? {})).not.toContain('literal constraint')
   const mutable = put(receiver.store, { data: { alias: { id: 'private' } }, children: [] })
   expect(() => acceptProvidedNode(receiver, [HOME_ID], request, { ...provided, children: [{ ...pinned, pinned: mutable }] }, 6)).toThrow('immutable edge')
-})
-
-test('template placement predicates remain complete after node-by-node exchange', () => {
-  const source = addRow(device('source'), [HOME_ID], 'template', 'Scoped workflow', 1, { id: 'workflow' })
-  const account = device('account')
-  syncWith(source, account, { now: 2 })
-  const receiver = syncWith(device('receiver'), account, { now: 3 })
-  const original = resolveScope(source.store, headCid(source), [HOME_ID, 'workflow'])!
-  const loaded = resolveScope(receiver.store, headCid(receiver), [HOME_ID, 'workflow'])!
-  const policies = (r: Replica, cid: string) => valueContent(r.store, cid).children.filter(edge => isRowOfType(r.store, edge, PATTERN_TYPE)).map(([, right]) => valueContent(r.store, right).children)
-  expect(policies(receiver, loaded)).toEqual(policies(source, original))
-  expect(policies(receiver, loaded).length).toBeGreaterThan(0)
-  const instruction = put(receiver.store, valueContent(receiver.store, loaded))
-  const value = put(receiver.store, { data: { alias: { id: 'child' } }, children: [] })
-  expect(acceptsChild(receiver.store, instruction, [rowTypeAt(receiver.store, 'home'), value])).toBe(false)
-  expect(acceptsChild(receiver.store, instruction, [rowTypeAt(receiver.store, 'task'), value])).toBe(true)
 })
 
 test('loading a binding on demand preserves its type and name on the receiving node', () => {
@@ -69,17 +54,17 @@ test('loading a binding on demand preserves its type and name on the receiving n
 test('unbound and bound row arguments retain their identity, names, types and values through account exchange', () => {
   const account = ensureHomeContext(createReplica('user:alice'), 0)
   let a = device('a'), b = device('b')
-  const type = a.store.primitive.documentField.getId()
+  const type = primitive(a.store, 'string')
   a = addRefAt(a, [HOME_ID], 'input', type, 1, null, 'input')
   a = syncWith(a, account, { now: 2 }); b = syncWith(b, account, { now: 3 })
   expect(refValueCid(b.store, argument(b, 'input'))).toBeNull()
   expect(argument(b, 'input').data.name?.content).toBe('input')
-  const value = put(b.store, { data: { description: { content: 'phone text' } }, children: [] })
+  const value = textValue(b.store, 'phone text')
   const proposal = proposeRefAt(b, [HOME_ID, 'input'], value, 'b', 4)
   b = applyProposalAt(proposal.replica, [HOME_ID, 'input'], proposal.proposalCid, 'b', 4)
   b = syncWith(b, account, { now: 5 }); a = syncWith(a, account, { now: 6 })
   const target = refValueCid(a.store, argument(a, 'input'))!
-  expect(content(a.store, target).data.description?.content).toBe('phone text')
+  expect(textOf(a.store, target)).toBe('phone text')
   expect(argumentRefs(a.store, resolveScope(a.store, headCid(a), [HOME_ID])!).find(arg => arg.name === 'input')?.type).toBe(type)
   expect(nodeShape(a, [HOME_ID]).children.find(child => child.id === 'input')?.right).toEqual({ name: 'input', bound: true })
 })

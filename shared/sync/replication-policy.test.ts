@@ -1,3 +1,4 @@
+import { primitive } from './primitives'
 import { syncWith, userView } from './test-helpers'
 import { addMemberAt, addTask, createReplica, deleteTask, headCid, isDirty, loadReplica, serializeReplica, setMemberCapabilitiesAt, view, type Replica } from './index'
 import { content, isPeerReference, resolveScope } from './graph'
@@ -25,7 +26,7 @@ test('nested exclusion keeps a row the server only references while siblings syn
   }
   expect(userView(server)!.tasks.map(t => t.title)).toContain('Public sibling')
   expect(held(server, ['group'])).toBe(true)
-  expect(view(r, ['group'])!.tasks[0]!.title).toBe('Must stay on devices')
+  expect(view(r, ['group'])!.tasks.find(t => t.id === 'secret')!.title).toBe('Must stay on devices')
   expect(isDirty(r)).toBe(false)
   r = loadReplica(serializeReplica(r))
   expect(isDirty(r)).toBe(false)
@@ -42,7 +43,8 @@ test('concurrent private edits survive a sync and server sibling edits merge', (
   r = syncWith(r, server)
   addTask(server, [], 'Server edit', 7, 'public')
   r = syncWith(r, server, { during: (local) => addTask(local, ['group'], 'Concurrent private edit', 9, 'new') })
-  expect(view(r, ['group'])!.tasks.map(t => t.id)).toEqual(['secret', 'new'])
+  expect(view(r, ['group'])!.tasks.map(t => t.title)).toEqual(['Private group', '', 'Must stay on devices', 'Concurrent private edit'])
+  expect(view(r, ['group'])!.tasks.filter(t => t.id === 'secret' || t.id === 'new').map(t => t.title)).toEqual(['Must stay on devices', 'Concurrent private edit'])
   expect(userView(r)!.tasks.some(t => t.id === 'public')).toBe(true)
   const wire: unknown[] = []
   syncWith(r, server, { wire })
@@ -58,7 +60,7 @@ test('another device keeps the reference and can edit public siblings without er
   expect(() => addTask(other, ['group'], 'Cannot edit unavailable content', 5)).toThrow(/another peer/)
   other = addTask(other, [], 'Other sibling', 22, 'other-row')
   other = syncWith(other, server); host = syncWith(host, server)
-  expect(view(host, ['group'])!.tasks[0]!.id).toBe('secret')
+  expect(view(host, ['group'])!.tasks.find(t => t.id === 'secret')!.title).toBe('Must stay on devices')
   expect(userView(host)!.tasks.some(t => t.id === 'other-row')).toBe(true)
 })
 
@@ -79,7 +81,7 @@ test('switching persistence off sends the node blank: the server holds it as the
   expect(held(server, ['group'])).toBe(true)
   const blanked = resolveScope(server.store, headCid(server), ['group'])!
   expect(content(server.store, blanked).data.ref?.peer).toBe('host')
-  expect(content(server.store, blanked).children).toEqual([[server.store.primitive.previousVersion.getId(), shared]])
+  expect(content(server.store, blanked).children).toEqual([[primitive(server.store, 'previous'), shared]])
   let other = syncWith(createReplica('other-device'), server)
   expect(userView(other)!.tasks.find(t => t.id === 'group')!.refPeer).toBe('host')
   // nothing more is sent while it stays private
@@ -89,9 +91,9 @@ test('switching persistence off sends the node blank: the server holds it as the
   // shared again: the device's content is the version after the reference
   r = setMemberCapabilitiesAt(r, ['group'], 'fos', ['persist'], [], 7)
   r = syncWith(r, server)
-  expect(view(server, ['group'])!.tasks.map(t => t.title)).toEqual(['Shared child', 'Never shared'])
+  expect(view(server, ['group'])!.tasks.map(t => t.title)).toEqual(['Previously shared', '', 'Shared child', 'Never shared'])
   // its history runs back through the reference to what was shared before
-  const prev = server.store.primitive.previousVersion.getId(), history: string[] = []
+  const prev = primitive(server.store, 'previous'), history: string[] = []
   for (let cid: string | undefined = resolveScope(server.store, headCid(server), ['group'])!; cid && history.length < 20; cid = content(server.store, cid).children.find(([i]) => i === prev)?.[1]) history.push(cid)
   expect(history.indexOf(blanked)).toBeGreaterThan(0)
   expect(history.indexOf(shared)).toBe(history.indexOf(blanked) + 1)
@@ -109,7 +111,7 @@ test('re-enabling persistence shares the current content, never what was deleted
   const wire: unknown[] = []
   host = syncWith(host, server, { wire })
   expect(isDirty(host)).toBe(false)
-  expect(view(server, ['group'])!.tasks.map(t => t.title)).toEqual(['Published snapshot'])
+  expect(view(server, ['group'])!.tasks.map(t => t.title)).toEqual(['Private group', '', 'Published snapshot'])
   expect(JSON.stringify(wire)).not.toContain('Must stay on devices')
   expect(JSON.stringify([...server.store.table.values()])).not.toContain('Must stay on devices')
 })

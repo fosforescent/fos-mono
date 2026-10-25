@@ -1,9 +1,9 @@
 /** Host-language observer primitives. Availability comes only from scoped ref declarations. */
-import { libAt, resolveScope, valueContent } from './graph'
+import { libAt, resolveScope, rowDone, valueContent } from './graph'
 import { headCid, view } from './replica'
 import { evaluationRecord } from './evaluation'
 import { watchedRefValue, type TriggerObserver } from './triggers'
-import type { PrimitiveDefinition } from './native-refs'
+import type { PrimitiveDefinition } from './primitives'
 
 /** Numeric five-field UTC cron; lists, ranges and steps. Day-of-month/day-of-week use cron's OR rule. */
 export function cronMatches(expression: string, now: number): boolean {
@@ -102,9 +102,9 @@ export const completionObserver: TriggerObserver = {
       cid = resolveScope(r.store, headCid(r), parent),
       evaluated = evaluationRecord(r, parent)
     if (evaluated?.status === 'committed' && evaluated.started >= t.created) return { id: 'evaluation:' + evaluated.id }
-    const data = cid ? valueContent(r.store, cid).data : null
-    if (data?.todo?.completed && (data.updated?.time ?? 0) >= t.created)
-      return previous?.status === 'finished' && previous.occurrence ? null : { id: 'completion:' + data.updated?.time }
+    const updated = cid ? valueContent(r.store, cid).data.updated?.time ?? 0 : 0
+    if (cid && rowDone(r.store, cid) && updated >= t.created)
+      return previous?.status === 'finished' && previous.occurrence ? null : { id: 'completion:' + updated }
     return previous?.status === 'finished' && previous.occurrence ? { id: '', reset: true } : null
   }
 }
@@ -133,9 +133,9 @@ const deviceObservers: Array<[string, TriggerObserver]> = [
   ['response', responseObserver],
   ['ref-change', refChangeObserver]
 ]
-export const deviceTriggerDefinitions: PrimitiveDefinition<unknown>[] = deviceObservers.map(([name, observer]) => ({
+export const deviceTriggerDefinitions: PrimitiveDefinition[] = deviceObservers.map(([name, observer]) => ({
   id: 'device:' + name,
   label: name,
-  type: (store, at) => libAt(store, at).capabilities[name]!,
+  capability: name,
   trigger: observer
 }))

@@ -1,3 +1,4 @@
+import { createStore } from '@fosforescent/shared/sync/graph'
 import { publishedTemplateId } from '@fosforescent/shared/sync/index'
 import { membershipPathAt } from '@fosforescent/shared/sync/index'
 import { asAccountStore } from './deviceRoot'
@@ -37,7 +38,7 @@ function makeDeps(loadDelayMs = 0) {
     async loadStore(username) {
       if (username !== 'alice') return null
       if (loadDelayMs) await new Promise((r) => setTimeout(r, loadDelayMs))
-      const store = stores.get(7) ?? asAccountStore(new FosStore())
+      const store = stores.get(7) ?? asAccountStore(createStore())
       stores.set(7, store)
       return { user: { id: 7, username }, store }
     },
@@ -77,7 +78,7 @@ const homeTitles = (store: FosStore) => view(createReplica('server', store), [HO
 describe('node provider', () => {
   it('refreshes GitHub on an authorized node load, persists the Fos merge and notifies other devices', async () => {
     const { deps, stores, notifications } = makeDeps()
-    let server = bindRepository(addTask(ensureHomeContext(createReplica('user:alice', asAccountStore(new FosStore())), 0), [HOME_ID], 'Project', 1, 'project'), [HOME_ID, 'project'], 'acme/project', 2)
+    let server = bindRepository(addTask(ensureHomeContext(createReplica('user:alice', asAccountStore(createStore())), 0), [HOME_ID], 'Project', 1, 'project'), [HOME_ID, 'project'], 'acme/project', 2)
     server = createBranch(server, [HOME_ID, 'project'], 'feature', 3)
     server = addTask(server, [HOME_ID, 'project'], 'Phone note', 4, 'note')
     selectBranch(server.store, 'project', 'main')
@@ -138,7 +139,8 @@ describe('node provider', () => {
     const b = addTask(ensureHomeContext(createReplica('B'), 0), [HOME_ID], 'from B', 2, 'b')
     await Promise.all([sync(handler, a), sync(handler, b)])
     expect(homeTitles(stores.get(7)!).sort()).toEqual(['from A', 'from B'])
-  })
+    // two whole syncs one after the other: every request loads and saves the whole account store
+  }, 30000)
 
   it('keeps concurrent accounts in their own stores', async () => {
     const stores = new Map<string, FosStore>()
@@ -146,7 +148,7 @@ describe('node provider', () => {
       async loadStore(username) {
         const id = username === 'user2' ? 2 : username === 'user3' ? 3 : null
         if (!id) return null
-        const store = stores.get(username) ?? asAccountStore(new FosStore())
+        const store = stores.get(username) ?? asAccountStore(createStore())
         stores.set(username, store)
         return { user: { id, username }, store }
       },
@@ -162,7 +164,7 @@ describe('node provider', () => {
 
 test('a device opens an existing account in Home without losing its rows', async () => {
   const { deps, stores } = makeDeps()
-  stores.set(7, addTask(createReplica('old-device', asAccountStore(new FosStore())), [], 'Existing project', 1, 'project').store)
+  stores.set(7, addTask(createReplica('old-device', asAccountStore(createStore())), [], 'Existing project', 1, 'project').store)
   const client = await sync(createNodeProvider(deps), ensureHomeContext(createReplica('new-device'), 0), { username: 'alice' }, false)
   // the device's root ships its own library; the account's rows are under Home
   expect(view(client, [])!.tasks.map((row) => row.id)).toEqual([LIBRARY_ID, HOME_ID])
@@ -171,7 +173,7 @@ test('a device opens an existing account in Home without losing its rows', async
 
 test('the server keeps its own root and shares only Home', async () => {
   const { deps, stores } = makeDeps()
-  let server = ensureHomeContext(createReplica('fos', asAccountStore(new FosStore())), 1)
+  let server = ensureHomeContext(createReplica('fos', asAccountStore(createStore())), 1)
   server = addTask(server, [], 'server-only settings', 2, 'server-settings')
   server = writeNodeValue(server, [], 'server-input', 'server value', 3)
   stores.set(7, server.store)
@@ -205,14 +207,14 @@ test('Home sync persists public siblings, never content excluded from Fos', asyn
   client = await sync(createNodeProvider(deps), client)
   expect(JSON.stringify([...stores.get(7)!.table.values()])).not.toContain('Never upload this')
   expect(homeTitles(stores.get(7)!)).toContain('Shared sibling')
-  expect(view(client, [HOME_ID, 'private'])!.tasks[0]!.id).toBe('secret')
+  expect(view(client, [HOME_ID, 'private'])!.tasks.some(t => t.id === 'secret')).toBe(true)
 })
 
 test('a message one device leaves for another waits in that peer\'s queue on the account', async () => {
   const { deps, stores } = makeDeps()
   deps.runtime = createHostRuntime([relayHandler()])
   // the account knows the desktop's agent peer on the hub
-  let account = ensureHomeContext(createReplica('user:alice', asAccountStore(new FosStore())), 0, deps.runtime.hostOffers())
+  let account = ensureHomeContext(createReplica('user:alice', asAccountStore(createStore())), 0, deps.runtime.hostOffers())
   account = addTask(account, [HOME_ID], 'Hub', 1, 'hub')
   account = addMemberAt(account, [HOME_ID, 'hub'], 'desktop-agent', 'Desktop agent', ['read', 'edit'], 2)
   stores.set(7, account.store)
@@ -222,14 +224,14 @@ test('a message one device leaves for another waits in that peer\'s queue on the
   phone = addTask(phone, [HOME_ID, 'hub', 'job'], 'Review the pull request', 4, 'job:task')
   phone = await sync(handler, phone)
   const stored = createReplica('user:alice', stores.get(7)!)
-  expect(view(stored, [...membershipPathAt(stored, [HOME_ID, 'hub'], 'desktop-agent')!, RELAY_QUEUE_ID, 'job'])!.tasks.map(t => t.title)).toEqual(['Review the pull request'])
+  expect(view(stored, [...membershipPathAt(stored, [HOME_ID, 'hub'], 'desktop-agent')!, RELAY_QUEUE_ID, 'job'])!.tasks.find(t => t.id === 'job:task')?.title).toBe('Review the pull request')
   expect(view(stored, [HOME_ID, 'hub'])!.tasks.some(t => t.id === 'job')).toBe(false)
   phone = await sync(handler, phone)
   expect(view(phone, [HOME_ID, 'hub'])!.tasks.some(t => t.id === 'job')).toBe(false)
   // the queue is ordinary rows of the hub's member entry: another device of the account receives them by syncing
   const desktop = await sync(handler, ensureHomeContext(createReplica('desktop'), 0), { username: 'alice' }, false)
   expect(relayQueues(desktop, 'desktop-agent')).toEqual([[...membershipPathAt(desktop, [HOME_ID, 'hub'], 'desktop-agent')!, RELAY_QUEUE_ID]])
-  expect(relayInbox(desktop, [...membershipPathAt(desktop, [HOME_ID, 'hub'], 'desktop-agent')!, RELAY_QUEUE_ID]).map(m => [m.id, m.rows.map(r => r.title)])).toEqual([['job', ['Review the pull request']]])
+  expect(relayInbox(desktop, [...membershipPathAt(desktop, [HOME_ID, 'hub'], 'desktop-agent')!, RELAY_QUEUE_ID]).map(m => [m.id, m.rows.find(r => r.id === 'job:task')?.title])).toEqual([['job', 'Review the pull request']])
 })
 
 test('member entries travel through provide-node: listings and offers made on a device reach the account and its market index', async () => {

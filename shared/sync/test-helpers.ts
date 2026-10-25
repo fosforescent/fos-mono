@@ -1,37 +1,42 @@
 /** Test helpers. */
+import { tagNode } from './structural'
+import { primitive } from './primitives'
 import { supplyValue } from './arguments'
-import type { Native } from './native'
-/** A native that answers the requirement it runs for with a value of its pattern, as `by`. */
-export const answering = (by: string, receipt?: string): Native => async (operands, context) => {
+import type { PrimitiveFunction } from './operands'
+/** A primitive that answers the requirement it runs for with a value of its pattern, as `by`. */
+export const answering = (by: string, receipt?: string): PrimitiveFunction => async (operands, context) => {
   const self = operands.outputs.self
-  if (!self) throw new Error('This native fills a requirement row.')
+  if (!self) throw new Error('This primitive fills a requirement row.')
   return { outputs: { self: supplyValue(context.store, self.pattern, by, receipt) } }
 }
-/** A native that answers nothing (an effect with no graph result). */
-export const silent: Native = async () => ({})
-import { libraryInstanceOf, libraryRowOf, SERVER_TRANSPORT_CAPABILITIES, type NodeView, type Scope } from './graph'
+/** A primitive that answers nothing (an effect with no graph result). */
+export const silent: PrimitiveFunction = async () => ({})
+import { libraryInstanceOf, libraryRowOf, SERVER_TRANSPORT_CAPABILITIES, type NodeView, type Scope, refValueCid } from './graph'
 import { headCid, view, type Replica } from './replica'
 import { accountContextAbove, exchangeNode, nodeTreeSync } from './node-sync'
 import type { NodeBranch, NodeRequest } from './node-provider'
-import { nativeRef, publishNativeRef } from './native-refs'
+import { primitiveRef, publishPrimitive } from './primitives'
 import { deviceTriggerDefinitions, cronObserver } from './trigger-primitives'
 import { libAt, libraryBindingAt, libraryInstanceEdge, commitRoot, updateAtScope, content, put, refNodeContent } from './graph'
 import type { Demand } from './arguments'
 import type { FosDataContent } from '../types'
 
 /** A "-[ ] task" demand: the value is a container holding a done task. */
-export const TASK_DEMAND: Demand = { capability: 'task', contains: { data: { todo: { completed: true } } as unknown as FosDataContent, children: [] } }
+export const TASK_DEMAND: Demand = { capability: 'task', done: true }
 
 /** An extension must be declared in a library instance before code can address its field. */
-export function declareTestCapability(r: Replica, name: string, at: Scope = [], data: import('../types').FosDataContent = {}): Replica {
+export function declareTestCapability(r: Replica, name: string, at: Scope = [], data: import('../types').FosDataContent = {}, revised = false): Replica {
   const store = r.store, binding = libraryBindingAt(store, at)!, library = content(store, binding.library)
   const group = libAt(store, at).field('capabilities'), namespace = content(store, group)
-  const operation = store.primitive.nameField.getId()
-  const kind = put(store, { data: { scalar: { type: 'text', value: `capabilities.${name}` } }, children: [] })
-  const type = put(store, { data: { capabilityDefinition: { name, label: name }, ...data }, children: [[operation, kind]] })
-  const declaration = put(store, refNodeContent(store, { name: { content: name } }, null))
+  const input: [string, string][] = revised ? [[primitive(store, 'string'), put(store, refNodeContent(store, { alias: { id: `${name}:input` }, name: { content: 'input' } }, null))]] : []
+  const type = put(store, { data, children: [[tagNode(store, name), put(store, { data: {}, children: [] })], ...input] })
+  const declaration = put(store, refNodeContent(store, { name: { content: name } }, type))
   const nextGroup = put(store, { ...namespace, children: [...namespace.children.filter(([, right]) => content(store, right).data.name?.content !== name), [type, declaration]] })
-  const nextLibrary = put(store, { ...library, children: library.children.map(([left, right]) => [left, right === group ? nextGroup : right]) })
+  // the group is the value of the library's capabilities ref
+  const nextLibrary = put(store, { ...library, children: library.children.map(([left, right]): [string, string] => {
+    const ref = content(store, right)
+    return [left, refValueCid(store, ref) === group ? put(store, { ...ref, children: ref.children.map(([key, target]): [string, string] => [key, target === group ? nextGroup : target]) }) : right]
+  }) })
   commitRoot(store, updateAtScope(store, headCid(r), at, node => {
     const instance = libraryInstanceOf(store, put(store, node))
     return { ...node, children: [...node.children.filter(([, right]) => right !== instance?.cid), libraryInstanceEdge(store, nextLibrary)] }
@@ -41,15 +46,15 @@ export function declareTestCapability(r: Replica, name: string, at: Scope = [], 
 
 /** Services are registered explicitly; granting permission must never manufacture a handler. */
 export function installTestHandler(r: Replica, peer: string, capability: string, at: Scope = []): Replica {
-  const definition = { id: `test:${capability}`, label: capability, type: (store: Replica['store'], scope: Scope) => libAt(store, scope).capabilities[capability]! }
-  return publishNativeRef(r, at, peer, nativeRef(r.store, peer, definition, {}, at), 0)
+  const definition = { id: `test:${capability}`, label: capability, capability: (store: Replica['store'], scope: Scope) => libAt(store, scope).capabilities[capability]! }
+  return publishPrimitive(r, at, peer, primitiveRef(r.store, peer, definition, {}, at), 0)
 }
 
 /** Explicit host setup for tests exercising observers; construction alone never registers them. */
 export function installTestObservers(r: Replica, peers = [r.meta.peerId], publish = true): Replica {
-  for (const peer of peers) for (const definition of [...deviceTriggerDefinitions, { id: 'test:cron', type: (store: Replica['store']) => libAt(store).capabilities.cron!, trigger: cronObserver }]) {
-    const ref = nativeRef(r.store, peer, definition)
-    if (publish) r = publishNativeRef(r, [], peer, ref, 0)
+  for (const peer of peers) for (const definition of [...deviceTriggerDefinitions, { id: 'test:cron', capability: (store: Replica['store']) => libAt(store).capabilities.cron!, trigger: cronObserver }]) {
+    const ref = primitiveRef(r.store, peer, definition)
+    if (publish) r = publishPrimitive(r, [], peer, ref, 0)
   }
   return r
 }

@@ -1,6 +1,7 @@
 /** The standard library: a mutable ref like any other, found by what it holds, changed by accepted submissions. */
-import { nativeRef } from './native-refs'
-import { primitiveImplementation } from './primitives'
+import { createStore } from './graph'
+import { primitiveRef } from './primitives'
+import { primitiveImplementation, primitive } from './primitives'
 import { libAt, handlerOfferId } from './graph'
 import { FosStore } from '../dag-implementation/store'
 import { HOME_ID, LIBRARY_ID, content, hasCapability, isLibraryRef, libraryRowOf, memberFor, namesInLibrary, put, refNodeContent, resolveScope, rowTypeAt, valueCidOf, valueContent } from './graph'
@@ -9,21 +10,23 @@ import { nodeAuthorityAt } from './node-context'
 import { acceptSubmission, missingApprovals } from './approvals'
 import { BUNDLED_LIBRARY, setLibraryArg, upgradeLibrary, useLibrary, ensureDeviceLibrary, exportLibrary, exportLocalLibrary, libraryPath, manualHandlers, manualHandlersFor } from './library'
 import { LIBRARY_TYPE, PLAIN_TYPE, TASK_TYPE } from './library-types'
-import { libraryBindingAt, libraryTypeAt, loadReplica, serializeReplica, setRefValueAt, openRefs, matchesGraph, rowConstructor } from './index'
+import { libraryBindingAt, libraryTypeAt, loadReplica, serializeReplica, setRefValueAt, openRefs, matchesGraph, rowConstructor, textValue, textOf, tagName, tagNode } from './index'
 import type { FosNodeContent } from '../types'
 
 const TEAM = 'team-library'
-/** The device root's library value with its task type titled `title`: a library its members changed. */
-function changedLibrary(r: Replica, title: string): string {
+/** The device root's library value with its task type tagged `version`: a library its members changed. */
+function changedLibrary(r: Replica, version: string): string {
   const store = r.store, value = valueCidOf(store, resolveScope(store, headCid(r), [LIBRARY_ID])!)
   return put(store, { ...content(store, value), children: content(store, value).children.map(edge => {
     const ref = content(store, edge[1])
     if (ref.data.name?.content !== TASK_TYPE) return edge
-    const node = put(store, { ...valueContent(store, edge[1]), data: { ...valueContent(store, edge[1]).data, description: { content: title } } })
+    const task = valueContent(store, edge[1])
+    const node = put(store, { ...task, children: [...task.children, [tagNode(store, version), put(store, { data: {}, children: [] })]] })
     return [edge[0], put(store, refNodeContent(store, ref.data, node))] as [string, string]
   }) })
 }
-const taskTitle = (r: Replica, at: string[]) => content(r.store, rowTypeAt(r.store, TASK_TYPE, at)).data.description?.content
+/** Which version of the task type rows made at `at` get: the tag a changed library put on it. */
+const taskVersion = (r: Replica, at: string[]) => content(r.store, rowTypeAt(r.store, TASK_TYPE, at)).children.map(([left]) => tagName(r.store, left)).find(name => name && name !== 'done') ?? null
 
 test('parameter predicates, row types, and manual handlers follow the same explicit library upgrade', () => {
   let r = addTask(createReplica(), [], 'Workspace', 1, 'workspace')
@@ -34,16 +37,17 @@ test('parameter predicates, row types, and manual handlers follow the same expli
   const oldFetch = libAt(store, at).capabilities.fetch!
   const oldInput = openRefs(store, oldFetch).find(ref => ref.name === 'url')!.left
   r = addRow(r, at, oldFetch, 'Pinned call', 4, { id: 'old-call' })
+  // the revision: the task type tagged, fetch's url a number, the mail fallback's title reworded
+  const unit = put(store, { data: {}, children: [] }), url = openRefs(store, oldFetch).find(ref => ref.name === 'url')!.cid
   const replacements = new Map<string, FosNodeContent>([
-    [libAt(store, at).field('string'), { data: { form: { primitive: 'number' } }, children: [] }],
-    [oldTask, { ...content(store, oldTask), data: { ...content(store, oldTask).data, description: { content: 'Revised task' } } }]
+    [oldTask, { ...content(store, oldTask), children: [...content(store, oldTask).children, [tagNode(store, 'revised'), unit]] }],
+    [oldFetch, { ...content(store, oldFetch), children: content(store, oldFetch).children.map(([left, right]) => right === url ? [primitive(store, 'number'), right] : [left, right]) }]
   ])
   const memo = new Map<string, string>()
   const copy = (cid: string): string => {
     if (memo.has(cid)) return memo.get(cid)!
     const node = replacements.get(cid) ?? content(store, cid)
-    const data = node.data.description?.content === 'Sent it myself'
-      ? { ...node.data, description: { content: 'Recorded manually' } } : node.data
+    const data = node.data.scalar?.value === 'Sent it myself' ? { ...node.data, scalar: { type: 'text' as const, value: 'Recorded manually' } } : node.data
     const result = put(store, { data, children: node.children.map(([left, right]) => [copy(left), copy(right)]) })
     memo.set(cid, result); return result
   }
@@ -81,7 +85,7 @@ test('a nearer library without a field cannot borrow manual handlers or row type
   expect(libraryTypeAt(r.store, TASK_TYPE, ['workspace'])).toBeNull()
   expect(() => rowTypeAt(r.store, TASK_TYPE, ['workspace'])).toThrow('row type task')
   expect(manualHandlers(r, []).length).toBeGreaterThan(0)
-  expect(libraryTypeAt(new FosStore(), TASK_TYPE)).toBeNull()
+  expect(libraryTypeAt(createStore(), TASK_TYPE)).toBeNull()
 })
 
 test('a device root has its library ref, a row of the Library type, found by what it holds', () => {
@@ -92,7 +96,7 @@ test('a device root has its library ref, a row of the Library type, found by wha
   expect(edge[0]).toBe(rowTypeAt(r.store, LIBRARY_TYPE))
   expect(libraryPath(r)).toEqual([LIBRARY_ID])
   // a ref holding anything else is no library, whatever it is called
-  const other = addRefAt(r, [HOME_ID], 'notes', rowTypeAt(r.store, PLAIN_TYPE), 2, put(r.store, { data: { description: { content: 'Standard library' } }, children: [] }))
+  const other = addRefAt(r, [HOME_ID], 'notes', rowTypeAt(r.store, PLAIN_TYPE), 2, textValue(r.store, 'Standard library'))
   expect(isLibraryRef(other.store, content(other.store, resolveScope(other.store, headCid(other), [HOME_ID, 'notes'])!))).toBe(false)
   // loading a device root again keeps the library it has: the build's is already its value
   expect(headCid(ensureDeviceLibrary(r, BUNDLED_LIBRARY, 3))).toBe(headCid(r))
@@ -106,7 +110,7 @@ test('a library shared by a group is an ordinary ref: members submit, the ref\'s
   // nearest ancestor: under Home the team's library, at the root the device's
   expect(libraryPath(r)).toEqual([HOME_ID, TEAM])
   expect(libraryPath(r, [])).toEqual([LIBRARY_ID])
-  expect(taskTitle(r, [HOME_ID])).toBe('Chore')
+  expect(taskVersion(r, [HOME_ID])).toBe('Chore')
   r = makeLinkAt(r, [HOME_ID, TEAM], 3)
   r = addMemberAt(r, [HOME_ID, TEAM], 'user:bob', 'Bob', ['edit'], 3)
   r = addMemberAt(r, [HOME_ID, TEAM], 'user:carol', 'Carol', ['edit'], 3)
@@ -118,15 +122,15 @@ test('a library shared by a group is an ordinary ref: members submit, the ref\'s
   expect(accepted.merged).toBe(true)
   r = accepted.replica
   // Home still uses the version it pinned until it upgrades
-  expect(taskTitle(r, [HOME_ID])).toBe('Chore')
+  expect(taskVersion(r, [HOME_ID])).toBe('Chore')
   r = upgradeLibrary(r, [HOME_ID], [HOME_ID, TEAM], 5)
-  expect(taskTitle(r, [HOME_ID])).toBe('Errand')
+  expect(taskVersion(r, [HOME_ID])).toBe('Errand')
   r = addTask(r, [HOME_ID], 'Shopping', 6, 'shop')
   expect(view(r, [HOME_ID])!.tasks.find(t => t.id === 'shop')!.type).toBe(TASK_TYPE)
   // exported, it is the content a new device's library takes, and the build source Home sees
   const bundle = exportLibrary(r, [HOME_ID, TEAM])
-  const device = ensureDeviceLibrary(createReplica('user:dave', new FosStore()), bundle, 7)
-  expect(taskTitle(device, [])).toBe('Errand')
+  const device = ensureDeviceLibrary(createReplica('user:dave', createStore()), bundle, 7)
+  expect(taskVersion(device, [])).toBe('Errand')
   const source = exportLocalLibrary(r)
   expect(content(r.store, rowTypeAt(r.store, TASK_TYPE, [HOME_ID])).data).toEqual(source.nodes[namesInLibrary(r.store, source.rootNodeId).byName.get(TASK_TYPE)!]!.data)
 })
@@ -157,21 +161,21 @@ test('the library carries manual fallback handlers for every kind of requirement
     'allocation:account', 'allocation:calendar', 'allocation:inventory', 'allocation:location', 'allocation:points', 'llm', 'mail', 'market', 'repo', 'search', 'tool'
   ])
   expect(manualHandlersFor(r, { capability: 'allocation', resource: 'account' }).map(h => h.label)).toEqual(['Paid outside Fos'])
-  // a place is entered by hand; the device's position only once the device passed the library its native
+  // a place is entered by hand; the device's position only once the device passed the library its primitive
   expect(manualHandlersFor(r, { capability: 'allocation', resource: 'location' }).map(h => h.device)).toEqual([false])
   expect(manualHandlersFor(r, { capability: 'mail' }).map(h => h.label)).toEqual(['Sent it myself'])
   expect(manualHandlersFor(r, { capability: 'confirmation' })).toEqual([])
 })
 
-test('the library requires natives the device passes in: its lib instance carries them, and they fill what they are declared for', () => {
+test('the library requires primitives the device passes in: its lib instance carries them, and they fill what they are declared for', () => {
   let r = ensureHomeContext(createReplica('user:device'), 1)
   const locate = { locate: async () => ({ lat: 1, lng: 2 }) }
-  const native = nativeRef(r.store, r.meta.peerId, { id: 'location', label: 'This device', type: store => libAt(store).capabilities.allocation! }, locate as never)
-  expect(() => setLibraryArg(r, [], 'nothingDeclared', native, 2)).toThrow(/requires no/)
-  r = setLibraryArg(r, [], 'deviceLocation', native, 2)
-  expect(headCid(setLibraryArg(r, [], 'deviceLocation', native, 3))).toBe(headCid(r))
+  const primitive = primitiveRef(r.store, r.meta.peerId, { id: 'location', label: 'This device', capability: store => libAt(store).capabilities.allocation! }, locate as never)
+  expect(() => setLibraryArg(r, [], 'nothingDeclared', primitive, 2)).toThrow(/requires no/)
+  r = setLibraryArg(r, [], 'deviceLocation', primitive, 2)
+  expect(headCid(setLibraryArg(r, [], 'deviceLocation', primitive, 3))).toBe(headCid(r))
   const device = manualHandlersFor(r, { capability: 'allocation', resource: 'location' }).find(h => h.device)!
-  expect(device).toMatchObject({ label: "Use this device's location", native })
-  // the native is what the device registered: the library holds no code, only what it was passed
-  expect(primitiveImplementation(r.store, valueCidOf(r.store, device.native!))?.value).toBe(locate)
+  expect(device).toMatchObject({ label: "Use this device's location", primitive })
+  // the primitive is what the device registered: the library holds no code, only what it was passed
+  expect(primitiveImplementation(r.store, valueCidOf(r.store, device.primitive!))?.value).toBe(locate)
 })

@@ -2,111 +2,16 @@
 
 ## Directory Summary
 
-Core graph implementation providing content-addressable storage and immutable nodes for the Fosforescent distributed workflow system. Evaluation lives above the store, in `shared/sync/evaluation.ts` (driven by `backend/sync/evaluation.ts` on the server).
+Responsible for the core graph: content-addressable storage and immutable nodes. Evaluation belongs above the store, in `shared/sync/`.
 
 **Key Design Documents:**
 - `../../docs/language-design.md` - Full language specification
 - `../../docs/implementation-roadmap.md` - Implementation phases (especially Phases 1-3, 5-6)
 
-## Implementation Priorities
+## Content Addressing
 
-This directory requires significant additions to implement the full language design:
-
-### Phase 1: New Primitives (primitive-node.ts)
-Add to `constructPrimitiveAliases()`:
-- TYPE, PI, SIGMA (type constructors)
-- EQ, REFL (equality types for HoTT binding)
-- SYMBOL (identifiers)
-- HOLE, CONTINUATION (partial evaluation)
-- SCOPE, BINDING, RULE (scoping)
-- BOX, DIAMOND, MODALITY (modal types)
-- ACTOR, CAPABILITY, EFFECT (actor system)
-
-### Phase 2: Type Checking (store.ts)
-Add methods:
-- `checkType(value, type): boolean`
-- `inferType(expr): FosNode`
-- `validateTypeAnnotation(node): { valid, error? }`
-
-### Phase 3: New Files (roadmap, none exist yet)
-- `scope.ts` - FosScope class with HoTT binding
-- `hole.ts` - HoleManager class
-- `modality.ts` - ModalityManager class
-- `actor.ts` - ActorRegistry class
-
-### Dependencies
-- **js-sha3**: SHA3-256 cryptographic hashing for content addressing
-- **@n1ru4l/json-patch-plus**: JSON diff/patch operations for incremental updates
-- **../types**: Shared type definitions (FosNodeContent, FosPath, etc.)
-- **../utils**: Utility functions (assert, aggMap)
-
-### Data Inputs
-
-#### Graph Construction
-- **FosContextData**: Serialized graph state with nodes, routes, and metadata
-- **TrellisSerializedData**: UI state (focus, collapsed nodes, view mode)
-- **FosNodeContent**: Individual node data with children relationships
-- **FosPath**: Navigation routes through the graph
-
-#### Node Operations
-- **NodeData**: Structured data (descriptions, todos, costs, etc.)
-- **Edge Relationships**: [instruction_node_id, target_node_id] tuples
-- **Mutation Operations**: Content updates with automatic versioning
-
-### Data Outputs
-
-#### Graph State
-- **Content-Addressable IDs**: SHA3-256 hashes as unique node identifiers
-- **Immutable Nodes**: New node instances for each modification
-- **Serialized Context**: JSON-exportable graph state for persistence
-
-#### Node Relationships
-- **Parent-Child Links**: Hierarchical graph structure
-- **Instruction-Target Pairs**: Computational relationships
-- **Route Navigation**: Path-based node access
-
-### Events Handled
-- **Node Creation**: Automatic hashing and storage in content table
-- **Node Mutation**: Version updates with timestamp tracking
-- **Graph Updates**: Context synchronization and callback triggers
-- **Cache Management**: Automatic node instance caching
-
-### Data Transformations
-- **Content Hashing**: Node content → SHA3-256 content identifiers (CIDs)
-- **Immutable Updates**: Content changes → New node instances with updated timestamps
-- **Graph Serialization**: FosStore instance → JSON context data
-- **Graph Deserialization**: JSON context → Reconstructed FosStore with node relationships
-- **Route Resolution**: FosPath arrays → Target node instances
-- **Diff Generation**: Store states → JSON patch operations for incremental sync
-
-### Core Components
-
-#### FosStore
-- **Content Table**: Map<CID, FosNodeContent> for content-addressable storage
-- **Node Cache**: WeakMap for FosNode instance caching
-- **Primitive Aliases**: Built-in node types and operations
-- **Trellis State**: UI state management (focus, collapsed, view mode)
-- **Peer Connections**: Distributed store synchronization
-
-#### FosNode
-- **Immutable Content**: Read-only node data with computed CID
-- **Edge Management**: Child relationship manipulation
-- **Mutation Operations**: Content updates creating new instances
-- **Tree Traversal**: Parent/child navigation methods
-
-#### Content Addressing
-- **Versioned cids**: `cid.ts` writes `v<FOS_DATA_VERSION>-<digest>` (`v0.0.1-…`; the constant lives in `shared/version.ts` and is also the standard library's version) and parses any `v<dotted version>-<hex>`, so another version is recognised and refused. There are no migrations: `FosStore` throws `UnsupportedDataVersionError` when loaded with a context in another version (`assertCurrentCid`), and the data has to be reset. See `docs/cid-versioning.md`.
-- **Deterministic Hashing**: Identical content produces identical CIDs
-- **Integrity Verification**: Content tampering detection
-- **Deduplication**: Automatic elimination of duplicate nodes
-- **Distributed Sync**: CID-based content sharing across peers
-
-### Performance Features
-- **Lazy Loading**: Nodes created on-demand during traversal
-- **Weak References**: Automatic garbage collection of unused nodes
-- **Hash Caching**: WeakMap for expensive hash computation
-- **Incremental Updates**: JSON patches for minimal data transfer
-- **Content Deduplication**: Single storage of identical content
+- Identical content must produce identical CIDs.
+- Cids must carry the data version (`FOS_DATA_VERSION` in `shared/version.ts`). Data in another version must be refused, not migrated, and has to be reset. See `docs/cid-versioning.md`.
 
 ## TODOs
 

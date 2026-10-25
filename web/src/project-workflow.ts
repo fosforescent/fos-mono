@@ -24,7 +24,7 @@ export function workflowForScope(r: Replica, scope: Scope): ProjectWorkflow | nu
 export function queueAgentEffect(r: Replica, scope: Scope, operation: string, now: number): Replica {
   const config = workflowForScope(r, scope)
   if (!config) throw new Error('Configure the project workflow before requesting a coding agent.')
-  const id = `agent-${parseCid(hashContent({ data: { description: { content: operation } }, children: [] }))!.digest}`
+  const id = `agent-${parseCid(hashContent({ data: { name: { content: operation } }, children: [] }))!.digest}`
   return enqueueWorkflowJob(r, config, { request: agentRequest(r, config, scope), scope: config.project.every((id, i) => scope[i] === id) ? scope : config.project, id }, now).replica
 }
 function onBranch<T>(r: Replica, project: Scope, branch: string, fn: () => T): T {

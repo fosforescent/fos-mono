@@ -1,5 +1,7 @@
 /** Bindings, menus, and executors must discover handlers through the same scoped declarations. */
-import { peerNode } from './graph'
+import { textOf } from './fields'
+import { primitive } from './primitives'
+import { peerNode, rowTitle } from './graph'
 import { TEMPLATE_TYPE, REF_TYPE } from './library-types'
 import type { FosStore } from '../dag-implementation/store'
 import { handlerOfferId, publishedTemplateId } from './graph'
@@ -34,7 +36,7 @@ export function discoverHandlers(r: Replica, path: Scope, environment: HandlerEn
         { ...environment, checkDependencies: false, scope: { replica: { ...r, store: binding.store }, path: binding.scope.path } })
       if (!result.some(offer => offer.peerId === value.peerId && offer.cid === cid)) result.push({ id: binding.id, cid, type: binding.pattern,
         binding, peerId: value.peerId, refPath: binding.refPath, refIds: binding.refIds, scope: binding.scope,
-        label: binding.name ?? content(binding.store, value.cid).data.description?.content ?? capability ?? binding.id,
+        label: binding.name ?? textOf(binding.store, value.cid) ?? capability ?? binding.id,
         ...(capability ? { capability } : {}), enabled: value.enabled && resolved.status === 'ready', active: value.active })
     }
   }
@@ -50,17 +52,18 @@ export function publishTemplate(r: Replica, at: Scope, templatePath: Scope, labe
   if (!cid || !templatePath.length) throw new Error('Select a template to publish.')
   const parent = resolveScope(r.store, headCid(r), templatePath.slice(0, -1))
   if (!parent || !valueContent(r.store, parent).children.some(e => identityCid(r.store, e) === cid && isRowOfType(r.store, e, TEMPLATE_TYPE))) throw new Error('Only template rows can be published.')
-  const type = r.store.primitive.templateField.getId(), peerId = r.meta.peerId
+  // offered as what it is: a value of the template type (its row's left)
+  const type = valueContent(r.store, parent).children.find(e => identityCid(r.store, e) === cid)![0], peerId = r.meta.peerId
   const id = publishedTemplateId(peerId, templatePath.at(-1)!)
   const publishedValue = transferRefGraph(r, cid, templatePath, [...at, id], true)
   if (!contextMemberRefs(r, at).has(peerId)) r = addMemberAt(r, at, peerId, peerId, [], now)
-  const handler = put(r.store, refNodeContent(r.store, { alias: { id }, name: { content: label.trim() || valueContent(r.store, cid).data.description?.content || 'Template' } }, publishedValue, []))
+  const handler = put(r.store, refNodeContent(r.store, { alias: { id }, name: { content: label.trim() || rowTitle(r.store, cid, null) || 'Template' } }, publishedValue, []))
   const existing = discoverHandlers(r, at).filter(o => o.peerId === peerId && o.type === type && o.id !== id).map(o => o.cid)
   r = setHandlerOffersAt(r, at, peerId, type, [...existing, handler], now)
   if (!market) return r
   if (!marketMemberOf(r.store, resolveScope(r.store, headCid(r), at)!)) r = addMemberAt(r, at, MARKET_PEER, 'Fos market', marketGrantsAt(r.store, headCid(r), at), now)
   const node = content(r.store, policyIdentity(r.store, resolveScope(r.store, headCid(r), at)!))
-  const published = memberHandlerRows(r.store, node, MARKET_PEER, r.store.primitive.capabilityNode.getId()).filter(([pattern, h]) => sameCapabilityType(r.store, pattern, type) && content(r.store, h).data.alias?.id !== id).map(([, h]) => h)
+  const published = memberHandlerRows(r.store, node, MARKET_PEER, primitive(r.store, 'grants')).filter(([pattern, h]) => sameCapabilityType(r.store, pattern, type) && content(r.store, h).data.alias?.id !== id).map(([, h]) => h)
   return setHandlerOffersAt(r, at, MARKET_PEER, type, [...published, handler], now, 'to')
 }
 
@@ -80,9 +83,9 @@ export function marketplaceOffers(r: Replica): Array<HandlerOffer & { path: Scop
       const node = content(s, policyIdentity(s, cid))
       const member = membershipOf(s, node, MARKET_PEER)
       const disabled = member ? content(s, member[1]).data.disabledCapabilities?.content ?? [] : []
-      for (const [type, h] of member ? memberHandlerRows(s, node, MARKET_PEER, s.primitive.capabilityNode.getId()) : []) {
+      for (const [type, h] of member ? memberHandlerRows(s, node, MARKET_PEER, primitive(s, 'grants')) : []) {
         const offer = content(s, h), id = offer.data.alias?.id ?? h
-        if (!disabled.includes(id)) result.set(id, { id, cid: h, type, peerId: MARKET_PEER, label: offer.data.name?.content ?? valueContent(s, h).data.description?.content ?? 'Capability', enabled: true, active: true, path })
+        if (!disabled.includes(id)) result.set(id, { id, cid: h, type, peerId: MARKET_PEER, label: offer.data.name?.content ?? textOf(s, h) ?? 'Capability', enabled: true, active: true, path })
       }
       for (const edge of valueContent(s, cid).children) if (isRowEdge(s, edge) && !isRowOfType(s, edge, REF_TYPE)) { const id = content(s, identityCid(s, edge)).data.alias?.id; if (id) walk([...path, id]) }
     }

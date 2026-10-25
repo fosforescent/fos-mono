@@ -4,6 +4,8 @@
  * positions. Each submission is an option on that ref in that scope (the use site's left node), never an assignment:
  * choosing one binds it, the others stay options. See docs/sync.md, "Patterns".
  */
+import { isFieldRow } from './fields'
+import { primitive } from './primitives'
 import type { FosStore } from '../dag-implementation/store'
 import type { FosNodeContent, FosPathElem } from '../types'
 import {
@@ -14,17 +16,13 @@ import {
 import { headCid, type Replica } from './replica'
 import { isValueSubmission } from './graph'
 import { refValueCompatible } from './scoped-refs'
-import { PATTERN_TYPE } from './library-types'
 
 /** Submissions to a right ref are value submissions; a label per source keeps one option per source. */
 
-/**
- * The rows a pattern position counts: everything but bookkeeping, the ref constructor's own pointers and placement
- * rules (a template's `lib.pattern` rows say what it accepts as children; they are not positions).
- */
+/** The rows a pattern position counts: everything but bookkeeping, the ref constructor's own pointers and a row's own fields. */
 export function patternRows(store: FosStore, node: FosNodeContent): FosPathElem[] {
-  const own = [store.primitive.targetPointerConstructor.getId(), store.primitive.instructionPointerConstructor.getId(), store.primitive.aliasConstructor.getId()]
-  return node.children.filter(edge => !isBookkeepingEdge(store, edge) && !own.includes(edge[0]) && typeIdOf(store, edge[0]) !== PATTERN_TYPE)
+  const own = [primitive(store, 'target'), primitive(store, 'instruction'), primitive(store, 'alias')]
+  return node.children.filter(edge => !isBookkeepingEdge(store, edge) && !own.includes(edge[0]) && !isFieldRow(store, edge))
 }
 
 /** A ref with no value yet: a hole the pattern leaves open. */

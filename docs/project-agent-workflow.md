@@ -1,39 +1,36 @@
 # Phone to desktop project workflow
 
-The repository and deployment URL are configured in Fos. The standard library contains **Project agent workflow** (`lib:project-agent-workflow`) and **Request project coding agent** (`lib:project-coding-request`). Their graph definitions, defaults, prompts, and verification requirement live in `.fos/library.json`, authored through the Fos CLI and compiled into the client. Setup instantiates those definitions; it does not synthesize their task structure in UI code.
+The workflow's graph definitions, defaults, prompts and verification requirement belong in the standard library; setup instantiates those definitions and must not synthesize their task structure in UI code.
 
-1. Run `fos .` in the project directory to open the desktop app. Sign in to your Fos account. Keep this app open; `fos run` does not run the GUI's agent dispatcher.
-2. Connect GitHub using the account's integration controls. Connect the project node to `owner/repository` using its repository action. Refresh its branches and PRs.
-3. On that node, choose **Configure agent workflow**. Set the local repository directory, coding agent, main branch, deployment URL, GitHub deployment environment, and verification agent. **Save and enable on this computer** grants this computer permission to dispatch this configuration. The directory is stored locally. Changing the configuration requires enabling it again on the target computer.
-4. On the phone, sign in to the same Fos account and open the synchronized project node. Create a project branch, edit its notes/tasks, and choose **Request coding agent**. The request is a tool requirement; evaluating it queues work for the desktop and leaves the evaluation awaiting review.
-5. The desktop claims the request durably, fetches the requested GitHub branch, and creates an isolated worktree under `<repository>/.fos/agent-worktrees/<request-id>`. It opens Claude Code or Codex in a terminal with the project's MCP endpoint bound to the requested branch. The agent sees current notes/tasks through MCP. The desktop checkout and displayed graph branch are preserved.
-6. The agent is instructed to test, commit, push the project branch, and open a PR without merging. GitHub PR refresh marks the corresponding graph branch as requesting merge. Review and merge using **Approve and merge on GitHub** on the project node, including from the phone.
-7. Loading a repository-bound node asks the server's GitHub capability handler to refresh branch/PR status (cached for 30 seconds per node/branch). Open PRs become ordinary Fos branch merge requests. A merged PR causes a Fos branch merge, recorded durably so refresh/restart cannot repeat it. The library template declares a generic `ref-change` trigger watching the destination branch's `fos:branch-merge` named ref. That ref is written by every Fos branch merge, including a local merge without GitHub; only then does the continuation queue verification. Ordinary note edits and merges into other branches do not trigger it. Verification waits until GitHub reports a successful deployment of the current main commit to the configured environment. An HTTP 200 response alone is insufficient.
+1. Run `fos .` in the project directory to open the desktop app and sign in to your Fos account. Keep the app open while the workflow is enabled.
+2. Connect GitHub using the account's integration controls, connect the project node to `owner/repository`, and refresh its branches and PRs.
+3. On that node, choose **Configure agent workflow**. Set the local repository directory, coding agent, main branch, deployment URL, GitHub deployment environment, and verification agent, then **Save and enable on this computer**. Changing the configuration requires enabling it again on the target computer.
+4. On the phone, sign in to the same Fos account, open the project node, create a project branch, edit its notes/tasks, and choose **Request coding agent**.
+5. Review and merge with **Approve and merge on GitHub** on the project node, including from the phone.
 
-Edit the instantiated workflow's `coding-instructions` and `verification-instructions` text bindings to customize its prompts. They support ordinary text substitution such as `{{repository}}` and `{{deployment-url}}`. The configuration fields are also ordinary text bindings. Changes to the repository, URL, agents or environment require saving/enabling the new configuration on the executor computer. Edits to the library affect future instances; existing instances keep their pinned template version.
+Customize prompts by editing the instantiated workflow's `coding-instructions` and `verification-instructions` text bindings (text substitution such as `{{repository}}` and `{{deployment-url}}`). Edits to the library affect future instances; existing instances keep their pinned template version.
+
+## Rules
+
+- The desktop must claim requests durably and run each in an isolated worktree; the desktop checkout and displayed graph branch are preserved.
+- The agent sees current notes/tasks through MCP bound to the requested branch.
+- The agent tests, commits, pushes the project branch and opens a PR; it must not merge.
+- Open PRs are ordinary Fos branch merge requests. A merged PR causes a Fos branch merge exactly once, even across refresh/restart.
+- Verification is triggered only by a Fos branch merge into the destination branch (including a local merge without GitHub). Ordinary note edits, merges into other branches and dispatch bookkeeping must not trigger it.
+- Verification waits until GitHub reports a successful deployment of the current main commit to the configured environment. An HTTP 200 response alone is insufficient.
+- Dispatch status is not task completion. An interrupted dispatch is never relaunched automatically; **Retry after review** creates a new request and worktree. Worktrees are retained for recovery, not deleted automatically.
+- **Pause workflow** stops new dispatches; it does not kill an already running agent.
+- Opening a prefilled Claude Desktop chat is not an executed test or a passing verification.
+- Configuration and requests use ordinary task/template/requirement rows and named mutable refs: no new domain row type, and no code/verify job-kind switch. The server's node-load hook knows nothing about coding or verification templates.
 
 ## Runtime setup
 
 Install Node.js 20+, Git, and the selected agent CLI on the desktop PATH. Sign in to the agent separately from Fos. The local Git installation must be able to fetch and push the configured repository, and the coding agent needs a way to open PRs (for example an authenticated GitHub CLI). Fos's GitHub OAuth connection does not install Git credentials into the local Git client.
 
-The deployment pipeline must publish GitHub Deployment records and successful Deployment Status records for the configured environment and exact main SHA. A pipeline that only publishes Actions check results does not satisfy this gate. The backend must include the `deployment` repository action added with this workflow.
+The deployment pipeline must publish GitHub Deployment records and successful Deployment Status records for the configured environment and exact main SHA. Publishing only Actions check results does not satisfy this gate.
 
-For **Claude Code with Chrome**, install and sign in to the Claude in Chrome extension, and authorize its site access. Fos launches Claude Code with `--chrome`; normal agent/browser permission prompts still apply. See [Anthropic's Chrome integration instructions](https://code.claude.com/docs/en/chrome).
+For **Claude Code with Chrome**, install and sign in to the Claude in Chrome extension and authorize its site access. See [Anthropic's Chrome integration instructions](https://code.claude.com/docs/en/chrome).
 
-For **Claude Desktop**, Fos opens a prefilled chat and records `handoff`. Send the prompt and enable the Chrome connector in that conversation. Opening the chat is not an executed test or a passing verification. See [Claude Desktop Chrome setup](https://support.claude.com/en/articles/12012173-get-started-with-claude-in-chrome). Verification results are not automatically imported from that chat.
+For **Claude Desktop**, send the prefilled prompt and enable the Chrome connector in that conversation. See [Claude Desktop Chrome setup](https://support.claude.com/en/articles/12012173-get-started-with-claude-in-chrome).
 
-## Status and recovery
-
-**Workflow status** opens a sibling workflow node containing configuration, the change-trigger template, and durable request rows. Only the project's Fos merge receipt is watched, so dispatch bookkeeping cannot retrigger verification. The queue remains visible when the desktop displays a different project branch.
-
-Requests move through `queued`, `starting`, and `launched` (or Desktop `handoff`). These indicate dispatch status, not task completion. Errors become `failed`. An interrupted `starting` request is not automatically launched again. Review the terminal, PR, and retained worktree before choosing **Retry after review**, which creates a new request and worktree. Worktrees are retained for recovery, not deleted automatically. **Pause workflow** stops new dispatches; it does not kill an already running agent.
-
-Configuration and requests use existing task/template/requirement rows and named mutable refs. No new domain row type is introduced. Native code supplies the `ref-change` trigger, one `fos.agent` tool handler, agent/MCP launch adapters, the Git worktree adapter, and GitHub deployment-status lookup. Named typed bindings now travel through masked, shallow node exchange, including empty slots and their bound values; update the account backend and clients together.
-
-## Validation
-
-`web/tests/project-workflow.cjs` exercises the phone request, durable desktop dispatch, branch-bound MCP reads, server GitHub node-load handler, Fos merge request and merge, library trigger evaluation, duplicate suppression, and deployment-gated Desktop handoff. `shared/sync/project-workflow.test.ts` exercises phone → account → desktop synchronization, merge-only dispatch, and reference-change trigger persistence. `shared/sync/argument-sync.test.ts` covers shallow binding exchange and access masks. `desktop/agent-runtime/local-git.test.mjs` creates actual Git repositories and verifies isolation from dirty desktop edits. GitHub and agent/browser calls are mocked in these tests; a live account/device rehearsal is still required before treating the entire workflow as verified.
-
-The trigger declaration is exported `.fos` data (`fos:trigger-template`); generic trigger binding supplies its node, branch and executor at configuration time. The server registry's node-load hook knows nothing about coding or verification templates. Coding and verification both request `fos.agent`. Each library requirement carries a `fos:agent-request` ref declaring its provider, prompt, optional branch, worktree, read-only context, Chrome, and deployment gate. Whole-value bindings resolve from the workflow's ordinary text refs when evaluated; current project context is read again when dispatched. There is no code/verify job-kind switch. The desktop setup form, saved project configuration, and native adapters still contain project-specific code; this is not yet a fully general graph workflow interpreter.
-
-Local bindings and remote peer entries now share `refProperties` traversal, including typed handler properties under remote refs. Binding resolution and peer discovery use that view while retaining main-branch grants and transport masks. Existing stored peer/ref representations remain compatible. The full multi-type/submission calculus and a unified push/pull/submit/diff/proposeMerge/merge/commit adapter are deferred.
+Update the account backend and clients together.

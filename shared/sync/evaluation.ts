@@ -1,6 +1,7 @@
 /** Evaluation uses ordinary typed refs for its journal and ordinary tasks for compensation. */
-import { compileOperands, type Native } from './native'
-import { isOutputPattern } from './parameters'
+import { isOutputDeclaration } from './structural'
+import { primitive } from './primitives'
+import { compileOperands, type PrimitiveFunction } from './operands'
 import type { BindingLocation } from './scope-bindings'
 import { proposeTransactionWrite } from './transactions'
 import { copyOuterScope } from './graph'
@@ -11,7 +12,7 @@ import { settingOf } from './graph'
 import { constructNodeValue, isNodeValueType, readGraphValue } from './node-values'
 import { isAttempt } from './work'
 import { argumentRefs, contextBindings, resolveBinding, resolveText, type BindingEnvironment } from './bindings'
-import { formText } from './forms'
+import { rowText } from './fields'
 import { TEMPLATE_TYPE } from './library-types'
 import { compileInstructions } from './ref-compiler'
 import { instructionPrimitives } from './primitives'
@@ -38,7 +39,7 @@ export function readNodeValue<T>(r: Replica, path: Scope, name: string, holder?:
 }
 /**
  * Write the value named `name` at `path`. `handler.peer` is who holds it (a device's setting: found by its name and
- * holder, `settingOf`), `handler.type` its constructor when not a native value.
+ * holder, `settingOf`), `handler.type` its constructor when not a primitive value.
  */
 export function writeNodeValue(r: Replica, path: Scope, name: string, value: unknown, now: number, handler?: { type?: string; peer: string }): Replica {
   const cid = resolveScope(r.store, headCid(r), path)
@@ -48,11 +49,11 @@ export function writeNodeValue(r: Replica, path: Scope, name: string, value: unk
   const peer = handler?.peer ?? (arg ? valueContent(r.store, arg.cid).data.peerId?.content : undefined)
   const alias = previous?.data.alias?.id ?? hashContent({ data: { name: { content: name }, ...(peer ? { peerId: { content: peer } } : {}) }, children: [] })
   const built = constructNodeValue(r.store, value, alias, arg?.cid)
-  const type = handler?.type ?? (arg && arg.type !== r.store.primitive.documentField.getId() && !isNodeValueType(r.store, arg.type) ? arg.type : built.type)
+  const type = handler?.type ?? (arg && arg.type !== primitive(r.store, 'string') && !isNodeValueType(r.store, arg.type) ? arg.type : built.type)
   const target = peer ? put(r.store, { ...content(r.store, built.cid), data: { ...content(r.store, built.cid).data, peerId: { content: peer } } }) : built.cid
   if (!arg) return addRefAt(r, path, alias, type, now, target, name)
-  const declarations = previous!.children.filter(([key]) => key !== r.store.primitive.targetPointerConstructor.getId() && key !== r.store.primitive.instructionPointerConstructor.getId() && key !== r.store.primitive.previousVersion.getId())
-  const next = put(r.store, refNodeContent(r.store, previous!.data, target, [...declarations, [r.store.primitive.previousVersion.getId(), arg.cid]]))
+  const declarations = previous!.children.filter(([key]) => key !== primitive(r.store, 'target') && key !== primitive(r.store, 'instruction') && key !== primitive(r.store, 'previous'))
+  const next = put(r.store, refNodeContent(r.store, previous!.data, target, [...declarations, [primitive(r.store, 'previous'), arg.cid]]))
   commitRoot(r.store, updateAtScope(r.store, headCid(r), path, node => ({ ...node, children: node.children.map(edge => identityCid(r.store, edge) === arg.cid ? [type, next] : edge) })), now)
   return { ...r }
 }
@@ -66,11 +67,11 @@ export function writeLinkedNodeValue(r: Replica, path: Scope, name: string, valu
   const cid = resolveScope(r.store, headCid(r), path)!
   const arg = argumentRefs(r.store, cid).find(a => a.name === name)!
   const ref = content(r.store, arg.cid), target = valueContent(r.store, arg.cid)
-  const children: typeof target.children = Object.entries(links).map(([key, link]) => [r.store.primitive.linkField.getId(), put(r.store, {
+  const children: typeof target.children = Object.entries(links).map(([key, link]) => [primitive(r.store, 'link'), put(r.store, {
     data: { alias: { id: `${ref.data.alias!.id}:${key}` }, name: { content: key }, ref: link }, children: []
   })])
-  const declarations = ref.children.filter(([key]) => key !== r.store.primitive.targetPointerConstructor.getId() && key !== r.store.primitive.instructionPointerConstructor.getId() && key !== r.store.primitive.previousVersion.getId())
-  const next = put(r.store, refNodeContent(r.store, ref.data, put(r.store, { ...target, children: [...target.children.filter(([key]) => key !== r.store.primitive.linkField.getId()), ...children] }), [...declarations, [r.store.primitive.previousVersion.getId(), arg.cid]]))
+  const declarations = ref.children.filter(([key]) => key !== primitive(r.store, 'target') && key !== primitive(r.store, 'instruction') && key !== primitive(r.store, 'previous'))
+  const next = put(r.store, refNodeContent(r.store, ref.data, put(r.store, { ...target, children: [...target.children.filter(([key]) => key !== primitive(r.store, 'link')), ...children] }), [...declarations, [primitive(r.store, 'previous'), arg.cid]]))
   commitRoot(r.store, updateAtScope(r.store, headCid(r), path, node => ({ ...node, children: node.children.map(edge => identityCid(r.store, edge) === arg.cid ? [arg.type, next] : edge) })), now)
   return { ...r }
 }
@@ -135,10 +136,11 @@ export function evaluationRecord(r: Replica, path: Scope): EvaluationRecord | nu
 
 export type EvaluationStep = { path: Scope; row: TaskView | null }
 /**
- * What runs a step: a native, the one shape every host implementation has (sync/native.ts). It sees compiled operands
+ * What runs a step: a primitive, the one shape every host implementation has (sync/operands.ts). It sees compiled operands
  * and answers values, which the evaluator submits as the evaluation's pending writes; discarding them reverts it.
  */
-export type StepExecutor = { native: Native }
+/** A step's executor: the primitive it runs (whose own submissions its answers are) and how to run it here. */
+export type StepExecutor = { run: PrimitiveFunction; primitive: string }
 /** The one executor that runs a step, or why there is none to run. Every host selects through this. */
 export function selectExecutor<E>(executors: E[]): { executor: E } | { executor: null; problem: string | null } {
   if (executors.length === 1) return { executor: executors[0]! }
@@ -227,14 +229,14 @@ function problems(r: Replica, step: EvaluationStep, driver: EvaluationDriver): s
   const executors = driver.executors(step), selected = selectExecutor(executors)
   if (selected.executor === null && selected.problem) issues.push(selected.problem)
   if (instructionPrimitives(r, step).length && !executors.length) issues.push('The instruction primitive has no available executor on this host.')
-  // a received ref (a primitive without `negative`) is filled at run time, so it does not hold the step back
+  // a declared output is filled at run time, so it does not hold the step back
   issues.push(...compileInstructions(r, step.path, { canRead: driver.canRead }).blocking.map(hole => `Unfilled instruction ref: ${hole.id} (${hole.reason})`))
   const candidates = contextBindings(r, step.path, driver)
-  // a negative argument (a requirement) is the step's own to fill: an output, never an input it needs first
-  for (const arg of argumentRefs(r.store, cid).filter(a => !settingOf(r.store, content(r.store, a.cid)) && content(r.store, a.cid).data.refRole !== 'output' && !isOutputPattern(r.store, a.type))) {
+  // a requirement is the step's own to fill: an output, never an input it needs first
+  for (const arg of argumentRefs(r.store, cid).filter(a => !settingOf(r.store, content(r.store, a.cid)) && content(r.store, a.cid).data.refRole !== 'output' && !isOutputDeclaration(r.store, a.type, a.cid))) {
     issues.push(...resolveBinding(r.store, arg.type, arg.cid, candidates, undefined, { ...driver, scope: { replica: r, path: step.path } }).problems)
   }
-  issues.push(...resolveText(r, step.path, formText(r.store, valueContent(r.store, cid)), [], driver).bindings.flatMap(b => b.problems))
+  issues.push(...resolveText(r, step.path, rowText(r.store, cid, null), [], driver).bindings.flatMap(b => b.problems))
   const req = step.row?.requirement
   if (req && !req.satisfied && !executors.length) {
     // a requirement with steps of its own (a task inside it) is fulfilled by running them; one with neither is unmet
@@ -259,7 +261,7 @@ const instruction = (r: Replica, path: Scope) => {
   // Output properties are supplied by the effect too. Track their enclosing declaration identities.
   // a declared output (a requirement's result, a handler's return) is the effect's to fill, not part of the instruction
   const input = (a: { cid: string; type: string; name?: string; refIds?: string[] }) => !settingOf(r.store, content(r.store, a.cid)) &&
-    content(r.store, a.cid).data.refRole !== 'output' && !isOutputPattern(r.store, a.type)
+    content(r.store, a.cid).data.refRole !== 'output' && !isOutputDeclaration(r.store, a.type, a.cid)
   const candidates = contextBindings(r, path)
   const resolved = args.filter(input).map(arg => {
     const value = resolveBinding(r.store, arg.type, arg.cid, candidates, undefined, { scope: { replica: r, path } })
@@ -267,21 +269,21 @@ const instruction = (r: Replica, path: Scope) => {
     // submissions on a declaration are not its instruction either.
     return { cid: refBindingBaseCid(r.store, content(r.store, arg.cid)), type: arg.type, name: arg.name, status: value.status, value: value.cid }
   })
-  const text = resolveText(r, path, formText(r.store, valueContent(r.store, cid)))
+  const text = resolveText(r, path, rowText(r.store, cid, null))
   return JSON.stringify({ data, instruction: compileInstructions(r, path, { openOutputs: true }).cid, arguments: resolved,
     text: text.text, bindings: text.bindings.map(binding => ({ status: binding.status, cid: binding.cid })) })
 }
 
 /**
- * Run a native: compile the step's operands, hand them over, and submit what it answers as this evaluation's pending
+ * Run a run: compile the step's operands, hand them over, and submit what it answers as this evaluation's pending
  * writes, each to the declaration the compiler named and checked against that declaration's pattern. Outputs win
  * over proposals for one destination (a remainder rebinding the handle it came from).
  */
-async function runNative(native: Native, step: EvaluationStep, evaluation: string, driver: EvaluationDriver): Promise<void | 'pending'> {
+async function runPrimitive({ run, primitive: submitter }: StepExecutor, step: EvaluationStep, evaluation: string, driver: EvaluationDriver): Promise<void | 'pending'> {
   const before = driver.get()
   // the compiler sees only the binding environment; the driver's other fields (its `outputs(step)`) are not compile options
   const { compiled, sources } = compileOperands(before, step.path, { ...(driver.canRead ? { canRead: driver.canRead } : {}), ...(driver.isPeerActive ? { isPeerActive: driver.isPeerActive } : {}) })
-  const result = await native(compiled, { evaluation, step: step.path, now: driver.now(), store: before.store, put: node => put(before.store, node) })
+  const result = await run(compiled, { evaluation, step: step.path, now: driver.now(), store: before.store, put: node => put(before.store, node) })
   const writes = new Map<string, { binding: BindingLocation; value: string }>()
   for (const [name, value] of Object.entries(result.proposals ?? {})) {
     const binding = sources[name]
@@ -294,7 +296,7 @@ async function runNative(native: Native, step: EvaluationStep, evaluation: strin
     writes.set(binding.cid, { binding, value })
   }
   let r = driver.get()
-  for (const { binding, value } of writes.values()) r = proposeTransactionWrite(r, binding, value, evaluation, driver.now())
+  for (const { binding, value } of writes.values()) r = proposeTransactionWrite(r, binding, value, evaluation, driver.now(), submitter)
   await driver.save(r)
   return result.pending ? 'pending' : undefined
 }
@@ -342,8 +344,8 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
       const effect = { path: step.path, title: current.row?.title ?? 'Ref', status: 'attempting' as EvaluationRecord['effects'][number]['status'] }
       record.effects.push(effect); await save() // persist before sending, including an uncertain failed response
       applied.add(JSON.stringify(step.path))
-      // a native's answers are this evaluation's pending writes: checked against their declarations now, live at commit
-      const outcome = await runNative(executor.native, step, record.id, driver)
+      // a primitive's answers are this evaluation's pending writes: checked against their declarations now, live at commit
+      const outcome = await runPrimitive(executor, step, record.id, driver)
       if (outcome === 'pending') { effect.status = 'pending-review'; awaiting = true; await save(); continue }
       effect.status = 'applied'; await save()
     }
@@ -378,7 +380,7 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
     }
     record.error = error instanceof Error ? error.message : String(error)
     try { await driver.save(discardTransactionWrites(driver.get(), record.id, driver.now())) } catch { /* the pending writes stay visible as open submissions */ }
-    // every native's writes were pending submissions, discarded above; what a native did outside the graph is its own to compensate
+    // every primitive's writes were pending submissions, discarded above; what a primitive did outside the graph is its own to compensate
     for (const effect of [...record.effects].reverse()) effect.status = 'reverted'
     for (const step of [...opened].reverse()) {
       try { await driver.abort?.(fresh(step), record.id) }

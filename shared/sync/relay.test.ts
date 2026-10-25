@@ -8,6 +8,9 @@ import { syncWith } from './test-helpers'
 
 const HUB: Scope = ['hub']
 const queueOf = (r: Replica, peer: string): Scope => [...membershipPathAt(r, HUB, peer)!, RELAY_QUEUE_ID]
+/** The rows at `scope`: one of the `ids` the test made by its id, any other (a field row of the node) by its value. */
+const rowsAt = (r: Replica, scope: Scope, ids: string[] = []): string[] =>
+  view(r, scope)!.tasks.map(t => ids.includes(t.id) ? t.id : t.title)
 
 /** A relay context: the hub knows the phone and the desktop; `handler` offers relay there. */
 function relayNode(peerId: string, handler: 'fos' | 'self'): Replica {
@@ -35,8 +38,8 @@ test('a message from a peer moves into the queue of the recipient the relay know
   expect(rowsLeftAt(server.store, hub).some(row => row.id === 'm1' && row.from === 'phone')).toBe(true)
 
   server = relayAfterSubmission(server, [...HUB, 'm1', 't1'], 'fos', 20)
-  expect(view(server, queueOf(server, 'desktop'))!.tasks.map(t => t.id)).toEqual(['m1'])
-  expect(view(server, [...queueOf(server, 'desktop'), 'm1'])!.tasks.map(t => t.title)).toEqual(['Summarize the repository'])
+  expect(rowsAt(server, queueOf(server, 'desktop'), ['m1'])).toEqual(['', 'desktop', 'm1'])
+  expect(view(server, [...queueOf(server, 'desktop'), 'm1'])!.tasks.map(t => t.title)).toEqual(['', 'desktop', 'Summarize the repository'])
   // taken out of the submission: nothing is left of it, and main never had it
   expect(readProposals(server.store, content(server.store, resolveScope(server.store, headCid(server), HUB)!)).filter(p => p.status === 'open')).toEqual([])
   expect(view(server, HUB)!.tasks.some(t => t.id === 'm1')).toBe(false)
@@ -64,7 +67,7 @@ test('the queue rows reach the recipient by ordinary sync, and its ack clears th
   const delivered = relayInbox(desktop, queueOf(desktop, 'desktop'))
   expect(delivered).toHaveLength(1)
   expect(delivered[0]).toMatchObject({ id: 'm4', to: 'desktop' })
-  expect(delivered[0]!.rows.map(row => row.title)).toEqual(['Summarize the repository'])
+  expect(delivered[0]!.rows.map(row => row.title)).toEqual(['', 'desktop', 'Summarize the repository'])
   // nobody else's queue is here, and the phone's entry is just its grants
   expect(relayQueues(desktop, 'phone')).toEqual([])
 
@@ -72,11 +75,11 @@ test('the queue rows reach the recipient by ordinary sync, and its ack clears th
   desktop = addRelayAck(desktop, queueOf(desktop, 'desktop'), 'm4', 60)
   expect(relayInbox(desktop, queueOf(desktop, 'desktop'))).toEqual([])
   desktop = syncWith(desktop, server, { now: 61 })
-  expect(view(server, queueOf(server, 'desktop'))!.tasks.map(t => t.id)).toEqual(['m4', relayAckId('m4')])
+  expect(rowsAt(server, queueOf(server, 'desktop'), ['m4', relayAckId('m4')])).toEqual(['', 'desktop', 'm4', relayAckId('m4')])
   server = relayAfterSubmission(server, [...queueOf(server, 'desktop'), relayAckId('m4')], 'fos', 62)
-  expect(view(server, queueOf(server, 'desktop'))!.tasks).toEqual([])
+  expect(rowsAt(server, queueOf(server, 'desktop'))).toEqual(['', 'desktop'])
   desktop = syncWith(desktop, server, { now: 63 })
-  expect(view(desktop, queueOf(desktop, 'desktop'))!.tasks).toEqual([])
+  expect(rowsAt(desktop, queueOf(desktop, 'desktop'))).toEqual(['', 'desktop'])
 })
 
 test('an invited recipient receives its own queue through its masked view of the relay node', () => {
@@ -97,7 +100,7 @@ test('an invited recipient acknowledges with its submission at the relay node', 
   let desktop = addRelayAck(createReplica('desktop'), [], 'm5', 30)
   desktop = syncWith(desktop, server, { invited: HUB })
   server = relayAfterSubmission(server, [...HUB, relayAckId('m5')], 'fos', 40)
-  expect(view(server, queueOf(server, 'desktop'))!.tasks).toEqual([])
+  expect(rowsAt(server, queueOf(server, 'desktop'))).toEqual(['', 'desktop'])
   expect(readProposals(server.store, content(server.store, resolveScope(server.store, headCid(server), HUB)!)).filter(p => p.status === 'open')).toEqual([])
 })
 
@@ -106,7 +109,7 @@ test('any device runs the same relay through its own handler offer', () => {
   let device = leaveInMain(relayNode('laptop', 'self'), 'desktop', 'm6')
   expect(headCid(relayAt(device, HUB, 'fos', 20))).toBe(headCid(device))
   device = relayAt(device, HUB, 'laptop', 20)
-  expect(view(device, queueOf(device, 'desktop'))!.tasks.map(t => t.id)).toEqual(['m6'])
+  expect(rowsAt(device, queueOf(device, 'desktop'), ['m6'])).toEqual(['', 'desktop', 'm6'])
   expect(view(device, HUB)!.tasks.some(t => t.id === 'm6')).toBe(false)
   const server = relayAt(leaveInMain(relayNode('user:alice', 'fos'), 'desktop', 'm6'), HUB, 'fos', 20)
   expect(view(device, [...queueOf(device, 'desktop'), 'm6'])!.tasks.map(t => t.title)).toEqual(view(server, [...queueOf(server, 'desktop'), 'm6'])!.tasks.map(t => t.title))

@@ -10,11 +10,11 @@
  * The embedding function is injected so tests run without Vertex.
  */
 
+import { isFieldRow, textOf } from '@fosforescent/shared/sync/fields'
 import { REF_TYPE } from '@fosforescent/shared/sync/index'
 import { createHash } from 'node:crypto'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { formTitle } from '@fosforescent/shared/sync/forms'
-import { createReplica, isRowOfType, marketGrantsOf, marketplaceOffers, withMainBranchPolicy, content, identityCid, rootTargetCid, isRowEdge, rowTypeIdOf, valueContent, isShippedLibrary, type Scope } from '@fosforescent/shared/sync/index'
+import { createReplica, isRowOfType, rowText, rowTypeOf, marketGrantsOf, marketplaceOffers, withMainBranchPolicy, content, identityCid, rootTargetCid, isRowEdge, rowTypeIdOf, valueContent, isShippedLibrary, type Scope } from '@fosforescent/shared/sync/index'
 
 export type Embed = (texts: string[]) => Promise<number[][]>
 
@@ -40,20 +40,21 @@ export function collectRows(store: FosStore, limit = 5000): IndexedRow[] {
       const id = identityCid(store, edge)
       const identity = content(store, id)
       const value = valueContent(store, id)
-      const aliasId = identity.data.alias?.id
+      // a field's id is its field's, the same in every row: it is indexed as that row's field
+      const own = identity.data.alias?.id, aliasId = own && isFieldRow(store, edge) ? `${path.at(-1) ?? ''}:${own}` : own
       if (!aliasId) continue
       // listed where the market peer is a member with `read`; a member entry below overrides what its ancestors grant
       const grants = marketGrantsOf(store, id)
       const market = grants ? grants.includes('read') : inherited
-      const title = formTitle(store, value).trim()
+      const title = rowText(store, id, rowTypeOf(store, edge)).trim()
       // a reference (its row type) stands for a row indexed where it lives
       if (title && !isRowOfType(store, edge, REF_TYPE)) out.push({ aliasId, type, title: title.split('\n')[0]!.slice(0, 200), path, market, text: title.slice(0, 600) })
-      walk(id, [...path, aliasId], market)
+      walk(id, [...path, own!], market)
     }
   }
   withMainBranchPolicy(store, () => walk(rootTargetCid(store), [], false))
   for (const offer of marketplaceOffers(createReplica('market-index', store))) {
-    const text = `${offer.label} ${valueContent(store, offer.cid).data.description?.content ?? ''}`.trim().slice(0, 600)
+    const text = `${offer.label} ${textOf(store, offer.cid) ?? ''}`.trim().slice(0, 600)
     out.push({ aliasId: offer.id, type: 'capability', title: offer.label, path: offer.path, market: true, text })
   }
   return out

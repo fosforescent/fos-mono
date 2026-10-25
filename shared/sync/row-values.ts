@@ -9,7 +9,6 @@ import type { FosPathElem } from '../types'
 import { commitRoot, content, identityCid, isRowEdge, put, resolveScope, updateAtScope, valueContent, type Scope } from './graph'
 import { headCid, type Replica } from './replica'
 import { constructNodeValue, readGraphValue } from './node-values'
-import { plainEdge } from './patterns'
 
 export type LeftMatch = string | ((store: FosStore, left: string) => boolean)
 const matches = (store: FosStore, match: LeftMatch, left: string) => typeof match === 'string' ? left === match : match(store, left)
@@ -17,7 +16,7 @@ const matches = (store: FosStore, match: LeftMatch, left: string) => typeof matc
 /** The row of the node `cid` whose left node is (or matches) `left`. */
 export function rowWithLeft(store: FosStore, cid: string, left: LeftMatch): { edge: FosPathElem; ref: string; alias: string } | null {
   for (const raw of valueContent(store, cid).children) {
-    const edge = plainEdge(store, raw)
+    const edge = raw
     if (!isRowEdge(store, edge) || !matches(store, left, edge[0])) continue
     const ref = identityCid(store, edge), alias = content(store, ref).data.alias?.id
     if (alias) return { edge, ref, alias }
@@ -28,14 +27,14 @@ export function rowWithLeft(store: FosStore, cid: string, left: LeftMatch): { ed
 /** Every row of the node `cid` whose left matches. */
 export function rowsWithLeft(store: FosStore, cid: string, left: LeftMatch): Array<{ edge: FosPathElem; ref: string; alias: string }> {
   return valueContent(store, cid).children.flatMap(raw => {
-    const edge = plainEdge(store, raw)
+    const edge = raw
     if (!isRowEdge(store, edge) || !matches(store, left, edge[0])) return []
     const ref = identityCid(store, edge), alias = content(store, ref).data.alias?.id
     return alias ? [{ edge, ref, alias }] : []
   })
 }
 
-/** The value the row with `left` at `path` holds, read as a native value. */
+/** The value the row with `left` at `path` holds, read as a host value. */
 export function readRowValue<T>(r: Replica, path: Scope, left: LeftMatch): T | null {
   const cid = resolveScope(r.store, headCid(r), path)
   const row = cid ? rowWithLeft(r.store, cid, left) : null

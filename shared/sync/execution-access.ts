@@ -1,5 +1,6 @@
+import { textValue } from './fields'
 import { nodeAuthorityAt } from './node-context'
-import { nodeLinkMaskAt, type NodeAuthority } from './node-provider'
+import { nodeLinkMaskAt, type NodeAuthority, TEXT_MASK } from './node-provider'
 /** Owner-authorized execution interactions. Transport must bind identity and scope. */
 import { executionInputs } from './sharing'
 import { evaluationRecord, evaluationSteps } from './evaluation'
@@ -12,12 +13,12 @@ import { resolveRefExpression, type RefAccess } from './ref-paths'
 
 export function executionSnapshot(r: Replica, path: Scope, authority?: NodeAuthority) {
   if (authority) nodeAuthorityAt(r, path, authority)
-  const allowed = (at: Scope, field = 'description') => {
+  const allowed = (at: Scope, field = TEXT_MASK) => {
     if (!authority) return true
     try { nodeAuthorityAt(r, at, authority); const mask = nodeLinkMaskAt(r, at, authority.peerId); return !mask.fields || mask.fields.includes(field) } catch { return false }
   }
   const compilation = compileRow(r, path, { canRead: (store, _cid, at) => (!authority || store === r.store) && allowed(at) })
-  return { revision: headCid(r), status: evaluationRecord(r, path)?.status ?? 'idle', compilation, canRun: compilation.canRun, inputs: executionInputs(r, path).filter(f => allowed([...path, ...f.path!], f.kind === 'text' || f.kind === 'ref' ? 'description' : f.direction === 'consume' ? 'allocation' : 'requirement')), nodes: evaluationSteps(r, path).filter(s => !s.row?.construction && allowed(s.path)).map(s => ({ path: s.path.slice(path.length), text: s.row?.title ?? '', type: s.row?.type ?? '' })) }
+  return { revision: headCid(r), status: evaluationRecord(r, path)?.status ?? 'idle', compilation, canRun: compilation.canRun, inputs: executionInputs(r, path).filter(f => allowed([...path, ...f.path!], f.kind === 'text' || f.kind === 'ref' ? TEXT_MASK : f.direction === 'consume' ? 'allocation' : 'requirement')), nodes: evaluationSteps(r, path).filter(s => !s.row?.construction && allowed(s.path)).map(s => ({ path: s.path.slice(path.length), text: s.row?.title ?? '', type: s.row?.type ?? '' })) }
 }
 export function executionInput(r: Replica, path: Scope, body: any, peer: string, now: number, access: RefAccess = {}): Replica {
   if (body.revision !== headCid(r)) throw new Error('Evaluation changed. Read it again before submitting.')
@@ -37,7 +38,7 @@ export function executionInput(r: Replica, path: Scope, body: any, peer: string,
   }
   if (field.kind === 'text') {
     if (typeof value !== 'string' || value.length > 8000) throw new Error('Text must be at most 8000 characters.')
-    const proposal = proposeRefAt(r, target, put(r.store, { data: { description: { content: value } }, children: [] }), peer, now)
+    const proposal = proposeRefAt(r, target, textValue(r.store, value), peer, now)
     return acceptSubmission(proposal.replica, target, proposal.proposalCid, r.meta.peerId, now).replica
   }
   if (field.kind === 'confirmation' || field.kind === 'choice') {

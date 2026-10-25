@@ -11,7 +11,6 @@
     "prebuild": "node ../scripts/compile-library.cjs"
   },
   "dependencies": {
-    "@n1ru4l/json-patch-plus": "^0.2.0",
     "js-sha3": "^0.9.3",
     "tslib": "^2.8.1",
     "uuid": "^10.0.0"

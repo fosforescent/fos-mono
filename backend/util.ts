@@ -1,19 +1,12 @@
 import { rememberLoadedRoot, saveRootVersion } from './sync/storeVersion'
 import crypto from "crypto";
-import {
-  AppState,
-  FosContextData,
-  FosNodeContent,
-  FosNodesData,
-  TrellisSerializedData,
-
-} from "@fosforescent/shared/types";
+import type { FosContextData, FosNodeContent, FosNodesData } from "@fosforescent/shared/types";
 
 
 
 import { UserModel, FosNodeModel, PrismaClient } from "@prisma/client";
 
-import { FosStore } from "@fosforescent/shared/dag-implementation/store";
+import { putNode, storeOf, type FosStore } from "@fosforescent/shared/dag-implementation/store";
 import { assertCurrentCid, verifyCid } from "@fosforescent/shared/dag-implementation/cid";
 import { asAccountStore } from "./sync/deviceRoot";
 import { JsonObject, UserArgs } from "@prisma/client/runtime/library";
@@ -21,9 +14,12 @@ import { JsonObject, UserArgs } from "@prisma/client/runtime/library";
 import { Prisma } from '@prisma/client';
 import { generateLinkToken } from "./email/email";
 import { hashPassword } from "./auth/register";
-import { defaultTrellisData } from "@fosforescent/shared/defaults";
-import { validateNodeData, validateTrellisData } from "@fosforescent/shared/utils";
-import { get } from "http";
+
+/** A stored node's content; the cid check happens where it is put in a store. */
+export const validateNodeData = (nodeContent: unknown): FosNodeContent => {
+  if (typeof nodeContent !== "object" || nodeContent === null) throw new Error("Invalid data")
+  return nodeContent as FosNodeContent
+}
 
 
 
@@ -51,13 +47,7 @@ export const checkDataFormat = (data: FosContextData) => {
 };
 
 
-export const validateTrellisDataToDB = (data: TrellisSerializedData): JsonObject => {
-  return data as unknown as JsonObject
-}
 export const validateNodeDataToDB = (data: FosNodeContent): JsonObject => {
-  return data as unknown as JsonObject
-}
-export const validateProfileDataToDB = (data: AppState["info"]["profile"]): JsonObject => {
   return data as unknown as JsonObject
 }
 
@@ -67,122 +57,27 @@ export const dbToStore = async (
   prisma: PrismaClient,
   user: UserWithNode,
 ): Promise<FosStore> => {
-
-
-  const trellisData: TrellisSerializedData = validateTrellisData(user.data)
-
-
-  const nodesToAdd = await prisma.fosNodeModel.findMany({
-    where: {
-      OR: [
-        {
-          FosNodeUserAccessLink: {
-            some: {
-              userId: user.id
-            }
-          }
-        },
-        {
-          FosNodeUserAccessLink: {
-            none: {}
-          }
-        }
-      ]
-    }
-  })
-
-  // one pass, mutating a single object: the former `{ ...acc }` reduce copied the table on every node (quadratic)
+  const access = { OR: [{ FosNodeUserAccessLink: { some: { userId: user.id } } }, { FosNodeUserAccessLink: { none: {} } }] }
   const table: FosNodesData = {}
-  for (const node of nodesToAdd) {
+  const add = (node: FosNodeModel) => {
     const data = validateNodeData(node.data)
     // rows of another data version are not migrated: the database has to be reset
     assertCurrentCid(node.cid)
-    if (!verifyCid(node.cid, data)) {
-      throw new Error("Hashes don't match")
-    }
+    if (!verifyCid(node.cid, data)) throw new Error("Hashes don't match")
     table[node.cid] = data
   }
-
-  const ctx: FosContextData = {
-    nodes: table,
-    route: [],
-    rootNodeId: user.fosNode.cid
+  for (const node of await prisma.fosNodeModel.findMany({ where: access })) add(node)
+  // The first query loads every node linked to the user; the walk (one query per node) runs only when the root is not among them.
+  const visit = async (node: FosNodeModel): Promise<void> => {
+    const ids = [...new Set(validateNodeData(node.data).children.flat())].filter(cid => !table[cid])
+    if (ids.length) await Promise.all((await prisma.fosNodeModel.findMany({ where: { cid: { in: ids }, ...access } })).map(visit))
+    if (!table[node.cid]) add(node)
   }
-
-
-
-  const newStore = new FosStore({
-    fosCtxData: {
-      fosData: ctx,
-      trellisData: trellisData
-    }
-  })
-
-
-
-
-  const getChildNodesHelper = async (node: FosNodeModel) => {
-
-    const nodeData: FosNodeContent = validateNodeData(node.data)
-    const allIds = new Set((nodeData.children || []).flat())
-
-    if (allIds.size > 0) {
-
-      const nodesToAdd = await prisma.fosNodeModel.findMany({
-        where: {
-          cid: {
-            in: [...allIds]
-          },
-          OR: [
-            {
-              FosNodeUserAccessLink: {
-                some: {
-                  userId: user.id
-                }
-              }
-            },
-            {
-              FosNodeUserAccessLink: {
-                none: {}
-              }
-            }
-          ]
-        }
-      })
-
-      const childrenPromises: Promise<void>[] = nodesToAdd.map(n => {
-        const promise: Promise<void> = getChildNodesHelper(n)
-        return promise
-      })
-      await Promise.all(childrenPromises)
-
-    }
-    if (!newStore.table.has(node.cid)) {
-      assertCurrentCid(node.cid)
-      newStore.create(nodeData)
-    }
-  }
-
-
-
-  // The first query already loaded every node linked to the user; the recursive
-  // walk (one query per node) is only needed when the root is not among them.
-  if (!newStore.table.has(user.fosNode.cid)) {
-    await getChildNodesHelper(user.fosNode)
-  }
-
-  const rootContent = validateNodeData(user.fosNode.data)
-  const rootNodeId = newStore.table.has(user.fosNode.cid)
-    ? user.fosNode.cid
-    : newStore.create(rootContent).cid
-
-  newStore.rootNodeId = rootNodeId
-  newStore.trellisData = trellisData
-
-  rememberLoadedRoot(newStore, user.fosNodeId)
+  if (!table[user.fosNode.cid]) await visit(user.fosNode)
+  const store = storeOf(table, user.fosNode.cid)
+  rememberLoadedRoot(store, user.fosNodeId)
   // an account's store is not a device root: its rows resolve through this server's own device root
-  return asAccountStore(newStore)
-
+  return asAccountStore(store)
 };
 
 export const ensureNodeInStore = async (
@@ -217,8 +112,7 @@ export const ensureNodeInStore = async (
   }
 
   if (!store.table.has(nodeCid)) {
-    const insertedNode = store.create(nodeContent)
-    if (insertedNode.getId() !== nodeCid) {
+    if (putNode(store, nodeContent) !== nodeCid) {
       throw new Error(`Hash mismatch when inserting node ${nodeCid}`)
     }
   }
@@ -257,14 +151,6 @@ export const storeToDb = async (
     }
   })
 
-  const shouldLinkNodeToUser = (node: FosNodeContent) => {
-    const scope = node.data.comment?.scope
-    if (scope === "global") {
-      return false
-    }
-    return true
-  }
-
   const nodesToCreate: { cid: string, data: JsonObject }[] = []
   const linksToEnsure: string[] = []
 
@@ -281,9 +167,7 @@ export const storeToDb = async (
       })
     }
 
-    if (shouldLinkNodeToUser(node)) {
-      linksToEnsure.push(id)
-    }
+    linksToEnsure.push(id)
   })
 
   if (nodesToCreate.length > 0) {
@@ -319,7 +203,7 @@ export const storeToDb = async (
   await saveRootVersion(store, user.fosNodeId, async (expected, next) => {
     const saved = await prisma.userModel.updateMany({
       where: { id: user.id, fosNodeId: expected },
-      data: { data: validateTrellisDataToDB(store.trellisData), fosNodeId: next }
+      data: { fosNodeId: next }
     })
     return saved.count === 1
   })
@@ -405,7 +289,6 @@ export const createSeedUser = async (prisma: PrismaClient, store: FosStore, user
       api_calls_used: 0,
       api_calls_total: 0,
       approved: true,
-      data: validateTrellisDataToDB(defaultTrellisData),
       fosNodeId: store.rootNodeId,
       ...userData,
       user_name: username,

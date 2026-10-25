@@ -23,8 +23,7 @@ import { hashContent } from '../dag-implementation/cid'
 import type { FosStore } from '../dag-implementation/store'
 import type { FosNodeContent, FosPathElem } from '../types'
 import { content, identityCid, isLibraryType, isRowEdge, newId, libraryTypeAt, memberEdgesOf, memberPeerOf, membershipPath, put, refNodeContent, resolveScope, valueCidOf, valueContent, type Scope } from './graph'
-import { constructForm, formRecord, type FormInput } from './forms'
-import { plainEdge } from './patterns'
+import { constructRow, fieldValues, rowRecord } from './fields'
 import { addRow, bindUserAt, deleteTask, headCid, homePath, view, writeGraphNode, type Replica } from './replica'
 import { PLAIN_TYPE } from './library-types'
 import { addRequirement } from './arguments'
@@ -57,37 +56,37 @@ export function unverifiedUser(username: string): UserRecord {
   return { account: '', username, name: username, publicKey: '', verification: null }
 }
 
-/** A user object's fields, read through its type's form. */
+/** A user object's fields, read through its type's fields. */
 export function readUser(store: FosStore, typeCid: string, node: FosNodeContent): UserRecord | null {
-  const r = formRecord(store, typeCid, node) as Record<string, FormInput> | undefined
-  if (!r || typeof r !== 'object' || Array.isArray(r) || typeof r.username !== 'string' || !r.username) return null
-  const v = r.verification as Record<string, FormInput> | undefined
-  const verification = v && typeof v === 'object' && !Array.isArray(v) && typeof v.attestation === 'string' && v.attestation
-    ? { by: String(v.by ?? ''), method: String(v.method ?? ''), issuedAt: Number(v.issuedAt ?? 0), attestation: v.attestation }
+  const r = rowRecord(store, typeCid, node)
+  if (typeof r.username !== 'string' || !r.username) return null
+  const verification = typeof r.attestation === 'string' && r.attestation
+    ? { by: String(r.verifiedBy ?? ''), method: String(r.verifyMethod ?? ''), issuedAt: Number(r.issuedAt ?? 0), attestation: r.attestation }
     : null
-  return { account: String(r.account ?? ''), username: r.username, name: String(r.name || r.username), publicKey: String(r.publicKey ?? ''), verification }
+  return { account: String(r.account ?? ''), username: r.username, name: String(r.displayName || r.username), publicKey: String(r.publicKey ?? ''), verification }
 }
 
-function userInput(user: UserRecord): FormInput {
-  return { account: user.account, username: user.username, name: user.name, publicKey: user.publicKey, verification: user.verification ?? { by: '', method: '', issuedAt: 0, attestation: '' } }
+function userInput(user: UserRecord): Record<string, string | number> {
+  const v = user.verification
+  return { account: user.account, username: user.username, displayName: user.name, publicKey: user.publicKey, ...(v ? { verifiedBy: v.by, verifyMethod: v.method, issuedAt: v.issuedAt, attestation: v.attestation } : {}) }
 }
 
 /** A user object's identity: the content address of the username, so devices that keep the same person make the same row. */
-export const userObjectId = (user: Pick<UserRecord, 'username'>): string => hashContent({ data: { description: { content: user.username.toLowerCase() } }, children: [] })
+export const userObjectId = (user: Pick<UserRecord, 'username'>): string => hashContent({ data: { name: { content: user.username.toLowerCase() } }, children: [] })
 
 /**
  * The user object node: the same record makes the same node (and cid) everywhere. Like every form field's value it
  * carries its field name (`user`), which is what node exchange keeps of a field.
  */
 export function userObjectContent(store: FosStore, typeCid: string, user: UserRecord, id = userObjectId(user)): FosNodeContent {
-  const node = constructForm(store, typeCid, id, userInput(user), user.verification?.issuedAt ?? 0)
+  const node = constructRow(store, typeCid, id, fieldValues(store, typeCid, userInput(user)), user.verification?.issuedAt ?? 0)
   return { ...node, data: { ...node.data, name: { content: USER_FIELD } } }
 }
 
 /** The edge of `node` that is its `user` field: the field named `user` whose type is a user type (any version). */
 export function userFieldEdge(store: FosStore, node: FosNodeContent): FosPathElem | undefined {
   return node.children.find(edge => {
-    const e = plainEdge(store, edge)
+    const e = edge
     return isUserType(store, e[0]) && valueContent(store, identityCid(store, e)).data.name?.content === USER_FIELD
   })
 }
@@ -96,7 +95,7 @@ export function userFieldEdge(store: FosStore, node: FosNodeContent): FosPathEle
 export function userOf(store: FosStore, node: FosNodeContent): UserRecord | null {
   const edge = userFieldEdge(store, node)
   if (!edge) return null
-  const e = plainEdge(store, edge)
+  const e = edge
   return readUser(store, e[0], valueContent(store, identityCid(store, e)))
 }
 
@@ -105,9 +104,9 @@ export function withUserField(store: FosStore, node: FosNodeContent, user: UserR
   const existing = userFieldEdge(store, node)
   if (!user) return existing ? { ...node, children: node.children.filter(e => e !== existing) } : node
   const value = put(store, userObjectContent(store, typeCid, user))
-  if (existing && plainEdge(store, existing)[0] === typeCid && valueCidOf(store, identityCid(store, plainEdge(store, existing))) === value) return node
+  if (existing && existing[0] === typeCid && valueCidOf(store, identityCid(store, existing)) === value) return node
   // a replaced field keeps its identity; a new one is the row's user field
-  const id = (existing && content(store, identityCid(store, plainEdge(store, existing))).data.alias?.id) || `${node.data.alias?.id ?? 'row'}/field/${USER_FIELD}`
+  const id = (existing && content(store, identityCid(store, existing)).data.alias?.id) || `${node.data.alias?.id ?? 'row'}/field/${USER_FIELD}`
   const ref = put(store, refNodeContent(store, { alias: { id }, name: { content: USER_FIELD } }, value))
   const edge: FosPathElem = [typeCid, ref]
   return { ...node, children: existing ? node.children.map(e => e === existing ? edge : e) : [...node.children, edge] }
@@ -147,7 +146,7 @@ export function verifyUser(user: UserRecord, trust: UserTrust): { ok: true; by: 
 /** The People row in Home (the row of the People type), if there is one. */
 export function usersPath(r: Replica): Scope | null {
   const home = homePath(r), cid = resolveScope(r.store, headCid(r), home)
-  const row = cid ? valueContent(r.store, cid).children.map(edge => plainEdge(r.store, edge)).find(edge => isLibraryType(r.store, edge[0], PEOPLE_TYPE)) : undefined
+  const row = cid ? valueContent(r.store, cid).children.map(edge => edge).find(edge => isLibraryType(r.store, edge[0], PEOPLE_TYPE)) : undefined
   const id = row ? content(r.store, identityCid(r.store, row)).data.alias?.id : undefined
   return id ? [...home, id] : null
 }
@@ -164,7 +163,7 @@ function cachedUserRow(r: Replica, username: string): { id: string; user: UserRe
   if (!cid) return null
   const wanted = username.toLowerCase()
   for (const edge of valueContent(r.store, cid).children) {
-    const e = plainEdge(r.store, edge)
+    const e = edge
     if (!isUserType(r.store, e[0])) continue
     const node = valueContent(r.store, identityCid(r.store, e)), user = readUser(r.store, e[0], node)
     const id = content(r.store, identityCid(r.store, e)).data.alias?.id
@@ -220,7 +219,7 @@ export const peerKeyId = (peerId: string): string => userObjectId({ username: pe
 function keyRowAt(r: Replica, entry: Scope, peerId: string): string | null {
   const cid = resolveScope(r.store, headCid(r), entry)
   for (const edge of cid ? content(r.store, cid).children : []) {
-    const plain = plainEdge(r.store, edge)
+    const plain = edge
     if (!isRowEdge(r.store, plain) || !isUserType(r.store, plain[0])) continue
     const user = readUser(r.store, plain[0], valueContent(r.store, identityCid(r.store, plain)))
     if (user?.username === peerId) return content(r.store, identityCid(r.store, plain)).data.alias?.id ?? null
@@ -252,7 +251,7 @@ export function publishedKeys(r: Replica): Record<string, string> {
     const peerId = memberPeerOf(r.store, member)
     // a key row is a row of the user type (the edge's left node) whose user is the entry's own peer; nothing else is read
     for (const edge of content(r.store, member[1]).children) {
-      const plain = plainEdge(r.store, edge)
+      const plain = edge
       if (!isUserType(r.store, plain[0])) continue
       const peer = readUser(r.store, plain[0], valueContent(r.store, identityCid(r.store, plain)))
       if (peer?.username === peerId && peer.publicKey) out[peerId] = peer.publicKey

@@ -11,7 +11,7 @@ const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTextAreaElement','Node','Option','navigator','localStorage','sessionStorage','location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 try {
   buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), external: ['mermaid','katex','katex/*'] })
-  const { App, mountUi, createMemoryStorage, view, SERVER_TRANSPORT_CAPABILITIES, libAt, nativeRef, publishNativeRef } = require(path.join(dir, 'test.cjs'))
+  const { App, mountUi, createMemoryStorage, view, SERVER_TRANSPORT_CAPABILITIES, libAt, primitiveRef, publishPrimitive } = require(path.join(dir, 'test.cjs'))
   const app = new App({ baseUrl: 'http://localhost', autoLogin: null, storage: createMemoryStorage() }); app.scheduleSync = () => {}
   assert(app.deviceCapabilities().includes('provideNode'), 'device startup publishes its registered node provider')
   mountUi(document.getElementById('app'), app)
@@ -49,19 +49,17 @@ try {
   assert(!palette('Fos server').includes('Ask fos') && !serverTriggers().includes('Cron trigger'))
   app.recordServerOffers([...SERVER_TRANSPORT_CAPABILITIES, 'llm', 'search', 'cron'])
   assert(!serverTriggers().includes('Cron trigger'), 'a name in a transport report is not an observer registration')
-  const cron = nativeRef(app.state.replica.store, 'fos', { id: 'server:cron', label: 'Cron', type: store => libAt(store).capabilities.cron })
-  app.set({ replica: publishNativeRef(app.state.replica, [], 'fos', cron, 10) })
+  const cron = primitiveRef(app.state.replica.store, 'fos', { id: 'server:cron', label: 'Cron', capability: 'cron' })
+  app.set({ replica: publishPrimitive(app.state.replica, [], 'fos', cron, 10) })
   assert(app.handlerOffers().some(o => o.peerId === 'fos' && o.capability === 'llm'), 'reported offers are recorded on the fos member')
   assert(!app.handlerOffers().some(o => o.peerId === 'fos' && o.capability === 'market'), 'unreported services stay absent')
   assert(palette('Fos server').includes('Ask fos') && serverTriggers().includes('Cron trigger'), 'the palette follows the advertised offers')
   app.recordServerOffers([...SERVER_TRANSPORT_CAPABILITIES, 'search'])
   assert(!app.handlerOffers().some(o => o.peerId === 'fos' && o.capability === 'llm'), 'a narrower report withdraws the offer')
-  const { put } = require(path.join(dir, 'test.cjs'))
-  const paint = nativeRef(app.state.replica.store, app.state.replica.meta.peerId, { id: 'extension:paint', label: 'Paint', type: store => put(store, {
-    data: { capabilityDefinition: { name: 'extension:paint', label: 'Paint', syntax: ['Paint'] } },
-    children: [[put(store, { data: { description: { content: 'name' } }, children: [] }), put(store, { data: { scalar: { type: 'text', value: 'paint' } }, children: [] })]]
-  }) })
-  app.set({ replica: publishNativeRef(app.state.replica, [], app.state.replica.meta.peerId, paint, 10) })
+  const { put, tagNode } = require(path.join(dir, 'test.cjs'))
+  // a capability no library assigns: its own tag names it
+  const paint = primitiveRef(app.state.replica.store, app.state.replica.meta.peerId, { id: 'extension:paint', label: 'Paint', capability: store => put(store, { data: {}, children: [[tagNode(store, 'extension:paint'), put(store, { data: {}, children: [] })]] }) })
+  app.set({ replica: publishPrimitive(app.state.replica, [], app.state.replica.meta.peerId, paint, 10) })
   app.goTo(parent)
   const custom = app.handlerOffers().find(offer => offer.cid === paint)
   assert(custom?.enabled, 'a device registers a capability that is absent from the standard library')
@@ -82,5 +80,5 @@ try {
   commitRoot(r.store, updateAtScope(r.store, headCid(r), [], node => ({ ...node, children: node.children.map(([left, right]) => [right === binding.cid ? projected : left, right]) })), 13)
   assert(app.libraryConstructors().some(item => item.label === 'Paid task'))
   assert(!app.libraryConstructors().some(item => item.label === 'Manual handlers'), 'a shared ref envelope must not turn a handler group into an executable template')
-  console.log('PASS: template publication, scoped ref discovery, instantiation, peer toggles, and native ref instructions')
+  console.log('PASS: template publication, scoped ref discovery, instantiation, peer toggles, and primitive ref instructions')
 } finally { rmSync(dir, { recursive: true, force: true }); dom.window.close() }

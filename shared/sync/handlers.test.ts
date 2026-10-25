@@ -1,5 +1,6 @@
+import { primitive } from './primitives'
 import { installTestHandler } from './test-helpers'
-import { addMemberAt, addTask, capabilityPeers, libAt, contextBindings, createBranch, createReplica, discoverHandlers, headCid, put, refNodeContent, resolveBinding, selectBranch, setHandlerEnabledAt, setHandlerOffersAt, setMemberCapabilitiesAt, workHandler, view } from './index'
+import { addMemberAt, addTask, capabilityPeers, libAt, contextBindings, createBranch, createReplica, discoverHandlers, headCid, put, refNodeContent, resolveBinding, selectBranch, setHandlerEnabledAt, setHandlerOffersAt, setMemberCapabilitiesAt, workHandler, view, isLibraryType } from './index'
 import { TEMPLATE_TYPE } from './library-types'
 
 test('permissions do not become handlers; built-in offers use the same candidates as typed offers', () => {
@@ -53,7 +54,7 @@ test('published templates use ordinary instantiation and inherit per-peer toggle
   r = addTask(r, ['template'], 'Write tests', 2, 'tests')
   r = addTask(r, [], 'Project', 3, 'project')
   r = publishTemplate(r, [], ['template'], 'Build feature', 4)
-  const offer = discoverHandlers(r, ['project']).find(o => o.type === r.store.primitive.templateField.getId())!
+  const offer = discoverHandlers(r, ['project']).find(o => isLibraryType(r.store, o.type, TEMPLATE_TYPE))!
   expect(offer.label).toBe('Build feature')
   const source = refValueCid(r.store, content(r.store, offer.cid))!
   r = addTask(r, ['project'], 'Instance', 5, 'instance')

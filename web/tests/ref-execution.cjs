@@ -13,7 +13,7 @@ async function main() {
   const app = new c.App({ baseUrl: 'http://localhost', autoLogin: null, storage: c.createMemoryStorage() })
   app.scheduleSync = () => {}
   let r = c.addTask(app.state.replica, [c.HOME_ID], 'Work', 1, 'work')
-  const text = r.store.primitive.documentField.getId(), root = [c.HOME_ID, 'work']
+  const text = c.primitive(r.store, 'string'), root = [c.HOME_ID, 'work']
   const source = c.put(r.store, c.refNodeContent(r.store, { alias: { id: 'instruction-source' }, name: { content: 'source' } }, null, []))
   const instruction = c.put(r.store, { data: { description: { content: 'Custom instruction' } }, children: [[text, source]] })
   c.commitRoot(r.store, c.updateAtScope(r.store, c.headCid(r), [c.HOME_ID], node => ({ ...node, children: node.children.map(edge => c.content(r.store, edge[1]).data.alias?.id === 'work' ? [instruction, edge[1]] : edge) })), 2)

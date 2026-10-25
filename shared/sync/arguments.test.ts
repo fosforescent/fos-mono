@@ -1,18 +1,19 @@
-/** Requirements and allocations are one kind of row, inverses of each other; authority moves through the allocate native. */
+/** Requirements and allocations are one kind of row, inverses of each other; authority moves through the allocate primitive. */
+import { textOf, refTitle } from './index'
 import { addTask, createReplica, headCid, view, type Replica } from './replica'
 import { content, libAt, resolveScope, valueContent } from './graph'
-import { nativeRef, publishNativeRef, primitiveExecutors } from './native-refs'
+import { primitiveRef, publishPrimitive, primitiveExecutors } from './primitives'
 import { evaluateNode, evaluationSteps, type EvaluationDriver } from './evaluation'
-import { addAllocation, addBank, addRequirement, allocateNative, bindArgument, consumeAllocation, debitGrant, handleAt, issueGrant, ownerGrants, supplyRequirement } from './arguments'
+import { addAllocation, addBank, addRequirement, allocatePrimitive, bindArgument, consumeAllocation, debitGrant, handleAt, issueGrant, ownerGrants, supplyRequirement } from './arguments'
 import { transactionWrites } from './transactions'
 import { setTaskDone, addRow } from './replica'
 import { TASK_TYPE } from './library-types'
 import { TASK_DEMAND } from './test-helpers'
 
-/** A host's allocate handler: the shared native, published as a native ref like a device's fetch or solve. */
+/** A host's allocate handler: the shared primitive, published as a primitive ref like a device's fetch or solve. */
 function installAllocate(r: Replica, host: string, at: string[] = []): Replica {
-  const definition = { id: `${host}:allocate`, label: 'allocate', type: (store: Replica['store'], scope: string[]) => libAt(store, scope).capabilities.allocate! }
-  return publishNativeRef(r, at, host, nativeRef(r.store, host, definition, { ...definition, native: allocateNative }, at), 0)
+  const definition = { id: `${host}:allocate`, label: 'allocate', capability: (store: Replica['store'], scope: string[]) => libAt(store, scope).capabilities.allocate! }
+  return publishPrimitive(r, at, host, primitiveRef(r.store, host, definition, { ...definition, run: allocatePrimitive }, at), 0)
 }
 
 function fixture() {
@@ -23,7 +24,7 @@ function fixture() {
   let clock = 10
   const driver: EvaluationDriver = {
     get: () => r, save: next => { r = next }, now: () => ++clock, check: () => [],
-    executors: step => primitiveExecutors(r, step, 'owner').map(value => ({ native: value.native.native! }))
+    executors: step => primitiveExecutors(r, step, 'owner').map(value => ({ run: value.implementation.run!, primitive: 'test' }))
   }
   return { get: () => r, set: (next: Replica) => { r = next }, driver, amounts: () => ownerGrants(r, ['bank']).map(grant => grant.allocation.amount).sort((a, b) => a - b) }
 }
@@ -140,25 +141,26 @@ test('a task requirement is a value containing a done task; a confirmation is a 
   r = addRequirement(r, ['t'], 'book a table', 2, TASK_DEMAND, 'rt')
   r = addRequirement(r, ['t'], 'ok?', 3, { capability: 'confirmation' }, 'rc')
   r = addRequirement(r, ['t'], 'fast or cheap', 4, { capability: 'choice', options: ['fast', 'cheap'] }, 'rx')
-  expect(view(r, ['t'])!.tasks.map(row => [row.id, row.requirement?.satisfied, row.requirement?.summary])).toEqual([['rt', false, 'task'], ['rc', false, 'confirmation'], ['rx', false, 'choice (fast | cheap)']])
+  const requirementRows = (r: ReturnType<typeof createReplica>) => view(r, ['t'])!.tasks.filter(row => ['rt', 'rc', 'rx'].includes(row.id))
+  expect(requirementRows(r).map(row => [row.id, row.requirement?.satisfied, row.requirement?.summary])).toEqual([['rt', false, 'task'], ['rc', false, 'confirmation'], ['rx', false, 'choice (fast | cheap)']])
   expect(view(r, [])!.tasks.find(t => t.id === 't')!.blockedBy).toEqual(['task', 'confirmation', 'choice (fast | cheap)'])
   // the first row typed inside an open requirement starts the value it is bound to
   r = addRow(r, ['t', 'rt'], TASK_TYPE, 'call the restaurant', 5, { id: 'call' })
-  expect(view(r, ['t', 'rt'])!.tasks.map(row => row.title)).toEqual(['call the restaurant'])
-  expect(view(r, ['t'])!.tasks[0]!.requirement!.satisfied).toBe(false)
+  expect(view(r, ['t', 'rt'])!.tasks.filter(row => row.id === 'call').map(row => row.title)).toEqual(['call the restaurant'])
+  expect(view(r, ['t'])!.tasks.find(row => row.id === 'rt')!.requirement!.satisfied).toBe(false)
   r = setTaskDone(r, ['t', 'rt'], 'call', true, 6)
-  expect(view(r, ['t'])!.tasks[0]!.requirement!.satisfied).toBe(true)
-  expect(view(r, ['t'])!.tasks[0]!.title).toBe('book a table')
+  expect(view(r, ['t'])!.tasks.find(row => row.id === 'rt')!.requirement!.satisfied).toBe(true)
+  expect(view(r, ['t'])!.tasks.find(row => row.id === 'rt')!.title).toBe('book a table')
   // a peer's confirmation and a chosen option bind the holes directly
   r = supplyRequirement(r, ['t'], 'rc', { by: 'user:ada' }, 7)
   expect(() => supplyRequirement(r, ['t'], 'rx', { by: 'user:ada', choice: 5 }, 8)).toThrow(/declared options/)
   r = supplyRequirement(r, ['t'], 'rx', { by: 'user:ada', choice: 1 }, 8)
-  expect(view(r, ['t'])!.tasks.map(row => row.requirement!.satisfied)).toEqual([true, true, true])
+  expect(requirementRows(r).map(row => row.requirement!.satisfied)).toEqual([true, true, true])
   expect(view(r, [])!.tasks.find(t => t.id === 't')!.blockedBy).toBeUndefined()
   r = setTaskDone(r, [], 't', true, 9)
   expect(view(r, [])!.tasks.find(t => t.id === 't')!.done).toBe(true)
   // the bound value stays the row's value; the pattern on its left is what was asked
   const cid = resolveScope(r.store, headCid(r), ['t', 'rx'])!
-  expect(valueContent(r.store, cid).data.description?.content).toBe('cheap')
-  expect(content(r.store, cid).data.description?.content).toBe('fast or cheap')
+  expect(textOf(r.store, cid)).toBe('cheap')
+  expect(refTitle(r.store, content(r.store, cid))).toBe('fast or cheap')
 })

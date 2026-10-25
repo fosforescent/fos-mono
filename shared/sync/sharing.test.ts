@@ -1,12 +1,13 @@
+import { primitive } from './primitives'
 import { declareTestCapability } from './test-helpers'
 import { createHash } from 'node:crypto'
 import { addMemberAt, ensureHomeContext, setMemberCapabilitiesAt, addConstructedRow, addRow, applyProposalAt, createReplica, headCid, view } from './replica'
 import { content, put, readProposals, resolveScope, rowTypeAt, valueContent } from './graph'
-import { formValueAt } from './forms'
+import { fieldRefId, rowRecord, textField } from './fields'
 import { markdownTitle, proposeVisitorValues, publish, publication, publishedUrl, writePageBase, unpublish, sharedProjection, SHARED_BODY_LIMIT, VISITOR_SUBMISSION } from './sharing'
 import { HOME_ID, SERVER_MEMBER } from './graph'
 import { membershipPathAt } from './replica'
-import { MARKDOWN_TYPE, PLAIN_TYPE, NOTE_TYPE, TEXT_TYPE } from './library-types'
+import { MARKDOWN_TYPE, PLAIN_TYPE, NOTE_TYPE } from './library-types'
 
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 
@@ -22,17 +23,18 @@ test('a published note is its title line and its whole markdown body row, keyed 
   const node = sharedProjection(r, ['post'], value => { hashed = value; return digest(value) })
   expect(node).toMatchObject({ title: 'Hello world', type: NOTE_TYPE })
   expect(node.body).toBeUndefined()
-  // each note's body is a Markdown row of its own; an empty body is left out
-  expect(node.rows.map(row => row.id)).toEqual(['post/field/body', 'long', 'long/field/body', 'plain', 'nested', 'huge', 'huge/field/body'])
+  // a note's fields are rows like any other: its title, and its body as Markdown; an empty body is left out
+  expect(node.rows.map(row => row.id)).toEqual(['post:title', 'post:body', 'long', 'long:title', 'long:body', 'plain', 'nested', 'nested:title', 'huge', 'huge:title', 'huge:body'])
+  expect(node.rows.find(row => row.id === 'long:title')).toEqual({ id: 'long:title', depth: 1, title: 'title', type: PLAIN_TYPE, body: 'Section' })
   const rows = Object.fromEntries(node.rows.map(row => [row.id, row]))
-  expect(rows['post/field/body']).toEqual({ id: 'post/field/body', depth: 0, title: '', type: MARKDOWN_TYPE, body: '# Hello world\n\nThe **body** of a post, with $e^{i\\pi} + 1 = 0$.' })
+  expect(rows['post:body']).toEqual({ id: 'post:body', depth: 0, title: '', type: MARKDOWN_TYPE, body: '# Hello world\n\nThe **body** of a post, with $e^{i\\pi} + 1 = 0$.' })
   // bodies are not cut at 8000 characters
   expect(rows.long).toEqual({ id: 'long', title: 'Section', depth: 0, type: NOTE_TYPE })
-  expect(rows['long/field/body']!.body).toHaveLength('## Section\n\n'.length + 9000)
-  expect(rows.plain).toEqual({ id: 'plain', title: 'A plain row', depth: 0, type: 'plain' })
+  expect(rows['long:body']!.body).toHaveLength('## Section\n\n'.length + 9000)
+  expect(rows.plain).toEqual({ id: 'plain', title: 'A plain row', depth: 0, type: PLAIN_TYPE })
   expect(rows.nested).toMatchObject({ title: 'Nested note', depth: 1 })
-  expect(rows['huge/field/body']!.body).toHaveLength(SHARED_BODY_LIMIT)
-  expect(rows['huge/field/body']!.truncated).toBe(true)
+  expect(rows['huge:body']!.body).toHaveLength(SHARED_BODY_LIMIT)
+  expect(rows['huge:body']!.truncated).toBe(true)
   expect(node.rows.every(row => !('kind' in row))).toBe(true)
   // the revision is computed from the earlier row shape, so votes cast before bodies were published stay valid
   expect(hashed.rows.find((row: any) => row.id === 'long')).toEqual({ id: 'long', title: 'Section', type: NOTE_TYPE, depth: 0 })
@@ -47,33 +49,36 @@ test('markdown titles drop heading and inline markup', () => {
 
 test('empty fields of a published row are inputs of their type; each visitor submits candidates as its own peer', () => {
   let r = createReplica('user:host')
-  // a product type over the library's text type: its title field is presented by the row, the other is asked for
-  const text = rowTypeAt(r.store, TEXT_TYPE)
-  const field = (name: string) => put(r.store, { data: { parameter: { name } }, children: [] })
-  const type = put(r.store, { data: { form: { title: ['label'] } }, children: [[text, field('label')], [text, field('email')]] })
+  // a type of two text fields: its title field (the first) is presented by the row, the other is asked for
+  const label = textField(r.store, 'label'), email = textField(r.store, 'email'), never = primitive(r.store, 'void')
+  const type = put(r.store, { data: {}, children: [[label, never], [email, never]] })
+  const field = fieldRefId(email)
   r = addRow(r, [], PLAIN_TYPE, 'Sign up', 1, { id: 'page' })
   r = addConstructedRow(r, ['page'], type, { label: 'Your details' }, 2, 'details')
   r = publish(r, ['page'], 'public', 3)
   const node = sharedProjection(r, ['page'], value => JSON.stringify(value).length.toString())
   expect(node.rows).toEqual([
     { id: 'details', title: 'Your details', depth: 0 },
-    { id: 'details/field/email', title: 'email', depth: 1, type: 'text', body: '' }
+    // its fields are its rows: the filled label shows its value, the open email is asked for
+    { id: 'details:label', title: 'label', depth: 1, type: PLAIN_TYPE, body: 'Your details' },
+    { id: 'details:email', title: 'email', depth: 1, type: PLAIN_TYPE, body: '' }
   ])
-  expect(node.inputs).toEqual([{ key: JSON.stringify(['details', 'details/field/email']), path: ['details', 'details/field/email'], name: 'email', kind: 'text' }])
+  expect(node.inputs).toEqual([{ key: JSON.stringify(['details', field]), path: ['details', field], name: 'email', kind: 'text' }])
   // two visitors (a visit admits each as a member that may run the node): two submissions; a resubmission replaces only its own
   r = addMemberAt(r, ['page'], 'visitor:a', 'A', ['execute'], 4)
   r = addMemberAt(r, ['page'], 'visitor:b', 'B', ['execute'], 4)
-  r = proposeVisitorValues(r, ['page'], 'visitor:a', [{ path: ['details', 'details/field/email'], value: 'a@example.test' }], 4)
-  r = proposeVisitorValues(r, ['page'], 'visitor:b', [{ path: ['details', 'details/field/email'], value: 'b@example.test' }], 5)
-  r = proposeVisitorValues(r, ['page'], 'visitor:a', [{ path: ['details', 'details/field/email'], value: 'a2@example.test' }], 6)
-  const identity = () => content(r.store, resolveScope(r.store, headCid(r), ['page'])!)
-  const open = readProposals(r.store, identity()).filter(p => p.name === VISITOR_SUBMISSION)
+  r = proposeVisitorValues(r, ['page'], 'visitor:a', [{ path: ['details', field], value: 'a@example.test' }], 4)
+  r = proposeVisitorValues(r, ['page'], 'visitor:b', [{ path: ['details', field], value: 'b@example.test' }], 5)
+  r = proposeVisitorValues(r, ['page'], 'visitor:a', [{ path: ['details', field], value: 'a2@example.test' }], 6)
+  // the field is a hole: each visitor's candidate is a submission to it
+  const hole = () => content(r.store, resolveScope(r.store, headCid(r), ['page', 'details', field])!)
+  const open = readProposals(r.store, hole()).filter(p => p.status === 'open')
   expect(open.map(p => p.peerId).sort()).toEqual(['visitor:a', 'visitor:b'])
   expect(sharedProjection(r, ['page'], v => String(v)).proposals).toEqual([])
   // accepting a's submission fills the field in the owner's node
-  r = applyProposalAt(r, ['page'], open.find(p => p.peerId === 'visitor:a')!.cid, 'user:host', 7)
+  r = applyProposalAt(r, ['page', 'details', field], open.find(p => p.peerId === 'visitor:a')!.cid, 'user:host', 7)
   const details = valueContent(r.store, resolveScope(r.store, headCid(r), ['page', 'details'])!)
-  expect(formValueAt(r.store, details, ['email'])!.data.scalar!.value).toBe('a2@example.test')
+  expect(rowRecord(r.store, type, details).email).toBe('a2@example.test')
   expect(view(r, ['page'])).toBeTruthy()
 })
 

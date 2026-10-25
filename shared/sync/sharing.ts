@@ -5,8 +5,11 @@
  * execute view (`sharedProjection`), and their inputs are stored in typed refs on it. A published template is an
  * endpoint: each visitor who starts it gets a private execution, a node of which only that visitor is a member.
  */
-import { settingOf } from './graph'
-import { nodeLinkMaskAt } from './node-provider'
+import { textValue, fieldText, fieldViews, isFieldRow, isTextField } from './fields'
+import { createStore, findEdge } from './graph'
+import { primitive } from './primitives'
+import { libraryNode, settingOf } from './graph'
+import { nodeLinkMaskAt, TEXT_MASK } from './node-provider'
 import { handleAt } from './arguments'
 import { instructionPrimitives } from './primitives'
 import { argumentRefs, capabilityPeers } from './bindings'
@@ -17,10 +20,9 @@ import { addMemberAt, createReplica, deleteTask, homePath, addRow, proposeRefAt,
 import { FosStore } from '../dag-implementation/store'
 import { isCid } from '../dag-implementation/cid'
 import type { FosPathElem } from '../types'
-import { plainEdge } from './patterns'
-import { FIELD_TYPES, MARKDOWN_TYPE, PEER_TYPE, VISITOR_SUBMISSION } from './published-types'
+import { MARKDOWN_TYPE, NUMBER_TYPE, PLAIN_TYPE, VISITOR_SUBMISSION } from './published-types'
 export * from './published-types'
-import { PLAIN_TYPE, REF_TYPE, TEMPLATE_TYPE } from './library-types'
+import { REF_TYPE, TEMPLATE_TYPE } from './library-types'
 import { isRowEdge, membershipPath, newId, SERVER_MEMBER, aliasIdOf, identityCid, typeIdOf, libAt, nestScope, commitRoot, content, hasCapability, importNodes, makeLink, memberFor, proposalContent, put, reachableNodes, readMembers, readProposals, resolveScope, isRefNode, refValueCid, rootTargetCid, updateAtScope, valueContent, withProposal, type Capability, type Scope } from './graph'
 
 export type Audience = 'public' | 'users'
@@ -66,7 +68,7 @@ export function visitorExecution(r: Replica, template: Scope, peer: string): Sco
 }
 /** What the account server's `url` handler records on its member entry: where share pages are, and whose account it is. */
 export type PageBase = { base: string; owner: string }
-const isUrl = (store: Replica['store'], left: string) => typeIdOf(store, left) === 'capabilities.url'
+const isUrl = (store: Replica['store'], left: string) => left === libraryNode(store, 'capabilities.url')
 /** Record where this account's share pages are (the `url` handler, on the server's member entry at `entry`). */
 export function writePageBase(r: Replica, entry: Scope, base: PageBase, now: number): Replica {
   const current = readRowValue<PageBase>(r, entry, isUrl)
@@ -162,7 +164,7 @@ export type SharedNode = {
 export function sharedInputs(r: Replica, path: Scope): SharedInput[] {
   const cid = resolveScope(r.store, headCid(r), path)
   if (!cid) return []
-  const text = argumentRefs(r.store, cid).filter(a => a.type === r.store.primitive.documentField.getId() && !refValueCid(r.store, content(r.store, a.cid)) && a.name && !settingOf(r.store, content(r.store, a.cid))).map(a => ({ key: content(r.store, a.cid).data.alias!.id, name: a.name!, kind: 'text' as const }))
+  const text = argumentRefs(r.store, cid).filter(a => a.type === primitive(r.store, 'string') && !refValueCid(r.store, content(r.store, a.cid)) && a.name && !settingOf(r.store, content(r.store, a.cid))).map(a => ({ key: content(r.store, a.cid).data.alias!.id, name: a.name!, kind: 'text' as const }))
   // a choice requirement asks the visitor to choose; an allocation requirement asks for an amount
   const choices = (view(r, path)?.tasks ?? []).flatMap(row => row.requirement?.capability === 'choice' && !row.requirement.satisfied && row.requirement.options?.length ? [{ key: row.id, path: [row.id], name: row.title, kind: 'choice' as const, options: row.requirement.options.slice(0, 100) }] : [])
   const allocations = (view(r, path)?.tasks ?? []).flatMap(row => row.requirement?.capability === 'allocation' ? [{ key: row.id, name: row.title, kind: 'allocation' as const, type: row.requirement.resource ?? 'inventory', unit: row.requirement.unit ?? 'unit', amount: row.requirement.amount, ...(row.requirement.start !== undefined ? { start: row.requirement.start } : {}), ...(row.requirement.end !== undefined ? { end: row.requirement.end } : {}) }] : [])
@@ -177,12 +179,12 @@ export function executionInputs(r: Replica, root: Scope): SharedInput[] {
   const current = root.length ? view(r, root.slice(0, -1))?.tasks.find(row => row.id === root.at(-1)) ?? null : null
   // A grant an invocation row below the root already consumes is taken, whether or not that row has run yet.
   const taken = new Set<string>()
-  const nativeRows = new Set<string>()
+  const primitiveRows = new Set<string>()
   const collect = (path: Scope, depth: number) => {
     if (depth > 8) return
     for (const row of view(r, path)?.tasks ?? []) {
       if (instructionPrimitives(r, { path: [...path, row.id], row }).length) {
-        nativeRows.add(JSON.stringify([...path, row.id]))
+        primitiveRows.add(JSON.stringify([...path, row.id]))
         for (const input of view(r, [...path, row.id])?.tasks ?? []) if (input.refId) {
           taken.add(input.id)
           const grant = handleAt(r, [...path, row.id, input.id])
@@ -192,7 +194,7 @@ export function executionInputs(r: Replica, root: Scope): SharedInput[] {
       if (row.refId === undefined && row.type !== TEMPLATE_TYPE) collect([...path, row.id], depth + 1)
     }
   }
-  if (instructionPrimitives(r, { path: root, row: current }).length) nativeRows.add(JSON.stringify(root))
+  if (instructionPrimitives(r, { path: root, row: current }).length) primitiveRows.add(JSON.stringify(root))
   collect(root, 0)
   const offered = (rowPath: Scope, id: string) => {
     if (taken.has(id)) return null
@@ -203,15 +205,15 @@ export function executionInputs(r: Replica, root: Scope): SharedInput[] {
     if (depth > 8 || result.length >= 32) return
     const cid = resolveScope(r.store, headCid(r), path)
     const rows = view(r, path)?.tasks ?? []
-    const native = nativeRows.has(JSON.stringify(path))
+    const primitiveRow = primitiveRows.has(JSON.stringify(path))
     for (const arg of cid ? argumentRefs(r.store, cid) : []) {
       const ref = content(r.store, arg.cid), id = ref.data.alias?.id
-      if (!id || settingOf(r.store, ref) || ref.data.ref || ref.data.refExpression || native && ref.data.refRole === 'output' && !refValueCid(r.store, ref)) continue
+      if (!id || settingOf(r.store, ref) || ref.data.ref || ref.data.refExpression || primitiveRow && ref.data.refRole === 'output' && !refValueCid(r.store, ref)) continue
       // Requirement refs have their own input controls below; do not also expose them as generic reference slots.
       if (rows.some(row => row.id === id && row.requirement)) continue
       const relative = [...path.slice(root.length), id]
       if (!refValueCid(r.store, ref)) result.push({ key: JSON.stringify(relative), path: relative, name: arg.name ?? id,
-        kind: arg.type === r.store.primitive.documentField.getId() ? 'text' : 'ref', type: arg.type, role: ref.data.refRole ?? 'input' })
+        kind: arg.type === primitive(r.store, 'string') ? 'text' : 'ref', type: arg.type, role: ref.data.refRole ?? 'input' })
       else {
         // an argument forwarding an allocation (a passed handle) is offered for use like any handle row
         const held = offered([...path, id], id)
@@ -222,7 +224,7 @@ export function executionInputs(r: Replica, root: Scope): SharedInput[] {
     for (const row of rows) {
       if (result.length >= 32) break
       const child = resolveScope(r.store, headCid(r), [...path, row.id])
-      if (native && child) {
+      if (primitiveRow && child) {
         const ref = content(r.store, child)
         if (ref.data.refRole === 'output' && !refValueCid(r.store, ref)) continue
       }
@@ -256,11 +258,14 @@ export function proposeVisitorValues(r: Replica, path: Scope, peer: string, valu
     const targetCid = resolveScope(r.store, headCid(r), target)
     const ref = targetCid && content(r.store, targetCid)
     if (!(ref && isRefNode(r.store, ref) && !refValueCid(r.store, ref))) { rows.push({ path: relative, value }); continue }
-    r = proposeRefAt(r, target, put(r.store, { data: { description: { content: value } }, children: [] }), peer, now).replica
+    // a value of what the hole is: a field's text for a field, else the text itself
+    const parent = resolveScope(r.store, headCid(r), target.slice(0, -1))
+    const left = parent && findEdge(r.store, valueContent(r.store, parent), `a:${target.at(-1)}`)?.[0]
+    r = proposeRefAt(r, target, left && isTextField(r.store, left) ? fieldText(r.store, left, value) : textValue(r.store, value), peer, now).replica
   }
   if (!rows.length) return r
   const store = r.store, root = headCid(r), cid = resolveScope(store, root, path)!
-  const base = put(store, valueContent(store, cid)), draftStore = new FosStore()
+  const base = put(store, valueContent(store, cid)), draftStore = createStore()
   importNodes(draftStore, reachableNodes(store, [base]))
   commitRoot(draftStore, base, now)
   nestScope(draftStore, { store, root, at: path })
@@ -328,7 +333,7 @@ export function sharedProjection(r: Replica, path: Scope, revision: (value: unkn
   if (!node || !policy) throw new Error('Shared node unavailable.')
   const visitor = peer ?? audiencePeer(policy.audience)
   const visible = (at: Scope) => servedTo(r, path, at, visitor)
-  const textVisible = (at: Scope) => { const mask = nodeLinkMaskAt(r, at, visitor); return !mask?.fields || mask.fields.includes('description') }
+  const textVisible = (at: Scope) => { const mask = nodeLinkMaskAt(r, at, visitor); return !mask?.fields || mask.fields.includes(TEXT_MASK) }
   const current = path.length ? view(r, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1)) : null
   const rows: SharedRow[] = [], hashed: unknown[] = [], fields: SharedInput[] = []
   let budget = SHARED_TOTAL_BODY
@@ -341,41 +346,38 @@ export function sharedProjection(r: Replica, path: Scope, revision: (value: unkn
     budget -= body.length
     return { title: '', type, body, ...(body.length < title.length ? { truncated: true as const } : {}) }
   }
-  const markdown = (row: { text?: { mediaType?: string } } | null | undefined) => row?.text?.mediaType === 'text/markdown'
-  const store = r.store, edgeAt = (at: Scope) => at.length ? childRowEdge(store, resolveScope(store, headCid(r), at.slice(0, -1)), at.at(-1)!) : null
-  const page = present(current?.title ?? node.name ?? 'Shared node', libraryType(current), textVisible(path), markdown(current))
-  const walk = (at: Scope, depth: number, presented: string[] | undefined) => {
+  const store = r.store
+  const page = present(current?.title ?? node.name ?? 'Shared node', libraryType(current), textVisible(path), false)
+  const walk = (at: Scope, depth: number, type: string | undefined) => {
     if (depth > 8 || hashed.length >= 200) return
     const parent = resolveScope(store, headCid(r), at)
+    // the row's own fields are rows like any other: a filled one shows its value, an open one is asked of the visitor
+    const own = new Map(parent && type ? fieldViews(store, type, valueContent(store, parent)).map(field => [field.id, field]) : [])
     for (const row of view(r, at)?.tasks ?? []) {
       if (hashed.length >= 200) break
       const childPath = [...at, row.id]
       // peer rows (who the node is connected to) are the read/edit view's, never the served page's
       if (!visible(childPath) || row.construction) continue
-      const shown = textVisible(childPath), edge = childRowEdge(store, parent, row.id), type = libraryType(row)
-      // The execute projection offers declared inputs separately. Their private
-      // bindings and runtime state are graph rows, but are not published page content.
-      if (edge && content(store, identityCid(store, edge)).data.name && !(type && (FIELD_TYPES.includes(type) || type === MARKDOWN_TYPE))) continue
-      hashed.push({ id: row.id, title: shown ? row.title.slice(0, 8000) : '', type: row.type, depth })
-      if (type && FIELD_TYPES.includes(type)) {
-        // a field of its row's product: the one the row presents (a note's body) is already shown by the row; an
-        // empty one is asked of the visitor, who submits a candidate value
-        const label = edge ? valueContent(store, identityCid(store, edge)).data.name?.content ?? '' : ''
-        if (presented?.length === 1 && presented[0] === label) continue
-        const relative = childPath.slice(path.length)
-        rows.push({ id: row.id, depth, type, title: label, ...(shown ? { body: row.title.slice(0, 8000) } : {}) })
-        if (shown && !row.title.trim() && type !== PEER_TYPE) fields.push({ key: JSON.stringify(relative), path: relative, name: label || 'Value', kind: 'text' })
+      const shown = textVisible(childPath), edge = childRowEdge(store, parent, row.id)
+      const field = edge && isFieldRow(store, edge) ? own.get(row.id) : undefined
+      if (field) {
+        // a field's id is its field's, the same in every row: on the page it is that row's field
+        const id = `${at.at(-1) ?? ''}:${field.key ?? row.id}`, label = field.key ?? ''
+        if (field.field === libraryNode(store, 'body')) { if (typeof field.value === 'string') rows.push({ id, depth, ...present(field.value, MARKDOWN_TYPE, shown, true) }); continue }
+        rows.push({ id, depth, type: typeof field.value === 'number' ? NUMBER_TYPE : PLAIN_TYPE, title: label, ...(shown ? { body: String(field.value ?? '').slice(0, 8000) } : {}) })
+        if (field.open && shown) { const relative = childPath.slice(path.length); fields.push({ key: JSON.stringify(relative), path: relative, name: label || 'Value', kind: 'text' }) }
         continue
       }
-      if (type === MARKDOWN_TYPE && !row.title.trim()) continue
-      rows.push({ id: row.id, depth, ...present(row.title, type, shown, markdown(row)) })
-      const definition = edge && store.table.has(plainEdge(store, edge)[0]) ? content(store, plainEdge(store, edge)[0]) : null
+      // The execute projection offers declared inputs separately. Their private
+      // bindings and runtime state are graph rows, but are not published page content.
+      if (edge && content(store, identityCid(store, edge)).data.name) continue
+      hashed.push({ id: row.id, title: shown ? row.title.slice(0, 8000) : '', type: row.type, depth })
+      rows.push({ id: row.id, depth, ...present(row.title, libraryType(row), shown, false) })
       // Reference targets, arguments, membership, previous versions and private inputs are never exported.
-      if (row.refId === undefined) walk([...at, row.id], depth + 1, definition?.data.form?.title)
+      if (row.refId === undefined) walk(childPath, depth + 1, row.typeCid)
     }
   }
-  const own = edgeAt(path)
-  walk(path, 0, own && store.table.has(plainEdge(store, own)[0]) ? content(store, plainEdge(store, own)[0]).data.form?.title : undefined)
+  walk(path, 0, current?.typeCid)
   // what a visitor submits (a member who may run the node but not edit it) is the owner's to review, not an option other visitors vote on
   const identity = content(r.store, resolveScope(r.store, headCid(r), path)!)
   // visitors are explicit members (a visit adds them); a peer the audience covers implicitly is no visitor
@@ -436,7 +438,7 @@ export function ensureInviteRequest(r: Replica, owner: string, aliasId: string, 
   }))
   if (pending) return { replica: r, path: hostPath, proposalCid: pending.cid }
   // the proposal's content: the row's current value plus the ref, built in a scratch store rooted at that value
-  const base = put(store, valueContent(store, hostCid)), draftStore = new FosStore()
+  const base = put(store, valueContent(store, hostCid)), draftStore = createStore()
   importNodes(draftStore, reachableNodes(store, [base]))
   commitRoot(draftStore, base, now)
   nestScope(draftStore, { store, root, at: hostPath })

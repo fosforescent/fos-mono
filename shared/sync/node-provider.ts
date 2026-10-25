@@ -1,10 +1,12 @@
+import { isTextField, isFieldRow } from './fields'
+import { primitive } from './primitives'
 import { approvalsOf } from './approvals'
 import type { FosDataContent, FosNodeContent, FosNodesData, FosPathElem } from '../types'
 import { hashContent, isCid } from '../dag-implementation/cid'
-import { content, put, refNodeContent, refValueCid, isRefNode, typeIdOf, libAt, commitRoot, updateAtScope, resolveScope, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, isShippedLibrary, reachableNodes, bookkeepingOf, rootTargetCid, withPeer,
+import { content, put, refNodeContent, refValueCid, isRefNode, libraryNode, libAt, commitRoot, updateAtScope, resolveScope, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, isShippedLibrary, reachableNodes, bookkeepingOf, rootTargetCid, withPeer,
   membershipOf, valueContent, readMembers, memberFor, memberPeerOf, peerNode, memberEntryPeerAt, isGrantEdge, grantChildId, memberEdgesOf, isMemberEdge, capabilityOf, isHandle, isPeerReference, isBookkeepingEdge, isRowEdge, identityCid, withMainBranchPolicy,
   readProposals, submissionAdditions, capabilityNames, type MemberRecord, type ProposalView, type Capability, type Scope } from './graph'
-import { advertisedRows, importNodes } from './graph'
+import { advertisedRows, findEdge, importNodes } from './graph'
 import { sameCapabilityType } from './capabilities'
 import { primitiveValue } from './primitives'
 import { refSubmissions } from './scoped-refs'
@@ -13,6 +15,12 @@ import { constructNodeValue, readGraphValue } from './node-values'
 
 /** Each endpoint owns its mask. Omitting an allowlist allows all; [] allows none. */
 export type NodeMask = { fields?: string[]; children?: string[] }
+/** The mask field that shows a node's text: its text rows (a title field's ref, a plain row's text, a value's label). */
+export const TEXT_MASK = 'title'
+/** Whether a child carries a node's text: a text field's ref, or a text leaf. */
+export function isTextChild(store: Replica['store'], child: { template: string; pinned?: string }): boolean {
+  return (!!child.pinned && store.table.get(child.pinned)?.data.scalar?.type === 'text') || (store.table.has(child.template) && isTextField(store, child.template))
+}
 export type NodeBranch = { scope: Scope; name: string }
 export type NodeAddress = { peerId: string; scope: Scope; branches?: NodeBranch[] }
 export type NodeRequest = {
@@ -46,13 +54,14 @@ export type NodeChild = { id: string; address: NodeAddress; template: string; he
  * truth: the enclosing row supplies its pattern; bound is the presence of TARGET. No values are bundled. */
 export function rightChild(r: Replica, edge: FosPathElem): NodeChild['right'] {
   const ref = content(r.store, identityCid(r.store, edge))
-  return isRowEdge(r.store, edge) && ref.data.alias && isRefNode(r.store, ref) && ref.data.name ? { ...(ref.data.name ? { name: ref.data.name.content } : {}), bound: !!refValueCid(r.store, ref) } : undefined
+  // a declaration (a named ref, or a row's field) travels as itself: a hole is installed as one, never loaded
+  return isRowEdge(r.store, edge) && ref.data.alias && isRefNode(r.store, ref) && (ref.data.name || isFieldRow(r.store, edge)) ? { ...(ref.data.name ? { name: ref.data.name.content } : {}), bound: !!refValueCid(r.store, ref) } : undefined
 }
 /** Immutable value graphs travel with their edge. Mutable descendants require their own authorized load. */
 export function isLiteralEdge(store: Replica['store'], edge: FosPathElem): boolean {
   if (isBookkeepingEdge(store, edge) || isGrantEdge(store, edge) || isMemberEdge(store, edge) || [
-    store.primitive.targetPointerConstructor.getId(), store.primitive.instructionPointerConstructor.getId(),
-    store.primitive.aliasConstructor.getId(), store.primitive.linkField.getId()
+    primitive(store, 'target'), primitive(store, 'instruction'),
+    primitive(store, 'alias'), primitive(store, 'link')
   ].includes(edge[0])) return false
   const seen = new Set<string>()
   const immutable = (cid: string): boolean => {
@@ -95,7 +104,7 @@ export type NodeAuthority = {
   proposeOnly?: boolean
   capabilities: Capability[]
 }
-const forbiddenFields = new Set(['alias', 'ref', 'versionControl', 'disabledCapabilities', 'peerId'])
+const forbiddenFields = new Set(['alias', 'ref', 'disabledCapabilities', 'peerId'])
 export class NodeAccessError extends Error {}
 
 function validPath(value: unknown): value is Scope {
@@ -123,9 +132,13 @@ function sourceId(r: Replica, path: Scope): string {
   if (!path.length) return content(r.store, r.store.rootNodeId).data.alias!.id
   const cid = resolveScope(r.store, headCid(r), path)
   if (!cid) throw new NodeAccessError('Linked node unavailable.')
+  // a field's ref is named by its field, the same in every row: it is that row's field
+  const parent = resolveScope(r.store, headCid(r), path.slice(0, -1))
+  const edge = parent ? findEdge(r.store, valueContent(r.store, parent), `a:${path.at(-1)}`) : undefined
+  if (edge && isFieldRow(r.store, edge)) return `${sourceId(r, path.slice(0, -1))}/${path.at(-1)}`
   return content(r.store, cid).data.alias?.id ?? cid
 }
-const localLinkId = (peer: string, other: string, id: string) => hashContent({ data: { description: { content: JSON.stringify([peer, other, id]) } }, children: [] })
+const localLinkId = (peer: string, other: string, id: string) => hashContent({ data: { name: { content: JSON.stringify([peer, other, id]) } }, children: [] })
 
 function linkAt(r: Replica, path: Scope, peer: string, remoteId: string) {
   // One endpoint per peer at a node. A caller cannot evade a mask by choosing a new link id.
@@ -192,13 +205,12 @@ export function setNodeLinkMask(r: Replica, path: Scope, peer: string, remoteId:
     alias: { id: previous ? content(r.store, previous.cid).data.alias!.id : id },
     nodeLink: { node: sourceId(r, path), ...(previous && content(r.store, previous.cid).data.nodeLink?.projection ? { projection: true } : {}) },
     ref: { id: remoteId, peer }
-  }, policy, previous ? [[r.store.primitive.previousVersion.getId(), previous.cid]] : []))
+  }, policy, previous ? [[primitive(r.store, 'previous'), previous.cid]] : []))
   if (previous && content(r.store, previous.cid).data.ref?.id === remoteId && refValueCid(r.store, content(r.store, previous.cid)) === policy) return r
   // Endpoint refs belong to this peer's root alias, outside its shared TARGETPOINTER.
   // They persist locally but never become another peer's mergeable policy.
   const root = content(r.store, r.store.rootNodeId)
   r.store.rootNodeId = put(r.store, { ...root, children: [...root.children.filter(e => !previous || e[1] !== previous.cid), [libAt(r.store).capabilities.provideNode!, ref]] })
-  r.store.updateCtxCallback?.(r.store.exportContext([]))
   return { ...r }
 }
 
@@ -236,7 +248,7 @@ export function decidingMember(store: Replica['store'], value: FosNodeContent, a
 export function grantsOf(store: Replica['store'], value: FosNodeContent, member: MemberRecord): boolean {
   if (member.capabilities.length) return true
   const entry = membershipOf(store, value, member.peerId), node = entry && content(store, entry[1])
-  return !(node && (isPeerReference(node) || node.children.some(e => e[0] === store.primitive.acceptsNode.getId())))
+  return !(node && (isPeerReference(node) || node.children.some(e => e[0] === primitive(store, 'accepts'))))
 }
 
 function permitted(r: Replica, cid: string, authority: Pick<NodeAuthority, 'peerId' | 'owner'>, inherited: boolean): boolean {
@@ -275,10 +287,10 @@ export function exchangedMember(store: Replica['store'], edge: FosPathElem): boo
   if (right.children.some(e => capabilityOf(store, e) === 'local')) return false
   return !(right.children.length && right.children.every(e => isTransportOffer(store, e)))
 }
-/** A peer's transport offered here (`offerNodeTransport`): a native `provideNode` value, this device's connection to that peer, never exchanged. */
+/** A peer's transport offered here (`offerNodeTransport`): a primitive `provideNode` value, this device's connection to that peer, never exchanged. */
 export function isTransportOffer(store: Replica['store'], edge: FosPathElem): boolean {
-  if (edge[0] !== store.primitive.acceptsNode.getId()) return false
-  return advertisedRows(store, edge[1]).some(([left, ref]) => typeIdOf(store, left) === 'capabilities.provideNode' && refSubmissions(store, ref).some(value => primitiveValue(store, value)))
+  if (edge[0] !== primitive(store, 'accepts')) return false
+  return advertisedRows(store, edge[1]).some(([left, ref]) => left === libraryNode(store, 'capabilities.provideNode') && refSubmissions(store, ref).some(value => primitiveValue(store, value)))
 }
 export function exchangedChildren(r: Replica, cid: string, path: Scope): Array<{ id: string; edge: FosPathElem; member?: true; grant?: true; literal?: true }> {
   const value = valueContent(r.store, cid), out: Array<{ id: string; edge: FosPathElem; member?: true; grant?: true; literal?: true }> = []
@@ -345,6 +357,7 @@ export function provideNode(r: Replica, input: NodeRequest, authority: NodeAutho
     const pinned = new Set<string>(), wanted = new Set<string>(), grantNodes: string[] = []
     for (const { id, edge, member, grant, literal } of heldByRequester ? [] : exchangedChildren(r, cid, path)) {
       if ((mask.children && !mask.children.includes(id)) || (member && !memberEntryVisible(memberPeerOf(r.store, edge), authority))) continue
+      if (fields && !fields.has(TEXT_MASK) && isTextChild(r.store, { template: edge[0], pinned: edge[1] })) continue
       // a grant is pinned by its node's cid; its content goes with the answer (it is small and immutable)
       if (grant || literal) { grantNodes.push(...edge); children.push({ id, address: { peerId: r.meta.peerId, scope: [...path, id] }, template: edge[0], pinned: edge[1] }); continue }
       const childCid = identityCid(r.store, edge), child = content(r.store, childCid)
@@ -387,7 +400,7 @@ export function acceptProvidedNode(r: Replica, at: Scope, request: NodeRequest, 
   if (memberEntryPeerAt(r.store, headCid(r), at) !== null) throw new NodeAccessError('A member entry syncs with its node.')
   const before = content(r.store, cid), local = nodeLinkMaskAt(r, at, node.peerId), ownMask = readMask(r, at, node.peerId, node.linkId)
   const data = Object.fromEntries(Object.entries(node.data).filter(([key]) => !forbiddenFields.has(key) && (!local.fields || local.fields.includes(key)))) as FosDataContent
-  const listed = node.children.filter(child => !local.children || local.children.includes(child.id))
+  const listed = node.children.filter(child => (!local.children || local.children.includes(child.id)) && (!local.fields || local.fields.includes(TEXT_MASK) || !isTextChild(r.store, child)))
   // A typed declaration carries its immutable schema, never the field's value or history.
   if (node.templates) {
     const schemas: FosNodesData = {}, pending = listed.flatMap(child => child.pinned ? [child.template, child.pinned] : child.right ? [child.template] : [])
@@ -423,7 +436,7 @@ export function acceptProvidedNode(r: Replica, at: Scope, request: NodeRequest, 
 
 export type NodeProvider = { id: string; capabilities: Capability[]; request(input: NodeRequest): Promise<ProvidedNode> }
 export function nodeRequestLinkId(localPeer: string, address: NodeAddress): string {
-  return hashContent({ data: { description: { content: JSON.stringify([localPeer, address.peerId, address.scope]) } }, children: [] })
+  return hashContent({ data: { name: { content: JSON.stringify([localPeer, address.peerId, address.scope]) } }, children: [] })
 }
 /** Only providers attached to this node are candidates. Offline peers fail over; no global search. */
 export async function pullNode(request: NodeRequest, peers: NodeProvider[]): Promise<ProvidedNode> {

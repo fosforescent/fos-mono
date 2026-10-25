@@ -59,7 +59,7 @@ test('template triggers create an independent instance and failed runs do not sp
   r = addTask(r, ['template'], 'Step', 1, 'step')
   r = setNodeTrigger(r, ['template'], { observer: libAt(r.store).capabilities['timer']!, peer: 'device', enabled: true, created: 1, due: 2 }, 1)
   let runs = 0
-  const driver = { get: () => r, save: (next: typeof r) => { r = next }, now: () => 3, available: () => true, evaluate: async (path: string[]) => { runs++; expect(path).not.toEqual(['template']); expect(view(r, path)!.tasks[0]!.title).toBe('Step'); throw new Error('Needs confirmation') } }
+  const driver = { get: () => r, save: (next: typeof r) => { r = next }, now: () => 3, available: () => true, evaluate: async (path: string[]) => { runs++; expect(path).not.toEqual(['template']); expect(view(r, path)!.tasks.map(t => t.title)).toContain('Step'); throw new Error('Needs confirmation') } }
   await runNodeTriggers(driver); await runNodeTriggers(driver)
   expect(runs).toBe(1)
   expect(triggerState(r, ['template'])?.error).toBe('Needs confirmation')
@@ -67,18 +67,18 @@ test('template triggers create an independent instance and failed runs do not sp
 })
 
 test('an incoming proposal fires the request trigger and its saved occurrence is not replayed', async () => {
-  const { makeLinkAt, proposalContent, withProposal, commitRoot, updateAtScope, headCid, resolveScope, put, rowContent } = await import('./index')
+  const { makeLinkAt, proposalContent, withProposal, commitRoot, updateAtScope, headCid, resolveScope, put, constructTextRow, rowTypeAt } = await import('./index')
   let r = makeLinkAt(addRow(createReplica('device'), [], TEMPLATE_TYPE, 'Inbox', 1, { id: 'inbox' }), ['inbox'], 1)
   r = setNodeTrigger(r, ['inbox'], { observer: libAt(r.store).capabilities['request']!, peer: 'device', enabled: true, created: 2 }, 2)
   let runs = 0
   const driver = { get: () => r, save: (next: typeof r) => { r = next }, now: () => 10, available: () => true, evaluate: async () => { runs++ } }
   await runNodeTriggers(driver); expect(runs).toBe(0)
-  const proposed = put(r.store, proposalContent(r.store, 'guest', 'request', put(r.store, rowContent('task', 'inbox', 'Requested change', 3)), resolveScope(r.store, headCid(r), ['inbox'])!, 3))
+  const proposed = put(r.store, proposalContent(r.store, 'guest', 'request', put(r.store, constructTextRow(r.store, rowTypeAt(r.store, 'task', []), 'inbox', 'Requested change', 3)), resolveScope(r.store, headCid(r), ['inbox'])!, 3))
   commitRoot(r.store, updateAtScope(r.store, headCid(r), ['inbox'], node => withProposal(r.store, node, 'guest', proposed, 'request'), 'node'), 3)
   await runNodeTriggers(driver); await runNodeTriggers(driver)
   expect(runs).toBe(1)
   expect(view(r, ['inbox'])!.proposals[0]!.status).toBe('open')
-  const second = put(r.store, proposalContent(r.store, 'other', 'request', put(r.store, rowContent('task', 'inbox', 'Second request', 4)), resolveScope(r.store, headCid(r), ['inbox'])!, 4))
+  const second = put(r.store, proposalContent(r.store, 'other', 'request', put(r.store, constructTextRow(r.store, rowTypeAt(r.store, 'task', []), 'inbox', 'Second request', 4)), resolveScope(r.store, headCid(r), ['inbox'])!, 4))
   commitRoot(r.store, updateAtScope(r.store, headCid(r), ['inbox'], node => withProposal(r.store, node, 'other', second, 'request'), 'node'), 4)
   await runNodeTriggers(driver); await runNodeTriggers(driver); expect(runs).toBe(2)
   commitRoot(r.store, updateAtScope(r.store, headCid(r), ['inbox'], node => withProposal(r.store, node, 'other', null, 'request'), 'node'), 5)

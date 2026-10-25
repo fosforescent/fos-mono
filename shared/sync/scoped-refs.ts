@@ -1,8 +1,10 @@
 /** Lexically scoped declarations and their accepted submissions. No capability vocabulary. */
+import { isFieldRow } from './fields'
+import { primitive, primitiveName } from './primitives'
 import { isHandlerStateLeft } from './capabilities'
 import type { FosStore } from '../dag-implementation/store'
 import { isTemplateType, isLibraryRef, content, identityCid, isBranchChoice, readChoice, isRefNode, refValueCid, typeIdOf, valueContent } from './graph'
-import { matchesGraph } from './structural'
+import { matchesGraph, capabilityName } from './structural'
 
 /** Accepted values include every alternative, without selecting or merging them.
  * PROPOSAL and PREV edges are deliberately excluded: an offer is not an assignment.
@@ -19,17 +21,14 @@ export function refSubmissionSet(store: FosStore, cid: string): { values: string
     visiting.add(current)
     try {
       const node = content(store, current)
-      if (node.data.refAlternatives) {
-        alternatives = true
-        for (const [, value] of node.children) walk(value)
-      } else if (isBranchChoice(store, node)) {
+      if (isBranchChoice(store, node)) {
         alternatives = true
         for (const option of readChoice(store, current).options) if (option.edge) {
           const right = content(store, option.edge[1])
           walk(isRefNode(store, right) && !refValueCid(store, right) && right.data.alias?.id === node.data.alias?.id ? option.edge[0] : identityCid(store, option.edge))
         }
       } else if (isRefNode(store, node)) {
-        for (const [key, target] of node.children) if (key === store.primitive.targetPointerConstructor.getId()) walk(target)
+        for (const [key, target] of node.children) if (key === primitive(store, 'target')) walk(target)
       } else values.add(current)
     } finally { visiting.delete(current) }
   }
@@ -47,21 +46,22 @@ export function declares(store: FosStore, type: string, cid: string): boolean {
   const node = content(store, cid)
   // A library ref is a container: its names resolve as its fields (namesInLibrary), never as lexical bindings.
   if (isLibraryRef(store, node)) return false
-  // a native handler's state rows (an execute row's journal, a trigger row) are no bindings
+  // a primitive handler's state rows (an execute row's journal, a trigger row) are no bindings
   if (isHandlerStateLeft(store, type)) return false
+  // a row's own field belongs to the row: it is no binding in scope
+  if (isFieldRow(store, [type, cid])) return false
   if (node.data.name || valueContent(store, cid).data.name) return true
   const pattern = store.table.get(type)
-  return isRefNode(store, node) && !isTemplateType(store, type) && (!typeIdOf(store, type) || !!pattern?.data.capabilityDefinition || !!pattern?.data.form?.primitive)
+  return isRefNode(store, node) && !isTemplateType(store, type) && (!typeIdOf(store, type) || capabilityName(store, type) !== null || primitiveName(store, type) !== null)
 }
 /** The pattern is another graph, not a JSON schema or a nominal type identifier. */
 export const matchesRefPattern = matchesGraph
 export const refValueCompatible = (store: FosStore, pattern: string, value: string): boolean => matchesGraph(store, pattern, value, { allowHoles: true })
 /**
  * Whether a declaration's pattern constrains the value its ref holds: a capability (refined or not), a primitive
- * type, or a pattern of its own. A library row type with a name (a bank, a task) constrains the row's placement
- * (sync/patterns.ts), never the value: a row's instruction is not its result's value predicate.
+ * type, or a pattern of its own. A library row type (a bank, a task) is not checked against what its ref holds.
  */
 export function patternIsValuePredicate(store: FosStore, pattern: string): boolean {
   const node = store.table.get(pattern)
-  return !!node && (!typeIdOf(store, pattern) || !!node.data.capabilityDefinition || !!node.data.form?.primitive)
+  return !!node && (!typeIdOf(store, pattern) || capabilityName(store, pattern) !== null || primitiveName(store, pattern) !== null)
 }

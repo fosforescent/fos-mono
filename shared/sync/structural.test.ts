@@ -1,100 +1,122 @@
-import { createReplica, put, namedRefPattern, matchesGraph, putBranches, refNodeContent, addRefAt, proposeRefAt, applyProposalAt, resolveScope, headCid, content, compileRow, compileRefGraph, refValueCompatible, addRow, instantiateTemplateValue, templateValuePattern, addRequirement } from './index'
+import { primitive } from './primitives'
+import { createReplica, put, putBranches, refNodeContent, match, matchesGraph, query } from './index'
 
 const setup = () => {
   const r = createReplica(), s = r.store
-  const empty = put(s, { data: {}, children: [] })
-  const key = (name: string) => namedRefPattern(s, name)
+  const unit = put(s, { data: {}, children: [] })
   const text = (value: string) => put(s, { data: { scalar: { type: 'text', value } }, children: [] })
-  const product = (...rows: [string, string][]) => put(s, { data: {}, children: rows })
-  const sum = (...values: string[]) => putBranches(s, 'alternatives', null, values.map((value, i) => ({ peerId: String(i), edge: [empty, value] })))
-  return { r, s, empty, key, text, product, sum }
+  const number = (value: number) => put(s, { data: { scalar: { type: 'number', value } }, children: [] })
+  const node = (...rows: [string, string][]) => put(s, { data: {}, children: rows })
+  /** a field: a node told apart by its name row */
+  const field = (name: string) => node([primitive(s, 'name'), text(name)])
+  const sum = (...values: string[]) => putBranches(s, 'sum', null, values.map((value, i) => ({ peerId: String(i), edge: [unit, value] })))
+  return { s, unit, text, number, node, field, sum, string: primitive(s, 'string'), num: primitive(s, 'number'), bool: primitive(s, 'boolean'), never: primitive(s, 'void') }
 }
 
-test('a named ref on the left and an empty right match an actual property, not an annotation', () => {
-  const { s, empty, key, text, product } = setup()
-  const pattern = product([key('complete'), empty])
-  expect(matchesGraph(s, pattern, product([key('complete'), text('anything')]))).toBe(true)
-  expect(matchesGraph(s, pattern, product([key('other'), text('anything')]))).toBe(false)
-  expect(matchesGraph(s, pattern, empty)).toBe(false)
-  const impostor = put(s, { data: {}, children: [[s.primitive.instructionPointerConstructor.getId(), pattern]] })
-  expect(matchesGraph(s, pattern, impostor)).toBe(false)
+test('unit is the wildcard: it matches anything and yields what it met; a node matches itself', () => {
+  const { s, unit, text, node, field } = setup()
+  const comment = field('comment'), title = field('title')
+  const pattern = node([title, unit], [comment, unit])
+  const value = node([comment, text('looks good')], [title, text('Venue')])
+  expect(match(s, pattern, value)?.fillers).toEqual([text('Venue'), text('looks good')])
+  expect(match(s, unit, value)?.fillers).toEqual([value])
+  expect(match(s, value, value)?.fillers).toEqual([])
 })
 
-test('row choices are sums, required rows are products, and matching recurses on both sides', () => {
-  const { s, empty, key, text, product, sum } = setup()
-  const a = product([key('a'), empty]), b = product([key('b'), empty]), c = product([key('c'), text('yes')])
-  const alternatives = putBranches(s, 'row-choice', null, [{ peerId: 'a', edge: [key('a'), empty] }, { peerId: 'b', edge: [key('b'), empty] }])
-  const pattern = product([s.primitive.choiceTarget.getId(), alternatives], [key('c'), text('yes')])
-  expect(matchesGraph(s, pattern, product([key('a'), empty], [key('c'), text('yes')]))).toBe(true)
-  expect(matchesGraph(s, pattern, product([key('b'), empty], [key('c'), text('yes')]))).toBe(true)
-  expect(matchesGraph(s, pattern, a)).toBe(false)
-  expect(matchesGraph(s, pattern, sum(a, c))).toBe(false)
-  expect(matchesGraph(s, sum(a, b), a)).toBe(true)
-  expect(matchesGraph(s, sum(a, b), sum(a, b))).toBe(true)
-  expect(matchesGraph(s, sum(a, b), c)).toBe(false)
-  expect(matchesGraph(s, product([key('nested'), a]), product([key('nested'), b]))).toBe(false)
+test('void is uninhabited: required in a type, an open hole in a value, until a ref holding it is overwritten', () => {
+  const { s, unit, text, node, field, never } = setup()
+  const title = field('title'), done = field('done')
+  const task = node([title, never], [done, unit])
+  expect(matchesGraph(s, task, node([title, text('Buy milk')], [done, never]))).toBe(true)
+  expect(matchesGraph(s, task, node([title, never], [done, unit]))).toBe(false)
+  expect(matchesGraph(s, task, node([title, never], [done, unit]), { allowHoles: true })).toBe(true)
+  expect(matchesGraph(s, never, never)).toBe(false)
+  // a hole is a ref whose value is void: filling it is overwriting the ref
+  const open = put(s, refNodeContent(s, { alias: { id: 'title' } }, never))
+  const filled = put(s, refNodeContent(s, { alias: { id: 'title' } }, text('Buy milk')))
+  expect(matchesGraph(s, task, node([title, open], [done, unit]))).toBe(false)
+  expect(matchesGraph(s, task, node([title, filled], [done, unit]))).toBe(true)
 })
 
-test('identities do not establish types; one node can satisfy different enclosing patterns', () => {
-  const { s, empty, key, text, product } = setup()
-  const a = product([key('a'), empty]), b = product([key('b'), empty])
-  const value = product([key('a'), text('first')], [key('b'), text('second')])
-  const renamed = put(s, { ...content(s, value), data: { alias: { id: 'another identity' } } })
-  expect(matchesGraph(s, a, renamed)).toBe(true)
-  expect(matchesGraph(s, b, renamed)).toBe(true)
-  expect(matchesGraph(s, value, renamed)).toBe(true)
+test('every pattern row needs its own witness row; extra rows are fine', () => {
+  const { s, unit, text, node, field } = setup()
+  const title = field('title'), done = field('done')
+  const pattern = node([title, unit], [done, unit])
+  expect(matchesGraph(s, pattern, node([title, text('a')], [done, unit], [field('subtask'), text('x')]))).toBe(true)
+  expect(matchesGraph(s, pattern, node([title, text('a')]))).toBe(false)
+  // two pattern rows cannot share one witness
+  expect(matchesGraph(s, node([title, unit], [title, unit]), node([title, text('a')]))).toBe(false)
+  expect(matchesGraph(s, node([title, unit], [title, unit]), node([title, text('a')], [title, text('b')]))).toBe(true)
 })
 
-test('immutable property rows are addressable only under their actual parent', () => {
-  const { s, key, text, product } = setup()
-  const field = text('value'), parent = product([key('property'), field])
-  expect(resolveScope(s, parent, [field])).toBe(field)
-  expect(resolveScope(s, product(), [field])).toBeNull()
-  expect(resolveScope(s, parent, [key('property')])).toBeNull()
+test('lefts match as fields, recursively: a parameterized field matches its constructor, different parameters differ', () => {
+  const { s, unit, text, node, field, string } = setup()
+  const name = primitive(s, 'name'), alias = field('alias')
+  const stringAlias = node([name, text('stringAlias')], [alias, string])
+  const titleField = node([name, text('stringAlias')], [alias, text('title')])
+  const bodyField = node([name, text('stringAlias')], [alias, text('body')])
+  expect(matchesGraph(s, node([stringAlias, string]), node([titleField, text('Buy milk')]))).toBe(true)
+  expect(matchesGraph(s, node([titleField, unit]), node([titleField, text('Buy milk')]))).toBe(true)
+  expect(matchesGraph(s, node([titleField, unit]), node([bodyField, text('Buy milk')]))).toBe(false)
 })
 
-test('a template input matches its constructed product without requiring editor policy rows', () => {
-  let r = createReplica()
-  r = addRow(r, [], 'template', 'Workflow definition', 1, { id: 'definition' })
-  r = addRequirement(r, ['definition'], 'Review it', 2, { capability: 'confirmation' }, 'review')
-  const definition = resolveScope(r.store, headCid(r), ['definition'])!
-  const pattern = templateValuePattern(r.store, definition)
-  r = addRow(r, [], 'task', 'My instance', 3, { id: 'instance' })
-  r = instantiateTemplateValue(r, [], 'instance', definition, 4)
-  expect(matchesGraph(r.store, pattern, resolveScope(r.store, headCid(r), ['instance'])!)).toBe(true)
-  expect(matchesGraph(r.store, pattern, put(r.store, { data: {}, children: [] }))).toBe(false)
+test('primitives check leaf values, and a filled leaf must be the same value', () => {
+  const { s, text, number, node, field, string, num, bool } = setup()
+  const amount = field('amount')
+  expect(matchesGraph(s, node([amount, num]), node([amount, number(30)]))).toBe(true)
+  expect(matchesGraph(s, node([amount, num]), node([amount, text('30')]))).toBe(false)
+  expect(matchesGraph(s, node([amount, string]), node([amount, text('30')]))).toBe(true)
+  expect(matchesGraph(s, bool, put(s, { data: { scalar: { type: 'boolean', value: true } }, children: [] }))).toBe(true)
+  expect(matchesGraph(s, node([amount, number(30)]), node([amount, number(30)]))).toBe(true)
+  expect(matchesGraph(s, node([amount, number(30)]), node([amount, number(31)]))).toBe(false)
 })
 
-test('submissions validate the enclosing row and refs carry no independent type', () => {
-  const { r, s, empty, key, text, product } = setup()
-  const pattern = product([key('complete'), empty])
-  let replica = addRefAt(r, [], 'result', pattern, 1)
-  const ref = content(s, resolveScope(s, headCid(replica), ['result'])!)
-  expect(ref.children.some(([left]) => left === s.primitive.instructionPointerConstructor.getId())).toBe(false)
-  const bad = proposeRefAt(replica, ['result'], product([key('other'), text('no')]), 'owner', 2)
-  expect(() => applyProposalAt(bad.replica, ['result'], bad.proposalCid, 'owner', 3)).toThrow(/incompatible/)
-  const good = proposeRefAt(replica, ['result'], product([key('complete'), text('yes')]), 'owner', 4)
-  replica = applyProposalAt(good.replica, ['result'], good.proposalCid, 'owner', 5)
-  expect(compileRow(replica, ['result']).right.complete).toBe(true)
+test('a ref is read as its current value; an unfilled ref is a hole only when holes are allowed', () => {
+  const { s, unit, text, node, field } = setup()
+  const title = field('title')
+  const filled = put(s, refNodeContent(s, { alias: { id: 'r1' } }, text('Venue')))
+  const open = put(s, refNodeContent(s, { alias: { id: 'r2' } }, null))
+  expect(matchesGraph(s, node([title, text('Venue')]), node([title, filled]))).toBe(true)
+  expect(matchesGraph(s, node([title, text('Other')]), node([title, filled]))).toBe(false)
+  expect(matchesGraph(s, node([title, text('Venue')]), node([title, open]))).toBe(false)
+  expect(matchesGraph(s, node([title, text('Venue')]), node([title, open]), { allowHoles: true })).toBe(true)
+  expect(matchesGraph(s, node([title, unit]), node([title, open]))).toBe(true)
 })
 
-test('partial assignments retain holes without proving an executable input', () => {
-  const { r, s, empty, key, text, product } = setup()
-  const pattern = product([key('complete'), text('yes')])
-  const hole = put(s, refNodeContent(s, { alias: { id: 'pending' } }, null))
-  expect(refValueCompatible(s, pattern, hole)).toBe(true)
-  expect(matchesGraph(s, pattern, hole)).toBe(false)
-  expect(compileRefGraph(r, hole).holes).toContainEqual(expect.objectContaining({ id: 'pending', reason: 'unbound' }))
-  expect(refValueCompatible(s, pattern, product([key('other'), empty]))).toBe(false)
+test('a sum is a choice: a pattern sum matches one of its options, a value sum matches only if every option does', () => {
+  const { s, text, node, field, sum, string, num } = setup()
+  const emoji = field('emoji'), icon = field('icon')
+  const either = sum(node([emoji, string]), node([icon, string]))
+  expect(matchesGraph(s, either, node([emoji, text('🌱')]))).toBe(true)
+  expect(matchesGraph(s, either, node([icon, text('calendar')]))).toBe(true)
+  expect(matchesGraph(s, either, node([field('other'), text('x')]))).toBe(false)
+  expect(matchesGraph(s, node([emoji, string]), sum(node([emoji, text('a')]), node([emoji, text('b')])))).toBe(true)
+  expect(matchesGraph(s, node([emoji, string]), sum(node([emoji, text('a')]), node([icon, text('b')])))).toBe(false)
+  expect(matchesGraph(s, node([emoji, num]), sum())).toBe(false)
 })
 
-test('native scalar constructors check values and remain distinct on the left', () => {
-  const { s, empty, text, product } = setup()
-  const number = put(s, { data: { form: { primitive: 'number' } }, children: [] })
-  const string = put(s, { data: { form: { primitive: 'text' } }, children: [] })
-  const nil = put(s, { data: { form: { primitive: 'null' } }, children: [] })
-  expect(matchesGraph(s, number, text('1'))).toBe(false)
-  expect(matchesGraph(s, number, put(s, { data: { scalar: { type: 'number', value: 1 } }, children: [] }))).toBe(true)
-  expect(matchesGraph(s, nil, put(s, { data: { scalar: { type: 'null', value: null } }, children: [] }))).toBe(true)
-  expect(matchesGraph(s, product([number, empty]), product([string, text('1')]))).toBe(false)
+test('a named hole binds once: every occurrence must meet the same value', () => {
+  const { s, text, node, field } = setup()
+  const hole = put(s, { data: { refHole: { slot: 0, role: 'input' } }, children: [] })
+  const from = field('from'), to = field('to')
+  const pattern = node([from, hole], [to, hole])
+  const result = match(s, pattern, node([from, text('a')], [to, text('a')]))
+  expect(result?.bindings.get(hole)).toBe(text('a'))
+  expect(match(s, pattern, node([from, text('a')], [to, text('b')]))).toBeNull()
+  expect(match(s, node([from, hole]), node([from, text('c')]), { bindings: new Map([[hole, text('a')]]) })).toBeNull()
+})
+
+test('a query returns the nodes a pattern matches', () => {
+  const { s, unit, text, node, field } = setup()
+  const title = field('title'), done = field('done')
+  const a = node([title, text('a')], [done, unit]), b = node([title, text('b')]), c = node([done, unit])
+  expect(query(s, node([title, unit], [done, unit]), [a, b, c])).toEqual([a])
+  expect(query(s, node([title, unit]), [a, b, c])).toEqual([a, b])
+})
+
+test('matching terminates on cycles through refs', () => {
+  const { s, node, field } = setup()
+  const loop = put(s, refNodeContent(s, { alias: { id: 'loop' } }, null))
+  expect(matchesGraph(s, node([field('x'), loop]), node([field('x'), loop]))).toBe(true)
+  expect(matchesGraph(s, node([field('x'), field('y')]), node([field('x'), loop]))).toBe(false)
 })

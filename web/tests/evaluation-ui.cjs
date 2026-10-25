@@ -9,7 +9,7 @@ for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTex
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export * from './src/analysis'; export {createMemoryStorage} from './src/storage'; export {createProjectStorage} from './src/project'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), external: ['mermaid','katex','katex/*'] })
 const { addRow, addRequirement, addConstructedRow, content, put, rowTypeAt, analysisRows, queryAnalysis, analysisTotals, App, mountUi, createMemoryStorage, createProjectStorage, loadReplica, evaluationRecord, SERVER_TRANSPORT_CAPABILITIES } = require(path.join(dir, 'test.cjs'))
 const TASK_TYPE = 'task'
-const PLAIN_TYPE = 'plain'
+const PLAIN_TYPE = 'title'
 const NOTE_TYPE = 'note'
 const TEMPLATE_TYPE = 'template'
 async function main() {
@@ -127,15 +127,15 @@ async function main() {
   assert(!triggers('Fos server').includes('Cron trigger'), 'Cron trigger is not offered before a provider advertises it')
   assert(triggers('Standard library').includes('Child evaluation'), 'the registered device handler advertises child evaluation at startup')
   app.recordServerOffers([...SERVER_TRANSPORT_CAPABILITIES, 'cron']) // the account server reports its scheduler
-  const { nativeRef, publishNativeRef, libAt, setHandlerOffersAt } = require(path.join(dir, 'test.cjs'))
-  const cron = nativeRef(store, 'fos', { id: 'server:cron', type: s => libAt(s).capabilities.cron })
-  app.set({ replica: publishNativeRef(app.state.replica, [], 'fos', cron, Date.now()) })
+  const { primitiveRef, publishPrimitive, libAt, setHandlerOffersAt } = require(path.join(dir, 'test.cjs'))
+  const cron = primitiveRef(store, 'fos', { id: 'server:cron', type: s => libAt(s).capabilities.cron })
+  app.set({ replica: publishPrimitive(app.state.replica, [], 'fos', cron, Date.now()) })
   const serverTriggers = triggers('Fos server')
   for (const label of ['Public template endpoint', 'Fos template endpoint', 'Cron trigger']) assert(serverTriggers.includes(label), label)
   assert(triggers('Standard library').includes('Child evaluation'), 'Child evaluation')
   const eventType = put(store, { data: { triggerDefinition: { label: 'User observer', icon: 'clock', mode: 'resume' } }, children: [] })
-  const observer = nativeRef(store, 'fos', { id: 'user:observer', type: () => eventType })
-  app.set({ replica: publishNativeRef(app.state.replica, [], 'fos', observer, Date.now()) })
+  const observer = primitiveRef(store, 'fos', { id: 'user:observer', type: () => eventType })
+  app.set({ replica: publishPrimitive(app.state.replica, [], 'fos', observer, Date.now()) })
   assert(triggers('Fos server').includes('User observer'), 'unfamiliar observer declarations drive the menu')
   app.set({ replica: setHandlerOffersAt(app.state.replica, [], 'fos', eventType, [], Date.now()) })
   assert(!triggers('Fos server').includes('User observer'), 'withdrawing the ref removes its constructor')

@@ -18,6 +18,6 @@ export function settlePayment(r: Replica, path: Scope, payment: PaymentSettlemen
   if (!request?.requirement || request.requirement.satisfied) return { replica: r, settled: false }
   const allocation = { resource: '', type: 'account' as const, amount: payment.amount, unit: request.requirement.unit ?? payment.unit, by: 'fos', at: now }
   const grant = grantValue(r.store, allocationPattern(r.store, taskPath, allocation, true), allocateCapability(r.store, taskPath), allocation,
-    { description: { content: `${payment.amount} ${payment.unit.toUpperCase()} to @${payment.payee}${payment.intent ? ` (${payment.intent})` : ''}` }, peerId: { content: 'fos' } })
+    { peerId: { content: 'fos' } }, [], `${payment.amount} ${payment.unit.toUpperCase()} to @${payment.payee}${payment.intent ? ` (${payment.intent})` : ''}`)
   return { replica: bindIssuedAuthority(r, path, grant, 'fos', now), settled: true }
 }

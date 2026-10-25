@@ -1,3 +1,7 @@
+import { isTriggerLeft } from '../../shared/sync/capabilities'
+import { TEXT_MASK } from '../../shared/sync/node-provider'
+import { textOf } from '../../shared/sync/fields'
+import { primitive } from '../../shared/sync/primitives'
 import { localGitControls, canVerifySpecifications, openSpecificationVerification } from './local-git'
 import { configureWorkflowDialog, requestProjectCoding, workflowStatus } from './project-workflow'
 import { projectWorkflow, workflowAt } from '../../shared/sync/project-workflow'
@@ -15,11 +19,11 @@ import { AUDIENCE_LABEL, audiencePeer } from '../../shared/sync/sharing'
 import { SETTING_LABELS, settingKeyOf } from './settings'
 import { combobox } from './combobox'
 import { iconSvg } from './icons'
-import { isNegative } from '../../shared/sync/parameters'
 import { libAt } from '../../shared/sync/graph'
 import { capabilityPresentation } from './capability-presentation'
 import { openTimeBlockPicker, type TimeBank } from './timeblocks'
 import { alternativePicker, proposalPreview, clearProposal } from './alternatives'
+import { compareBranches } from './branch-compare'
 /**
  * DOM rendering. The shell is built once; each state change re-renders the
  * dynamic regions from the app state and the replica's view model (plain ids,
@@ -28,7 +32,7 @@ import { alternativePicker, proposalPreview, clearProposal } from './alternative
 
 import QRCode from 'qrcode'
 import { sharingControls } from './sharing'
-import { readNodeValue, nodeShape, NODE_PERMISSION_DEFAULT, resolveScope, resolveText, put, content, valueContent, headCid, viewNode, findChild, WORK_SYSTEM, isDirty, view as viewAt, type ChoiceView, homePath, type MovePosition, type NodeView, type Scope, type TaskView } from '../../shared/sync/index'
+import { readNodeValue, nodeShape, NODE_PERMISSION_DEFAULT, resolveScope, resolveText, put, content, valueContent, headCid, viewNode, findChild, WORK_SYSTEM, isDirty, view as viewAt, type ChoiceView, homePath, type MovePosition, type NodeView, type Scope, type TaskView, isLibraryType } from '../../shared/sync/index'
 import type { App, AppState, ContextPeer } from './app'
 import { hydrateDiagrams, renderMarkdown } from './markdown'
 import { RESOURCE_NAME, SYNTAX_HELP, allocationTag, argumentType, describeParsed, downloadText, formatAmount, rawRowText, renderInlineText } from './rows'
@@ -226,7 +230,6 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
   const record = app.evaluationStatus(root)
   const locked = app.evaluating || !!record && record.status !== 'idle' && record.status !== 'rolled-back' && record.status !== 'awaiting-review'
   const current = app.currentRow()
-  const documentRow = current?.headline ? viewAt(state.replica, root)?.tasks.find(row => row.scalar && row.text?.mediaType === 'text/markdown') : undefined
   if (!!current?.checkable) {
     const actions = div('execution-task-actions', '')
     const complete = button('primary', 'Complete', () => void app.finishExecution()); complete.disabled = locked
@@ -240,13 +243,9 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
     time.append(notes, toggle)
     for (const entry of entries) time.append(div('time-entry', `${new Date(entry.start).toLocaleString()} ? ${entry.end === undefined ? 'Running' : Math.round((entry.end - entry.start) / 1000) + ' seconds'}${entry.notes ? ' ? ' + entry.notes : ''}`))
     regions.node.append(time)
-  } else if (current?.text?.mediaType === 'text/markdown') {
-    const parentState = { ...state, view: root.slice(0, -1) }
-    const output = renderNoteBody(current, [], parentState, app); output.title = ''; output.classList.add('execution-document')
-    regions.node.replaceChildren(output)
-  } else if (current?.headline && documentRow) {
-    // a note: its Markdown body row is the document
-    const output = renderNoteBody(documentRow, [], { ...state, view: root }, app); output.title = ''; output.classList.add('execution-document')
+  } else if (current?.body !== undefined) {
+    // a note: its body is the document
+    const output = renderNoteBody(current, [], { ...state, view: root.slice(0, -1) }, app); output.title = ''; output.classList.add('execution-document')
     regions.node.replaceChildren(h4(current.title), output)
   }
   const toolbar = div('execution-toolbar', '')
@@ -290,14 +289,14 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
     li.append(span('constructor-label', field.name), input, save); rows.push(li)
     if (field.role !== 'output') work = true
   }
-  const walk = (path: Scope, depth: number, fields: string[] = []) => {
+  const walk = (path: Scope, depth: number) => {
     if (depth > 32 || rows.length > 1000) return
     for (const row of viewAt(state.replica, path)?.tasks ?? []) {
-      if (row.construction || fields.includes(row.id)) continue
+      if (row.construction) continue
       const held = handleAt(state.replica, [...path, row.id])
       if (row.requirement || row.allocation || held) work = true
       const li = document.createElement('li'); li.className = 'task'; li.style.setProperty('--depth', String(depth))
-      const body = row.text?.mediaType === 'text/markdown'
+      const body = row.body !== undefined
         ? renderNoteBody(row, [], { ...state, view: path }, app)
         : span('title', resolveText(state.replica, [...path, row.id], row.title).text)
       body.title = ''
@@ -325,10 +324,10 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
       }
       for (const control of li.querySelectorAll<HTMLButtonElement | HTMLSelectElement>('button,select')) control.disabled = locked
       rows.push(li)
-      if (row.refId === undefined && row.type !== TEMPLATE_TYPE) walk([...path, row.id], depth + 1, inlineFields(row))
+      if (row.refId === undefined && row.type !== TEMPLATE_TYPE) walk([...path, row.id], depth + 1)
     }
   }
-  walk(root, 0, [...(current ? inlineFields(current) : []), ...(documentRow ? [documentRow.id] : [])])
+  walk(root, 0)
   const status = document.createElement('li'); status.className = 'task has-constructor'; status.append(span('title', record?.status === 'committed' ? 'Complete' : record?.status === 'idle' ? '' : record?.status ?? ''))
   if (record?.error) status.append(span('error', record.error))
   // Tasks carry their own Complete above; other work gets one here, and plain content gets none.
@@ -468,6 +467,7 @@ function renderCrumbs(el: HTMLElement, state: AppState, app: App): void {
     crumbs.append(settings, span('sep', '‹'), home)
   } else {
     crumbs.append(homeCrumb)
+    if (!settingsContext) crumbDrop(homeCrumb, app, homePath(state.replica))
     view.forEach((_id, index) => {
       if (app.isHome(view.slice(0, index + 1))) return
       const row = viewAt(state.replica, view.slice(0, index), true)?.tasks.find(row => row.id === _id)
@@ -475,6 +475,7 @@ function renderCrumbs(el: HTMLElement, state: AppState, app: App): void {
       crumb.title = labels.view[index] ?? ''
       const symbol = ({ task: '☑', note: 'note', comment: 'comment', template: '✦', allocation: 'money', money: 'money', requirement: '⑂' } as Record<string, string>)[row ? typeClass(row) : '']
       if (symbol) { const icon = span('crumb-icon', ''); icon.innerHTML = iconSvg(symbol) ?? ''; crumb.prepend(icon) }
+      crumbDrop(crumb, app, view.slice(0, index + 1))
       crumbs.append(span('sep', '›'), crumb)
     })
     const current = crumbs.lastElementChild as HTMLElement
@@ -484,6 +485,18 @@ function renderCrumbs(el: HTMLElement, state: AppState, app: App): void {
   el.replaceChildren(crumbs)
 }
 
+/** A crumb takes a row dragged from the tree: it goes to the end of that node (moved, or with Alt/Ctrl a reference or copy). */
+function crumbDrop(crumb: HTMLElement, app: App, target: Scope): void {
+  crumb.addEventListener('dragover', event => { if (!drag) return; event.preventDefault(); if (event.dataTransfer) event.dataTransfer.dropEffect = drag.mode === 'move' ? 'move' : drag.mode === 'ref' ? 'link' : 'copy'; crumb.classList.add('drop-into') })
+  crumb.addEventListener('dragleave', () => crumb.classList.remove('drop-into'))
+  crumb.addEventListener('drop', event => {
+    crumb.classList.remove('drop-into')
+    if (!drag) return
+    event.preventDefault(); event.stopPropagation()
+    const { at, id, mode } = drag; drag = null
+    app.dropRowInto(at, id, target, mode)
+  })
+}
 function branchSelector(task: TaskView, at: Scope, app: App, absolute = false): HTMLElement {
   return alternativePicker(app, [...(absolute ? [] : app.state.view), ...at, task.id], task)
 }
@@ -587,6 +600,17 @@ function typeClass(task: TaskView): string {
   // a library type's field name (`money` → `type-money`); a row of a template is a task, handled above
   return task.type && !task.template ? task.type.replace(/[A-Z]/g, c => '-' + c.toLowerCase()) : 'plain'
 }
+/** The glyph a row's type chip shows when its capability declares no icon: by what the row is, like the crumbs. */
+function typeIcon(task: TaskView): string | null {
+  if (task.requirement) {
+    const r = task.requirement
+    return r.resource === 'calendar' || r.capability === 'time' ? 'clock' : r.resource === 'inventory' ? 'things' : r.resource || r.capability === 'allocation' ? 'money'
+      : ({ choice: 'decision', confirmation: 'confirm', peer: 'person', user: 'person', search: 'query', llm: '✦', mail: 'mail', market: 'store' } as Record<string, string>)[r.capability ?? ''] ?? 'request'
+  }
+  if (task.allocation) return task.allocation.type === 'calendar' ? 'clock' : task.allocation.type === 'inventory' ? 'things' : 'coins'
+  // a task's checkbox already says what it is
+  return ({ note: 'note', comment: 'comment', template: 'template', resource: 'bank', query: 'query', markdown: 'note', user: 'person', ref: 'link' } as Record<string, string>)[typeClass(task)] ?? null
+}
 type DragMode = 'move' | 'ref' | 'copy'
 let drag: { id: string; at: Scope; mode: DragMode } | null = null
 let pointerDown = false
@@ -656,13 +680,13 @@ function installRowClipboard(list: HTMLElement, app: App): void {
 
 type NodeLayout = 'tree'
 /** `peer`: the selected tab of the constructor panel ('device' or a context peer id); `input`: the text/media input panel under the title. */
-type WorkspacePrefs = { peer: string; layout: NodeLayout; actionTab: string; search: string; trigger?: string; open: Record<string, boolean>; input: boolean }
+type WorkspacePrefs = { peer: string; layout: NodeLayout; actionTab: string; search: string; trigger?: string; open: Record<string, boolean> }
 const workspacePrefs = new WeakMap<App, WorkspacePrefs>()
 const composerObservers = new WeakMap<HTMLElement, ResizeObserver>()
 const workspaceSearch = new WeakMap<App, { key: string; values: Map<string, string> }>()
 function workspace(app: App): WorkspacePrefs {
   let prefs = workspacePrefs.get(app)
-  if (!prefs) { prefs = { peer: 'library', layout: 'tree', actionTab: 'main', search: '', open: { context: true }, input: true }; workspacePrefs.set(app, prefs) }
+  if (!prefs) { prefs = { peer: 'library', layout: 'tree', actionTab: 'main', search: '', open: { context: true } }; workspacePrefs.set(app, prefs) }
   const key = JSON.stringify([app.state.atRoot, app.state.view])
   let search = workspaceSearch.get(app)
   if (!search) { search = { key, values: new Map() }; workspaceSearch.set(app, search) }
@@ -696,7 +720,16 @@ const CONSTRUCTORS = [
 ] as const
 type ConstructorItem = { id: string; label: string; icon: string; description?: string; output: string; group: string; parent?: string; mask?: { peer: string; key: 'fields' | 'children'; id: string }; peer?: Peer; triggerPeer?: string }
 const PATTERN_DRAG_TYPE = 'application/x-fos-capability-pattern'
-type CapabilityTerm = { id: string; negative: boolean }
+/**
+ * A term of the capability pattern: a capability with a sign. Neutral is a row of it (data, asks nothing), + a supply
+ * of it (an allocation, a handler's row), − a requirement of it (a hole). Terms sharing a `group` are a branch: either
+ * one will do. Groups combine as AND.
+ */
+type Sign = 'neutral' | 'positive' | 'negative'
+type CapabilityTerm = { id: string; sign: Sign; group?: number }
+const SIGN_GLYPH: Record<Sign, string> = { neutral: '·', positive: '+', negative: '−' }
+const SIGN_WORD: Record<Sign, string> = { neutral: 'neutral, data only', positive: 'supplies', negative: 'requires (a hole)' }
+const SIGNS: Sign[] = ['neutral', 'positive', 'negative']
 const capabilityPatterns = new WeakMap<App, { key: string; store: AppState['replica']['store']; selected: CapabilityTerm[]; applied: CapabilityTerm[] }>()
 function capabilityPattern(app: App) {
   const key = JSON.stringify([app.state.view, app.state.atRoot])
@@ -711,12 +744,12 @@ function inverseConstructor(id: string): string | null {
   if (id.startsWith('seed:')) return `seed:-${id.slice(5)}`
   return null
 }
-function patternMatches(app: App, row: TaskView): boolean {
-  const terms = capabilityPattern(app).applied
-  if (!terms.length) return true
-  const options = constructorOptions(app)
-  return terms.some(term => {
-    const id = term.negative ? inverseConstructor(term.id) ?? term.id : term.id
+/** Whether the row itself is the term: a row of its capability, with the term's sign. */
+function termMatches(app: App, options: ConstructorItem[], term: CapabilityTerm, row: TaskView): boolean {
+  const negative = term.sign === 'negative'
+  const id = negative ? inverseConstructor(term.id) ?? term.id : term.id
+  const supply = !row.requirement && (!!row.allocation || !!row.construction)
+  const typed = ((): boolean => {
     if (id.startsWith('mask:children:')) return row.id === id.slice(14)
     const item = options.find(option => option.id === id)
     const seed = id.startsWith('seed:') ? id.slice(5) : ({ account: '$ ', calendar: ': ', inventory: '# ' } as Record<string, string>)[id]
@@ -726,11 +759,30 @@ function patternMatches(app: App, row: TaskView): boolean {
       if (parsed.extras?.allocation) return !row.requirement && row.allocation?.type === parsed.extras.allocation.type
       return row.type === parsed.type && !row.requirement
     }
-    if (id.startsWith('name:')) return (row.type === id.slice(5) || row.type === `capabilities.${id.slice(5)}`) && (!!row.typeCid && isNegative(app.state.replica.store, row.typeCid)) === term.negative
+    if (id.startsWith('name:')) return (row.type === id.slice(5) || row.type === `capabilities.${id.slice(5)}`) && !!row.requirement === negative
     if (id.startsWith('library:')) return row.template?.id === id.slice(8)
     if (id.startsWith('peer-row:')) return row.construction?.handler === id.slice(9) || row.construction?.peerId === id.slice(9)
-    return !!item && [row.type, row.requirement?.capability, row.allocation?.type].includes(item.output) && (!term.negative || !!row.requirement)
-  })
+    if (id.startsWith('scope:')) return row.typeCid === id.slice(6) || row.requirement?.capability === item?.label
+    return !!item && [row.type, row.requirement?.capability, row.allocation?.type].includes(item.output) && (!negative || !!row.requirement)
+  })()
+  return typed && (term.sign !== 'positive' || supply)
+}
+/** The applied pattern as AND of OR groups; a selected sub-capability refines its parent, which then drops out. */
+function patternGroups(app: App, options: ConstructorItem[]): CapabilityTerm[][] {
+  const terms = capabilityPattern(app).applied
+  const refined = new Set(terms.map(term => options.find(option => option.id === term.id)?.parent).filter((id): id is string => !!id))
+  const groups = new Map<string, CapabilityTerm[]>()
+  terms.filter(term => !refined.has(term.id)).forEach((term, index) => { const key = term.group === undefined ? `t${index}` : `g${term.group}`; groups.set(key, [...groups.get(key) ?? [], term]) })
+  return [...groups.values()]
+}
+/** A row matches the pattern when its subtree holds every group: the row or a row inside it is one of each group's terms. */
+function patternMatches(app: App, row: TaskView, path: Scope): boolean {
+  if (!capabilityPattern(app).applied.length) return true
+  const options = constructorOptions(app), groups = patternGroups(app, options)
+  const subtree: TaskView[] = []
+  const collect = (task: TaskView, at: Scope) => { subtree.push(task); if (at.length < 64 && subtree.length < 2000 && task.childCount) for (const child of viewAt(app.state.replica, at)?.tasks ?? []) collect(child, [...at, child.id]) }
+  collect(row, path)
+  return groups.every(group => group.some(term => subtree.some(task => termMatches(app, options, term, task))))
 }
 /**
  * Peer rows the panel makes (`@{handler}`): connecting this node to a peer. Whatever a connection needs (a code, a
@@ -769,13 +821,15 @@ function constructorOptions(app: App): ConstructorItem[] {
       const parent = app.libraryNames().find(other => other.node !== n.node && valueContent(app.state.replica.store, other.node).children.some(([left]) => left === n.node))
       return { id: `name:${n.name}`, label: n.label, icon: n.icon ?? 'handler', description: n.description, output: n.name, group: 'library', ...(parent ? { parent: `name:${parent.name}` } : {}) }
     }),
+    // capabilities declared by name in this scope (search + adds one): open holes a row can require until something fills them
+    ...app.scopeCapabilities(app.constructorContext()).map(c => ({ id: `scope:${c.type}`, label: c.name, icon: 'handler', output: c.type, group: 'library' })),
     ...PEER_ROWS.filter(r => !r.desktop || inTauri()).map(r => ({ id: `peer-row:${r.id}`, label: r.label, icon: r.icon, output: 'peer', group: r.server ? account : 'device' })),
     // a sub-peer's own row on this node: MCP servers and integrations (agents have their launch constructors)
     ...peers.filter(p => p.mcpServer || p.integration).map(p => ({ id: `peer-row:${p.integration ? p.id.slice(12) : p.id}`, label: p.integration ? `Connect ${p.name}` : p.name, icon: peerIcon(p), output: 'peer', group: p.id })),
     { id: 'trigger:public', label: 'Public template endpoint', icon: 'broadcast', output: 'trigger', group: 'triggers' },
     { id: 'trigger:users', label: 'Fos template endpoint', icon: 'user-check', output: 'trigger', group: 'triggers' },
     ...ROW_SEEDS.map(([label, seed, icon]) => ({ id: `seed:${seed}`, label, icon, output: 'row', group: 'device' })),
-    ...app.handlerOffers().filter(o => !content(app.state.replica.store,o.type).data.triggerDefinition).map(o => { const presentation = capabilityPresentation(app.state.replica.store, o.type); return { id: `handler:${o.cid}`, label: o.label, icon: presentation.icon ?? 'handler', description: presentation.description, output: o.type === app.state.replica.store.primitive.templateField.getId() ? 'template' : o.capability ?? o.type, group: offerGroup(o.peerId) } }),
+    ...app.handlerOffers().filter(o => !isTriggerLeft(app.state.replica.store, o.type)).map(o => { const presentation = capabilityPresentation(app.state.replica.store, o.type); return { id: `handler:${o.cid}`, label: o.label, icon: presentation.icon ?? 'handler', description: presentation.description, output: isLibraryType(app.state.replica.store, o.type, TEMPLATE_TYPE) ? 'template' : o.capability ?? o.type, group: offerGroup(o.peerId) } }),
     ...(canVerifySpecifications(app,app.constructorContext()) ? [{id:'verify-specifications',label:'Verify specifications',icon:'verify',output:'tool',group:'device'}] : []),
     { id: 'feature-specification', label: 'Feature specification', icon: 'specification', output: 'note', group: 'device' },
     ...CONSTRUCTORS.map(c => ({ ...c, output: c.id === 'integration' ? 'peer' : c.id === 'repository' ? 'repo' : c.id, group: c.id === 'repository' ? github : 'device' })),
@@ -819,19 +873,21 @@ function constructorControl(app: App, item: ConstructorItem, target: HTMLElement
     if (held) { held = false; return }
     if (item.id.startsWith('peer:')) { insertConstructor(app, item.id); return }
     if (!state.enabled) return
+    // a tap puts the capability in the pattern (neutral) or takes it out; its sign is picked by holding
     const index = pattern.selected.findIndex(term => term.id === item.id)
-    if (index < 0) pattern.selected.push({ id: item.id, negative: false }); else pattern.selected.splice(index, 1)
+    if (index < 0) pattern.selected.push({ id: item.id, sign: 'neutral' }); else pattern.selected.splice(index, 1)
     app.refresh()
   })
-  b.setAttribute('aria-pressed', String(!!term)); b.classList.toggle('negative', !!term?.negative)
-  b.title = `${item.label}${term?.negative ? ' · inverse' : ''} — select; hold and drag to a row or input; drag up to invert`
+  b.setAttribute('aria-pressed', String(!!term)); b.classList.toggle('negative', term?.sign === 'negative'); b.classList.toggle('positive', term?.sign === 'positive')
+  if (term) { const badge = span('sign-badge', SIGN_GLYPH[term.sign]); badge.setAttribute('aria-hidden', 'true'); b.append(badge) }
+  b.title = `${item.label}${term ? ` · ${SIGN_WORD[term.sign]}` : ''} — tap to select; hold and drag to a row, an input, or a sign above`
   const description = div('capability-description', '')
   description.id = `capability-description-${++capabilityDescriptionId}`; description.setAttribute('role', 'tooltip')
   const descriptionTitle = div('capability-description-title', '')
   const descriptionIcon = span('capability-description-icon', '')
   descriptionIcon.innerHTML = iconSvg(item.icon) ?? ''; if (!descriptionIcon.childElementCount) descriptionIcon.textContent = item.icon
   descriptionTitle.append(descriptionIcon, span('', item.label))
-  description.append(descriptionTitle, div('', item.description || item.label), div('muted small', 'Drag up to invert · Drop on New row or an input'))
+  description.append(descriptionTitle, div('', item.description || item.label), div('muted small', 'Drop on + or − to sign it, on Branch for either-or · on New row or an input to make it'))
   const hideDescription = () => { clearTimeout(descriptionTimer); description.remove(); b.removeAttribute('aria-describedby') }
   const showDescription = () => { target.parentElement?.querySelector('.capability-description')?.remove(); target.parentElement?.append(description); b.setAttribute('aria-describedby', description.id) }
   b.addEventListener('pointerdown', () => { held = false; clearTimeout(descriptionTimer); descriptionTimer = setTimeout(() => { held = true; showDescription() }, 350) })
@@ -844,22 +900,33 @@ function constructorControl(app: App, item: ConstructorItem, target: HTMLElement
   if (item.peer) { b.classList.add('sub-peer', `peer-status-${app.peerStatus(item.peer)}`); b.title = `${item.label} · ${app.peerStatus(item.peer) === 'disabled' ? 'nothing granted here' : app.peerStatus(item.peer)}` }
   b.classList.toggle('constructor-disabled', !state.enabled)
   b.setAttribute('aria-disabled', String(!state.enabled))
-  constructorDrag(b, term?.negative ? inverseConstructor(item.id) ?? `inverse:${item.id}` : item.id)
+  constructorDrag(b, term?.sign === 'negative' ? inverseConstructor(item.id) ?? `inverse:${item.id}` : item.id)
   b.addEventListener('dragstart', event => {
     if (!app.canApprove() || proposalPreview(app)) return
     activeConstructorDrags.get(app)?.clear()
     showDescription()
-    const clear = () => { hideDescription(); target.hidden = true; target.ondrop = null; target.ondragover = null; activeConstructorDrags.delete(app) }
+    const clear = () => { hideDescription(); target.hidden = true; target.ondrop = null; target.ondragover = null; target.replaceChildren(); activeConstructorDrags.delete(app) }
     activeConstructorDrags.set(app, { store: app.state.replica.store, path: JSON.stringify(app.state.view), source: b, clear })
-    target.hidden = false; target.textContent = '↑ Invert capability'
+    // the zones above the icons: the two signs it does not have yet, and Branch (either this or the last term)
+    const current = pattern.selected.find(term => term.id === item.id)?.sign ?? 'neutral'
+    const zones = [...SIGNS.filter(sign => sign !== current).map(sign => ({ zone: sign, label: `${SIGN_GLYPH[sign]} ${sign === 'neutral' ? 'neutral' : sign === 'positive' ? 'supplies' : 'requires'}` })), { zone: 'branch', label: '⑂ Branch (either)' }]
+    target.replaceChildren(...zones.map(({ zone, label }) => { const z = span(`sign-zone sign-zone-${zone}`, label); z.dataset.zone = zone; return z }))
+    target.hidden = false
     const store = app.state.replica.store, path = JSON.stringify(app.state.view)
     target.ondragover = e => { if (e.dataTransfer?.types.includes(CONSTRUCTOR_DRAG_TYPE)) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy' } }
     target.ondrop = e => {
-      e.preventDefault(); e.stopPropagation(); clear()
+      e.preventDefault(); e.stopPropagation()
+      const zone = (e.target as HTMLElement).closest<HTMLElement>('[data-zone]')?.dataset.zone ?? (current === 'negative' ? 'positive' : 'negative')
+      clear()
       if (!e.dataTransfer?.getData(CONSTRUCTOR_DRAG_TYPE) || app.state.replica.store !== store || JSON.stringify(app.state.view) !== path || proposalPreview(app) || !app.canApprove()) return
-      const selected = pattern.selected.find(term => term.id === item.id)
-      if (selected) selected.negative = !selected.negative
-      else pattern.selected.push({ id: item.id, negative: true })
+      let selected = pattern.selected.find(term => term.id === item.id)
+      if (!selected) { selected = { id: item.id, sign: 'neutral' }; pattern.selected.push(selected) }
+      if (zone === 'branch') {
+        const other = [...pattern.selected].reverse().find(term => term !== selected)
+        if (!other) { app.notify('info', 'Select another capability first: a branch is either one.'); app.refresh(); return }
+        other.group ??= Math.max(0, ...pattern.selected.map(term => (term.group ?? 0) + 1))
+        selected.group = other.group
+      } else selected.sign = zone as Sign
       app.refresh()
     }
   })
@@ -948,6 +1015,7 @@ function insertConstructor(app: App, id: string, path = app.constructorContext()
   if (id === 'feature-specification') { app.addFeatureSpecification(path); return }
   if (id.startsWith('seed:')) { seedRow(app, id.slice(5), path, replace); return }
   if (id.startsWith('handler:')) { try { app.insertHandler(id.slice(8), path) } catch (error) { app.notify('error', String(error)) }; return }
+  if (id.startsWith('scope:')) { try { app.applyConstructor(path, { type: id.slice(6), text: item?.label ?? '', done: false }, replace) } catch (error) { app.notify('error', String(error)) }; return }
   if (id === 'pull') { try { app.addPullConstructor(path) } catch (error) { app.notify('error', String(error)) }; return }
   if (id.startsWith('peer:')) { workspace(app).peer = id.slice(5); app.refresh(); return } // a sub-peer icon: open its own constructors
   if (id.startsWith('action:agent-launch:')) {
@@ -1215,9 +1283,15 @@ function openImport(app: App): void {
   }
   dialog.addEventListener('close', () => dialog.remove()); document.body.append(dialog); dialog.showModal()
 }
-function mediaPicker(app: App, label: string, accept: string, attach = false): HTMLElement {
+/** An entry of the composer's + menu: icon, label and what it does. */
+function menuItem(icon: string, label: string, hint: string, run: () => void): HTMLButtonElement {
+  const b = button('input-menu-item', '', run); b.setAttribute('role', 'menuitem'); b.setAttribute('aria-label', label)
+  b.innerHTML = iconSvg(icon) ?? ''; b.append(span('input-menu-label', label), span('input-menu-hint', hint))
+  return b
+}
+function mediaPicker(app: App, label: string, accept: string, attach = false, hint = ''): HTMLElement {
   const input = document.createElement('input'); input.type = 'file'; input.accept = accept; input.hidden = true; input.setAttribute('aria-label', label)
-  const box = span('media-input', ''), trigger = iconButton(attach ? 'file' : accept.startsWith('image') ? 'image' : 'video', label, () => { at = [...app.state.view]; store = app.state.replica.store; input.click() })
+  const box = span('media-input', ''), trigger = menuItem(attach ? 'file' : accept.startsWith('image') ? 'image' : 'video', label, hint, () => { at = [...app.state.view]; store = app.state.replica.store; input.click() })
   let at = [...app.state.view], store = app.state.replica.store
   input.onchange = async () => { const file = input.files?.[0]; if (!file || store !== app.state.replica.store) return; try { if (attach) await app.attachFile(file, at); else await app.inputMedia(file, at) } catch (error) { app.notify('error', String(error)) } finally { input.value = '' } }
   box.append(trigger, input); return box
@@ -1332,7 +1406,7 @@ function renderConstructorPanel(head: HTMLElement, grid: HTMLElement, suggestion
 
   if (!preview && !isTriggers && group.id !== 'library') {
     const peer = group.peer?.id ?? NODE_PERMISSION_DEFAULT
-    for (const id of Object.keys(nodeShape(state.replica, state.view).data)) group.items.push({ id: `mask:fields:${id}`, label: id === 'description' ? 'Text' : id, icon: 'note', output: 'field', group: group.id, mask: { peer, key: 'fields', id } })
+    for (const id of [TEXT_MASK, ...Object.keys(nodeShape(state.replica, state.view).data)]) group.items.push({ id: `mask:fields:${id}`, label: id === TEXT_MASK ? 'Text' : id, icon: 'note', output: 'field', group: group.id, mask: { peer, key: 'fields', id } })
     for (const row of app.currentView()?.tasks ?? []) if (!row.construction) group.items.push({ id: `mask:children:${row.id}`, label: row.title || 'Untitled node', icon: 'device', output: 'child', group: group.id, mask: { peer, key: 'children', id: row.id } })
   }
   grid.setAttribute('aria-label', `${group.name} constructors`); grid.replaceChildren()
@@ -1363,12 +1437,22 @@ function renderConstructorPanel(head: HTMLElement, grid: HTMLElement, suggestion
   })
   handle.addEventListener('dragend', () => { activeConstructorDrags.get(app)?.clear(); app.refresh() })
   installTouchDrag(handle); pattern.append(handle)
+  // the terms in order; a branch's terms sit together, read as either one
+  const placed = new Set<CapabilityTerm>()
   for (const term of selected) {
-    const item = options.find(item => item.id === term.id) ?? group.items.find(item => item.id === term.id)
-    const chip = button('pattern-term' + (term.negative ? ' negative' : ''), `${term.negative ? '−' : '+'} ${item?.label ?? 'Row'}`, () => { term.negative = !term.negative; app.refresh() })
-    chip.title = 'Invert capability'; pattern.append(chip)
+    if (placed.has(term)) continue
+    const members = term.group === undefined ? [term] : selected.filter(other => other.group === term.group)
+    const box = members.length > 1 ? span('pattern-branch', '') : null
+    members.forEach((member, index) => {
+      placed.add(member)
+      const item = options.find(item => item.id === member.id) ?? group.items.find(item => item.id === member.id)
+      const chip = button(`pattern-term sign-${member.sign}`, `${SIGN_GLYPH[member.sign]} ${item?.label ?? 'Row'}`, () => { member.sign = SIGNS[(SIGNS.indexOf(member.sign) + 1) % SIGNS.length]!; app.refresh() })
+      chip.title = `${item?.label ?? 'Row'}: ${SIGN_WORD[member.sign]} — click to change the sign`
+      if (box) { if (index) box.append(span('pattern-or', 'or')); box.append(chip) } else pattern.append(chip)
+    })
+    if (box) pattern.append(box)
   }
-  pattern.append(span('muted small', 'Select · hold to drag · drag up to invert'))
+  pattern.append(span('muted small', 'Tap to select · hold to sign or drag'))
   grid.after(pattern)
   grid.hidden = false
   if (!group.items.length) grid.append(span('muted', group.id === 'library' ? 'No standard library constructors are available on this device yet.' : isTriggers ? 'No trigger handlers are active here.' : group.peer?.online === false ? 'Connect this peer to use its constructors.' : 'No constructors from this peer yet.'))
@@ -1612,8 +1696,6 @@ const details = new WeakMap<HTMLElement, { key: string; store: AppState['replica
 const ORGANIZE_TITLE = 'The account\'s model files each point under the row it belongs to here (or new rows grouped here), keeping the text as a note: one submission from fos you accept or reject here'
 /** A long prose paste goes to the node's capture box to be organized, instead of one row per line. */
 function offerOrganize(app: App, text: string): void {
-  const prefs = workspace(app)
-  if (!prefs.input) { prefs.input = true; app.refresh() }
   const box = document.querySelector<HTMLTextAreaElement>('.node-input .capture-text')
   if (!box) return
   box.value = box.value.trim() ? `${box.value.trimEnd()}\n\n${text}` : text
@@ -1640,14 +1722,18 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     titleRow.className = 'node-title-row task current-node-row'; titleRow.style.setProperty('--depth', '0')
     const editing = span('title editing', ''); editing.append(input, peerAutocomplete(input, app))
     const titleLeft = div('row-left type-chip', ''), titleRight = div('row-right', '')
-    titleLeft.append(span('row-type-name', row?.scalar ? row.typeName ?? 'Value' : 'Text'), kindPreview(input, app), after); titleRight.append(check, editing)
+    // the node's own row heads the rows: its type as an icon chip, then its editor, what the text reads as and its badges
+    const glyph = row?.checkable ? null : (row && typeIcon(row)) ?? 'title'
+    if (glyph) { const titleIcon = span('row-type-icon', ''); titleIcon.innerHTML = iconSvg(glyph) ?? ''; titleLeft.classList.add('has-icon'); titleLeft.append(titleIcon, span('row-type-name', row?.scalar ? row.typeName ?? 'Value' : row?.typeName ?? 'Title')) }
+    titleLeft.hidden = !glyph
+    titleRight.append(check, editing, kindPreview(input, app), after)
     titleRow.append(titleLeft, titleRight)
     const controls = div('node-actions', '')
     const entry = { key, store: state.replica.store, input, baseline: raw, draft: { store: state.replica.store, head: headCid(state.replica), path: [...state.view] }, controls, titleRow, check, after }
     const save = () => {
       if (entry.input.readOnly || entry.input.value === entry.baseline) return
       const text = entry.input.value, current = app.currentRow(); entry.baseline = text
-      if (!current || current.text || current.scalar || current.refId !== undefined) app.editCurrentText(text, entry.draft)
+      if (!current || current.body !== undefined || current.scalar || current.refId !== undefined) app.editCurrentText(text, entry.draft)
       else app.rewriteCurrentRow(app.parseRowInput(text), entry.draft)
       entry.draft = { ...entry.draft, head: headCid(app.state.replica) }
     }
@@ -1669,23 +1755,33 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     const search = combobox('Find a node to link', 'Search constructors or nodes…', query => [...constructorOptions(app).filter(c => constructorState(app, c).enabled).filter(c => c.label.toLowerCase().includes(query.toLowerCase())).map(c => ({ label: c.label, group: 'Constructors', drag: { type: CONSTRUCTOR_DRAG_TYPE, value: c.id }, run: () => insertConstructor(app, c.id) })), ...(query ? app.searchLocalNodes(query).map(found => ({
       label: `${found.row.title} · ${found.row.typeName ?? 'Row'}`, group: 'Values', disabled: !app.canLinkNode(found.row.id),
       drag: { type: NODE_DRAG_TYPE, value: found.row.id }, run: () => app.linkNode(found.row.id)
-    })) : [])], () => [], 'Search constructors on all peers, or nodes to link…')
+    })) : [])], query => {
+      // nothing by that name: declare it here, as a capability rows can ask for
+      const name = query.trim()
+      return name && !constructorOptions(app).some(c => c.label.toLowerCase() === name.toLowerCase()) && !proposalPreview(app) ? [{ label: `+ Add “${name}” as a capability here`, group: 'Create', run: () => app.declareCapability(name) }] : []
+    }, 'Search constructors on all peers, or nodes to link…')
     search.classList.add('node-search')
-    // Title row: editable choice title, adjacent edit toggle and Run.
-    const header = div('node-header', '')
+    // The branch bar above the rows: the node's branches (with merge requests and compare beside each), the open
+    // merge requests, then Run and Analyze.
+    const header = div('node-header branch-bar', '')
+    header.setAttribute('aria-label', 'Branches')
     const toolbar = div('node-toolbar', '')
     const run = button('evaluate', '', () => { input.dispatchEvent(new window.Event('commit-edit')); void app.startExecution(app.currentRow()?.construction?.evaluation ? app.state.view.slice(0, -1) : [...app.state.view]) })
     run.innerHTML = `${iconSvg('▶') ?? ''}<span>Run</span>`
-    const editToggle = iconButton('✎', 'Input / edit', () => { workspace(app).input = !workspace(app).input; app.refresh() })
-    editToggle.classList.add('input-toggle')
     const analyze = button('analyze', '', () => openAnalysis(app))
     analyze.innerHTML = `${iconSvg('analysis') ?? ''}<span>Analyze</span>`
     analyze.title = 'Analyze node'; analyze.setAttribute('aria-label', 'Analyze node')
     toolbar.append(run, analyze)
-    const titleSection = div('node-title-section', ''); titleSection.append(span('workspace-label', 'Rows'), editToggle)
-    // the node's choices (branches, submissions): a caret at the header's top right, whether or not it has a title
     const choices = div('node-choices', '')
-    header.append(titleSection, choices, toolbar)
+    // open merge requests (local branches marked for merge, incoming submissions): opens the branch list where each has its icon
+    const requests = button('merge-requests', '', () => {
+      // one request of this node's own: straight to its review; otherwise the branch list, where each request has its icon
+      const current = app.currentRow(), local = current?.branches?.mergeRequests ?? [], incoming = app.readsRequests() ? (app.currentView()?.proposals ?? []).filter(p => p.status === 'open').length : 0
+      const target = local.length === 1 && !incoming ? current?.branches?.mergeTargets?.[local[0]!] : undefined
+      if (target && !app.pullRequestTarget([...app.state.view])) compareBranches(app, [...app.state.view], local[0]!, target, true)
+      else header.querySelector<HTMLButtonElement>('.node-choices .combo-trigger')?.click()
+    })
+    header.append(choices, requests, toolbar)
     const values = div('node-values', '')
     const dynamicValues = div('node-values-dynamic', '')
     values.append(placeholderForm(app), dynamicValues)
@@ -1697,7 +1793,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     captureText.placeholder = 'Write a row, or paste notes…'; captureText.setAttribute('aria-label', 'Node input')
     captureText.rows = 1
     composeConstructorInput(captureText, app)
-    const send = iconButton('play', 'Add input as rows', () => {
+    const send = iconButton('send', 'Add input as rows', () => {
       if (!captureText.value.trim() || state.replica.store !== app.state.replica.store) return
       const text = captureText.value; captureText.value = ''
       app.pasteRows(parsePastedRows(text), [])
@@ -1715,12 +1811,12 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
       event.stopPropagation()
       if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && !send.disabled) { event.preventDefault(); send.click() }
     })
-    capture.append(captureText, send)
+    capture.append(captureText)
     const inputMenu = document.createElement('details'); inputMenu.className = 'input-menu'
-    const inputSummary = document.createElement('summary'); inputSummary.innerHTML = iconSvg('+') ?? '+'; inputSummary.setAttribute('aria-label', 'More input options'); inputSummary.title = 'Images, videos, text and files'
-    const inputOptions = div('input-menu-options', ''); inputOptions.append(div('input-controls', ''), organize)
+    const inputSummary = document.createElement('summary'); inputSummary.innerHTML = iconSvg('+') ?? '+'; inputSummary.setAttribute('aria-label', 'Add image, video, text dump, upload, download or script'); inputSummary.title = 'Images, videos, text and files'
+    const inputOptions = div('input-menu-options', ''); inputOptions.setAttribute('role', 'menu'); inputOptions.append(div('input-controls', ''), organize)
     inputMenu.append(inputSummary, inputOptions)
-    const edit = div('node-input', ''); edit.setAttribute('aria-label', 'Input'); edit.append(inputMenu, div('node-input-fields', ''), capture, voice)
+    const edit = div('node-input', ''); edit.setAttribute('aria-label', 'Input'); edit.append(inputMenu, div('node-input-fields', ''), capture, voice, send)
     composerObservers.get(el)?.disconnect()
     if (typeof ResizeObserver !== 'undefined') {
       const observer = new ResizeObserver(() => el.closest<HTMLElement>('#app')?.style.setProperty('--composer-height', `${edit.getBoundingClientRect().height}px`))
@@ -1773,9 +1869,11 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   run.title = app.evaluating ? 'Evaluating…' : shared && !app.sharedGrants(state.view)?.includes('execute') ? `@${shared.owner} has not granted “run evaluations” here` : row?.blockedBy?.length ? 'Blocked by unfilled requirements' : 'Evaluate this node'
   run.setAttribute('aria-label', app.evaluating ? 'Evaluating' : 'Run (evaluate this node)')
   if (!instructions.canRun) run.title = `Needs instruction refs: ${instructions.blocking.map(hole => hole.id).join(', ')}`
-  const editToggle = header.querySelector<HTMLElement>('.input-toggle')!
-  editToggle.hidden = !!preview || !row
-  editToggle.setAttribute('aria-pressed', String(prefs.input)); editToggle.setAttribute('aria-controls', 'node-input')
+  const requests = header.querySelector<HTMLButtonElement>('.merge-requests')!
+  const openRequests = (row?.branches?.mergeRequests?.length ?? 0) + (app.readsRequests() ? (app.currentView()?.proposals ?? []).filter(p => p.status === 'open').length : 0)
+  requests.hidden = !openRequests
+  requests.innerHTML = `${iconSvg('merge-request') ?? ''}<span>Merge requests</span><span class="count">${openRequests}</span>`
+  requests.setAttribute('aria-label', `Merge requests, ${openRequests} open`)
   toolbar.hidden = !!preview || !!row?.construction?.peerId || !!row?.construction?.handler
   const accordionEl = el.querySelector<HTMLDetailsElement>('[data-accordion="context"]')!
   renderConstructorPanel(el.querySelector<HTMLElement>('.constructor-head')!, el.querySelector<HTMLElement>('.constructor-grid')!, el.querySelector<HTMLElement>('.constructor-suggestions')!, el.querySelector<HTMLElement>('.node-context')!, state, app)
@@ -1790,15 +1888,18 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     if (row.requirement.capability === 'choice') for (const [choice, label] of (row.requirement.options ?? []).entries()) controls.append(choiceButton(app, state.view.slice(0, -1), row.id, choice, label, true))
   }
   const edit = el.querySelector<HTMLElement>('.node-input')!
-  edit.id = 'node-input'; edit.hidden = !prefs.input || !!preview || !!row?.refPeer
+  edit.id = 'node-input'; edit.hidden = !!preview || !!row?.refPeer
   const inputs = edit.querySelector<HTMLElement>('.input-controls')!; inputs.replaceChildren()
   for (const redo of [false, true]) {
     const control = iconButton(redo ? '↪' : '↶', redo ? 'Redo in this node' : 'Undo in this node', () => { document.activeElement?.dispatchEvent(new window.Event('commit-edit')); if (document.activeElement !== cached!.input) cached!.input.dispatchEvent(new window.Event('commit-edit')); app.undoNode(redo) })
     control.disabled = !!preview || !app.canUndoNode(redo); control.onmousedown = e => e.preventDefault(); inputs.append(control)
   }
   if (!preview) {
-    inputs.append(mediaPicker(app, 'Picture input', 'image/jpeg,image/png,image/webp'), mediaPicker(app, 'Video input', 'video/mp4,video/webm'), mediaPicker(app, 'Attach file (up to 1 MB)', '', true), yamlImportButton(app))
-
+    inputs.append(mediaPicker(app, 'Image', 'image/jpeg,image/png,image/webp', false, 'png · jpg · webp'), mediaPicker(app, 'Video', 'video/mp4,video/webm', false, 'transcribed to rows'),
+      menuItem('≡', 'Text dump', 'paste notes, split into rows', () => { el.querySelector<HTMLTextAreaElement>('.capture-text')!.focus() }),
+      mediaPicker(app, 'Upload file', '', true, 'attach to this node · 1 MB'), menuItem('file', 'Import', 'Markdown or YAML → rows', () => openImport(app)),
+      menuItem('open', 'Download', 'export this node as YAML', () => downloadText('fos-nodes.yaml', app.exportYaml())))
+    const script = menuItem('code', 'Fos script', 'compiles to rows · soon', () => {}); script.disabled = true; inputs.append(script)
   }
   if (preview) {
     controls.replaceChildren(span('muted', 'Read-only proposed branch'))
@@ -1815,8 +1916,6 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   el.querySelector(':scope > .account-form')?.remove()
   if (!state.session && (row?.construction?.peerId === 'fos' || row?.construction?.handler === 'fos')) { const auth = div('account-form', ''); renderConnect(auth, state, app); controls.after(auth) }
   if (inTauri() && row && app.repositoryInfo() && !localRepository(state.replica, state.view)) controls.append(button('secondary small', 'Attach local checkout…', () => openConstructor(app, 'repository', [...state.view], true)))
-  inputs.append(button('secondary small', 'Text dump', () => { el.querySelector<HTMLTextAreaElement>('.capture-text')!.focus() }), button('secondary small', 'Download YAML', () => downloadText('fos-nodes.yaml', app.exportYaml())))
-  inputs.append(span('muted small', 'Markdown / YAML → rows'))
   const dynamicValues = el.querySelector<HTMLElement>('.node-values-dynamic')!
   dynamicValues.replaceChildren()
   for (const arg of app.placeholders()) {
@@ -1895,35 +1994,46 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   inputFields.hidden = !declaredInputs || !!preview
   edit.classList.toggle('has-declared-inputs', !!declaredInputs)
   capture.hidden = !!preview || !!row?.refPeer || !!declaredInputs
+  edit.querySelector<HTMLElement>('.composer-send')!.hidden = capture.hidden
   const organize = edit.querySelector<HTMLButtonElement>('.organize-capture')!
   organize.disabled = !capture.querySelector<HTMLTextAreaElement>('.capture-text')!.value.trim() || !!state.voice || !app.canOrganize()
   organize.title = app.canOrganize() ? ORGANIZE_TITLE : state.session?.kind === 'user' ? 'Organizing needs a Fos peer with a language model' : 'Connect to your account to organize text'
   el.querySelector<HTMLElement>('[data-slot="repository"]')!.hidden = !!preview || !['main', 'repo'].includes(prefs.actionTab)
   const childToolbar = el.parentElement?.querySelector<HTMLElement>('[data-region="children-toolbar"]')
   if (!childToolbar) return
-  const savedSearch = childToolbar.querySelector<HTMLInputElement>('.child-search')
-  for (const child of Array.from(childToolbar.children)) if (child !== savedSearch) child.remove()
+  const savedBox = childToolbar.querySelector<HTMLElement>('.filter-box')
+  for (const child of Array.from(childToolbar.children)) if (child !== savedBox) child.remove()
+  savedBox?.querySelector('.active-pattern')?.remove()
   const toggle = iconButton('grid', 'Constructors', () => { accordionEl.open = !accordionEl.open; prefs.open.context = accordionEl.open; app.refresh() })
   toggle.classList.add('constructors-toggle'); toggle.setAttribute('aria-pressed', String(accordionEl.open)); toggle.setAttribute('aria-controls', 'constructors')
   childToolbar.append(toggle)
   let filter = childToolbar.querySelector<HTMLInputElement>('.child-search')
   if (!filter) {
-    filter = document.createElement('input'); filter.type = 'search'; filter.className = 'child-search'; filter.placeholder = 'Filter rows'; filter.setAttribute('aria-label', 'Filter children'); filter.value = prefs.search
-    filter.addEventListener('input', () => { prefs.search = filter!.value; app.refresh() }); childToolbar.prepend(filter)
+    filter = document.createElement('input'); filter.type = 'search'; filter.className = 'child-search'; filter.placeholder = 'Filter rows, or drop a pattern here'; filter.setAttribute('aria-label', 'Filter children'); filter.value = prefs.search
+    filter.addEventListener('input', () => { prefs.search = filter!.value; app.refresh() })
+    // one box: the filter icon, the pattern applied (dropped here), the text filter
+    const box = document.createElement('label'); box.className = 'filter-box'
+    const icon = span('filter-icon', ''); icon.innerHTML = iconSvg('filter') ?? ''
+    box.append(icon, filter); childToolbar.prepend(box)
   }
-  filter.ondragover = event => { if (event.dataTransfer?.types.includes(PATTERN_DRAG_TYPE)) { event.preventDefault(); filter!.classList.add('drop-into') } }
-  filter.ondragleave = () => filter!.classList.remove('drop-into')
-  filter.ondrop = event => {
+  const filterBox = filter.parentElement!
+  filterBox.ondragover = event => { if (event.dataTransfer?.types.includes(PATTERN_DRAG_TYPE)) { event.preventDefault(); filterBox.classList.add('drop-into') } }
+  filterBox.ondragleave = () => filterBox.classList.remove('drop-into')
+  filterBox.ondrop = event => {
     if (!event.dataTransfer?.types.includes(PATTERN_DRAG_TYPE)) return
-    event.preventDefault(); event.stopPropagation(); filter!.classList.remove('drop-into')
+    event.preventDefault(); event.stopPropagation(); filterBox.classList.remove('drop-into')
     try {
       const terms: unknown = JSON.parse(event.dataTransfer.getData(PATTERN_DRAG_TYPE))
       const available = new Set(constructorOptions(app).map(item => item.id))
-      if (Array.isArray(terms) && terms.length < 200 && terms.every(term => typeof term?.id === 'string' && available.has(term.id) && typeof term.negative === 'boolean')) { capabilityPattern(app).applied = terms; app.refresh() }
+      if (Array.isArray(terms) && terms.length < 200 && terms.every(term => typeof term?.id === 'string' && available.has(term.id) && SIGNS.includes(term.sign) && (term.group === undefined || Number.isInteger(term.group)))) { capabilityPattern(app).applied = terms; app.refresh() }
     } catch { /* Ignore an invalid drag from another application. */ }
   }
   const applied = capabilityPattern(app).applied
-  if (applied.length) childToolbar.append(button('secondary small active-pattern', `Pattern · ${applied.length} ×`, () => { capabilityPattern(app).applied = []; app.refresh() }))
+  if (applied.length) {
+    const chip = button('active-pattern', `Pattern · ${applied.length}`, () => { capabilityPattern(app).applied = []; app.refresh() })
+    chip.title = 'Remove pattern filter'; chip.setAttribute('aria-label', `Remove pattern filter (${applied.length} terms)`)
+    chip.append(span('active-pattern-remove', '×')); filter.before(chip)
+  }
   const suggestions = document.createElement('datalist'); suggestions.id = 'child-filter-options'
   for (const tag of tags) suggestions.append(new Option(`type:${tag}`, `type:${tag}`))
   for (const child of app.currentView()?.tasks ?? []) suggestions.append(new Option(child.title, child.title))
@@ -1941,7 +2051,7 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
   const ghost = reuse ? cached.row : renderGhostRow(node, state, app)
   const prefs = workspace(app)
   el.className = `list tree layout-${prefs.layout}`
-  const textMatches = (row: TaskView, path: Scope): boolean => (matchesSearch(row, prefs.search) && patternMatches(app, row)) || (path.length < 64 && !!viewAt(state.replica, path)?.tasks.some(child => textMatches(child, [...path, child.id])))
+  const textMatches = (row: TaskView, path: Scope): boolean => (matchesSearch(row, prefs.search) && patternMatches(app, row, path)) || (path.length < 64 && !!viewAt(state.replica, path)?.tasks.some(child => textMatches(child, [...path, child.id])))
   const matches = (row: TaskView): boolean => textMatches(row, [...state.view, row.id])
   node = { ...node, tasks: node.tasks.filter(row => settingKeyOf(row) !== 'history') }
   // Home lists one of its bookkeeping rows, where this device left off; the other constructors stay in Settings.
@@ -1955,7 +2065,7 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
   // never in a separate title editor, and absent text does not invent a title input.
   const detailElement = el.parentElement?.parentElement?.querySelector<HTMLElement>('[data-region="node"]')
   const detail = detailElement && details.get(detailElement), current = app.currentRow()
-  if (detail && current && current.type !== HOME_TYPE && !current.form && (current.title || current.scalar) && !proposalPreview(app)) rows.unshift(detail.titleRow)
+  if (detail && current && current.type !== HOME_TYPE && (current.title || current.scalar) && !proposalPreview(app)) rows.unshift(detail.titleRow)
   const preview = proposalPreview(app)
   // Home shows what relays delivered to this device
   const inbox = !preview && state.view.length === 1 && app.isHome(state.view) && !state.atRoot ? renderRelayInbox(app) : null
@@ -2177,10 +2287,12 @@ function argumentEditor(app: App, at: Scope, id: string, name: string, text: str
 /** Rows for `node`'s tasks (and nested choices) at `depth`; `at` is the path relative to the view. */
 function renderRows(node: NodeView, at: Scope, depth: number, state: AppState, app: App): HTMLElement[] {
   const query = workspace(app).search
-  const matches = (row: TaskView, path: Scope): boolean => (matchesSearch(row, query) && patternMatches(app, row)) || (path.length < 64 && !!viewAt(state.replica, [...state.view, ...path])?.tasks.some(child => matches(child, [...path, child.id])))
+  // a row inside one that matches the pattern shows as part of it: the pattern selects nodes, whole
+  const insideMatch = capabilityPattern(app).applied.length > 0 && at.some((id, i) => { const row = viewAt(state.replica, [...state.view, ...at.slice(0, i)])?.tasks.find(task => task.id === id); return !!row && patternMatches(app, row, [...state.view, ...at.slice(0, i + 1)]) })
+  const matches = (row: TaskView, path: Scope): boolean => (matchesSearch(row, query) && (insideMatch || patternMatches(app, row, [...state.view, ...path]))) || (path.length < 64 && !!viewAt(state.replica, [...state.view, ...path])?.tasks.some(child => matches(child, [...path, child.id])))
   if (query || capabilityPattern(app).applied.length) node = { ...node, tasks: node.tasks.filter(row => matches(row, [...at, row.id])) }
   const rows: HTMLElement[] = []
-  const argumentsById = new Map((node.tasks.some(row => row.typeCid === state.replica.store.primitive.documentField.getId()) ? app.textArguments(at) : []).map(arg => [arg.id, arg]))
+  const argumentsById = new Map((node.tasks.some(row => row.typeCid === primitive(state.replica.store, 'string')) ? app.textArguments(at) : []).map(arg => [arg.id, arg]))
   // the device root is a settings page: its rows stay rows, shown in groups
   if (state.atRoot && !at.length && !query) {
     const groupOf = (task: TaskView): string => {
@@ -2214,8 +2326,7 @@ function renderRows(node: NodeView, at: Scope, depth: number, state: AppState, a
       const child = viewAt(state.replica, [...state.view, ...at, task.id])
       if (child) {
         child.choices.forEach((choice) => rows.push(renderNestedChoice(choice, [...at, task.id], depth + 1, state, app)))
-        const fields = !editingBelow ? new Set(inlineFields(task)) : new Set<string>()
-        rows.push(...renderRows({ ...child, tasks: child.tasks.filter(row => !fields.has(row.id)) }, [...at, task.id], depth + 1, state, app))
+        rows.push(...renderRows(child, [...at, task.id], depth + 1, state, app))
       }
     }
   }
@@ -2231,10 +2342,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   const path: Scope = [...at, task.id]
   const selected = !!state.selected && state.selected.length === path.length && state.selected.every((p, i) => path[i] === p)
   const li = document.createElement('li')
-  li.className = 'task type-' + typeClass(task) + (task.checkable ? ' checkable' : '') + (task.refId !== undefined ? ' ref' : '') + (task.requirement ? ' requirement' : '') + (task.done ? ' done' : '') + (task.isLink ? ' linked' : '') + (selected ? ' selected' : '') + (task.typeError?.length ? ' type-error' : '') + (task.rejected ? ' type-rejected' : '')
-  // a type error: the row holds rows its type does not accept (they are marked too); everything else reads as before
-  if (task.typeError?.length) li.title = `${task.title || task.typeName || 'Row'} does not accept ${task.typeError.length === 1 ? 'one of its rows' : `${task.typeError.length} of its rows`} (marked in red)`
-  else if (task.rejected) li.title = 'This row cannot be here: its parent’s type does not accept it. Move or remove it to fix the parent.'
+  li.className = 'task type-' + typeClass(task) + (task.checkable ? ' checkable' : '') + (task.refId !== undefined ? ' ref' : '') + (task.requirement ? ' requirement' : '') + (task.done ? ' done' : '') + (task.isLink ? ' linked' : '') + (selected ? ' selected' : '')
   li.style.setProperty('--depth', String(depth))
   if (task.construction) li.classList.add('has-constructor')
   li.draggable = true
@@ -2327,7 +2435,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   // rows without children show no bullet; notes keep a middot so a note block reads as an item in the outline
   const toggle = hasChildren && !canExpandHere
     ? button('icon toggle zoom', '›', () => app.zoomTo([...at, task.id]))
-    : button('icon toggle', hasChildren ? (state.collapsed.includes(task.id) ? '▸' : '▾') : task.text?.mediaType === 'text/markdown' ? '·' : '', () => { if (hasChildren) app.toggleCollapsed(task.id) })
+    : button('icon toggle', hasChildren ? (state.collapsed.includes(task.id) ? '▸' : '▾') : task.body !== undefined ? '·' : '', () => { if (hasChildren) app.toggleCollapsed(task.id) })
   if (hasChildren && !canExpandHere) toggle.title = `Open (${task.childCount} inside)`
   toggle.disabled = !hasChildren
   toggle.tabIndex = -1
@@ -2353,12 +2461,12 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   else if (task.type === HOME_TYPE) { body = span('title home-node', ''); body.innerHTML = iconSvg('⌂')!; body.setAttribute('aria-label', 'Home'); body.title = 'Home' }
   else if (task.construction && !(task.construction.handler && selected)) { body = constructorBody(task, state, app, [...state.view, ...at, task.id]) }
   else if ((inputs = app.rowInputs([...state.view, ...at, task.id])) && !task.requirement) { body = constructedRowBody(task, inputs, [...state.view, ...at, task.id], app, 'right') }
-  else if (task.form && !task.text && !task.headline) { body = renderForm(task, at, state, app) }
+  else if (task.fields && task.body === undefined && !selected) { body = renderFields(task, at, state, app) }
   else if (selected && task.refId === undefined && (!hasControls(task) || editingSpecial === task.id)) {
     body = renderEditor(task, at, state, app)
   } else if (task.refId !== undefined) {
     body = renderRefBody(task, app, [...at, task.id])
-  } else if (task.text?.mediaType === 'text/markdown') {
+  } else if (task.body !== undefined) {
     body = renderNoteBody(task, at, state, app)
   } else if (hasControls(task)) {
     body = renderSpecialBody(task, at, state, app)
@@ -2412,18 +2520,21 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   // a typed row shows its type raised at the left: the row's eager side, before its lazy text
   const left = div('row-left type-chip', ''), right = div('row-right', '')
   left.setAttribute('aria-label', 'Capability and inputs'); right.setAttribute('aria-label', 'Value and outputs')
-  if (task.typeCid && task.type !== PLAIN_TYPE && task.type !== HOME_TYPE) {
+  // a plain task's checkbox already says what it is; other types (a template's tasks too) show theirs
+  if (task.typeCid && task.type !== PLAIN_TYPE && task.type !== HOME_TYPE && !(task.type === TASK_TYPE && !task.template)) {
     const type = span('row-type-name', task.typeName || task.template?.name || 'Capability')
-    const presentation = capabilityPresentation(state.replica.store, task.typeCid)
-    if (presentation.icon) { const icon = span('row-type-icon', ''); icon.innerHTML = iconSvg(presentation.icon) ?? ''; if (!icon.childElementCount) icon.textContent = presentation.icon; left.append(icon) }
+    const presentation = capabilityPresentation(state.replica.store, task.typeCid), glyph = presentation.icon ?? typeIcon(task)
+    if (glyph) { const icon = span('row-type-icon', ''); icon.innerHTML = iconSvg(glyph) ?? ''; if (!icon.childElementCount) icon.textContent = glyph; left.append(icon); left.classList.add('has-icon') }
     type.title = presentation.description || `${type.textContent} row`; left.append(type)
-    if (isNegative(state.replica.store, task.typeCid)) { left.classList.add('negative'); left.append(span('polarity-tag', '−')) }
+    if (task.requirement) { left.classList.add('negative'); left.append(span('polarity-tag', '−')) }
   }
   if (inputs?.some(ref => !ref.received)) left.append(constructedRowBody(task, inputs, [...state.view, ...at, task.id], app, 'left'))
   const leftTags = span('row-left-tags', '')
   for (const tag of Array.from(body.querySelectorAll('.kind-preview, .kind-badge'))) leftTags.append(tag)
   for (const tag of Array.from(meta.querySelectorAll('.kind-badge, .blocked-badge'))) leftTags.append(tag)
   if (leftTags.childElementCount) left.append(leftTags)
+  // an icon chip says what it is on hover and to assistive technology: the type and its tags
+  if (left.classList.contains('has-icon')) { left.title = [left.querySelector('.row-type-name')?.textContent, ...Array.from(leftTags.children, tag => tag.textContent)].filter(Boolean).join(' · ') }
   left.hidden = !left.childElementCount
   meta.classList.add('row-right-meta'); right.append(checkbox, body, meta)
   li.append(zoom, handle, toggle, left, right, choices)
@@ -2478,62 +2589,43 @@ function caretOnEdge(input: HTMLInputElement | HTMLTextAreaElement, edge: 'first
 
 /** The selected row's text, editable in place. Keys: ↑/↓ rows, Enter new row below, Ctrl+Enter done (notes: new row),
  *  Ctrl+Shift+Enter row inside, Tab/⇧Tab indent, Alt+↑/↓ move, Alt+→ zoom in, Alt+← zoom out, Backspace on blank deletes, Esc leaves. */
-function renderForm(task: TaskView, at: Scope, state: AppState, app: App): HTMLElement {
+/** A row's own fields (besides its title, body and done), each filled in place; an open one is still needed. */
+function renderFields(task: TaskView, at: Scope, state: AppState, app: App): HTMLElement {
   const root = div('node-form', '')
-  const render = (field: import('../../shared/sync/forms').FormElement): HTMLElement => {
-    const path = [...at, task.id, ...field.path]
-    if (!field.available) return span('muted', `${field.label}: load this field to edit`)
-    if (field.primitive) {
-      const label = document.createElement('label'); label.className = 'node-form-field'
-      label.append(span('muted', field.label))
-      const input = document.createElement(field.primitive === 'text' ? 'textarea' : 'input')
-      if (input instanceof HTMLInputElement) {
-        input.type = field.primitive === 'number' || field.primitive === 'time' ? 'number' : field.primitive === 'boolean' ? 'checkbox' : 'text'
-        if (field.primitive === 'boolean') input.checked = field.value === true
-        if (field.primitive === 'null') input.readOnly = true
-      }
-      else input.rows = Math.min(8, Math.max(1, String(field.value ?? '').split('\n').length))
-      input.value = field.primitive === 'null' ? 'null' : String(field.value ?? ''); input.setAttribute('aria-label', field.label)
-      input.dataset.fieldPath = JSON.stringify(field.path)
-      const draft = { store: state.replica.store, head: headCid(state.replica), parent: [...state.view, ...path.slice(0, -1)] }
-      let baseline = input.value
-      const save = () => {
-        if (input.value === baseline) return
-        if (input instanceof HTMLInputElement && input.type === 'number' && (!input.value.trim() || !Number.isFinite(Number(input.value)))) { input.setCustomValidity('Enter a number.'); input.reportValidity(); return }
-        const text = input.value
-        app.rewriteRowAt(path.slice(0, -1), path.at(-1)!, { type: PLAIN_TYPE, text, done: false }, draft)
-        baseline = text
-      }
-      input.addEventListener('input', () => input.setCustomValidity(''))
-      if (input instanceof HTMLInputElement && input.type === 'checkbox') input.addEventListener('change', () => { input.value = String(input.checked); save() })
-      input.addEventListener('commit-edit', save)
-      input.addEventListener('blur', () => { if (!renderDepth) save() })
-      input.addEventListener('click', event => event.stopPropagation())
-      input.addEventListener('keydown', event => { event.stopPropagation(); if ((event as KeyboardEvent).key === 'Escape') { input.value = baseline; input.blur() } })
-      label.append(input); return label
+  for (const field of task.fields!) {
+    const label = document.createElement('label'); label.className = 'node-form-field'
+    const name = field.key ?? 'Value'
+    label.append(span('muted', name))
+    const input = document.createElement('input')
+    input.type = typeof field.value === 'number' ? 'number' : 'text'
+    input.value = field.value === null ? '' : String(field.value); input.setAttribute('aria-label', name)
+    if (field.open) input.placeholder = 'Needed'
+    let baseline = input.value
+    const save = () => {
+      if (input.value === baseline || field.key === null) return
+      if (input.type === 'number' && (!input.value.trim() || !Number.isFinite(Number(input.value)))) { input.setCustomValidity('Enter a number.'); input.reportValidity(); return }
+      baseline = input.value
+      app.setRowFields([...state.view, ...at], task.id, { [field.key]: input.type === 'number' ? Number(input.value) : input.value })
     }
-    const group = document.createElement('fieldset'); group.className = 'node-form-group'
-    if (field.label) { const legend = document.createElement('legend'); legend.textContent = field.label; group.append(legend) }
-    for (const child of field.fields) {
-      const control = render(child)
-      if (field.repeat) control.append(button('secondary small', 'Remove', () => app.deleteTaskAt([...at, task.id, ...child.path.slice(0, -1)], child.path.at(-1)!)))
-      group.append(control)
-    }
-    if (field.repeat) group.append(button('secondary small', 'Add item', () => app.addRowAt(path, PLAIN_TYPE, ' ')))
-    return group
+    input.addEventListener('input', () => input.setCustomValidity(''))
+    input.addEventListener('commit-edit', save)
+    input.addEventListener('blur', () => { if (!renderDepth) save() })
+    input.addEventListener('click', event => event.stopPropagation())
+    input.addEventListener('keydown', event => { event.stopPropagation(); if ((event as KeyboardEvent).key === 'Escape') { input.value = baseline; input.blur() } })
+    label.append(input); root.append(label)
   }
-  root.append(render(task.form!))
   return root
 }
 
 function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTMLElement {
-  const multiline = task.text?.mediaType === 'text/markdown'
+  // a note's row edits its body; its title is the title row's
+  const multiline = task.body !== undefined
   const input = document.createElement('textarea')
-  input.rows = multiline ? Math.min(16, Math.max(2, task.title.split('\n').length + 1)) : 1
+  input.rows = multiline ? Math.min(16, Math.max(2, task.body!.split('\n').length + 1)) : 1
   input.className = 'edit'
   // the editor shows the row in its raw marker form ("-$ 50 lunch", "[x] done", "> note"), exactly as it was typed
   const draft = { store: state.replica.store, head: headCid(state.replica), parent: [...state.view, ...at] }
-  const raw = task.text || task.refId !== undefined ? task.title : rawRowText(task)
+  const raw = multiline ? task.body! : task.refId !== undefined ? task.title : rawRowText(task)
   input.value = raw
   input.placeholder = multiline ? 'Markdown…' : task.type === COMMENT_TYPE ? '// Comment…' : 'Row text…'
   let committed = false
@@ -2542,7 +2634,8 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
     committed = true
     if (editingSpecial === task.id) editingSpecial = null
     if (input.value === raw) { if (!task.scalar && !input.value.trim()) app.dropBlankRow(draft.parent, task.id, draft.store); return }
-    if (task.text || task.scalar || task.refId !== undefined) { app.rewriteRowAt(at, task.id, { type: task.type, text: input.value, done: task.done }, draft); return }
+    if (multiline) { app.setRowFields([...state.view, ...at], task.id, { body: input.value }); return }
+    if (task.scalar || task.refId !== undefined) { app.rewriteRowAt(at, task.id, { type: task.type, text: input.value, done: task.done }, draft); return }
     // the text is re-parsed whole: the marker decides the kind, the rest its text and data; the row keeps its id and children
     const parsed = app.parseRowInput(input.value)
     if (parsed.type === PLAIN_TYPE && !parsed.text) { if (!task.title.trim() && !task.childCount && !task.childChoices) app.dropBlankRow(draft.parent, task.id, draft.store); else app.rewriteRowAt(at, task.id, { ...parsed, text: ' ' }, draft); return }
@@ -2597,7 +2690,7 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
 
 /** What the title row's editor shows: a row's marker text, or the text alone for rows whose text is all there is to edit. */
 function titleText(row: TaskView): string {
-  return row.text || row.scalar || row.refId !== undefined ? row.title : rawRowText(row)
+  return row.body !== undefined || row.scalar || row.refId !== undefined ? row.title : rawRowText(row)
 }
 
 function firstLine(text: string): string {
@@ -2655,10 +2748,6 @@ function renderRefBody(task: TaskView, app: App, path: Scope): HTMLElement {
   return body
 }
 
-/** The ids of a row's form fields edited inline in its row; a headline row's fields are rows of their own. */
-function inlineFields(task: TaskView): string[] {
-  return task.headline ? [] : task.form?.fields.map(field => field.path[0]!) ?? []
-}
 
 /**
  * A note block: markdown with its `{name}` references resolved from the bindings in scope (the same resolution as
@@ -2667,8 +2756,8 @@ function inlineFields(task: TaskView): string[] {
 function renderNoteBody(task: TaskView, at: Scope, state: AppState, _app: App): HTMLElement {
   const body = div('title note-body', '')
   body.title = 'Click or press Enter to edit (Ctrl+Enter saves)'
-  const text = task.title.trim() ? task.title : ''
-  const expanded = text && task.text?.interpolate ? resolveText(state.replica, [...state.view, ...at, task.id], text).text : text
+  const text = (task.body ?? task.title).trim() ? task.body ?? task.title : ''
+  const expanded = text && resolveText(state.replica, [...state.view, ...at, task.id], text).text
   if (!expanded) { body.append(span('muted', '(empty note)')); return body }
   const cached = noteHtml.get(expanded)
   if (cached) {
@@ -2711,7 +2800,7 @@ function manualControls(app: App, state: AppState, at: Scope, task: TaskView, ab
   const controls: HTMLElement[] = []
   // the library this requirement sees: Home's linked one under Home, the root's shipped one elsewhere
   for (const handler of manualHandlersFor(state.replica, req, absolute ? at : [...state.view, ...at])) {
-    if (handler.device && !app.deviceNative(handler)) continue
+    if (handler.device && !app.devicePrimitive(handler)) continue
     const record = button('secondary small manual-handler', handler.label, () => void app.applyManualHandler(at, task, handler, undefined, absolute)); record.dataset.handler = handler.id
     record.title = handler.device ? 'Records this device\'s position as the place' : 'Records that you did this by hand; no peer is involved'
     controls.push(record)
@@ -3202,7 +3291,7 @@ function renderTemplatePicker(body: HTMLElement, state: AppState, app: App): voi
     common.append(iconButton(icon, label, () => app.changeTemplate(type, undefined, extras)))
   }
   body.append(common, combobox('Choose template', 'Find a template…', query => app.searchLocalNodes(query, TEMPLATE_TYPE).filter(found => JSON.stringify(found.path) !== JSON.stringify(state.templatePicker?.path)).flatMap(found => [
-    { label: found.row.title, group: 'Templates', run: () => app.changeTemplate('plain', found.row.id) },
+    { label: found.row.title, group: 'Templates', run: () => app.changeTemplate(PLAIN_TYPE, found.row.id) },
     // the same template as a pattern: this row's values are submitted to its refs instead of copying its rows in
     { label: found.row.title, group: 'Use as pattern', run: () => app.usePattern(found.row.id) }
   ]), () => [], 'Search templates…'))
@@ -3331,10 +3420,10 @@ function renderWork(body: HTMLElement, state: AppState, app: App): void {
     label.textContent = 'Context used for this attempt'
     const text = document.createElement('pre'); text.className = 'work-context'; text.textContent = `System instructions:\n${attempt.system}\n\nTask context:\n${attempt.context}`
     saved.append(label, text); section.append(saved)
-    if (attempt.resultCid) section.append(div('muted', 'Accepted result'), div('work-context', content(state.replica.store, attempt.resultCid).data.description?.content ?? ''))
+    if (attempt.resultCid) section.append(div('muted', 'Accepted result'), div('work-context', textOf(state.replica.store, attempt.resultCid) ?? ''))
     else if (!attempt.proposals.length) section.append(div('muted', work.busy ? 'Awaiting a result…' : 'No result received. You can start a new attempt.'))
     for (const proposal of attempt.proposals) {
-      section.append(div('work-context', content(state.replica.store, proposal.contentCid).data.description?.content ?? ''))
+      section.append(div('work-context', textOf(state.replica.store, proposal.contentCid) ?? ''))
       if (proposal.status === 'rejected') { section.append(div('muted', 'Rejected — retained for reference.')); continue }
       const accept = button('primary', 'Accept result', () => app.reviewWork(attempt.resultPath, proposal.cid, true))
       const reject = button('secondary', 'Reject', () => app.reviewWork(attempt.resultPath, proposal.cid, false))

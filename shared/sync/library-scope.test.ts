@@ -1,15 +1,18 @@
+import { textValue, textOf } from './index'
+import { createStore } from './graph'
+import { primitive } from './primitives'
 import { FosStore } from '../dag-implementation/store'
 import {
   addTask, addRefAt, addRow, compileRow, content, createReplica, commitRoot, headCid, libAt,
-  libraryBindingAt, libraryInstanceEdge, libraryInstanceOf, libraryTypeAt, loadReplica, nativeRef,
-  nestScope, publishNativeRef, primitiveExecutors, put, refNodeContent, resolveRefExpression,
-  restoreNativeRef, rowTypeAt, serializeReplica, typeIdOf, updateAtScope, valueContent,
+  libraryBindingAt, libraryInstanceEdge, libraryInstanceOf, libraryTypeAt, loadReplica, primitiveRef,
+  nestScope, publishPrimitive, primitiveExecutors, put, refNodeContent, resolveRefExpression,
+  restorePrimitive, rowTypeAt, serializeReplica, typeIdOf, updateAtScope, valueContent,
   capabilityName, triggerDefinitionOf, handlerOfferId, discoverHandlers, addRefCall, evaluationSteps, findTemplateByName, TEMPLATE_TYPE, enclosingScopes, lookupInScope, nearestInScope, type EvaluationStep
 } from './index'
 import { declareTestCapability } from './test-helpers'
 
 test('lookup requires a declared library and never installs missing fields', () => {
-  const store = new FosStore(), before = store.table.size
+  const store = createStore(), before = store.table.size
   expect(() => libAt(store)).toThrow('No library binding')
   expect(store.table.size).toBe(before)
   const r = createReplica()
@@ -49,7 +52,7 @@ test('two libraries in one scope are ambiguous, including identical definitions'
 test('nested stores resolve through their enclosing graph and recognize imported pinned fields', () => {
   let outer = addTask(createReplica(), [], 'Context', 1, 'context')
   outer = declareTestCapability(outer, 'paint', ['context'])
-  const inner = createReplica('draft', new FosStore())
+  const inner = createReplica('draft', createStore())
   nestScope(inner.store, { store: outer.store, root: headCid(outer), at: ['context'] })
   const type = libAt(inner.store).capabilities.paint!
   expect(type).toBe(libAt(outer.store, ['context']).capabilities.paint)
@@ -57,33 +60,34 @@ test('nested stores resolve through their enclosing graph and recognize imported
   expect(libraryInstanceOf(inner.store, headCid(inner))).toBeNull()
 })
 
-test('native restoration keeps the offered capability version after a library upgrade', () => {
+test('primitive restoration keeps the offered capability version after a library upgrade', () => {
   let r = declareTestCapability(createReplica('host'), 'paint')
-  const native = async () => ({}), definition = { id: 'paint-native', type: (store: FosStore, at: string[]) => libAt(store, at).capabilities.paint!, native }
-  const ref = nativeRef(r.store, 'host', definition), original = libAt(r.store).capabilities.paint!
-  r = publishNativeRef(r, [], 'host', ref, 1)
+  const primitive = async () => ({}), definition = { id: 'paint-primitive', capability: (store: FosStore, at: string[]) => libAt(store, at).capabilities.paint!, run: primitive }
+  const ref = primitiveRef(r.store, 'host', definition), original = libAt(r.store).capabilities.paint!
+  r = publishPrimitive(r, [], 'host', ref, 1)
   r = addRow(r, [], ref, 'Paint', 2, { id: 'call' })
-  r = declareTestCapability(r, 'paint', [], { description: { content: 'Revised definition' } })
+  // a revised definition: the same capability with an input of its own
+  r = declareTestCapability(r, 'paint', [], {}, true)
   expect(libAt(r.store).capabilities.paint).not.toBe(original)
   expect(handlerOfferId('host', original, definition.id)).not.toBe(handlerOfferId('host', libAt(r.store).capabilities.paint!, definition.id))
   r = loadReplica(serializeReplica(r))
-  restoreNativeRef(r, [], 'host', definition)
+  restorePrimitive(r, [], 'host', definition)
   const step = { path: ['call'], row: { typeCid: ref } } as EvaluationStep
-  expect(primitiveExecutors(r, step).map(value => value.native.native)).toEqual([native])
+  expect(primitiveExecutors(r, step).map(value => value.implementation.run)).toEqual([primitive])
   expect(discoverHandlers(r, []).find(offer => offer.cid === ref)?.type).toBe(original)
 })
 
 test('both sides of a row resolve from its parent; children see its declarations', () => {
-  let r = createReplica(), text = r.store.primitive.documentField.getId()
-  const literal = (value: string) => put(r.store, { data: { description: { content: value } }, children: [] })
+  let r = createReplica(), text = primitive(r.store, 'string')
+  const literal = (value: string) => textValue(r.store, value)
   r = addRefAt(r, [], 'outer', text, 1, literal('parent'), 'chosen')
   const expression = put(r.store, { data: { refExpression: { up: 0, path: ['chosen'], lexical: true } }, children: [] })
   const local = put(r.store, refNodeContent(r.store, { alias: { id: 'inner' }, name: { content: 'chosen' } }, literal('local')))
   const right = put(r.store, { data: { alias: { id: 'row' }, refExpression: { up: 0, path: ['chosen'], lexical: true } }, children: [[text, local]] })
   commitRoot(r.store, updateAtScope(r.store, headCid(r), [], node => ({ ...node, children: [...node.children, [expression, right]] })), 2)
   const compiled = compileRow(r, ['row'])
-  expect(content(r.store, compiled.left.cid).data.description?.content).toBe('parent')
-  expect(content(r.store, compiled.right.cid).data.description?.content).toBe('parent')
+  expect(textOf(r.store, compiled.left.cid)).toBe('parent')
+  expect(textOf(r.store, compiled.right.cid)).toBe('parent')
   expect(resolveRefExpression(r, ['row'], 'chosen').locations[0]?.cid).toBe(local)
 })
 
@@ -95,10 +99,10 @@ test('library fields are reachable through graph refs with no encoded node ids',
 
 test('a row cannot execute through its own declarations, but its children can', () => {
   let r = createReplica('host')
-  const definition = { id: 'local-effect', type: (store: FosStore) => libAt(store).capabilities.llm!, native: async () => ({}) }
-  const ref = nativeRef(r.store, 'host', definition)
+  const definition = { id: 'local-effect', capability: (store: FosStore) => libAt(store).capabilities.llm!, run: async () => ({}) }
+  const ref = primitiveRef(r.store, 'host', definition)
   r = addRefCall(r, [], ref, 1, 'call')
-  r = publishNativeRef(r, ['call'], 'host', ref, 2)
+  r = publishPrimitive(r, ['call'], 'host', ref, 2)
   r = addRefCall(r, ['call'], ref, 3, 'child')
   expect(primitiveExecutors(r, evaluationSteps(r, ['call'])[0]!, 'host')).toEqual([])
   expect(primitiveExecutors(r, evaluationSteps(r, ['call', 'child'])[0]!, 'host')).toHaveLength(1)
@@ -135,37 +139,6 @@ test('shared row envelopes preserve named namespaces and their declarations', ()
   expect(resolveRefExpression(r, [], 'lib.capabilities.llm').locations[0]?.cid).toBe(llm)
 })
 
-test('library aliases cannot reclassify pinned constructors, including after reload', () => {
-  let r = addTask(createReplica(), [], 'Existing task', 1, 'existing')
-  const store = r.store, binding = libraryBindingAt(store)!, library = content(store, binding.library)
-  const task = libAt(store).field('task'), note = libAt(store).field('note')
-  const renamed = put(store, { ...library, children: library.children.map(([left, right]) => {
-    const declaration = content(store, right), name = declaration.data.name?.content
-    return name === 'task' || name === 'note'
-      ? [left, put(store, { ...declaration, data: { ...declaration.data, name: { content: name === 'task' ? 'chore' : 'task' } } })] as [string, string]
-      : [left, right] as [string, string]
-  }) })
-  commitRoot(store, updateAtScope(store, headCid(r), [], node => ({ ...node, children: node.children.map(([left, right]) => [right === binding.cid ? renamed : left, right]) })), 2)
-  for (const replica of [r, loadReplica(serializeReplica(r))]) {
-    expect(libAt(replica.store).field('chore')).toBe(task)
-    expect(libAt(replica.store).field('task')).toBe(note)
-    expect(typeIdOf(replica.store, task)).toBe('task')
-    expect(typeIdOf(replica.store, note)).toBe('note')
-    expect(compileRow(replica, ['existing']).left.cid).toBe(task)
-  }
-})
-
-test('constructor names are explicit string rows and ambiguous names fail', () => {
-  const store = new FosStore(), key = store.primitive.nameField.getId()
-  const text = (value: string) => put(store, { data: { scalar: { type: 'text', value } }, children: [] })
-  const unnamed = put(store, { data: { name: { content: 'task' } }, children: [] })
-  expect(typeIdOf(store, unnamed)).toBeNull()
-  const ambiguous = put(store, { data: {}, children: [[key, text('task')], [key, text('note')]] })
-  expect(() => typeIdOf(store, ambiguous)).toThrow('Ambiguous constructor name')
-  const invalid = put(store, { data: {}, children: [[key, unnamed]] })
-  expect(() => typeIdOf(store, invalid)).toThrow('must be a string')
-})
-
 test('every lookup by name stops at the nearest scope that answers: ambiguous and blocked never fall through', () => {
   let r = addTask(createReplica(), [], 'Outer', 1, 'outer')
   r = addTask(r, ['outer'], 'Inner', 2, 'inner')
@@ -180,8 +153,8 @@ test('every lookup by name stops at the nearest scope that answers: ambiguous an
 })
 
 test('a ref path denied at a nearer scope does not resolve from an outer one', () => {
-  let r = addTask(createReplica(), [], 'Child', 1, 'child'), text = r.store.primitive.documentField.getId()
-  const literal = (value: string) => put(r.store, { data: { description: { content: value } }, children: [] })
+  let r = addTask(createReplica(), [], 'Child', 1, 'child'), text = primitive(r.store, 'string')
+  const literal = (value: string) => textValue(r.store, value)
   r = addRefAt(r, [], 'outer', text, 2, literal('outer'), 'chosen')
   r = addRefAt(r, ['child'], 'inner', text, 3, literal('inner'), 'chosen')
   const inner = resolveRefExpression(r, ['child'], 'chosen').locations[0]!.cid

@@ -125,5 +125,5 @@ test('a partially invalid owner submission rolls back all edits and keeps its le
   expect(failure.error).toBeDefined()
   expect(s.get().store.rootNodeId).toBe(before)
   expect(request('fos_task_status').claim.id).toBe(claimId)
-  expect(request('fos_task_read', { claimId }).children).toHaveLength(1)
+  expect(request('fos_task_read', { claimId }).children.map((c: { type: string }) => c.type)).toEqual(['title', 'done', 'task'])
 })

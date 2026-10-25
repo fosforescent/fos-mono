@@ -2,15 +2,15 @@
  * Rows made by a constructor node: [constructor, right]. The constructor's rows declare refs, [parameters, ref]; the
  * right node assigns them, a ref with the same alias. The rows combine: an assignment on the right fills the
  * constructor's ref (run time), a value on the left's ref is its default (fixed with the constructor, compile time).
- * Parameters such as `negative` (sent) or none (received) say which way each ref goes; see parameters.ts.
+ * A ref declared as an output is received (filled at run time); the others are assigned first.
  */
+import { textValue } from './fields'
 import type { FosPathElem } from '../types'
 import { commitRoot, content, findEdge, identityCid, isRefNode, put, refNodeContent, refValueCid, resolveScope, updateAtScope, valueContent, withRowTemplate, type Scope } from './graph'
 import { headCid, type Replica } from './replica'
-import { isNegative, primitiveOf } from './parameters'
 import { assertCompiledGraph, compileInstructions } from './ref-compiler'
 
-export type OpenRef = { cid: string; alias: string; name: string; left: string; defaultValue: string | null; sent: boolean; received: boolean }
+export type OpenRef = { cid: string; alias: string; name: string; left: string; defaultValue: string | null; received: boolean }
 
 /** The refs a row's left declares in its rows (through a ref on the left, such as a pinned handler, to its value). */
 export function openRefs(store: Replica['store'], constructor: string): OpenRef[] {
@@ -19,8 +19,7 @@ export function openRefs(store: Replica['store'], constructor: string): OpenRef[
   return node.children.flatMap(([left, right]) => {
     const ref = store.table.get(right)
     if (!ref || !isRefNode(store, ref) || !ref.data.alias) return []
-    const primitive = primitiveOf(store, left) !== null
-    return [{ cid: right, alias: ref.data.alias.id, name: ref.data.name?.content ?? ref.data.alias.id, left, defaultValue: refValueCid(store, ref), sent: primitive && isNegative(store, left), received: primitive && !isNegative(store, left) }]
+    return [{ cid: right, alias: ref.data.alias.id, name: ref.data.name?.content ?? ref.data.alias.id, left, defaultValue: refValueCid(store, ref), received: ref.data.refRole === 'output' }]
   })
 }
 
@@ -43,7 +42,7 @@ export function assignedValue(r: Replica, row: Scope, alias: string): string | n
   return constructor ? openRefs(r.store, constructor).find(ref => ref.alias === alias)?.defaultValue ?? null : null
 }
 
-/** Bind the editor's assignments once. Native evaluation consumes the CID graph; edits use the separate source map. */
+/** Bind the editor's assignments once. Primitive evaluation consumes the CID graph; edits use the separate source map. */
 export function compileConstructorCall(r: Replica, row: Scope) {
   const constructor = rowConstructor(r, row)
   if (!constructor) throw new Error('The row has no constructor.')
@@ -57,7 +56,7 @@ export function compileConstructorCall(r: Replica, row: Scope) {
     const name = content(r.store, ref.cid).data.name?.content
     const cid = put(r.store, refNodeContent(r.store, name === undefined ? {} : { name: { content: name } }, value))
     edits.set(cid, ref.alias)
-    return { cid, type, name: name ?? '', sent: ref.sent, received: ref.received }
+    return { cid, type, name: name ?? '', received: ref.received }
   })
   const cid = put(r.store, { data: {}, children: args.map(arg => [arg.type, arg.cid]) })
   assertCompiledGraph(r.store, [cid])
@@ -87,15 +86,9 @@ export function constructAt(r: Replica, row: Scope, constructor: string, values:
   for (const ref of openRefs(r.store, constructor)) {
     const text = values[ref.name]
     // Each call owns its argument refs, including defaulted inputs and initially empty outputs.
-    // Native results must bind this call's output, never the shared constructor definition.
-    r = assignRefAt(r, row, ref.alias, text !== undefined ? put(r.store, { data: { description: { content: text } }, children: [] }) : ref.defaultValue, now)
+    // Primitive results must bind this call's output, never the shared constructor definition.
+    r = assignRefAt(r, row, ref.alias, text !== undefined ? textValue(r.store, text) : ref.defaultValue, now)
   }
   return r
 }
 
-/** The text of a string value cid (its description or text scalar). */
-export function textOf(r: Replica, cid: string | null): string | null {
-  if (!cid) return null
-  const node = valueContent(r.store, cid)
-  return node.data.scalar?.type === 'text' ? String(node.data.scalar.value) : node.data.description?.content ?? null
-}

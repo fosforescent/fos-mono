@@ -1,4 +1,4 @@
-import { FosStore } from './store'
+import { storeOf, type FosStore } from './store'
 import { FOS_DATA_VERSION, UnsupportedDataVersionError, assertCurrentCid, cidVersion, formatCid, hashContent, isCid, isCurrentCid, parseCid, shortCid, verifyCid } from './cid'
 import type { FosNodeContent, FosNodesData } from '../types'
 import { addTask, createReplica, headCid, loadReplica, serializeReplica } from '../sync/replica'
@@ -76,10 +76,10 @@ describe('data of another version', () => {
     const { context } = serializeReplica(replica)
     const older = inVersion(context.nodes, '0.0.0')
     const rootNodeId = formatCid(parseCid(context.rootNodeId)!.digest, '0.0.0')
-    expect(() => new FosStore({ fosCtxData: { fosData: { nodes: older, route: [], rootNodeId }, trellisData: replica.store.trellisData } }))
+    expect(() => storeOf(older, rootNodeId))
       .toThrow(UnsupportedDataVersionError)
     // and the current data loads as it was
-    const store = new FosStore({ fosCtxData: { fosData: { nodes: context.nodes, route: [], rootNodeId: context.rootNodeId }, trellisData: replica.store.trellisData } })
+    const store = storeOf(context.nodes, context.rootNodeId)
     expect(store.rootNodeId).toBe(context.rootNodeId)
   })
 

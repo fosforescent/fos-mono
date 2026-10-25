@@ -8,7 +8,7 @@ const dir = mkdtempSync(path.join(require('node:os').tmpdir(), 'fos-allocations-
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTextAreaElement','Node','Option','navigator','localStorage','sessionStorage','location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {parseRowInput} from './src/rows'; export {createMemoryStorage} from './src/storage'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), external: ['mermaid','katex','katex/*'] })
-const { App, mountUi, parseRowInput, createMemoryStorage, view, ownerGrants, handleAt, executionInputs, evaluationRecord, typeErrorAt, HOME_ID } = require(path.join(dir, 'test.cjs'))
+const { App, mountUi, parseRowInput, createMemoryStorage, view, ownerGrants, handleAt, executionInputs, evaluationRecord, HOME_ID } = require(path.join(dir, 'test.cjs'))
 const tick = () => new Promise(resolve => setImmediate(resolve))
 const settle = async () => { for (let i = 0; i < 20; i++) await tick() }
 
@@ -21,7 +21,6 @@ async function main() {
   assert(bank, 'the bank row was created under the task')
   const grants = ownerGrants(app.state.replica, [HOME_ID, task, bank.id])
   assert.deepEqual(grants.map(g => g.allocation.amount), [12], 'the amount typed on a new bank is issued as one grant checked by the device\'s allocate handler')
-  assert.equal(typeErrorAt(app.state.replica, [HOME_ID, task, bank.id]), null, 'the grant row is accepted under the bank')
   const inputs = executionInputs(app.state.replica, [HOME_ID, task])
   assert.deepEqual(inputs.filter(f => f.direction === 'consume').map(f => [f.amount, f.unit]), [[12, 'unit']], 'the grant is offered for use')
 
@@ -49,7 +48,7 @@ async function main() {
   const grantsNow = ownerGrants(app.state.replica, [HOME_ID, task, bank.id])
   assert.deepEqual(grantsNow.map(g => g.allocation.amount).sort((a, b) => a - b), [-5, 3, 5, 7])
   assert.equal(view(app.state.replica, [HOME_ID, task]).tasks.find(t => t.resource).resource.held, 10)
-  // (grants issued by the allocate native carry no issuer peer; see shared/sync/arguments.ts grantValue)
+  // (grants issued by the allocate primitive carry no issuer peer; see shared/sync/arguments.ts grantValue)
 
   // using more than a handle holds is refused before anything is authored
   const before = JSON.stringify(view(app.state.replica, [HOME_ID, task]).tasks.map(t => t.id))

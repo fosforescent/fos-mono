@@ -8,6 +8,8 @@
  * the verified nodes; the market appends them (`applyBid`) to a branch of the node and records that as the bidder's
  * proposal. Nothing here knows what kinds of rows a bid holds.
  */
+import { allocationShapeOf } from './allocations'
+import { createStore } from './graph'
 import { FosStore } from '../dag-implementation/store'
 import type { FosNodesData, FosPathElem } from '../types'
 import {
@@ -44,7 +46,7 @@ export type MarketBid = { nodes: FosNodesData; rows: Array<{ under: Scope; edge:
  * from there); `under(id)` says where each top-level row goes in the receiving node.
  */
 export function draftBid(r: Replica, at: Scope, now: number, build: (draft: Replica) => Replica, under: (id: string) => Scope = () => []): MarketBid {
-  const store = new FosStore()
+  const store = createStore()
   commitRoot(store, put(store, { data: {}, children: [] }), now)
   nestScope(store, { store: r.store, root: headCid(r), at })
   const draft = build(createReplica(r.meta.peerId, store))
@@ -89,8 +91,7 @@ export function applyBid(store: FosStore, valueCid: string, bid: unknown, bidder
     if (memberEdgesOf(store, cid).length || content(store, cid).children.some(e => isBookkeepingEdge(store, e) && !isPrevEdge(store, e))) throw new BidError('A bid cannot carry members or proposals.')
     // allocation rows name who they are by
     if (isAllocationRow(store, edge)) {
-      const data = valueContent(store, cid).data
-      for (const by of [data.allocation?.by]) if (by !== undefined && by !== bidder && by !== `user:${bidder}`) throw new BidError('Allocations in a bid are the bidder’s own.')
+      for (const by of [allocationShapeOf(store, cid)?.by]) if (by !== undefined && by !== bidder && by !== `user:${bidder}`) throw new BidError('Allocations in a bid are the bidder’s own.')
     }
     for (const child of valueContent(store, cid).children) if (isRowEdge(store, child)) check(child, depth + 1)
   }

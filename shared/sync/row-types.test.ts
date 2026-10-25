@@ -1,4 +1,6 @@
 /** Rows are made from the nodes the nearest standard library ref names: shipped in every device root, linked in Home. */
+import { tagName, tagNode } from './index'
+import { createStore } from './graph'
 import { FosStore } from '../dag-implementation/store'
 import { HOME_ID, LIBRARY_ID, SERVER_MEMBER, content, namesInLibrary, readProposals, put, refNodeContent, resolveScope, rowTypeAt, typeIdOf, valueCidOf, valueContent } from './graph'
 import { exchangeNode, nodeShape, templateNodesAt } from './node-sync'
@@ -10,18 +12,21 @@ import { NOTE_TYPE, TASK_TYPE, TEMPLATE_TYPE } from './library-types'
 
 /** The node the library ref at `library` names `name`. */
 const named = (r: Replica, library: string[], name: string) => namesInLibrary(r.store, valueCidOf(r.store, resolveScope(r.store, headCid(r), library)!)).byName.get(name)!
+/** Which changed version a node is: the tag a changed library put on it. */
+const version = (r: Replica, cid: string) => content(r.store, cid).children.map(([left]) => tagName(r.store, left)).find(name => name && name !== 'done') ?? null
 const edgeOf = (r: Replica, at: string[], id: string) => valueContent(r.store, resolveScope(r.store, headCid(r), at)!).children.find(e => content(r.store, e[1]).data.alias?.id === id)!
-/** The library value `library` (a ref's path) with the node its ref `name` points at replaced by one titled `title`. */
+/** The library value `library` (a ref's path) with the node its ref `name` points at changed: tagged `title`. */
 function renamed(r: Replica, library: string[], name: string, title: string): string {
   const store = r.store, value = valueCidOf(store, resolveScope(store, headCid(r), library)!)
   return put(store, { ...content(store, value), children: content(store, value).children.map(edge => {
     const ref = content(store, edge[1])
     if (ref.data.name?.content !== name) return edge
-    const node = put(store, { ...valueContent(store, edge[1]), data: { ...valueContent(store, edge[1]).data, description: { content: title } } })
+    const type = valueContent(store, edge[1])
+    const node = put(store, { ...type, children: [...type.children, [tagNode(store, title), put(store, { data: {}, children: [] })]] })
     return [edge[0], put(store, refNodeContent(store, ref.data, node))] as [string, string]
   }) })
 }
-/** A library defined at `at` whose task is titled `title` (what a library looks like after its members changed it), used there. */
+/** A library defined at `at` whose task is tagged `title` (what a library looks like after its members changed it), used there. */
 function withLibrary(r: Replica, at: string[], title: string): Replica {
   r = addRefAt(r, at, LIBRARY_ID, put(r.store, { data: {}, children: [] }), 1, renamed(r, [LIBRARY_ID], TASK_TYPE, title))
   return useLibrary(r, at, [...at, LIBRARY_ID], 1)
@@ -44,7 +49,7 @@ test('the nearest library wins: one linked in Home overrides the shipped one und
   r = addTask(r, [HOME_ID], 'In Home', 3, 'home-task')
   r = addTask(r, [], 'At the root', 4, 'root-task')
   const todo = named(r, [HOME_ID, LIBRARY_ID], TASK_TYPE)
-  expect(valueContent(r.store, todo).data.description?.content).toBe('To-do')
+  expect(version(r, todo)).toBe('To-do')
   expect(edgeOf(r, [HOME_ID], 'home-task')[0]).toBe(todo)
   expect(edgeOf(r, [], 'root-task')[0]).toBe(named(r, [LIBRARY_ID], TASK_TYPE))
   // deeper still: a project with its own library, for its subtree only
@@ -52,12 +57,12 @@ test('the nearest library wins: one linked in Home overrides the shipped one und
   r = withLibrary(r, [HOME_ID, 'project'], 'Ticket')
   r = addTask(r, [HOME_ID, 'project'], 'Bug', 6, 'bug')
   r = addTask(r, [HOME_ID], 'Elsewhere', 7, 'elsewhere')
-  expect(valueContent(r.store, edgeOf(r, [HOME_ID, 'project'], 'bug')[0]).data.description?.content).toBe('Ticket')
+  expect(version(r, edgeOf(r, [HOME_ID, 'project'], 'bug')[0])).toBe('Ticket')
   expect(edgeOf(r, [HOME_ID], 'elsewhere')[0]).toBe(todo)
 })
 
 test('a root with no library above a row makes no rows', () => {
-  const r = createReplica('p', new FosStore())
+  const r = createReplica('p', createStore())
   expect(() => rowTypeAt(r.store, TASK_TYPE)).toThrow(/No standard library/)
   expect(() => addTask(r, [], 'Nothing to make it from', 1, 'x')).toThrow(/No standard library/)
 })
@@ -73,7 +78,7 @@ test('a library value the members accept makes the new rows; rows made before ke
   r = addTask(r, [HOME_ID], 'After', 5, 'after')
   const after = edgeOf(r, [HOME_ID], 'after')[0]
   expect(after).not.toBe(before)
-  expect(valueContent(r.store, after).data).toMatchObject({ description: { content: 'To-do' } })
+  expect(version(r, after)).toBe('To-do')
   expect(edgeOf(r, [HOME_ID], 'before')[0]).toBe(before)
   // both are task: the library ref names the earlier node too (its other value)
   expect(view(r, [HOME_ID])!.tasks.filter(t => ['before', 'after'].includes(t.id)).map(t => t.type)).toEqual([TASK_TYPE, TASK_TYPE])
@@ -124,7 +129,7 @@ test('an exported library is a submission another device takes as it is, so it m
   owner = upgradeLibrary(acceptSubmission(submitted.replica, [LIBRARY_ID], submitted.proposalCid, owner.meta.peerId, 2).replica, [], [LIBRARY_ID], 2)
   const bundle = exportLibrary(owner, [LIBRARY_ID])
   // a device that never synced takes the bundle as its first library value
-  const fresh = new FosStore()
+  const fresh = createStore()
   let device = createReplica('device', fresh)
   device = ensureDeviceLibrary(device, bundle, 4)
   expect(named(device, [LIBRARY_ID], NOTE_TYPE)).toBe(named(owner, [LIBRARY_ID], NOTE_TYPE))

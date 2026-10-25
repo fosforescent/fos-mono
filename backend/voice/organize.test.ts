@@ -1,3 +1,4 @@
+import { createStore } from '@fosforescent/shared/sync/graph'
 import type { Request, Response } from 'express'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
 import { argumentSupplier, addRow, createReplica, ensureHomeContext, evaluationRecord, HOME_ID, requestOrganize, requirementAnswer, view, type Replica } from '@fosforescent/shared/sync/index'
@@ -61,7 +62,7 @@ function host(initial: Replica, handler = organizeHandler(() => model())) {
 const rows = (r: Replica, at: string[]) => view(r, at)!.tasks.filter(t => !t.scalar).map(t => t.title)
 
 function garden(): Replica {
-  let r = ensureHomeContext(createReplica('user:alice', asAccountStore(new FosStore())), 1, { server: ['organize'] })
+  let r = ensureHomeContext(createReplica('user:alice', asAccountStore(createStore())), 1, { server: ['organize'] })
   r = addRow(r, [HOME_ID], PLAIN_TYPE, 'Project', 2, { id: 'project' })
   r = addRow(r, [HOME_ID, 'project'], PLAIN_TYPE, 'Budget', 3, { id: 'budget' })
   r = addRow(r, [HOME_ID], PLAIN_TYPE, 'Unrelated', 4, { id: 'unrelated' })
@@ -69,7 +70,7 @@ function garden(): Replica {
 }
 
 test('the model sees the target, the outline with ids and the capture; its answer is validated against that outline', async () => {
-  const fake = model(JSON.stringify({ title: 'Garden', items: [{ ref: 'n1', parent: 'tomatoes', type: 'plain', text: 'water daily' }, { ref: 'n2', parent: 'not-in-outline', text: 'compost' }] }))
+  const fake = model(JSON.stringify({ title: 'Garden', items: [{ ref: 'n1', parent: 'tomatoes', type: PLAIN_TYPE, text: 'water daily' }, { ref: 'n2', parent: 'not-in-outline', text: 'compost' }] }))
   const outline = [{ id: 'garden', parent: null, title: 'Garden', depth: 0, path: ['garden'] }, { id: 'tomatoes', parent: 'garden', title: 'Tomatoes', depth: 1, path: ['garden', 'tomatoes'] }]
   const plan = await organizeCapture(fake, { text: 'water the tomatoes daily, start compost', title: 'Home', outline })
   expect(fake.asked).toHaveLength(1)
@@ -77,7 +78,7 @@ test('the model sees the target, the outline with ids and the capture; its answe
   expect(fake.asked[0]!.system).toMatch(/Never use an id that is not in the subtree/)
   expect(fake.asked[0]!.system).toMatch(/"note" for a note/) // rows name a standard-library row type
   expect(fake.asked[0]!.user).toBe('Target: Home\n\nSubtree:\n- [garden] Garden\n  - [tomatoes] Tomatoes\n\nCapture:\nwater the tomatoes daily, start compost')
-  expect(plan.items).toEqual([{ ref: 'n1', parent: 'tomatoes', text: 'water daily', type: 'plain' }, { ref: 'n2', parent: null, text: 'compost', type: 'plain' }])
+  expect(plan.items).toEqual([{ ref: 'n1', parent: 'tomatoes', text: 'water daily', type: PLAIN_TYPE }, { ref: 'n2', parent: null, text: 'compost', type: PLAIN_TYPE }])
 })
 
 test('an answer that is not JSON is asked for once more, then fails', async () => {
@@ -101,7 +102,7 @@ test('the organize handler answers the request with the plan\'s rows inside it; 
   const done = await h.complete(asked.path)
   if (!done.body.evaluation) throw new Error(`organize failed: ${JSON.stringify(done.body)}`)
   expect(done.body.evaluation.status).toBe('committed')
-  // a native sees no tree: the model gets the capture alone (the target's outline awaits its replacement, current_tasks.md)
+  // a primitive sees no tree: the model gets the capture alone (the target's outline awaits its replacement, current_tasks.md)
   expect(fake.asked[0]!.user).toBe('Target: Voice note\n\nSubtree:\n(empty)\n\nCapture:\nkickoff transcript')
   const r = h.get()
   // the target is unchanged but for the filled request, which holds the plan's rows
@@ -112,7 +113,8 @@ test('the organize handler answers the request with the plan\'s rows inside it; 
   expect(request.requirement).toMatchObject({ capability: 'organize', satisfied: true })
   expect(argumentSupplier(r, asked.path)).toBe('fos')
   expect(requirementAnswer(r, asked.path)).toBe('Kickoff')
-  expect(rows(r, asked.path)).toEqual(['kickoff transcript', 'cap at $5k', 'Hiring', 'must stay inside'])
+  // the request's title field row comes first; the capture is the request's input: a string row like any other, before the plan's rows
+  expect(rows(r, asked.path)).toEqual(['Voice note', 'kickoff transcript', 'cap at $5k', 'Hiring', 'must stay inside'])
   const hiring = view(r, asked.path)!.tasks.find(t => t.title === 'Hiring')!
   expect(rows(r, [...asked.path, hiring.id])).toEqual(['one designer'])
   expect(meter.records).toEqual([0.01])
@@ -133,10 +135,10 @@ test('over the free budget the request is refused and rolled back; a failing mod
 })
 
 test('texted messages go through the same handler: the filled request waits in Home holding the rows', async () => {
-  let r = ensureHomeContext(createReplica('user:alice', asAccountStore(new FosStore())), 1, { server: ['organize'] })
+  let r = ensureHomeContext(createReplica('user:alice', asAccountStore(createStore())), 1, { server: ['organize'] })
   r = addRow(r, [HOME_ID], PLAIN_TYPE, 'Groceries', 2, { id: 'groceries' })
   r = addRow(r, [HOME_ID, 'groceries'], PLAIN_TYPE, 'milk', 3, { id: 'milk' })
-  const fake = model(JSON.stringify({ title: 'Errands', items: [{ ref: 'n1', parent: 'groceries', type: 'plain', text: 'eggs' }, { ref: 'n2', parent: null, type: 'plain', text: 'Hardware store' }, { ref: 'n3', parent: 'n2', type: 'plain', text: 'hinges' }] }))
+  const fake = model(JSON.stringify({ title: 'Errands', items: [{ ref: 'n1', parent: 'groceries', type: PLAIN_TYPE, text: 'eggs' }, { ref: 'n2', parent: null, type: PLAIN_TYPE, text: 'Hardware store' }, { ref: 'n3', parent: 'n2', type: PLAIN_TYPE, text: 'hinges' }] }))
   const h = host(r, organizeHandler(() => fake))
   const replies: string[] = []
   const inbound = createTextCommandInbound({
@@ -152,7 +154,7 @@ test('texted messages go through the same handler: the filled request waits in H
   expect(rows(after, [HOME_ID, 'groceries'])).toEqual(['milk'])
   const request = view(after, [HOME_ID])!.tasks.find(t => t.requirement?.capability === 'organize')!
   expect(request).toMatchObject({ title: 'Text message (sms)', requirement: { satisfied: true } })
-  expect(rows(after, [HOME_ID, request.id])).toEqual(['need eggs, and hinges from the hardware store', 'eggs', 'Hardware store'])
+  expect(rows(after, [HOME_ID, request.id])).toEqual(['Text message (sms)', 'need eggs, and hinges from the hardware store', 'eggs', 'Hardware store'])
   expect(replies.at(-1)).toBe('fos: organized for Home under “Text message (sms)”: 3 rows (Errands)')
   // the model failing: that request goes again and the text lands in Home as a plain row
   await inbound({ source: 'sms', id: 'm2', from: '+1', replyTo: '+1', text: 'fail please', timestamp: 't' })

@@ -1,11 +1,12 @@
+import { primitive } from './primitives'
 import { exchangeNodeContext } from './node-context'
-import { pinnedLiteralEdge } from './node-provider'
+import { pinnedLiteralEdge, TEXT_MASK, isTextChild } from './node-provider'
 import { primitiveValue } from './primitives'
 import { refSubmissions } from './scoped-refs'
 import { sameCapabilityType, capabilityName } from './capabilities'
 import { mergeNodes } from './merge'
 import type { FosDataContent, FosNodeContent, FosNodesData } from '../types'
-import { FOS_DATA_VERSION, cidVersion, isCid, isCurrentCid } from '../dag-implementation/cid'
+import { FOS_DATA_VERSION, cidVersion, hashContent, isCid, isCurrentCid } from '../dag-implementation/cid'
 import { advertisedRows, content, valueContent, identityCid, isRowEdge, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, rowTypeOf, isShippedLibrary, resolveScope, isHandle, isPeerReference,
   scopeBranches, branchSelection, selectBranch, isBranchChoice, readChoice, capabilityNames, putStripped, readProposals, proposalContent, withProposal, submissionAdditions, removeProposalByCid, importNodes, reachableNodes, copyOuterScope, refValueCid, withMainBranchPolicy, readMembers, memberFor, updateAtScope, commitRoot, put, refNodeContent, bookkeepingOf,
   memberEntryPeerAt, inMemberEntry, isMemberEdge, memberEdgesOf, memberPeerOf, membershipPath, withMembershipRow, withMembershipRows, makeLink, isRefNode, SERVER_MEMBER, type Scope } from './graph'
@@ -35,7 +36,7 @@ function acceptFilledHostDeclarations(r: Replica, local: NodeShape, remote: Node
     const values = refSubmissions(r.store, ref), nextValues = refSubmissions(r.store, nextRef)
     if (values.length !== 1 || nextValues.length !== 1) return child
     const value = content(r.store, values[0]!), primitive = primitiveValue(r.store, nextValues[0]!)
-    const stub = value.data.behavior?.content === id && Object.keys(value.data).every(key => ['peerId', 'description', 'behavior'].includes(key)) &&
+    const stub = value.data.behavior?.content === id && Object.keys(value.data).every(key => ['peerId', 'behavior'].includes(key)) &&
       value.children.every(edge => content(r.store, pattern).children.some(row => equal(row, edge)))
     return stub && primitive?.implementation === id && primitive.host === value.data.peerId?.content ? { ...child, pinned: other.pinned } : child
   }) }
@@ -122,7 +123,7 @@ function installMemberEntry(r: Replica, path: Scope, shape: NodeShape, now: numb
   if (!resolveScope(s, headCid(r), path.slice(0, -1))) throw new NodeAccessError('Node no longer exists.')
   const before = cid && !isPeerReference(content(s, cid)) ? content(s, cid) : { data: {}, children: [] }
   const rows = new Map(before.children.filter(e => exchangedValueEdge(r, e)).map(e => [content(s, identityCid(s, e)).data.alias?.id, e]))
-  const grantTypes = [s.primitive.capabilityNode.getId(), s.primitive.acceptsNode.getId()]
+  const grantTypes = [primitive(s, 'grants'), primitive(s, 'accepts')]
   const children = shape.children.map(child => {
     if (child.pinned) {
       if (!grantTypes.includes(child.template)) return pinnedLiteralEdge(s, child)
@@ -147,13 +148,24 @@ function installMemberEntry(r: Replica, path: Scope, shape: NodeShape, now: numb
 
 /** Three-way merge only fields/edges changed by the writer. Missing masked fields
  * are never interpreted as deletions. Conflicts leave both replicas untouched. */
+const timeOf = (value: unknown): number => (value as { time?: number } | undefined)?.time ?? 0
 export function mergeNodeShape(base: NodeShape, next: NodeShape, current: NodeShape): NodeShape {
   const data = { ...current.data } as Record<string, unknown>
   for (const key of new Set([...Object.keys(base.data), ...Object.keys(next.data)])) {
     const before = (base.data as Record<string, unknown>)[key], after = (next.data as Record<string, unknown>)[key], present = data[key]
     if (equal(before, after)) continue
+    // when a node last changed is the later of both changes, never a conflict
+    if (key === 'updated') { data[key] = { time: Math.max(timeOf(present), timeOf(after)) }; continue }
     if (!equal(present, before) && !equal(present, after)) throw new NodeAccessError(`Concurrent change to node field "${key}". Local changes were kept.`)
     if (after === undefined) delete data[key]; else data[key] = after
+  }
+  // a node of literal rows only (a field's value) is one value, not rows with their own identity: changed on both sides is a
+  // conflict. A literal row's id is its own content; a grant's names what it grants.
+  const literal = (child: NodeChild) => !!child.pinned && child.id === hashContent({ data: {}, children: [[child.template, child.pinned]] })
+  const literals = (shape: NodeShape) => shape.children.filter(literal).map(child => child.id).sort()
+  const value = [base, next, current].every(shape => shape.children.every(literal))
+  if (value && !equal(literals(base), literals(next)) && !equal(literals(base), literals(current)) && !equal(literals(next), literals(current))) {
+    throw new NodeAccessError(`Concurrent change to child "${literals(next).find(id => !literals(base).includes(id)) ?? literals(base)[0]}". Local changes were kept.`)
   }
   const children = new Map(current.children.map(child => [child.id, child]))
   const old = new Map(base.children.map(child => [child.id, child])), desired = new Map(next.children.map(child => [child.id, child]))
@@ -252,7 +264,7 @@ export function acceptSubmissionRows(r: Replica, at: Scope, additions: Array<{ p
 }
 
 function heldHistory(store: Replica['store'], held: FosNodeContent, heldCid: string): FosNodeContent['children'] {
-  const prev = store.primitive.previousVersion.getId(), kept = bookkeepingOf(store, held)
+  const prev = primitive(store, 'previous'), kept = bookkeepingOf(store, held)
   return kept.some(([i]) => i === prev) ? [...kept.filter(([i]) => i !== prev), [prev, heldCid]] : kept
 }
 
@@ -439,7 +451,7 @@ export function outgoingNodeShape(r: Replica, path: Scope, peer: string, shape: 
     if (i === path.length) children = mask?.children
   }
   return { data: Object.fromEntries(Object.entries(shape.data).filter(([key]) => !fields || fields.includes(key))) as FosDataContent,
-    children: shape.children.filter(c => !children || children.includes(c.id)) }
+    children: shape.children.filter(c => (!children || children.includes(c.id)) && (!fields || fields.includes(TEXT_MASK) || !isTextChild(r.store, c))) }
 }
 
 export function establishNodeSync(r: Replica, path: Scope, request: NodeRequest, remote: ProvidedNode, now: number): Replica {
@@ -542,7 +554,7 @@ function keepAsHeld(r: Replica, request: NodeRequest, authority: NodeAuthority, 
   const node = content(r.store, cid)
   if (!(isPeerReference(node) && node.data.ref?.peer === request.peerId)) {
     const ref = { id, peer: request.peerId, version: 'unloaded', scope: path }
-    const held = { data: { alias: { id }, ref }, children: [[r.store.primitive.previousVersion.getId(), cid]] as FosNodeContent['children'] }
+    const held = { data: { alias: { id }, ref }, children: [[primitive(r.store, 'previous'), cid]] as FosNodeContent['children'] }
     commitRoot(r.store, updateAtScope(r.store, headCid(r), path, () => held, 'replace'), now)
     r = { ...r }
   }
@@ -592,7 +604,7 @@ function historicalChild(r: Replica, path: Scope): string | null {
     const node = content(r.store, root), target = refValueCid(r.store, node)
     const cid = target && resolveScope(r.store, target, path)
     if (cid) return cid
-    root = node.children.find(e => e[0] === r.store.primitive.previousVersion.getId())?.[1]
+    root = node.children.find(e => e[0] === primitive(r.store, 'previous'))?.[1]
   }
   return null
 }
@@ -693,7 +705,7 @@ export function nodeSyncPush(r: Replica, plan: NodeSyncPlan, remote: ProvidedNod
   acceptPinnedContent(replica, remote, remote.templates)
   const visible = (shape: NodeShape): NodeShape => ({
     data: Object.fromEntries(Object.entries(shape.data).filter(([key]) => !remote.mask?.fields || remote.mask.fields.includes(key))) as FosDataContent,
-    children: shape.children.filter(child => !remote.mask?.children || remote.mask.children.includes(child.id))
+    children: shape.children.filter(child => (!remote.mask?.children || remote.mask.children.includes(child.id)) && (!remote.mask?.fields || remote.mask.fields.includes(TEXT_MASK) || !isTextChild(replica.store, child)))
   })
   const outgoingBase = visible(outgoingNodeShape(replica, plan.path, remote.peerId, plan.baseline))
   const outgoing = visible(outgoingNodeShape(replica, plan.path, remote.peerId, acceptFilledHostDeclarations(replica, plan.local, remote)))

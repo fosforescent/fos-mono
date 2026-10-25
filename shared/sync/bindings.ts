@@ -1,6 +1,7 @@
 /** Shared, read-only resolution for data arguments and callable values. */
+import { hostOf, primitive } from './primitives'
 import { discoverHandlers, type HandlerEnvironment } from './handlers'
-import { formText } from './forms'
+import { rowText } from './fields'
 import type { FosStore } from '../dag-implementation/store'
 import {
   isBranchChoice, selectedBranchValue, libraryTypeAt, type Capability, childRows, isRequirementRow, argumentSatisfied, content, isChoiceEdge, isRefNode, refValueCid,
@@ -9,9 +10,8 @@ import {
 import { type Replica } from './replica'
 import { sameCapabilityType } from './capabilities'
 import { bindingProperties, visibleBindings, bindingTree, bindingAvailable, bindingAssignments, submissionRef, type ScopedBinding } from './scope-bindings'
-import { matchesGraph, patternHasStructure } from './structural'
+import { matchesGraph } from './structural'
 import { patternIsValuePredicate } from './scoped-refs'
-import { isNegative } from './parameters'
 import { parseRefExpression, resolveRefExpression, resolveRefIdentity, nodeOccurrence, textRefExpressions, type RefAccess } from './ref-paths'
 
 export type BindingEnvironment = HandlerEnvironment & RefAccess & {
@@ -56,14 +56,12 @@ export function contextBindings(r: Replica, at: Scope, environment: BindingEnvir
 export function resolveBinding(store: FosStore, type: string | null, target: string | ScopedBinding | null, candidates: BindingCandidate[] = [], name?: string, environment: BindingEnvironment = {}): BindingResolution {
   const sources = new Set<string>(), active = new Set<string>()
   const fail = (status: BindingResolution['status'], message: string): BindingResolution => ({ status, sources: [...sources], problems: [message] })
-  // A pattern with structure selects by the candidate's value; a bare capability selects by the candidate's declared type.
-  // A negative declaration asks for a value; it is never a value to select. Otherwise a pattern with structure selects
-  // by the candidate's value and a bare capability by the candidate's declared type.
-  const compatible = (declared: string, wanted: string | null, cid: string): boolean => wanted !== null && !isNegative(store, declared) &&
-    (patternHasStructure(store, wanted) ? matchesGraph(store, wanted, cid) : matchesGraph(store, wanted, declared, { side: 'left' }))
+  // a candidate is selected by its value: a handler is a value of the capability it fills; a hole is no value to select
+  const compatible = (_declared: string, wanted: string | null, cid: string): boolean => wanted !== null && matchesGraph(store, wanted, cid)
   const choose = (wanted: string | null, label?: string, excluded?: string, anonymous = false): BindingResolution => {
     const matches = [...new Set(candidates.filter(c => c.cid !== excluded && (!label || c.binding?.nameVisible !== false) &&
-      (label && c.name === label || compatible(c.type, wanted, c.cid) && (!label || anonymous && (!c.name || !!c.refIds)))).map(c => c.cid))]
+      // a declaration inside another ref is reached by its path, never selected by its type
+      (label && c.name === label || compatible(c.type, wanted, c.cid) && (c.binding?.refPath.length ?? 1) <= 1 && (!label || anonymous && (!c.name || !!c.refIds)))).map(c => c.cid))]
     if (!matches.length) return fail('missing', `Missing binding${label ? `: ${label}` : ''}`)
     if (matches.length > 1) {
       matches.forEach(cid => sources.add(cid))
@@ -109,11 +107,6 @@ export function resolveBinding(store: FosStore, type: string | null, target: str
     active.add(cid)
     try {
       const node = content(store, cid)
-      if (node.data.refAlternatives) {
-        const alternatives = [...new Set(node.children.map(([, value]) => value))]
-        if (alternatives.length !== 1) return fail(alternatives.length ? 'ambiguous' : 'missing', 'Choose a handler for this capability')
-        return follow(alternatives[0]!, wanted, scope, true)
-      }
       if (node.data.refExpression) {
         if (!scope) return fail('missing', 'Ref expression needs its lexical scope')
         const found = resolveRefExpression({ store: scope.store }, scope.path, node.data.refExpression, environment)
@@ -123,7 +116,7 @@ export function resolveBinding(store: FosStore, type: string | null, target: str
         if (location.store !== store) importNodes(store, reachableNodes(location.store, [location.cid]))
         return follow(location.cid, wanted, { store: location.store, path: location.path.slice(0, -1) })
       }
-      if (isBranchChoice(store, node)) { const selected = selectedBranchValue(store, cid); return selected ? follow(selected, wanted, scope) : fail('missing', 'Choose a supplied value branch') }
+      if (isBranchChoice(store, node)) { const selected = selectedBranchValue(store, cid); return selected ? follow(selected, wanted, scope) : fail('ambiguous', 'Choose one of the alternatives') }
       if (node.children.some(e => isChoiceEdge(store, e))) return fail('conflict', 'Resolve conflicting values first')
       if (node.data.ref) {
         if (node.data.ref.peer || node.data.ref.owner) return fail('missing', 'The remote reference needs a handler in this scope')
@@ -135,7 +128,7 @@ export function resolveBinding(store: FosStore, type: string | null, target: str
         return followDeclaration(location, null)
       }
       if (isRefNode(store, node)) {
-        const targets = [...new Set(node.children.filter(e => e[0] === store.primitive.targetPointerConstructor.getId()).map(e => e[1]))]
+        const targets = [...new Set(node.children.filter(e => e[0] === primitive(store, 'target')).map(e => e[1]))]
         if (!targets.length) return explicit ? fail('missing', 'The explicitly referenced declaration has no supplied value') : choose(wanted, node.data.name?.content, cid, true)
         // a ref row's value sees the declarations inside that row (an answer written inside a requirement), so it resolves from the row's own path
         const inner: BindingScope | undefined = occurrence ? { store, path: occurrence } : scope
@@ -146,7 +139,8 @@ export function resolveBinding(store: FosStore, type: string | null, target: str
         return { ...values[0]!, sources: [...sources] }
       }
       if (wanted && !matchesGraph(store, wanted, cid)) return fail('conflict', 'The value does not match the row pattern')
-      const peer = node.data.peerId?.content
+      // a handler whose primitive runs at a peer needs that peer; a value that only names who supplied it does not
+      const peer = hostOf(store, cid) ?? undefined
       if (peer && environment.isPeerActive && !environment.isPeerActive(peer)) return fail('missing', `Peer ${peer} is not active`)
       if (environment.checkDependencies === false) return { status: 'ready', cid, sources: [...sources], problems: [] }
       for (const child of childRows(store, cid).filter(c => isRequirementRow(store, c.edge))) {
@@ -167,7 +161,7 @@ export function resolveBinding(store: FosStore, type: string | null, target: str
 export function resolveText(r: Replica, at: Scope, text: string, defaults: BindingCandidate[] = [], environment: BindingEnvironment = {}): { text: string; bindings: BindingResolution[] } {
   const candidates = contextBindings(r, at, environment), bindings: BindingResolution[] = []
   for (const candidate of defaults) if (!candidates.some(c => c.type === candidate.type && c.name === candidate.name)) candidates.push(candidate)
-  const type = r.store.primitive.documentField.getId()
+  const type = primitive(r.store, 'string')
   let rendered = '', previous = 0
   for (const expression of textRefExpressions(text)) {
     const name = expression.source, parsed = parseRefExpression(name)
@@ -181,7 +175,7 @@ export function resolveText(r: Replica, at: Scope, text: string, defaults: Bindi
       } else result = { status: found.status === 'denied' ? 'missing' : found.status === 'ready' ? 'missing' : found.status, sources: [], problems: [`Unresolved ref property: ${name}`] }
     } else result = resolveBinding(r.store, type, null, candidates, name, { ...environment, scope: { replica: r, path: at } })
     bindings.push(result)
-    rendered += text.slice(previous, expression.start) + (result.status === 'ready' ? formText(r.store, valueContent(r.store, result.cid!)) : text.slice(expression.start, expression.end))
+    rendered += text.slice(previous, expression.start) + (result.status === 'ready' ? rowText(r.store, result.cid!, null) : text.slice(expression.start, expression.end))
     previous = expression.end
   }
   return { text: rendered + text.slice(previous), bindings }

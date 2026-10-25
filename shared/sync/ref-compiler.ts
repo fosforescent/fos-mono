@@ -1,4 +1,6 @@
 /** Resolve editor references into immutable graph edges. Editor locations belong only to diagnostics. */
+import { isFieldRow } from './fields'
+import { primitive } from './primitives'
 import { settingOf } from './graph'
 import { isHandlerStateLeft } from './capabilities'
 import type { FosPathElem } from '../types'
@@ -6,8 +8,7 @@ import type { FosStore } from '../dag-implementation/store'
 import { importNodes, reachableNodes, content, findAliasEdge, identityCid, isBranchChoice, isMemberEdge, isProposalEdge, isRowEdge, put, putBranches, readChoice, isRefNode, refValueCid, resolveScope, selectedBranchValue, valueContent, type Scope } from './graph'
 import { addRefAt, headCid, type Replica } from './replica'
 import { argumentRefs } from './bindings'
-import { isTagRow, matchesGraph } from './structural'
-import { isOutputPattern } from './parameters'
+import { isTagRow, matchesGraph, isOutputDeclaration, capabilityName } from './structural'
 import { resolveRefExpression, resolveRefIdentity, type RefAccess, type RefLocation } from './ref-paths'
 import { bindingAssignments, type ScopedBinding } from './scope-bindings'
 
@@ -83,11 +84,6 @@ export function compileRefGraph(r: Replica, cid: string, at: Scope = [], options
     visiting.add(current)
     try {
       const previousHoleCount = holes.length
-      // a sum of options on a refined capability (a choice pattern) is a pattern, not a ref with alternative handlers
-      if (node.data.refAlternatives && options.selected && !node.data.capabilityDefinition) {
-        const values = [...new Set(node.children.map(([, value]) => value))]
-        return values.length === 1 ? walk(store, values[0]!, path, role, depth + 1, type) : hole(id, type, path, values.length ? 'ambiguous' : 'unbound', role)
-      }
       if (role === 'output' && options.openOutputs) return hole(id, type, path, 'unbound', role)
       if (node.data.refHole) {
         holes.push({ cid: current, id: current, ...(type ? { type } : {}), path, reason: 'unbound', role: node.data.refHole.role })
@@ -111,7 +107,8 @@ export function compileRefGraph(r: Replica, cid: string, at: Scope = [], options
       if (isBranchChoice(store, node)) {
         if (options.selected) {
           const selected = selectedBranchValue(store, current)
-          return selected ? walk(store, selected, path, role, depth + 1, type) : hole(id, type, path, 'unbound', role)
+          // alternatives nobody has chosen from are ambiguous; a choice of none is unbound
+          return selected ? walk(store, selected, path, role, depth + 1, type) : hole(id, type, path, readChoice(store, current).options.length > 1 ? 'ambiguous' : 'unbound', role)
         }
         const alternatives = readChoice(store, current).options.flatMap(option => {
           if (!option.edge) return []
@@ -145,17 +142,19 @@ export function compileRefGraph(r: Replica, cid: string, at: Scope = [], options
       }
       const children: FosPathElem[] = []
       for (const edge of node.children) {
-        if (edge[0] === store.primitive.previousVersion.getId() || isProposalEdge(store, edge) || isMemberEdge(store, edge)) continue
+        if (edge[0] === primitive(store, 'previous') || isProposalEdge(store, edge) || isMemberEdge(store, edge)) continue
         // a tag names a capability by identity; the capability's own declarations are not this node's to fill
         if (isTagRow(store, edge)) { children.push(edge); continue }
         const child = store.table.get(edge[1])
         if (child && settingOf(store, child)) continue
+        // a field left open is absent: void, not a hole the row waits for
+        if (child && isFieldRow(store, edge) && !refValueCid(store, child)) { children.push([edge[0], primitive(store, 'void')]); continue }
         if (isRowEdge(store, edge) && isHandlerStateLeft(store, edge[0])) continue
         const childPath = isRowEdge(store, edge) ? [...path, child?.data.alias?.id ?? edge[1]] : path
         // A constructor is kept by identity (a form's field types stay the types its definition names) unless it contains refs of its own to compile.
         const instruction = containsRef(store, edge[0]) ? walk(store, edge[0], childPath, role, depth + 1) : edge[0]
         if (instruction === edge[0]) locations.push({ source: edge[0], path: childPath, cid: instruction })
-        const childRole = isOutputPattern(store, edge[0]) ? 'output' : role
+        const childRole = isOutputDeclaration(store, edge[0], edge[1]) ? 'output' : role
         children.push([instruction, walk(store, edge[1], childPath, childRole, depth + 1, isRowEdge(store, edge) ? edge[0] : type)])
       }
       const { alias: _alias, updated: _updated, ref: _ref, refExpression: _expression, refRole: _role, ...data } = node.data
@@ -201,7 +200,7 @@ export function compileRow(r: Replica, path: Scope, options: CompileRefOptions =
 
 /** Persist the residual and its reachable immutable graph together, not just an orphan CID. */
 export function saveRefCompilation(r: Replica, path: Scope, id: string, compiled: CompiledRef, now: number): Replica {
-  const type = put(r.store, { data: { description: { content: 'Compiled ref' } }, children: [] })
-  const envelope = put(r.store, { data: { refCompilation: { cid: compiled.cid } }, children: [[r.store.primitive.targetPointerConstructor.getId(), compiled.cid]] })
+  const type = put(r.store, { data: { name: { content: 'Compiled ref' } }, children: [] })
+  const envelope = put(r.store, { data: { refCompilation: { cid: compiled.cid } }, children: [[primitive(r.store, 'target'), compiled.cid]] })
   return addRefAt(r, path, id, type, now, envelope)
 }

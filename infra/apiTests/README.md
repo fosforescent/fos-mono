@@ -1,22 +1,5 @@
 # API Tests
 
-This directory contains API tests for the Fosforescent backend. The tests are organized to be used with various API testing tools:
-
-- **Postman Collections** (`.json`) - Import into Postman
-- **REST Client Files** (`.http`) - Use with VS Code REST Client extension or similar tools
-- **Test Scripts** (`.cjs`) - Automated test scripts
-
-## Test Collections
-
-### Authentication Flow
-- `auth-flow.postman_collection.json` - Postman collection for authentication
-- `auth-flow.http` - REST client file for authentication tests
-- `auth-flow.test.cjs` - Automated test script
-
-### WebSocket Testing
-- `websocket-flow.http` - REST client file with WebSocket connection instructions
-- `websocket-flow.test.cjs` - Automated WebSocket connection tests
-
 ## Setup
 
 ### Prerequisites
@@ -91,6 +74,6 @@ wscat -c "ws://localhost:4000/TOKEN"
 2. Update user profile
 
 ## Test Data
-Tests use dynamic usernames with timestamps to avoid conflicts:
+Tests should use dynamic usernames with timestamps to avoid conflicts:
 - Username: `testuser_{{timestamp}}`
-- Password: `TestPass123` (meets requirements: 8+ chars, uppercase, number)
+- Password: `TestPass123` (must meet requirements: 8+ chars, uppercase, number)

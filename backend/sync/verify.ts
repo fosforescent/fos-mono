@@ -1,3 +1,4 @@
+import { labelRow } from '@fosforescent/shared/sync/fields'
 import { standardHostRef } from './host-runtime'
 /**
  * The fos server attests users. `@name` in a row is shorthand for a user object (shared/sync/users.ts, the standard
@@ -21,7 +22,7 @@ import { standardHostRef } from './host-runtime'
  * object (read from the account's profile when it has one) and `ed25519-self` verifications are signed by it.
  */
 import { createPrivateKey, createPublicKey, hkdfSync, randomBytes, sign, verify, type KeyObject } from 'node:crypto'
-import { USER_SERVER_ATTESTATION, userFieldEdge, content, identityCid, plainEdge, supplyRequirement, bindUserAt, userAttestationPayload, verifyUser, headCid, resolveScope, valueContent, type UserRecord } from '@fosforescent/shared/sync/index'
+import { USER_SERVER_ATTESTATION, userFieldEdge, content, identityCid, supplyRequirement, bindUserAt, userAttestationPayload, verifyUser, headCid, resolveScope, valueContent, type UserRecord } from '@fosforescent/shared/sync/index'
 import type { HostHandler } from './host-runtime'
 import { readUser, userObjectContent, userType } from '@fosforescent/shared/sync/users'
 import { valueOfPattern } from '@fosforescent/shared/sync/structural'
@@ -87,7 +88,7 @@ export function verifyHandler(deps: VerifyDeps, key: IdentityKey, peer = 'fos'):
       return user.verification?.method === USER_SERVER_ATTESTATION && verifyUser(user, { servers: { [peer]: key.publicKey }, verify: verifyEd25519 }).ok
     },
     // the request's user field (the user as typed) is an operand; the answer carries the attested object as its user field
-    native: () => async (operands, ctx) => {
+    run: () => async (operands, ctx) => {
       const self = operands.outputs.self
       if (!self) throw new Error('This handler fills a verify requirement.')
       const type = userType(ctx.store, ctx.step)
@@ -97,7 +98,7 @@ export function verifyHandler(deps: VerifyDeps, key: IdentityKey, peer = 'fos'):
       const user = await resolve(name)
       if (!user) throw new Error(`No Fos user is named @${name}.`)
       const field: [string, string] = [type, ctx.put(userObjectContent(ctx.store, type, user))]
-      return { outputs: { self: valueOfPattern(ctx.store, self.pattern, { description: { content: `@${user.username}` }, peerId: { content: peer } }, [field]) } }
+      return { outputs: { self: valueOfPattern(ctx.store, self.pattern, { peerId: { content: peer } }, [field, labelRow(ctx.store, `@${user.username}`)]) } }
     }
   }
 }

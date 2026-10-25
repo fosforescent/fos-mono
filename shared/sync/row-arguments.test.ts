@@ -1,3 +1,5 @@
+import { textOf, textValue } from './index'
+import { primitive } from './primitives'
 import {
   createReplica, ensureHomeContext, shareHome, HOME_ID, addRefAt, put, content, refNodeContent,
   headCid, resolveScope, valueContent, commitRoot, updateAtScope, view, refProperties,
@@ -7,22 +9,22 @@ import {
   missingTemplatesAt, templateNodesAt, acceptTemplateNodes
 } from './index'
 
-test('a native constructor and its unfilled right argument are an ordinary editable row', () => {
+test('a primitive constructor and its unfilled right argument are an ordinary editable row', () => {
   let r = createReplica('owner')
-  const left = r.store.primitive.documentField.getId()
+  const left = primitive(r.store, 'string')
   r = addRefAt(r, [], 'input', left, 1, null, 'input')
   expect(view(r, [])!.tasks.find(row => row.id === 'input')?.typeCid).toBe(left)
   expect(refProperties(r.store, headCid(r)).find(row => row.id === 'input')).toMatchObject({ type: left, argument: true })
   r = renameTask(r, [], 'input', 'Filled through the row editor', 2)
   const right = content(r.store, resolveScope(r.store, headCid(r), ['input'])!)
   expect(refValueCid(r.store, right)).toBeTruthy()
-  expect(valueContent(r.store, refValueCid(r.store, right)!).data.description?.content).toBe('Filled through the row editor')
+  expect(textOf(r.store, refValueCid(r.store, right)!)).toBe('Filled through the row editor')
 })
 
 test('submitting to an ordinary property ref uses the row left and preserves value alternatives', () => {
   let r = writeNodeValue(createReplica('owner'), [], 'settings', { count: 1, untouched: true }, 1)
   const property = resolveRefExpression(r, [], '.settings.count').locations[0]!
-  expect(content(r.store, property.cid).children.some(([key]) => key === r.store.primitive.instructionPointerConstructor.getId())).toBe(false)
+  expect(content(r.store, property.cid).children.some(([key]) => key === primitive(r.store, 'instruction'))).toBe(false)
   const next = put(r.store, { data: { scalar: { type: 'number', value: 2 } }, children: [] })
   const proposed = proposeRefAt(r, property.path, next, 'owner', 2)
   r = applyProposalAt(proposed.replica, property.path, proposed.proposalCid, 'owner', 3)
@@ -35,7 +37,7 @@ test('submitting to an ordinary property ref uses the row left and preserves val
 test('the enclosing left instruction is the only pattern carried through node exchange', () => {
   const device = (id: string) => shareHome(ensureHomeContext(createReplica(id), 0))
   let source = device('source'), receiver = device('receiver')
-  const left = put(source.store, { data: { description: { content: 'Left capability' } }, children: [] })
+  const left = textValue(source.store, 'Left capability')
   const value = put(source.store, { data: { scalar: { type: 'text', value: 'handler value' } }, children: [] })
   const right = put(source.store, refNodeContent(source.store, { alias: { id: 'handler' }, name: { content: 'handler' } }, value, []))
   commitRoot(source.store, updateAtScope(source.store, headCid(source), [HOME_ID], node => ({ ...node, children: [...node.children, [left, right]] })), 1)
@@ -54,7 +56,7 @@ test('the enclosing left instruction is the only pattern carried through node ex
   const load = { ...request, path: ['handler'], linkId: 'value' }
   receiver = acceptProvidedNode(receiver, [HOME_ID, 'handler'], load, provideNode(source, load, authority, 4).node, 5)
   const received = resolveScope(receiver.store, headCid(receiver), [HOME_ID, 'handler'])!
-  expect(content(receiver.store, received).children.some(([key]) => key === receiver.store.primitive.instructionPointerConstructor.getId())).toBe(false)
+  expect(content(receiver.store, received).children.some(([key]) => key === primitive(receiver.store, 'instruction'))).toBe(false)
   expect(view(receiver, [HOME_ID])!.tasks.find(row => row.id === 'handler')?.typeCid).toBe(left)
   expect(valueContent(receiver.store, received).data.scalar?.value).toBe('handler value')
   expect(compileInstructions(receiver, [HOME_ID, 'handler']).cid).toBe(left)
@@ -64,7 +66,7 @@ test('a named right ref stays a row while its left definition is loaded separate
   const device = (id: string) => shareHome(ensureHomeContext(createReplica(id), 0))
   const source = device('source')
   let receiver = device('receiver')
-  const left = put(source.store, { data: { description: { content: 'Custom field constructor' } }, children: [] })
+  const left = textValue(source.store, 'Custom field constructor')
   const value = put(source.store, { data: { scalar: { type: 'text', value: 'field value' } }, children: [] })
   const right = put(source.store, refNodeContent(source.store, { alias: { id: 'field' }, name: { content: 'field' } }, value))
   commitRoot(source.store, updateAtScope(source.store, headCid(source), [HOME_ID], node => ({ ...node, children: [...node.children, [left, right]] })), 1)

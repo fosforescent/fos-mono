@@ -14,6 +14,7 @@
  * children, ours' order wins (no choice is raised for pure reorders).
  */
 
+import { primitive } from './primitives'
 import { FosStore } from '../dag-implementation/store'
 import type { FosDataContent, FosNodeContent, FosPathElem } from '../types'
 import {
@@ -23,7 +24,6 @@ import {
   identityCid,
   isChoiceEdge,
   isHandle,
-  isLegacyInlineLink,
   isPrevEdge,
   isRefNode,
   makeLink,
@@ -37,8 +37,8 @@ import {
   withIdentity,
   type ChoiceOption
 } from './graph'
+import { isFieldRow } from './fields'
 
-import { withoutTypeErrors } from './patterns'
 
 export type MergeLabels = { ours: string; theirs: string }
 
@@ -57,8 +57,7 @@ export function mergeNodes(
 ): MergeResult {
   const newChoiceCids: string[] = []
   // type errors are derived (sync/patterns.ts): merge the rows themselves, the commit derives them again
-  const plain = (cid: string) => withoutTypeErrors(store, cid)
-  const outcome = mergeNode(store, baseCid && plain(baseCid), plain(oursCid), plain(theirsCid), labels, newChoiceCids, true)
+  const outcome = mergeNode(store, baseCid, oursCid, theirsCid, labels, newChoiceCids, true)
   if (outcome.kind !== 'node') throw new Error('conflicting typed refs must be merged through their owning node to resolve the choice')
   return { cid: outcome.cid, newChoiceCids }
 }
@@ -70,7 +69,8 @@ function mergeNode(
   theirsCid: string,
   labels: MergeLabels,
   newChoiceCids: string[],
-  isTop: boolean
+  isTop: boolean,
+  field = false
 ): NodeOutcome {
   if (oursCid === theirsCid) return { kind: 'node', cid: oursCid }
   if (baseCid === oursCid) return { kind: 'node', cid: theirsCid }
@@ -120,7 +120,7 @@ function mergeNode(
   }
 
   // Mutable references merge by value; members/proposals/peers are unioned; history keeps both parents.
-  const asRef = (value: FosNodeContent): boolean => (isRefNode(store, value) && !isHandle(value)) || isLegacyInlineLink(store, value)
+  const asRef = (value: FosNodeContent): boolean => isRefNode(store, value) && !isHandle(value)
   if (asRef(ours) || asRef(theirs)) {
     const refOf = (cid: string | null, value: FosNodeContent): { cid: string; node: FosNodeContent } | null => {
       if (!cid) return null
@@ -134,7 +134,12 @@ function mergeNode(
     const valueOf = (r: { node: FosNodeContent } | null): string | null => (r ? refValueCid(store, r.node) : null)
     const oursValue = valueOf(o) ?? put(store, stripLink(store, ours))
     const theirsValue = valueOf(t) ?? put(store, stripLink(store, theirs))
-    const typed = !!(o.node.data.name || t.node.data.name || b && !valueOf(b))
+    // a field holds one value: values changed differently on both sides make its row conflict (a choice of whole rows)
+    if (field) {
+      const ov = valueOf(o), tv = valueOf(t), bv = valueOf(b)
+      if (ov !== tv && ov !== bv && tv !== bv) return { kind: 'conflict' }
+    }
+    const typed = field || !!(o.node.data.name || t.node.data.name || b && !valueOf(b))
     let mergedValue: string | null
     if (typed) {
       const ov = valueOf(o), tv = valueOf(t), bv = valueOf(b)
@@ -147,18 +152,20 @@ function mergeNode(
       }
     } else {
       const merged = mergeNode(store, valueOf(b), oursValue, theirsValue, labels, newChoiceCids, true)
+      // a row's own fields conflicting makes the row conflict; the top node keeps ours
+      if (merged.kind === 'conflict' && !isTop) return merged
       mergedValue = merged.kind === 'node' ? merged.cid : oursValue
     }
     const book = (r: { node: FosNodeContent } | null): FosNodeContent => ({ data: {}, children: r ? bookkeepingOf(store, r.node).filter((e) => !isPrevEdge(store, e)) : [] })
-    const bookkeeping = mergeChildren(store, book(b), book(o), book(t), labels, newChoiceCids)
+    const bookkeeping = mergeChildren(store, book(b), book(o), book(t), labels, newChoiceCids) ?? book(o).children
     // History: a merge that changed the value is a new version with both parents; a merge of
     // bookkeeping only (members, peers, proposals) is not a version, so the existing PREV edges
     // are kept as they are (unioned, like any other bookkeeping).
     const valueChanged = mergedValue !== oursValue || mergedValue !== theirsValue
-    const prevEdge = (cid: string): FosPathElem => [store.primitive.previousVersion.getId(), cid]
+    const prevEdge = (cid: string): FosPathElem => [primitive(store, 'previous'), cid]
     const existingPrev = (r: { node: FosNodeContent } | null): FosPathElem[] => (r ? r.node.children.filter((e) => isPrevEdge(store, e)) : [])
     const prev: FosPathElem[] = valueChanged
-      ? (o.cid === t.cid ? [prevEdge(o.cid)] : [prevEdge(o.cid), prevEdge(t.cid)])
+      ? (o.cid === t.cid ? [prevEdge(o.cid)] : [o.cid, t.cid].sort().map(prevEdge))
       : [...existingPrev(o), ...existingPrev(t).filter((e) => !existingPrev(o).some((x) => x[1] === e[1]))]
     const data = mergeData(b?.node.data ?? {}, o.node.data, t.node.data, true) ?? o.node.data
     return { kind: 'node', cid: put(store, refNodeContent(store, data, mergedValue, [...bookkeeping, ...prev])) }
@@ -168,6 +175,7 @@ function mergeNode(
   if (!data) return { kind: 'conflict' }
 
   const children = mergeChildren(store, base, ours, theirs, labels, newChoiceCids)
+  if (!children) return { kind: 'conflict' }
   return { kind: 'node', cid: put(store, { data, children }) }
 }
 
@@ -183,7 +191,6 @@ function mergeData(base: FosDataContent, ours: FosDataContent, theirs: FosDataCo
   const t = theirs as Record<string, unknown>
 
   for (const key of keys) {
-    if (key === 'versionControl') continue
     if (key === 'updated') {
       const time = Math.max(timeOf(o[key]), timeOf(t[key]), timeOf(b[key]))
       if (time > 0) out[key] = { time }
@@ -230,7 +237,7 @@ function mergeChildren(
   theirs: FosNodeContent,
   labels: MergeLabels,
   newChoiceCids: string[]
-): FosPathElem[] {
+): FosPathElem[] | null {
   const index = (value: FosNodeContent) => {
     const map = new Map<string, FosPathElem>()
     for (const edge of value.children) map.set(edgeKey(store, edge), edge)
@@ -262,12 +269,14 @@ function mergeChildren(
     if (o && t && sameShape(store, o, t) && (!isChoiceEdge(store, o) || isBranchChoice(store, content(store, o[1])))) {
       // A base that is a choice (or has another shape) is no use as a merge base.
       const baseIdentity = b && sameShape(store, b, o) && (!isChoiceEdge(store, b) || isBranchChoice(store, content(store, b[1]))) ? identityCid(store, b) : null
-      const merged = mergeNode(store, baseIdentity, identityCid(store, o), identityCid(store, t), labels, newChoiceCids, false)
+      const merged = mergeNode(store, baseIdentity, identityCid(store, o), identityCid(store, t), labels, newChoiceCids, false, isFieldRow(store, o))
       if (merged.kind === 'node') {
         out.push(withIdentity(store, o, merged.cid))
         continue
       }
     }
+    // one of the node's own fields changed differently on both sides: the node itself conflicts
+    if ((o && isFieldRow(store, o)) || (t && isFieldRow(store, t))) return null
 
     const id = key.startsWith('a:') ? key.slice(2) : key
     const options: ChoiceOption[] = [
@@ -276,7 +285,7 @@ function mergeChildren(
     ]
     const choiceCid = putChoice(store, id, b && (!isChoiceEdge(store, b) || isBranchChoice(store, content(store, b[1]))) ? b : null, options)
     newChoiceCids.push(choiceCid)
-    out.push([store.primitive.choiceTarget.getId(), choiceCid])
+    out.push([primitive(store, 'choice'), choiceCid])
   }
   return out
 }
@@ -328,15 +337,15 @@ export function resolveChoiceIn(store: FosStore, value: FosNodeContent, choiceId
     if (existing !== edge) { children.push(existing); continue }
     if (pick === null) continue
     const choice = content(store, edge[1])
-    const alternatives = choice.children.filter(([i]) => i === store.primitive.optionNotSelectedConstructor.getId())
+    const alternatives = choice.children.filter(([i]) => i === primitive(store, 'notSelected'))
     const alt = alternatives[pick]
     if (!alt) throw new Error(`choice ${choiceId} has no option ${pick}`)
     const pointer = content(store, alt[1])
     let instr: string | null = null
     let target: string | null = null
     for (const [i, t] of pointer.children) {
-      if (i === store.primitive.instructionPointerConstructor.getId()) instr = t
-      if (i === store.primitive.targetPointerConstructor.getId()) target = t
+      if (i === primitive(store, 'instruction')) instr = t
+      if (i === primitive(store, 'target')) target = t
     }
     if (!instr || !target) continue // the picked option was "deleted"
     const picked: FosPathElem = [instr, target]

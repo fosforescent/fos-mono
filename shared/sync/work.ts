@@ -1,10 +1,12 @@
 /** A bounded, local planning-agent flow built from rows, refs, templates and proposals. */
+import { hostOf, primitive } from './primitives'
 import { instantiateLibraryTemplate } from './replica'
-import { settingOf } from './graph'
+import { settingOf, completes, isLibraryRef } from './graph'
 import { isHandlerStateLeft } from './capabilities'
 import { discoverHandlers } from './handlers'
 import { contextBindings, resolveBinding, resolveText, type BindingEnvironment } from './bindings'
-import { constructForm, formText, formTitle } from './forms'
+import { constructRow, fieldValues, isFieldRow, rowText, titleField, textOf, textValue } from './fields'
+import { libraryNode, rowTitle, valueCidOf } from './graph'
 import {
   requirementViewOf, libAt, commitRoot, content, identityCid, newId, put,
   readProposals, refArguments, refNodeContent, refValueCid, resolveScope,
@@ -33,12 +35,14 @@ const nodeAt = (r: Replica, path: Scope) => {
 const slots = (r: Replica, cid: string, type: string) => refArguments(r.store, valueContent(r.store, cid), type)
 /** A saved model attempt has a context snapshot, handler binding and return slot. */
 export function isAttempt(r: Replica, cid: string): boolean {
-  return valueContent(r.store, cid).children.some(([left]) => typeIdOf(r.store, left) === 'capabilities.llm')
-    && slots(r, cid, r.store.primitive.descriptionField.getId()).some(slot => !!slot.targetCid)
-    && slots(r, cid, r.store.primitive.documentField.getId()).length > 0
+  // an attempt pins the handler it ran with (the request's own llm slot is a hole until then)
+  const llm = libraryNode(r.store, 'capabilities.llm')
+  return !!llm && slots(r, cid, llm).some(slot => !!slot.targetCid)
+    && slots(r, cid, primitive(r.store, 'string')).some(slot => !!slot.targetCid)
+    && slots(r, cid, primitive(r.store, 'string')).length > 0
 }
 
-/** Shared resolution, with the primitive Fos advertisement adapted to a native value. */
+/** Shared resolution, with the primitive Fos advertisement adapted to a host value. */
 export function workHandler(r: Replica, requestPath: Scope, environment: BindingEnvironment = {}) {
   const store = r.store, type = libAt(store, requestPath).capabilities.llm!
   const request = nodeAt(r, requestPath)
@@ -48,7 +52,7 @@ export function workHandler(r: Replica, requestPath: Scope, environment: Binding
   const result = handlers.length > 1
     ? { status: 'ambiguous' as const, sources: handlers.map(h => h.cid), problems: ['Choose one language-model handler.'] }
     : resolveBinding(store, type, handlers[0]?.cid ?? null, candidates, undefined, environment)
-  if (result.status === 'ready' && valueContent(store, result.cid!).data.peerId?.content === 'fos' && !fos) return { status: 'missing' as const, sources: result.sources, problems: ['The bound Fos handler is unavailable in this context.'] }
+  if (result.status === 'ready' && hostOf(store, valueCidOf(store, result.cid!)) === 'fos' && !fos) return { status: 'missing' as const, sources: result.sources, problems: ['The bound Fos handler is unavailable in this context.'] }
   return result
 }
 
@@ -61,10 +65,12 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
   handler.problems.forEach(problem => blockers.add(problem))
   if (view(r, requestPath.slice(0, -1))?.tasks.find(row => row.id === requestPath.at(-1))?.requirement?.capability !== 'llm') throw new Error('Select a language-model requirement.')
   // a row's type is its edge's left node: its name labels the row in the prompt; rows that read as text are context
-  const typeLabel = (edge: [string, string]) => valueContent(store, rowTypeOf(store, edge)!).data.description?.content ?? 'Row'
+  const typeLabel = (edge: [string, string]) => typeIdOf(store, rowTypeOf(store, edge)) ?? 'Row'
+  // rows that read as text: plain rows, references, and titled rows that do not complete (notes, not tasks)
   const isText = (edge: [string, string]) => {
-    const type = rowTypeOf(store, edge)!, id = typeIdOf(store, type)
-    return !id || id === PLAIN_TYPE || id === REF_TYPE || !!valueContent(store, type).data.form
+    const type = rowTypeOf(store, edge)!
+    if (isLibraryRef(store, content(store, identityCid(store, edge)))) return false
+    return type === libraryNode(store, PLAIN_TYPE) || type === libraryNode(store, REF_TYPE) || (titleField(store, type) !== null && !completes(store, type)) || !typeIdOf(store, type)
   }
   const emit =(cid: string, label: string, depth: number, external = false, ancestorNotes = false, at: Scope = requestPath) => {
     if (depth > 30) { blockers.add('An input is nested too deeply.'); return }
@@ -77,14 +83,13 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
     const identity = content(store, cid), value = valueContent(store, cid)
     // a note reads as one block: its title line and its body (whose row is then not listed again)
     // a requirement reads as its own declaration (its value, once bound, is its result)
-    const rendered = resolveText(r, at, formText(store, value) || identity.data.description?.content || '(untitled)')
-    const headline = value.data.presentation?.headline?.[0]
+    const rendered = resolveText(r, at, rowText(store, cid, null) || rowTitle(store, cid, null) || '(untitled)')
     for (const binding of rendered.bindings) { binding.problems.forEach(p => blockers.add(p)); binding.sources.forEach(cid => sources.add(cid)) }
     lines.push(`${'  '.repeat(depth)}${label}: ${rendered.text}`)
     const ref = identity.data.ref
     if (ref) {
       const found = !ref.owner && !ref.peer ? resolveRef(r, ref.id, at.slice(0, -1)) : null
-      if (!found) blockers.add(`Input unavailable: ${value.data.description?.content || ref.id}`)
+      if (!found) blockers.add(`Input unavailable: ${rowTitle(store, cid, null) || ref.id}`)
       else {
         const target = resolveScope(store, headCid(r), [...found.path, found.row.id])!
         if (target === request.cid) { active.delete(cid); return }
@@ -93,19 +98,22 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
         emit(target, 'Referenced input', depth + 1, true, false, [...found.path, found.row.id])
       }
     }
-    for (const input of refArguments(store, value, store.primitive.documentField.getId())) {
+    for (const input of refArguments(store, value, primitive(store, 'string'))) {
       if (settingOf(store, content(store, input.cid))) continue // a device's settings are not inputs
-      const resolved = resolveBinding(store, store.primitive.documentField.getId(), input.cid, contextBindings(r, at), undefined, { scope: { replica: r, path: at } })
+      // a text input is a named declaration (`{name}`); an unnamed string ref is a plain row, read below
+      if (!content(store, input.cid).data.name) continue
+      const resolved = resolveBinding(store, primitive(store, 'string'), input.cid, contextBindings(r, at), undefined, { scope: { replica: r, path: at } })
       if (resolved.status !== 'ready') resolved.problems.forEach(p => blockers.add(p))
       else emit(resolved.cid!, 'Bound input', depth + 1, true)
     }
-    for (const edge of value.children) {
+    // a ref's own rows (an argument row's title) come first, whether or not it holds a value yet
+    const own = identity !== value ? identity.children.filter(edge => isFieldRow(store, edge)) : []
+    for (const edge of [...own, ...value.children]) {
       if (!isRowEdge(store, edge) || isRowOfType(store, edge, TEMPLATE_TYPE)) continue
       if (ancestorNotes && !isText(edge)) continue
       const child = identityCid(store, edge)
       // Runtime values (`fos:evaluation`, triggers, …) are not task context; they change while the task is worked on.
       if (settingOf(store, content(store, child)) || isHandlerStateLeft(store, edge[0])) continue
-      if (headline && content(store, child).data.name?.content === headline) continue
       // Other work requests are context only once accepted, when explicitly referenced.
       if (!content(store, child).data.ref && requirementViewOf(store, edge, child)?.capability === 'llm' && child !== request.cid && !external) continue
       // the rows a value carries as a value of its pattern have no identity and are no context
@@ -117,7 +125,7 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
   for (let i = 0; i < requestPath.length - 1; i++) {
     const ancestor = nodeAt(r, requestPath.slice(0, i))
     sources.add(ancestor.cid)
-    lines.push(`Ancestor: ${formTitle(store, ancestor.value) || 'Project'}`)
+    lines.push(`Ancestor: ${rowTitle(store, ancestor.cid, null) || 'Project'}`)
     for (const edge of ancestor.value.children) {
       if (!isRowEdge(store, edge)) continue
       const child = identityCid(store, edge)
@@ -141,14 +149,15 @@ export function workAttempts(r: Replica, requestPath: Scope) {
   return (view(r, requestPath)?.tasks ?? []).flatMap((row) => {
     const path = [...requestPath, row.id], { cid } = nodeAt(r, path)
     if (!isAttempt(r, cid)) return []
-    const result = slots(r, cid, r.store.primitive.documentField.getId())[0]!
-    const snapshot = slots(r, cid, r.store.primitive.descriptionField.getId())[0]?.targetCid
+    // an attempt holds its context snapshot first and its return slot last (beginTaskWork)
+    const strings = slots(r, cid, primitive(r.store, 'string')), result = strings.at(-1)!
+    const snapshot = strings.length > 1 ? strings[0]!.targetCid : null
     if (!snapshot) return []
     const saved = valueContent(r.store, snapshot)
     const systemEdge = saved.children.find((edge) => isRowOfType(r.store, edge, NOTE_TYPE))
-    const system = systemEdge ? formText(r.store, valueContent(r.store, identityCid(r.store, systemEdge))) : ''
+    const system = systemEdge ? rowText(r.store, identityCid(r.store, systemEdge), null) : ''
     return [{ path, resultPath: [...path, result.id], resultCid: result.targetCid,
-      context: formText(r.store, saved), system, proposals: readProposals(r.store, content(r.store, result.cid)) }]
+      context: rowText(r.store, put(r.store, saved), null), system, proposals: readProposals(r.store, content(r.store, result.cid)) }]
   })
 }
 
@@ -161,25 +170,25 @@ export function beginTaskWork(r: Replica, requestPath: Scope, preview: WorkConte
   if (resolved.status !== 'ready') throw new Error(resolved.problems.join('\n'))
   const handler = resolved.cid!
   // the handler the binding resolved (an llm offer) must be the account server's, whose model runs it
-  if (valueContent(store, handler).data.peerId?.content !== 'fos') throw new Error('No executor is configured for this language-model handler.')
+  if (hostOf(store, valueCidOf(store, handler)) !== 'fos') throw new Error('No executor is configured for this language-model handler.')
   const id = newId(), path = [...requestPath, id], contextId = newId(), resultId = newId()
   r = addRow(r, requestPath, PLAIN_TYPE, `Agent attempt ${workAttempts(r, requestPath).length + 1}`, now, { id })
   r = addRow(r, path, NOTE_TYPE, current.prompt, now, { id: contextId })
   r = addRow(r, [...path, contextId], NOTE_TYPE, WORK_SYSTEM, now)
-  for (const source of current.sources) r = addRefAt(r, [...path, contextId], newId(), store.primitive.documentField.getId(), now, source)
+  for (const source of current.sources) r = addRefAt(r, [...path, contextId], newId(), primitive(store, 'string'), now, source)
   const snapshot = nodeAt(r, [...path, contextId]).cid
-  r = addRefAt(r, path, newId(), store.primitive.descriptionField.getId(), now, snapshot)
+  r = addRefAt(r, path, newId(), primitive(store, 'string'), now, snapshot)
   const handlerId = newId()
   r = addRefAt(r, path, handlerId, type, now)
   r = setRefValueAt(r, [...path, handlerId], put(store, refNodeContent(store, {}, handler, [])), now)
-  r = addRefAt(r, path, resultId, store.primitive.documentField.getId(), now)
+  r = addRefAt(r, path, resultId, primitive(store, 'string'), now)
   return { replica: r, path, resultPath: [...path, resultId], prompt: current.prompt, system: WORK_SYSTEM }
 }
 
 export function proposeTaskResult(r: Replica, resultPath: Scope, text: string, now: number): Replica {
   if (!text.trim()) throw new Error('The model returned an empty result. Try again.')
-  const result = put(r.store, constructForm(r.store, rowTypeAt(r.store, NOTE_TYPE, resultPath), newId(), { text }, now))
-  return proposeRefAt(r, resultPath, result, 'fos', now).replica
+  // the answer is text, proposed to the attempt's return slot; accepting it makes it a note
+  return proposeRefAt(r, resultPath, textValue(r.store, text), 'fos', now).replica
 }
 
 /** Acceptance is the only operation that supplies the work request. The task remains manually checkable. */
@@ -192,7 +201,7 @@ export function decideTaskResult(r: Replica, requestPath: Scope, resultPath: Sco
   if (current.blockers.length) throw new Error(current.blockers.join('\n'))
   if (attempt.context !== current.prompt) throw new Error('The task context changed. Run a new attempt before accepting.')
   const generating = asksForSubtasks(r, requestPath)
-  const subtasks = generating ? formText(r.store, valueContent(r.store, proposal.contentCid)).split('\n').flatMap(line => {
+  const subtasks = generating ? rowText(r.store, proposal.contentCid, null).split('\n').flatMap(line => {
     const match = line.match(/^\s*(?:[-*]\s+)?\[ \]\s+(.+)$/)
     return match ? [match[1]!.trim()] : []
   }) : []
@@ -201,12 +210,12 @@ export function decideTaskResult(r: Replica, requestPath: Scope, resultPath: Sco
   if (!accepted.merged) throw new Error(`Waiting for approval by ${accepted.missing.join(', ')}.`)
   r = accepted.replica
   if (refValueCid(r.store, content(r.store, nodeAt(r, resultPath).cid)) !== proposal.contentCid) throw new Error('The return ref changed. Review the current proposal again.')
-  const result = content(r.store, proposal.contentCid)
-  if (!result.data.alias?.id) throw new Error('Result has no identity.')
-  const next = updateAtScope(r.store, headCid(r), requestPath, (value) => ({ ...value, children: [...value.children, rowEdgeAt(r.store, NOTE_TYPE, proposal.contentCid, requestPath)] }))
+  const note = rowTypeAt(r.store, NOTE_TYPE, requestPath), id = newId()
+  const result = put(r.store, constructRow(r.store, note, id, fieldValues(r.store, note, { body: textOf(r.store, proposal.contentCid) ?? '' }), now))
+  const next = updateAtScope(r.store, headCid(r), requestPath, (value) => ({ ...value, children: [...value.children, rowEdgeAt(r.store, NOTE_TYPE, result, requestPath)] }))
   commitRoot(r.store, next, now)
   for (const title of subtasks) r = addTask(r, requestPath.slice(0, -1), title, now)
-  return supplyRequirement(r, requestPath.slice(0, -1), requestPath.at(-1)!, { by: 'fos', ref: result.data.alias.id }, now)
+  return supplyRequirement(r, requestPath.slice(0, -1), requestPath.at(-1)!, { by: 'fos', ref: id }, now)
 }
 
 /** Whether the request at `path` asks for its answer as subtasks (its row's request, from the Generate subtasks template). */

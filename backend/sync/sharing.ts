@@ -1,3 +1,5 @@
+import { TEXT_MASK } from '@fosforescent/shared/sync/node-provider'
+import { textValue } from '@fosforescent/shared/sync/fields'
 import { createHash, createHmac, randomUUID } from 'node:crypto'
 import * as jsonwebtoken from 'jsonwebtoken'
 import type { Request, Response } from 'express'
@@ -158,7 +160,7 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
           for (const step of evaluationSteps(host, at.path)) {
             if (!nodeAuthorityAt(host, step.path, authority).includes('edit')) throw new Failure(403, 'This peer cannot execute effects on this node.')
             const fields = nodeLinkMaskAt(host, step.path, peer).fields
-            if (fields && ['description', 'requirement', 'allocation'].some(field => !fields.includes(field))) throw new Failure(403, 'Masked effects cannot be executed by this peer.')
+            if (fields && [TEXT_MASK, 'requirement', 'allocation'].some(field => !fields.includes(field))) throw new Failure(403, 'Masked effects cannot be executed by this peer.')
           }
         }
         if (body.revision !== node.revision) throw new Failure(409, 'The node or its options changed. Refresh and review before submitting.')
@@ -218,10 +220,10 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
             if (field.kind === 'ref') {
               r = executionInput(r, at.path, { revision: headCid(r), key, value }, peer, now(), {
                 canRead: (store, _cid, path) => store === r.store && path.length >= at.path.length && at.path.every((id, index) => path[index] === id) && servedTo(r, at.path, path, peer) &&
-                  (!nodeLinkMaskAt(r, path, peer)?.fields || nodeLinkMaskAt(r, path, peer)!.fields!.includes('description'))
+                  (!nodeLinkMaskAt(r, path, peer)?.fields || nodeLinkMaskAt(r, path, peer)!.fields!.includes(TEXT_MASK))
               })
             } else if (field.kind === 'text') {
-              r = setRefValueAt(r, target, put(r.store, { data: { description: { content: value as string } }, children: [] }), now())
+              r = setRefValueAt(r, target, textValue(r.store, value as string), now())
             } else if (field.direction === 'consume') r = consumeAllocation(r, at.path, target, (value as { amount: number }).amount, now())
             else if (field.kind === 'confirmation' || field.kind === 'choice') r = supplyRequirement(r, target.slice(0, -1), target.at(-1)!, { by: peer, ...(field.kind === 'choice' ? { choice: value as number } : {}) }, now())
             else {

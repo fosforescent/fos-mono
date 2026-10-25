@@ -1,3 +1,4 @@
+import { createStore } from '@fosforescent/shared/sync/graph'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
 import { SERVER_TRANSPORT_CAPABILITIES, addMemberAt, addTask, approvalsOf, createBranch, createReplica, ensureHomeContext, exchangeNode, makeLinkAt, nodeTreeSync, openSubmission, pullRequest, setMergeRule, renameTask, verifyApproval, view, type NodeAuthority, type NodeSyncContext, type Replica } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
@@ -17,7 +18,7 @@ const PROJECT = ['proj']
 /** Alice's account on a host whose `approve` handler attests approvals (and whose key `verify` publishes). */
 function host() {
   const runtime = createHostRuntime([verifyHandler({ findUser: async () => null }, key), approveHandler(key)])
-  let store = asAccountStore(new FosStore())
+  let store = asAccountStore(createStore())
   const deps: AccountStoreDeps = {
     async loadStore(username) { return username === 'alice' ? { user: { id: 1, username }, store } : null },
     async saveStore(_user, next) { store = next },

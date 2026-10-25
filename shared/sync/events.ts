@@ -27,6 +27,8 @@
  *
  * Capabilities as session types over this grammar come later; for now events are independent requests.
  */
+import { withLabel, withRowText } from './fields'
+import { createStore, hasDone, rowDone, withDone } from './graph'
 import { FosStore } from '../dag-implementation/store'
 import { NOTE_TYPE, PLAIN_TYPE, TASK_TYPE, TEMPLATE_TYPE } from './library-types'
 import type { FosPathElem } from '../types'
@@ -59,7 +61,7 @@ export function submittedRequest(store: FosStore, contentCid: string, path: Scop
   const request = state?.request
   return request && typeof request.id === 'string' && typeof request.peer === 'string' ? request : null
 }
-import { nodeLinkMaskAt } from './node-provider'
+import { nodeLinkMaskAt, TEXT_MASK } from './node-provider'
 
 /** Who is acting. Supplied by the transport (JWT claims, a loopback token, a linked phone), never by the event. */
 export type Principal = {
@@ -204,7 +206,7 @@ function descend(store: FosStore, cid: string, path: Scope): string {
   }
   return cid
 }
-const bookkeeping = new Set(['alias', 'ref', 'versionControl', 'disabledCapabilities', 'peerId'])
+const bookkeeping = new Set(['alias', 'ref', 'disabledCapabilities', 'peerId'])
 
 /**
  * Apply one event to a replica on behalf of `principal`. Pure over the replica: the host wraps it in its own lock,
@@ -341,7 +343,7 @@ function dispatch(r: Replica, event: FosEvent, principal: Principal, now: number
       let snapshot: ReturnType<typeof executionSnapshot> | null = null
       try { snapshot = executionSnapshot(r, absolute(path), owner ? undefined : { peerId: principal.peerId, scope: canonical, capabilities: [] }) } catch { snapshot = null }
       return unchanged({
-        ...described, ...(mask?.fields && !mask.fields.includes('description') ? { title: null } : {}), data,
+        ...described, ...(mask?.fields && !mask.fields.includes(TEXT_MASK) ? { title: null } : {}), data,
         ancestors: path.map((_id, i) => describe(path.slice(0, i))),
         children: children.slice(offset, offset + 100).map(row => ({ ...row, path: [...path, row.id] })), nextOffset: offset + 100 < children.length ? offset + 100 : null,
         conflicts: node.choices.map(c => ({ id: c.id, subject: c.subject })),
@@ -387,13 +389,13 @@ function dispatch(r: Replica, event: FosEvent, principal: Principal, now: number
         seen.add(current); visited++
         const value = valueContent(store, current)
         // a done task's subtree is finished; a template's is a definition, not work
-        if ((task && value.data.todo?.completed) || (!!edge && isRowOfType(store, edge, TEMPLATE_TYPE))) continue
+        if ((task && rowDone(store, current)) || (!!edge && isRowOfType(store, edge, TEMPLATE_TYPE))) continue
         const mask = owner ? null : nodeLinkMaskAt(r, absolute(at), principal.peerId)
         const demand = requirement && edge ? requirementViewOf(store, edge, current) : undefined
         if (at.length && (task || (demand && !demand.satisfied))) {
           // assigned to this peer: bound as a member on the row itself, or named by the requirement
           const assigned = readMembers(store, content(store, selectedIdentity(store, current))).some(m => m.peerId === principal.peerId) || (!!demand?.peer && [principal.peerId, principal.name].includes(demand.peer))
-          if (!claims.some(c => workOverlaps(c, absolute(at), { ...branches, ...scopeBranches(store, root, absolute(at)) }))) open.push({ ...describe(at), ...(mask?.fields && !mask.fields.includes('description') ? { title: null } : {}), parent: at.slice(0, -1), assigned, ...(demand ? { requirement: demand.summary } : {}), ...(blockedBy?.length ? { blockedBy } : {}) })
+          if (!claims.some(c => workOverlaps(c, absolute(at), { ...branches, ...scopeBranches(store, root, absolute(at)) }))) open.push({ ...describe(at), ...(mask?.fields && !mask.fields.includes(TEXT_MASK) ? { title: null } : {}), parent: at.slice(0, -1), assigned, ...(demand ? { requirement: demand.summary } : {}), ...(blockedBy?.length ? { blockedBy } : {}) })
         }
         if (at.length < 32) {
           const rows = viewNode(store, current).tasks.filter(row => !mask?.children || mask.children.includes(row.id))
@@ -415,7 +417,7 @@ function dispatch(r: Replica, event: FosEvent, principal: Principal, now: number
       const request = newId()
       const identity = content(store, selectedIdentity(store, attached!))
       if (readProposals(store, identity).some(p => p.peerId === principal.peerId && p.status === 'open' && submittedRequest(store, p.contentCid, path))) throw new EventError('This evaluation is already requested.')
-      const base = put(store, valueContent(store, attached!)), draftStore = new FosStore()
+      const base = put(store, valueContent(store, attached!)), draftStore = createStore()
       importNodes(draftStore, reachableNodes(store, [base]))
       commitRoot(draftStore, base, now)
       nestScope(draftStore, { store, root, at: canonical })
@@ -453,7 +455,7 @@ function dispatch(r: Replica, event: FosEvent, principal: Principal, now: number
       const next = executionInput(r, absolute(path), { revision: headCid(r), key: event.key, value: event.value }, principal.peerId, now, {
         canRead: (source, _cid, target) => {
           if (source !== store || !within(canonical, target)) return false
-          try { resolve(target.slice(canonical.length)); const mask = owner ? null : nodeLinkMaskAt(r, target, principal.peerId); return !mask?.fields || mask.fields.includes('description') } catch { return false }
+          try { resolve(target.slice(canonical.length)); const mask = owner ? null : nodeLinkMaskAt(r, target, principal.peerId); return !mask?.fields || mask.fields.includes(TEXT_MASK) } catch { return false }
         }
       })
       return { replica: next, changed: true, result: { ...executionSnapshot(next, absolute(path), owner ? undefined : { peerId: principal.peerId, scope: canonical, capabilities: [] }), revision: resolveScope(next.store, headCid(next), absolute(path)) } }
@@ -479,7 +481,7 @@ function dispatch(r: Replica, event: FosEvent, principal: Principal, now: number
           const child = resolve(at.slice(0, i)), value = content(store, selectedIdentity(store, child))
           if (readMembers(store, value).some(m => m.peerId === principal.peerId) && !permission(child, 'edit')) throw new EventError('Peer cannot edit this child.')
         }
-        if (!owner && nodeLinkMaskAt(r, absolute(at), principal.peerId).fields?.includes('description') === false) throw new EventError('Node text is not exposed to this peer.')
+        if (!owner && nodeLinkMaskAt(r, absolute(at), principal.peerId).fields?.includes(TEXT_MASK) === false) throw new EventError('Node text is not exposed to this peer.')
         const target = [...base, ...change.path]
         if (ADDS.includes(change.operation)) {
           const parent = resolveScope(draftStore, headCid(draft), target)
@@ -497,18 +499,18 @@ function dispatch(r: Replica, event: FosEvent, principal: Principal, now: number
           const text = textOf(change.text)
           if (!at.length) {
             const head = headCid(draft)
-            commitRoot(draftStore, updateAtScope(draftStore, head, base, value => ({ ...value, data: { ...value.data, description: { content: text } } })), now)
+            commitRoot(draftStore, updateAtScope(draftStore, head, base, value => withRowText(draftStore, value, text, now) ?? withLabel(draftStore, value, text)), now)
             draft = { ...draft }
           } else draft = renameTask(draft, target.slice(0, -1), target.at(-1)!, text, now)
         } else if (change.operation === 'complete' && typeof change.done === 'boolean') {
           if (!at.length) {
-            if (!scoped || !valueContent(store, source).data.todo) throw new EventError('Completion requires a task path.')
+            if (!scoped || !hasDone(store, source)) throw new EventError('Completion requires a task path.')
             const targetCid = resolveScope(draftStore, headCid(draft), base)!
             if (change.done && taskBlockers(draftStore, targetCid).length) throw new EventError('Task has unmet requirements.')
-            commitRoot(draftStore, updateAtScope(draftStore, headCid(draft), base, value => ({ ...value, data: { ...value.data, todo: { completed: change.done!, time: value.data.todo?.time ?? now } } })), now)
+            commitRoot(draftStore, updateAtScope(draftStore, headCid(draft), base, value => withDone(draftStore, value.data.alias?.id ?? '', value, change.done!, now) ?? value), now)
             draft = { ...draft }; continue
           }
-          if (!valueContent(store, source).data.todo) throw new EventError('Only tasks have a completion state.')
+          if (!hasDone(store, source)) throw new EventError('Only tasks have a completion state.')
           const before = headCid(draft)
           draft = setTaskDone(draft, target.slice(0, -1), target.at(-1)!, change.done, now)
           if (before === headCid(draft) && viewNode(draftStore, descend(draftStore, resolveScope(draftStore, headCid(draft), base)!, at)).done !== change.done) throw new EventError('Task has unmet requirements.')
@@ -526,7 +528,7 @@ function dispatch(r: Replica, event: FosEvent, principal: Principal, now: number
     const proposalName = event.name ? textOf(event.name, 100) : `${principal.name ?? principal.peerId} ${new Date(now).toISOString()}`
     const identity = content(store, selectedIdentity(store, attached!))
     if (readProposals(store, identity).some(p => p.peerId === principal.peerId && p.name === proposalName)) throw new EventError('That proposal name already exists. Review it or choose a new name.')
-    const base = put(store, valueContent(store, attached!)), draftStore = new FosStore()
+    const base = put(store, valueContent(store, attached!)), draftStore = createStore()
     importNodes(draftStore, reachableNodes(store, [base]))
     commitRoot(draftStore, base, now)
     nestScope(draftStore, { store, root, at: canonical })

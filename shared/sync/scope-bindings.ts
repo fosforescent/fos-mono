@@ -1,4 +1,5 @@
 /** One declaration view for lexical arguments, explicit references, and advertised handlers. */
+import { hostOf, primitive } from './primitives'
 import type { FosStore } from '../dag-implementation/store'
 import { fieldNode } from '../library-names'
 import {
@@ -68,7 +69,7 @@ function declaration(location: BindingLocation, pattern: string, access: Binding
   const targets = accepted.values
   const id = node.data.alias?.id ?? path.at(-1) ?? cid, capability = capabilityOfTarget(store, pattern)
   const submissions = targets.map(value => {
-    const peer = content(store, value).data.peerId?.content ?? node.data.peerId?.content ?? peerId
+    const peer = hostOf(store, value) ?? content(store, value).data.peerId?.content ?? node.data.peerId?.content ?? peerId
     const disabled = policy.get(peer) ?? []
     return { cid: value, peerId: peer, enabled: !disabled.includes(id) && !(capability && disabled.includes(capability)), active: !peer || (access.isPeerActive?.(peer) ?? true) }
   })
@@ -93,9 +94,10 @@ export function bindingProperties(location: BindingLocation & { policy?: Readonl
     const node = content(store, cid)
     if (node.data.ref?.peer || node.data.ref?.owner) break
     const shadowed = new Set(result.bindings.map(binding => binding.id))
+    // an advertised handler (a grant's offer) is an alternative to the scope's own declarations
     for (const { edge, alternative } of node.children.flatMap(edge => isGrantEdge(store, edge)
-      ? advertisedRows(store, edge[1]).map(row => ({ edge: row, alternative: !!content(store, edge[1]).data.refAlternatives }))
-      : [{ edge, alternative: !!node.data.refAlternatives }])) {
+      ? advertisedRows(store, edge[1]).map(row => ({ edge: row, alternative: true }))
+      : [{ edge, alternative: false }])) {
       if (!store.table.has(edge[1]) || !(isRowEdge(store, edge) || isMemberEdge(store, edge) || isGrantEdge(store, edge))) continue
       const childCid = identityCid(store, edge), child = content(store, childCid)
       const name = child.data.name?.content ?? store.table.get(refValueCid(store, child) ?? childCid)?.data.name?.content ??
@@ -103,7 +105,7 @@ export function bindingProperties(location: BindingLocation & { policy?: Readonl
       const id = child.data.alias?.id ?? name ?? childCid
       // A ref's own properties precede the properties of its accepted target.
       if (shadowed.has(id)) continue
-      const field = libraryField ? fieldNode(key => store.table.get(key), edge, store.primitive.targetPointerConstructor.getId(), store.primitive.aliasConstructor.getId()) : null
+      const field = libraryField ? fieldNode(key => store.table.get(key), edge, primitive(store, 'target'), primitive(store, 'alias')) : null
       const target = field?.node ?? childCid, pattern = rowTypeOf(store, edge) ?? edge[0]
       result.bindings.push({ ...declaration({ store, cid: target, path: [...path, id], ...(libraryField ? { libraryField: true as const } : {}) },
         pattern, access, peerId, !libraryField && isRowEdge(store, edge) && declares(store, pattern, childCid), name, location.policy),
@@ -133,13 +135,13 @@ export function bindingLayers(r: Context, at: Scope, access: BindingAccess = {})
   for (const member of members) {
     const layer = layers[member.depth]!
     if (access.canRead && !access.canRead(member.store, member.cid, member.scope)) { layer.blocked = true; continue }
-    for (const edge of content(member.store, member.cid).children) if (edge[0] === member.store.primitive.acceptsNode.getId()) {
+    for (const edge of content(member.store, member.cid).children) if (edge[0] === primitive(member.store, 'accepts')) {
       for (const [pattern, cid] of advertisedRows(member.store, edge[1])) {
         const node = content(member.store, cid), id = node.data.alias?.id
         if (!id) continue
         const name = node.data.name?.content ?? content(member.store, refValueCid(member.store, node) ?? cid).data.name?.content
         layer.bindings.push({ ...declaration({ store: member.store, cid, path: [...member.scope, id] }, pattern, access, member.peer, true, name, policy),
-          ...(content(member.store, edge[1]).data.refAlternatives ? { capability: pattern } : {}) })
+          capability: pattern })
       }
     }
   }

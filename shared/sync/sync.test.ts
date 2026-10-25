@@ -1,8 +1,11 @@
+import { textOf, constructTextRow, fieldText, rowTitle } from './index'
+import { createStore } from './graph'
+import { primitive } from './primitives'
 import { memberEdgesOf, memberPeerOf, peerNode } from './graph'
 import { userView } from './test-helpers'
 import { unverifiedUser } from './users'
 import { LIBRARY_ID } from './graph'
-import { FosStore } from '../dag-implementation/store'
+import type { FosStore } from '../dag-implementation/store'
 import type { FosPathElem } from '../types'
 import { parseToml, peerPolicyOf, serverPolicyOf, type FosProjectConfig } from './project'
 import {
@@ -22,10 +25,8 @@ import {
   isChoiceEdge,
   parsePolicy,
   isHandle,
-  isLegacyInlineLink,
   isRefNode,
   linkHistory,
-  normalizeRefs,
   rowEdge,
   ensureLibraryRow,
   put,
@@ -34,7 +35,9 @@ import {
   resolveScope,
   rootTargetCid,
   stripLink,
-  taskContent,
+  refNodeContent,
+  resolveRowType,
+  rowVocabulary,
   rowEdgeAt,
   valueContent,
   viewNode
@@ -78,18 +81,35 @@ const LABELS = { ours: 'A', theirs: 'B' }
 
 /** Build content nodes in one store for the merge tests. */
 function fixtures(store: FosStore) {
-  const task = (id: string, title: string, done = false, time = 1000, updated = time) =>
-    rowEdgeAt(store, TASK_TYPE, put(store, taskContent(id, title, done, time, updated)), [])
+  const task = (id: string, title: string, done = false, time = 1000, updated = time) => {
+    const type = resolveRowType(store, TASK_TYPE), field = rowVocabulary(store)!.done
+    const value = constructTextRow(store, type, id, title, time, new Map([[field, done ? put(store, { data: {}, children: [] }) : primitive(store, 'void')]]))
+    return rowEdge(store, put(store, { ...value, data: { ...value.data, updated: { time: updated } } }), type)
+  }
   const node = (...edges: FosPathElem[]) => put(store, { data: {}, children: edges })
-  const part = (id: string, name: string, ...edges: FosPathElem[]) => rowEdgeAt(store, PLAIN_TYPE, put(store, { data: { alias: { id }, description: { content: name } }, children: edges }), [])
+  const part = (id: string, name: string, ...edges: FosPathElem[]) => {
+    const type = resolveRowType(store, PLAIN_TYPE), text = content(store, fieldText(store, type, name))
+    return rowEdge(store, put(store, refNodeContent(store, { alias: { id } }, put(store, { ...text, children: [...text.children, ...edges] }))), type)
+  }
   return { task, node, part }
+}
+
+/** The root aliases before the current one, newest first, following each root's `previous` row. */
+function previousRoots(store: FosStore): string[] {
+  const out: string[] = []
+  let at = store.rootNodeId
+  for (;;) {
+    const previous = store.table.get(at)?.children.find(([i]) => i === primitive(store, 'previous'))?.[1]
+    if (!previous || !store.table.get(previous)?.children.length) return out
+    out.push(previous); at = previous
+  }
 }
 
 describe('mergeNodes', () => {
   let store: FosStore
   let f: ReturnType<typeof fixtures>
   beforeEach(() => {
-    store = new FosStore()
+    store = createStore()
     ensureLibraryRow(store)
     f = fixtures(store)
   })
@@ -295,8 +315,8 @@ describe('replica + account end to end', () => {
     phone = addTask(phone, [], 'two', 2)
     phone = world.sync(phone)
     const root = content(world.server.store, world.server.store.rootNodeId)
-    expect(root.children.find(([i]) => i === world.server.store.primitive.previousVersion.getId())).toBeDefined()
-    expect(world.server.store.getPrevList(world.server.store.rootNodeId).length).toBeGreaterThanOrEqual(2)
+    expect(root.children.find(([i]) => i === primitive(world.server.store, 'previous'))).toBeDefined()
+    expect(previousRoots(world.server.store).length).toBeGreaterThanOrEqual(2)
   })
 
   it('a field changed on both devices is refused on the second device, which keeps its change', () => {
@@ -310,7 +330,7 @@ describe('replica + account end to end', () => {
     phone = renameTask(phone, [], 't', 'draft v2 (phone)', 5)
     laptop = renameTask(laptop, [], 't', 'draft v2 (laptop)', 6)
     phone = world.sync(phone)
-    expect(() => world.sync(laptop)).toThrow(/Concurrent change to node field "description"/)
+    expect(() => world.sync(laptop)).toThrow(/Concurrent change to child/)
     expect(titles(laptop)).toEqual(['draft v2 (laptop)'])
     expect(world.serverTasks()).toEqual(['draft v2 (phone)'])
   })
@@ -388,7 +408,7 @@ describe('replica + account end to end', () => {
     const all = r.store.table.size
     const kept = Object.keys(serializeReplica(r).context.nodes).length
     expect(kept).toBeLessThanOrEqual(all)
-    expect(loadReplica(JSON.parse(JSON.stringify(serializeReplica(r)))).store.getPrevList(r.store.rootNodeId).length).toBeGreaterThanOrEqual(20)
+    expect(previousRoots(loadReplica(JSON.parse(JSON.stringify(serializeReplica(r)))).store).length).toBeGreaterThanOrEqual(20)
   })
 })
 
@@ -405,7 +425,6 @@ import { TASK_TYPE, PLAIN_TYPE, NOTE_TYPE, COMMENT_TYPE, QUERY_TYPE, RESOURCE_TY
 import { addAllocation, addBank, addRequirement, argumentSupplier, supplyRequirement } from './arguments'
 import { TASK_DEMAND } from './test-helpers'
 import { REF_TYPE } from './library-types'
-import { TEXT_TYPE } from './library-types'
 
 const ids = (r: Replica, at: string[] = []) => (at.length ? view(r, at) : userView(r))!.tasks.map((t) => t.id)
 
@@ -418,10 +437,13 @@ describe('tree: subtasks, zoom and moves', () => {
     r = setTaskDone(r, ['P'], 'c1', true, 4)
     r = addTask(r, ['P', 'c2'], 'grandchild', 5, 'g')
     const root = userView(r)!
-    expect(root.tasks[0]).toMatchObject({ id: 'P', childCount: 2, subtreeTasks: 3, subtreeDone: 1 })
-    expect(ids(r, ['P'])).toEqual(['c1', 'c2'])
+    // its rows are its title and done fields, then its two child tasks
+    expect(root.tasks[0]).toMatchObject({ id: 'P', childCount: 4, subtreeTasks: 3, subtreeDone: 1 })
+    expect(titles(r, ['P'])).toEqual(['parent', '', 'child one', 'child two'])
+    expect(ids(r, ['P']).slice(2)).toEqual(['c1', 'c2'])
     expect(view(r, ['P', 'c2'])!.name).toBe('child two')
-    expect(ids(r, ['P', 'c2'])).toEqual(['g'])
+    expect(titles(r, ['P', 'c2'])).toEqual(['child two', '', 'grandchild'])
+    expect(ids(r, ['P', 'c2']).at(-1)).toBe('g')
   })
 
   it('moves above, below and into, and refuses to move a node into its own subtree', () => {
@@ -433,7 +455,8 @@ describe('tree: subtasks, zoom and moves', () => {
     expect(ids(r)).toEqual(['a', 'b', 'c'])
     r = moveNode(r, [], 'c', [], { into: 'a' }, 4)
     expect(ids(r)).toEqual(['a', 'b'])
-    expect(ids(r, ['a'])).toEqual(['c'])
+    expect(titles(r, ['a'])).toEqual(['A', '', 'C'])
+    expect(ids(r, ['a']).at(-1)).toBe('c')
     r = moveNode(r, ['a'], 'c', [], { relativeTo: 'a', position: 'above' }, 5)
     expect(ids(r)).toEqual(['c', 'a', 'b'])
     const before = headCid(r)
@@ -487,12 +510,12 @@ describe('link nodes: history, members and proposals', () => {
     const { world, owner: owner0 } = setup()
     let owner = owner0
     let guest = guestAt(world, 5)
-    expect(ids(guest)).toEqual(['f'])
+    expect(titles(guest)).toEqual(['project', '', 'first'])
 
     guest = addTask(guest, [], 'from guest', 6, 'g1')
     guest = world.sync(guest, 7, ['proj'])
-    expect(ids(guest)).toEqual(['f', 'g1'])                 // the guest keeps its edit
-    expect(world.serverTasks(['proj'])).toEqual(['first']) // main is untouched
+    expect(titles(guest)).toEqual(['project', '', 'first', 'from guest'])                 // the guest keeps its edit
+    expect(world.serverTasks(['proj'])).toEqual(['project', '', 'first']) // main is untouched
     const proposals = view(world.server, ['proj'])!.proposals
     expect(proposals).toHaveLength(1)
     expect(proposals[0]).toMatchObject({ peerId: 'guest', summary: { added: ['from guest'], changed: [], removed: [] } })
@@ -502,12 +525,12 @@ describe('link nodes: history, members and proposals', () => {
     expect(view(world.server, ['proj'])!.proposals).toHaveLength(1)
 
     world.server = applyProposalAt(world.server, ['proj'], proposals[0]!.id, 'user:alice', 9)
-    expect(world.serverTasks(['proj'])).toEqual(['first', 'from guest'])
+    expect(world.serverTasks(['proj'])).toEqual(['project', '', 'first', 'from guest'])
     expect(view(world.server, ['proj'])!.proposals).toHaveLength(0)
     owner = world.sync(owner)
-    expect(ids(owner, ['proj'])).toEqual(['f', 'g1'])
+    expect(titles(owner, ['proj'])).toEqual(['project', '', 'first', 'from guest'])
     guest = world.sync(guest, 10, ['proj'])
-    expect(ids(guest)).toEqual(['f', 'g1'])
+    expect(titles(guest)).toEqual(['project', '', 'first', 'from guest'])
   })
 
   it('a rejected proposal stays rejected; main keeps its content', () => {
@@ -536,8 +559,8 @@ describe('link nodes: history, members and proposals', () => {
     const reviewer = nodeContent(store, memberships.find((e) => memberPeerOf(store, e) === 'reviewer')![1])
     expect(reviewer.data).not.toHaveProperty('actor')
     expect(reviewer.children).toEqual([
-      [store.primitive.capabilityNode.getId(), libAt(store).capabilities.read!],
-      [store.primitive.capabilityNode.getId(), libAt(store).capabilities.edit!]
+      [primitive(store, 'grants'), libAt(store).capabilities.read!],
+      [primitive(store, 'grants'), libAt(store).capabilities.edit!]
     ])
     // deciding proposals is how edit is exercised on a node with several peers: no grant of its own
     expect(hasCapability(store, linkValue, 'reviewer', 'edit')).toBe(true)
@@ -558,7 +581,7 @@ describe('link nodes: history, members and proposals', () => {
     let other = world.sync(createReplica('owner-phone'))
     other = addTask(other, ['proj'], 'from phone', 5, 'p1')
     other = world.sync(other)
-    expect(world.serverTasks(['proj'])).toEqual(['first', 'from phone'])
+    expect(world.serverTasks(['proj'])).toEqual(['project', '', 'first', 'from phone'])
     const owner = world.sync(owner0)
     expect(view(owner, ['proj'])!.proposals).toHaveLength(0)
   })
@@ -576,10 +599,12 @@ describe('row types', () => {
     const v = userView(r)!
     expect(v.tasks.map((t) => [t.id, t.type, t.checkable])).toEqual([['p', PLAIN_TYPE, false], ['t', TASK_TYPE, true], ['n', NOTE_TYPE, false], ['c', COMMENT_TYPE, false]])
     expect(v.tasks.find((t) => t.id === 'n')!.title).toBe('Title')
-    expect(view(r, ['n'])!.tasks.find((t) => t.id === 'n/field/body')!.title).toBe('# Title\n\nbody with {{who}}')
+    expect(v.tasks.find((t) => t.id === 'n')!.body).toBe('# Title\n\nbody with {{who}}')
     expect(v.tasks.find((t) => t.id === 'c')!.author).toMatchObject({ name: 'Ada' })
-    expect(view(r, ['c'])!.tasks.map((t) => t.type)).toEqual([TEXT_TYPE, 'person', 'listText', COMMENT_TYPE])
-    expect(view(r, ['c'])!.tasks.slice(0, 3).map(t => t.id)).toEqual(['c/field/body', 'c/field/person', 'c/field/texts'])
+    // a row's fields are not its child rows
+    // a row's own fields come first, then its child rows
+    expect(view(r, ['c'])!.tasks.map((t) => t.type)).toEqual(['body', 'author', COMMENT_TYPE])
+    expect(view(r, ['c'])!.tasks.at(-1)!.id).toBe('c2')
     // a plain row cannot be completed; converting it to a task makes it checkable
     expect(userView(setTaskDone(r, [], 'p', true, 7))!.tasks[0]).toMatchObject({ id: 'p', done: false, checkable: false })
     r = setRowType(r, [], 'p', TASK_TYPE, 8)
@@ -602,11 +627,11 @@ describe('row types', () => {
     r = addTask(r, ['proj', 'des'], 'sketch', 3, 'sk')
     r = addTask(r, [], 'today', 4, 'today')
     r = addRef(r, ['today'], 'sk', 5)
-    const refRow = view(r, ['today'])!.tasks[0]!
+    const refRow = view(r, ['today'])!.tasks.find((t) => t.type === REF_TYPE)!
     expect(refRow.type).toBe(REF_TYPE)
     expect(refRow.refId).toBe('sk')
     expect(resolveRef(r, 'sk')).toMatchObject({ path: [], row: { id: 'sk', title: 'sketch' } })
-    expect(view(r, ['proj', 'des'])!.tasks[0]!.refId).toBe('sk')
+    expect(view(r, ['proj', 'des'])!.tasks.find((t) => t.type === REF_TYPE)!.refId).toBe('sk')
     expect(resolveRef(r, 'nope')).toBeNull()
     // a ref placed above a sibling
     r = addRef(r, [], 'des', 6, { relativeTo: 'today', position: 'above' })
@@ -617,14 +642,14 @@ describe('row types', () => {
     expect(top.map((t) => t.title)).toEqual(['project', 'project', '', 'today', 'sketch', 'design'])
     const copyId = top[1]!.id
     expect(copyId).not.toBe('proj')
-    expect(view(r, [copyId])!.tasks.map((t) => t.title)).toEqual(['design'])
-    const copiedDesign = view(r, [copyId])!.tasks[0]!.id
+    expect(view(r, [copyId])!.tasks.map((t) => t.title)).toEqual(['project', '', 'design'])
+    const copiedDesign = view(r, [copyId])!.tasks.find((t) => t.title === 'design')!.id
     expect(copiedDesign).not.toBe('des')
     r = renameTask(r, [copyId], copiedDesign, 'design v2', 8)
     expect(resolveRef(r, 'des')!.row.title).toBe('design')
     // copy into a node
     r = copyNode(r, [], 'sk', [], { into: 'today' }, 9)
-    expect(view(r, ['today'])!.tasks.map((t) => [t.type, t.title])).toEqual([[REF_TYPE, ''], [TASK_TYPE, 'sketch']])
+    expect(view(r, ['today'])!.tasks.map((t) => [t.type, t.title])).toEqual([['title', 'today'], ['done', ''], [REF_TYPE, ''], [TASK_TYPE, 'sketch']])
   })
 
   it('rows of mixed types merge like tasks: both sides adding different types keeps all of them in order', () => {
@@ -659,11 +684,11 @@ describe('approval convergence', () => {
     expect(proposals).toHaveLength(1)
     world.server = applyProposalAt(world.server, ['proj'], proposals[0]!.id, 'user:alice', 8)
     owner = world.sync(owner, 9)
-    expect(view(owner, ['proj'])!.tasks.map((t) => t.title)).toEqual(['from guest'])
+    expect(view(owner, ['proj'])!.tasks.map((t) => t.title)).toEqual(['project', '', 'from guest'])
     expect(view(owner, ['proj'])!.proposals).toEqual([])
     expect(isDirty(owner)).toBe(false)
     guest = world.sync(guest, 11, ['proj'])
-    expect(userView(guest)!.tasks.map((t) => t.title)).toEqual(['from guest'])
+    expect(userView(guest)!.tasks.map((t) => t.title)).toEqual(['project', '', 'from guest'])
   })
 })
 
@@ -682,9 +707,8 @@ describe('mutable references: root, link rows and reference rows are one node sh
     expect(isRefNode(store, proj)).toBe(true)
     expect(isHandle(proj)).toBe(false)
     expect(proj.data.alias?.id).toBe('proj')
-    expect(proj.data.description).toBeUndefined()
-    expect(valueContent(store, projCid).data.description?.content).toBe('project')
-    expect(view(r, ['proj'])!.tasks.map((t) => t.title)).toEqual(['design'])
+    expect(rowTitle(store, projCid, null)).toBe('project')
+    expect(view(r, ['proj'])!.tasks.map((t) => t.title)).toEqual(['project', '', 'design'])
     expect(userView(r)!.tasks[0]).toMatchObject({ id: 'proj', type: TASK_TYPE, title: 'project', isLink: true })
     // editing inside the link advances the ref: new ref node, PREV → the old one, same value shape
     const before = projCid
@@ -699,8 +723,8 @@ describe('mutable references: root, link rows and reference rows are one node sh
     r = addRef(r, ['today'], 'des', 6)
     const des = resolveScope(store, headCid(r), ['des'])!
     expect(isRefNode(store, content(store, des))).toBe(true)
-    expect(view(r, ['proj'])!.tasks[0]).toMatchObject({ refId: 'des', type: REF_TYPE })
-    const handleRow = view(r, ['today'])!.tasks[0]!
+    expect(view(r, ['proj'])!.tasks.find((t) => t.refId === 'des')).toMatchObject({ type: REF_TYPE })
+    const handleRow = view(r, ['today'])!.tasks.find((t) => t.type === REF_TYPE)!
     expect(handleRow.type).toBe(REF_TYPE)
     const handleCid = resolveScope(store, headCid(r), ['today', handleRow.id])!
     const handle = content(store, handleCid)
@@ -709,47 +733,7 @@ describe('mutable references: root, link rows and reference rows are one node sh
     // the handle resolves live: renaming the target shows through
     r = renameTask(r, [], 'des', 'design v2', 7)
     expect(resolveRef(r, 'des')?.row.title).toBe('design v2')
-    expect(view(r, ['today'])!.tasks[0]!.type).toBe(REF_TYPE) // the handle's own value is never followed as content
-  })
-
-  it('legacy inline link nodes are rewritten into ref nodes on load, keeping members, peers and history', () => {
-    let r = createReplica('d')
-    r = addTask(r, [], 'shared', 1, 'sh')
-    r = addTask(r, ['sh'], 'one', 2, 'o1')
-    const store = r.store
-    // hand-build the old shape: the content node itself carries data.link and the bookkeeping edges
-    const shCid = resolveScope(store, headCid(r), ['sh'])!
-    const inline = content(store, shCid)
-    const olderVersion = put(store, { ...inline, data: { ...inline.data, link: { createdAt: 0 }, description: { content: 'shared (old)' } } })
-    const legacy = put(store, {
-      data: { ...inline.data, link: { createdAt: 0 } },
-      children: [...inline.children,
-        [peerNode(store, 'guest'), put(store, { data: { alias: { id: 'guest-entry' } }, children: [[store.primitive.capabilityNode.getId(), store.primitive.proposeAction.getId()]] })],
-        [store.primitive.peerField.getId(), put(store, { data: { peerId: { content: 'guest' } }, children: [] })],
-        [store.primitive.previousVersion.getId(), olderVersion]]
-    })
-    const rootValue = content(store, headCid(r))
-    const edge = rootValue.children.find((e) => edgeKey(store, e) === 'a:sh')!
-    const legacyRoot = put(store, { ...rootValue, children: rootValue.children.map((e) => (e === edge ? [e[0], legacy] as FosPathElem : e)) })
-    commitRoot(store, legacyRoot, 3)
-    expect(isLegacyInlineLink(store, content(store, resolveScope(store, headCid(r), ['sh'])!))).toBe(true)
-    // reading still works before normalization
-    expect(view(r, ['sh'])!).toMatchObject({ isLink: true, name: 'shared' })
-    expect(view(r, ['sh'])!.members.map((m) => m.peerId)).toEqual(['guest'])
-    // a serialized replica is normalized when loaded
-    const loaded = loadReplica(JSON.parse(JSON.stringify(serializeReplica(r))))
-    const shNow = resolveScope(loaded.store, headCid(loaded), ['sh'])!
-    const node = content(loaded.store, shNow)
-    expect(isRefNode(loaded.store, node)).toBe(true)
-    expect(node.data.link).toBeUndefined()
-    expect(stripLink(loaded.store, node).data.description?.content).toBe('shared')
-    expect(view(loaded, ['sh'])!).toMatchObject({ isLink: true, name: 'shared', versions: 1, peers: ['guest'] })
-    expect(view(loaded, ['sh'])!.members.map((m) => m.peerId)).toEqual(['guest'])
-    expect(view(loaded, ['sh'])!.tasks.map((t) => t.title)).toEqual(['one'])
-    // and it keeps working as a link: edits advance it
-    const edited = addTask(loaded, ['sh'], 'two', 4, 'o2')
-    expect(view(edited, ['sh'])!.versions).toBe(2)
-    expect(normalizeRefs(edited.store, headCid(edited))).toBe(headCid(edited)) // idempotent
+    expect(view(r, ['today'])!.tasks.find((t) => t.id === handleRow.id)!.type).toBe(REF_TYPE) // the handle's own value is never followed as content
   })
 })
 
@@ -761,7 +745,7 @@ describe('requirements, supplies, resource banks and market listings', () => {
     r = addRequirement(r, ['t'], 'choice', 3, { capability: 'choice', options: ['fast', 'cheap'] }, 'rq2')
     let task = userView(r)!.tasks[0]!
     expect(task.blockedBy).toEqual(['confirmation', 'choice (fast | cheap)'])
-    expect(view(r, ['t'])!.tasks.map((x) => [x.type, x.requirement?.satisfied])).toEqual([['capabilities.confirmation', false], ['capabilities.choice', false]])
+    expect(view(r, ['t'])!.tasks.map((x) => [x.type, x.requirement?.satisfied])).toEqual([['title', undefined], ['done', undefined], ['capabilities.confirmation', false], ['capabilities.choice', false]])
     // completion is refused while blocked
     r = setTaskDone(r, [], 't', true, 4)
     expect(userView(r)!.tasks[0]!.done).toBe(false)
@@ -770,7 +754,7 @@ describe('requirements, supplies, resource banks and market listings', () => {
     task = userView(r)!.tasks[0]!
     expect(task.blockedBy).toBeUndefined()
     expect(argumentSupplier(r, ['t', 'rq1'])).toBe('ada@x')
-    expect(view(r, ['t'])!.tasks.map((x) => x.title)).toEqual(['confirmation', 'choice'])
+    expect(view(r, ['t'])!.tasks.map((x) => x.title)).toEqual(['ship it', '', 'confirmation', 'choice'])
     r = setTaskDone(r, [], 't', true, 7)
     expect(userView(r)!.tasks[0]!.done).toBe(true)
     // a choice is one of the declared options; a confirmation declares none
@@ -794,7 +778,7 @@ describe('requirements, supplies, resource banks and market listings', () => {
     r = addTask(r, [], 'interview', 5, 't')
     r = addRequirement(r, ['t'], 'calendar 1 h', 6, { capability: 'allocation', resource: 'calendar', amount: 1, unit: 'h' }, 'rq')
     expect(userView(r)!.tasks[1]!.blockedBy).toEqual(['calendar 1 h'])
-    expect(view(r, ['t'])!.tasks[0]!.requirement).toMatchObject({ capability: 'allocation', linear: true, resource: 'calendar', amount: 1, unit: 'h' })
+    expect(view(r, ['t'])!.tasks.find((t) => t.id === 'rq')!.requirement).toMatchObject({ capability: 'allocation', linear: true, resource: 'calendar', amount: 1, unit: 'h' })
     // what a bank holds is its value, not a lexical declaration: nothing outside can refer to it by id
     expect(() => supplyRequirement(r, ['t'], 'rq', { by: 'ada', ref: 'a1' }, 7)).toThrow(/not visible/)
     expect(userView(r)!.tasks[1]!.blockedBy).toEqual(['calendar 1 h'])
@@ -835,7 +819,7 @@ describe('requirements, supplies, resource banks and market listings', () => {
     r = addRequirement(r, ['t'], 'give feedback', 2, { capability: 'peer', inputs: { peer: 'bob' } }, 'rp')
     r = addRequirement(r, ['t'], 'find a printer', 3, { capability: 'market' }, 'rm')
     expect(userView(r)!.tasks[0]!.blockedBy).toEqual(['@bob', 'market'])
-    expect(view(r, ['t'])!.tasks[0]!.requirement).toMatchObject({ capability: 'peer', peer: 'bob', inputs: { peer: 'bob' } })
+    expect(view(r, ['t'])!.tasks.find((t) => t.id === 'rp')!.requirement).toMatchObject({ capability: 'peer', peer: 'bob', inputs: { peer: 'bob' } })
     r = supplyRequirement(r, ['t'], 'rp', { by: 'bob' }, 5)
     expect(userView(r)!.tasks[0]!.blockedBy).toEqual(['market'])
     expect(argumentSupplier(r, ['t', 'rp'])).toBe('bob')
@@ -864,16 +848,16 @@ describe('allocations: people allocate themselves, rows are rewritten in place',
     r = addTask(r, [], 'plan', 1, 't')
     r = addRequirement(r, ['t'], 'lunch', 2, { capability: 'allocation', resource: 'account', amount: 50, unit: 'USD' }, 'rq')
     r = addRow(r, ['t', 'rq'], COMMENT_TYPE, 'any place is fine', 3, { id: 'c' })
-    expect(view(r, ['t'])!.tasks[0]).toMatchObject({ id: 'rq', title: 'lunch', requirement: { resource: 'account', amount: 50, unit: 'USD' } })
+    expect(view(r, ['t'])!.tasks.find((t) => t.id === 'rq')).toMatchObject({ id: 'rq', title: 'lunch', requirement: { resource: 'account', amount: 50, unit: 'USD' } })
     expect(view(r, ['t', 'rq'])!.tasks.find((c) => c.id === 'c')).toMatchObject({ type: COMMENT_TYPE, title: 'any place is fine' })
     // "-$ 50 lunch" edited to "[x] lunch walk": a done task, still with its child
     r = setRowContentAt(r, ['t'], 'rq', TASK_TYPE, 'lunch walk', { done: true }, 5)
-    expect(view(r, ['t'])!.tasks[0]).toMatchObject({ id: 'rq', type: TASK_TYPE, title: 'lunch walk', done: true })
-    expect(view(r, ['t'])!.tasks[0]!.requirement).toBeUndefined()
+    expect(view(r, ['t'])!.tasks.find((t) => t.id === 'rq')).toMatchObject({ id: 'rq', type: TASK_TYPE, title: 'lunch walk', done: true })
+    expect(view(r, ['t'])!.tasks.find((t) => t.id === 'rq')!.requirement).toBeUndefined()
     expect(view(r, ['t', 'rq'])!.tasks.find((c) => c.id === 'c')).toMatchObject({ type: COMMENT_TYPE, title: 'any place is fine' })
     // and back to plain text
     r = setRowContentAt(r, ['t'], 'rq', PLAIN_TYPE, 'just a note', {}, 6)
-    expect(view(r, ['t'])!.tasks[0]).toMatchObject({ id: 'rq', type: PLAIN_TYPE, title: 'just a note', checkable: false })
+    expect(view(r, ['t'])!.tasks.find((t) => t.id === 'rq')).toMatchObject({ id: 'rq', type: PLAIN_TYPE, title: 'just a note', checkable: false })
   })
 })
 

@@ -13,7 +13,7 @@ buildSync({ stdin: { contents: `export {App} from './src/app'; export * from './
 const sync = require(path.join(dir, 'app.cjs'))
 const { exchangeNode, SERVER_TRANSPORT_CAPABILITIES, headCid, App, mountUi, createMemoryStorage, createLocalStorageAdapter, addTask, nodeTreeSync, createReplica, ensureHomeContext, view, renameTask, addMemberAt, virtualStorage, serializeReplica, loadReplica, renderMarkdown, renderInlineText, virtualPeerFromUrl, parseRowInput, HOME_ID, LIBRARY_ID } = require(path.join(dir, 'app.cjs'))
 const TASK_TYPE = 'task'
-const PLAIN_TYPE = 'plain'
+const PLAIN_TYPE = 'title'
 const COMMENT_TYPE = 'comment'
 const TEMPLATE_TYPE = 'template'
   // what a real account server advertises with the default handler registry (backend/sync/hostHandlers.ts)
@@ -562,7 +562,8 @@ async function main() {
   await branchApp.createNodeBranch([], branchProject, 'feature')
   branchApp.zoomTo([branchProject])
   assert(!document.querySelector('.node-header .add-row'), 'the header no longer has an Add button')
-  assert(document.querySelector('.node-title-section > .input-toggle'), 'Edit sits beside the title')
+  assert(document.querySelector('.node-header.branch-bar .node-choices .combo-trigger').textContent.includes('feature'), 'the branch bar shows the branch you are on')
+  assert(!document.querySelector('.node-input[hidden]'), 'the composer is always there')
   // the title is the node's own row editor: its marker text, parsed on Enter
   const titleInput = document.querySelector('.current-node-row textarea')
   assert.equal(titleInput.value, '[ ] Branch project')

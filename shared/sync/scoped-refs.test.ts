@@ -1,17 +1,19 @@
+import { textValue } from './index'
+import { primitive } from './primitives'
 import { declareTestCapability } from './test-helpers'
 import {
-  addMemberAt, addRefAt, addRequirement, supplyRequirement, addTask, applyProposalAt, libAt, content, contextBindings, nativeRef, publishNativeRef, primitiveExecutors,
+  addMemberAt, addRefAt, addRequirement, supplyRequirement, addTask, applyProposalAt, libAt, content, contextBindings, primitiveRef, publishPrimitive, primitiveExecutors,
   createReplica, discoverHandlers, headCid, matchesRefPattern, parsePolicy, proposeRefAt, put,
   refNodeContent, refSubmissions, argumentSatisfied, resolveBinding, resolveScope, resolveText, visibleBindings,
   serializeReplica, loadReplica, nestScope, setHandlerEnabledAt, valueContent, evaluationSteps
 } from './index'
 
-const leaf = (r: ReturnType<typeof createReplica>, name: string) => put(r.store, { data: { description: { content: name } }, children: [] })
+const leaf = (r: ReturnType<typeof createReplica>, name: string) => textValue(r.store, name)
 const at = (r: ReturnType<typeof createReplica>, path: string[]) => resolveScope(r.store, headCid(r), path)!
 
 test('a nested document inherits device ref declarations without writing device declarations into the document', () => {
   let device = declareTestCapability(createReplica('device'), 'custom')
-  device = publishNativeRef(device, [], 'device', nativeRef(device.store, 'device', { id: 'device:custom', type: store => libAt(store).capabilities.custom! }), 1)
+  device = publishPrimitive(device, [], 'device', primitiveRef(device.store, 'device', { id: 'device:custom', capability: store => libAt(store).capabilities.custom! }), 1)
   const document = createReplica('device')
   const before = headCid(document)
   nestScope(document.store, { store: device.store, root: headCid(device), at: [] })
@@ -64,7 +66,7 @@ test('declarations in sibling documents are not ambient capabilities', () => {
 
 test('nearest names shadow for value and type lookup; distinct declarations remain alternatives', () => {
   let r = addTask(createReplica(), [], 'Child', 1, 'child')
-  const text = r.store.primitive.documentField.getId()
+  const text = primitive(r.store, 'string')
   r = addRefAt(r, [], 'outer', text, 2, leaf(r, 'Ada'), 'recipient')
   r = addRefAt(r, ['child'], 'inner', text, 3, leaf(r, 'Grace'), 'recipient')
   expect(resolveText(r, ['child'], 'Hello {recipient}').text).toBe('Hello Grace')
@@ -84,22 +86,22 @@ test('patterns recurse through rows and submitted refs without node type declara
   expect(resolveBinding(r.store, pattern, null, [{ cid: tree, type: pattern }]).status).toBe('ready')
 })
 
-test('device and host native implementations are selected through published refs and respect disabled offers', async () => {
+test('device and host primitive implementations are selected through published refs and respect disabled offers', async () => {
   let r = declareTestCapability(createReplica('device'), 'extension:paint'), calls = 0
-  const ref = nativeRef<void>(r.store, 'device', { id: 'custom:executor', type: store => libAt(store).capabilities['extension:paint']!, native: async () => { calls++; return {} } })
+  const ref = primitiveRef(r.store, 'device', { id: 'custom:executor', capability: store => libAt(store).capabilities['extension:paint']!, run: async () => { calls++; return {} } })
   r = addRequirement(r, [], 'Paint', 1, { capability: 'extension:paint' }, 'req')
   const step = evaluationSteps(r, ['req'])[0]!
   expect(primitiveExecutors(r, step, 'device')).toEqual([])
-  r = publishNativeRef(r, [], 'device', ref, 1)
-  await primitiveExecutors<void>(r, step, 'device')[0]!.native.native!({ inputs: {}, outputs: {}, left: '' }, { evaluation: 'e', step: step.path, now: 0, store: r.store, put: () => '' })
+  r = publishPrimitive(r, [], 'device', ref, 1)
+  await primitiveExecutors(r, step, 'device')[0]!.implementation.run!({ inputs: {}, outputs: {}, left: '' }, { evaluation: 'e', step: step.path, now: 0, store: r.store, put: () => '' })
   expect(calls).toBe(1)
   r = setHandlerEnabledAt(r, [], 'device', content(r.store, ref).data.alias!.id, false, 2)
   expect(primitiveExecutors(r, step, 'device')).toEqual([])
 })
 
-test('a native implementation is reached through an assigned ref rather than the declaration name', () => {
+test('a primitive implementation is reached through an assigned ref rather than the declaration name', () => {
   let r = declareTestCapability(createReplica('device'), 'paint')
-  const reference = nativeRef<void>(r.store, 'device', { id: 'native:paint', type: store => libAt(store).capabilities.paint!, native: async () => ({}) })
+  const reference = primitiveRef(r.store, 'device', { id: 'primitive:paint', capability: store => libAt(store).capabilities.paint!, run: async () => ({}) })
   r = addRefAt(r, [], 'my-handler', libAt(r.store).capabilities.paint!, 1, reference)
   r = addRequirement(r, [], 'Paint', 1, { capability: 'paint' }, 'req')
   const step = evaluationSteps(r, ['req'])[0]!
@@ -121,7 +123,7 @@ test('arbitrary extension names do not accidentally invoke Object prototype prop
 
 test('an old nominal annotation cannot satisfy a structural pattern', () => {
   let r = createReplica('device')
-  const old = r.store.primitive.llmCapability.getId(), value = leaf(r, 'model')
+  const old = primitive(r.store, 'llm'), value = leaf(r, 'model')
   r = addRefAt(r, [], 'old-model', old, 1, value)
   expect(resolveBinding(r.store, libAt(r.store).capabilities.llm!, null, contextBindings(r, [])).status).toBe('missing')
 })

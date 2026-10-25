@@ -57,21 +57,22 @@ test('moving rows inside the Home constructor follows its mutable value', () => 
   expect(view(r, [HOME_ID])!.tasks.map(row => row.id)).toEqual(['second', 'first'])
   r = moveNode(r, [HOME_ID], 'second', [HOME_ID], { into: 'first' }, 4)
   expect(view(r, [HOME_ID])!.tasks.map(row => row.id)).toEqual(['first'])
-  expect(view(r, [HOME_ID, 'first'])!.tasks[0]!.id).toBe('second')
+  expect(view(r, [HOME_ID, 'first'])!.tasks.some(row => row.id === 'second')).toBe(true)
 })
 
 
 test('a handler demand is an argument row; supplying it binds its ref to a value naming the supplier', () => {
   let r = addTask(createReplica(), [], 'Task', 1, 'task')
   r = addRequirement(r, ['task'], 'Confirm', 2, { capability: 'confirmation' }, 'need')
-  expect(view(r, ['task'])!.tasks[0]!.requirement).toMatchObject({ capability: 'confirmation', satisfied: false })
+  expect(view(r, ['task'])!.tasks.find(row => row.id === 'need')!.requirement).toMatchObject({ capability: 'confirmation', satisfied: false })
   expect(argumentSupplier(r, ['task', 'need'])).toBeNull()
   r = supplyRequirement(r, ['task'], 'need', { by: 'user' }, 3)
-  expect(view(r, ['task'])!.tasks[0]!.requirement?.satisfied).toBe(true)
+  expect(view(r, ['task'])!.tasks.find(row => row.id === 'need')!.requirement?.satisfied).toBe(true)
   expect(argumentSupplier(r, ['task', 'need'])).toBe('user')
   // the row keeps its title and holds no rows of its own: the value is what its ref is bound to
-  expect(view(r, ['task'])!.tasks[0]!.title).toBe('Confirm')
-  expect(view(r, ['task', 'need'])!.tasks).toEqual([])
+  expect(view(r, ['task'])!.tasks.find(row => row.id === 'need')!.title).toBe('Confirm')
+  // the requirement's only row is its own title
+  expect(view(r, ['task', 'need'])!.tasks.map(t => [t.type, t.title])).toEqual([['title', 'Confirm']])
 })
 
 

@@ -35,7 +35,7 @@ export function createEvaluationService(deps: AccountStoreDeps, runtime: HostRun
           // the account's own rows are always reachable here; the host and the providers checked above are live when they said so
           isPeerActive: peer => peer === 'fos' || peer === r.meta.peerId || active.get(peer) === true,
           check: step => runtime.executors(step, r).length && !available(step).length ? [`${[...new Set(runtime.executors(step, r).map(h => peerLabel(h.peerId)))].join(' or ')} is not active in this context.`] : [],
-          executors: step => available(step).flatMap((handler): StepExecutor[] => handler.native ? [{ native: handler.native({ id: user.id, username: user.username }) }] : [])
+          executors: step => available(step).flatMap((handler): StepExecutor[] => handler.run ? [{ run: handler.run({ id: user.id, username: user.username }), primitive: handler.ref.id }] : [])
         })
         if (result.status !== 'committed' && result.status !== 'awaiting-review') throw new Error(result.error ?? 'Evaluation needs recovery.')
         return result

@@ -1,4 +1,8 @@
 /** Library definitions are editable values. Runtime consumers must use explicitly pinned instances. */
+import { capabilityName } from './structural'
+import { allocationShapeOf } from './allocations'
+import { refTitle } from './fields'
+import { primitive } from './primitives'
 import type { ResourceType } from './graph'
 import { homePath, proposeRefAt, view, type Replica } from './replica'
 import { commitRoot, content, ensureLibraryRow, importNodes, reachableNodes, enclosingScopes, nearestInScope, libraryBindingAt, libraryTypeAt, viewNode, isLibraryDefinition, isPeerReference, libraryInstanceEdge, libraryInstanceOf, libraryRowOf, updateAtScope, put, refValueCid, resolveScope, valueContent, SERVER_MEMBER, type Scope } from './graph'
@@ -8,7 +12,6 @@ import { FOS_DATA_VERSION } from '../version'
 import * as COMPILED_LIBRARY from './library.generated.json'
 import { compileLibrary, type LibrarySource } from '../library-compiler'
 import { fieldNode } from '../library-names'
-import { plainEdge } from './patterns'
 import { bookkeepingOf, isBookkeepingEdge, namesInLibrary, refNodeContent, valueCidOf } from './graph'
 import { hashContent } from '../dag-implementation/cid'
 
@@ -42,9 +45,9 @@ export function exportLocalLibrary(r: Replica, at: Scope | null = libraryPath(r)
 
 /**
  * A fallback the library offers for a kind of requirement: the row's text is the button, its requirement the kind it
- * fills. `native`: a native the device passed the library (`setLibraryArg`), which does it; else the person does it.
+ * fills. `primitive`: a primitive the device passed the library (`setLibraryArg`), which does it; else the person does it.
  */
-export type ManualHandler = { id: string; label: string; capability?: string; resource?: ResourceType; device: boolean; native?: string }
+export type ManualHandler = { id: string; label: string; capability?: string; resource?: ResourceType; device: boolean; primitive?: string }
 
 /**
  * The library definition a row at `at` sees, by nearest ancestor: one referenced in Home (once its content is here)
@@ -79,16 +82,16 @@ export function upgradeLibrary(r: Replica, at: Scope, definition: Scope, now: nu
   if (!def || !instance) throw new Error('There is no library here to upgrade.')
   const next = valueCidOf(r.store, def)
   if (next === instance.library) return r
-  commitRoot(r.store, updateAtScope(r.store, headCid(r), at, value => ({ ...value, children: value.children.map(edge => plainEdge(r.store, edge)[1] === instance.cid ? [next, instance.cid] : edge) })), now)
+  commitRoot(r.store, updateAtScope(r.store, headCid(r), at, value => ({ ...value, children: value.children.map(edge => edge[1] === instance.cid ? [next, instance.cid] : edge) })), now)
   return { ...r }
 }
 
-/** The library's field declaring what it needs passed in by the device that uses it (its natives). */
+/** The library's field declaring what it needs passed in by the device that uses it (its primitives). */
 export const LIBRARY_REQUIRES = 'requires'
 
 /**
- * Pass `value` (a native this device registered, `nativeRef`) into the library instance of the node at `at` as its
- * argument `name`: what the library's `requires.<name>` declares. The library never calls a native itself; it uses
+ * Pass `value` (a primitive this device registered, `primitiveRef`) into the library instance of the node at `at` as its
+ * argument `name`: what the library's `requires.<name>` declares. The library never calls a primitive itself; it uses
  * what it was passed.
  */
 export function setLibraryArg(r: Replica, at: Scope, name: string, value: string, now: number): Replica {
@@ -102,19 +105,19 @@ export function setLibraryArg(r: Replica, at: Scope, name: string, value: string
   const arg = put(store, refNodeContent(store, { alias: { id: hashContent({ data: { name: { content: name } }, children: [] }) }, name: { content: name } }, value))
   const nextArgs = put(store, { ...args, children: [...args.children.filter(edge => edge !== existing), [left, arg]] })
   const nextRef = put(store, refNodeContent(store, ref.data, nextArgs, bookkeepingOf(store, ref)))
-  commitRoot(store, updateAtScope(store, headCid(r), at, value => ({ ...value, children: value.children.map(edge => plainEdge(store, edge)[1] === instance.cid ? [instance.library, nextRef] : edge) })), now)
+  commitRoot(store, updateAtScope(store, headCid(r), at, value => ({ ...value, children: value.children.map(edge => edge[1] === instance.cid ? [instance.library, nextRef] : edge) })), now)
   return { ...r }
 }
 
 /**
  * What the nearest library instance at `at` was passed for its `requires` declarations: each declaration (its name
- * and node) with the native the device passed, when it passed one.
+ * and node) with the primitive the device passed, when it passed one.
  */
-export function libraryArgs(r: Replica, at: Scope): Array<{ name: string; declaration: FosNodeContent; value: string }> {
+export function libraryArgs(r: Replica, at: Scope): Array<{ name: string; declaration: FosNodeContent; pattern: string; value: string }> {
   const instance = libraryBindingAt(r.store, at)
   if (!instance) return []
   const store = r.store
-  const target = store.primitive.targetPointerConstructor.getId(), alias = store.primitive.aliasConstructor.getId(), get = (id: string) => store.table.get(id)
+  const target = primitive(store, 'target'), alias = primitive(store, 'alias'), get = (id: string) => store.table.get(id)
   const group = namesInLibrary(store, instance.library).byName.get(LIBRARY_REQUIRES)
   const args = refValueCid(store, content(store, instance.cid))
   if (!group || !args) return []
@@ -123,7 +126,7 @@ export function libraryArgs(r: Replica, at: Scope): Array<{ name: string; declar
     if (!declared) return []
     const passed = content(store, args).children.find(([left]) => left === declared.node)
     const value = passed && refValueCid(store, content(store, passed[1]))
-    return value ? [{ name: declared.name, declaration: content(store, edge[1]), value }] : []
+    return value ? [{ name: declared.name, declaration: content(store, edge[1]), pattern: edge[0], value }] : []
   })
 }
 
@@ -131,7 +134,7 @@ export function libraryArgs(r: Replica, at: Scope): Array<{ name: string; declar
 export function libraryFieldPath(r: Replica, field: string, at?: Scope): Scope | null {
   const path = libraryPath(r, at), cid = path && resolveScope(r.store, headCid(r), path)
   if (!path || !cid) return null
-  const target = r.store.primitive.targetPointerConstructor.getId(), alias = r.store.primitive.aliasConstructor.getId()
+  const target = primitive(r.store, 'target'), alias = primitive(r.store, 'alias')
   const edge = valueContent(r.store, cid).children.find(e => fieldNode(id => r.store.table.get(id), e as [string, string], target, alias)?.name === field)
   const id = edge && content(r.store, edge[1]).data.alias?.id
   return id ? [...path, id] : null
@@ -141,19 +144,21 @@ export function libraryFieldPath(r: Replica, field: string, at?: Scope): Scope |
 export function manualHandlers(r: Replica, at?: Scope): ManualHandler[] {
   const field = libraryTypeAt(r.store, MANUAL_HANDLERS, at ?? homePath(r))
   if (!field) return []
+  // each a declaration of what it stands in for: its capability, and the resource it is for
   return viewNode(r.store, field).tasks.flatMap(row => {
-    const req = row.requirement
-    if (!req || !row.title.trim()) return []
-    return [{ id: row.id, label: row.title.trim(), ...(req.capability ? { capability: req.capability } : {}), ...(req.resource ? { resource: req.resource } : {}), device: false }]
+    const capability = row.typeCid ? capabilityName(r.store, row.typeCid) : null
+    if (!capability || !row.title.trim()) return []
+    const resource = allocationShapeOf(r.store, row.typeCid!)?.type
+    return [{ id: row.id, label: row.title.trim(), capability, ...(resource ? { resource } : {}), device: false }]
   })
 }
 
-/** The device's fallbacks: the natives it passed the library for what the library requires, each filling the requirement it declares. */
+/** The device's fallbacks: the primitives it passed the library for what the library requires, each filling the requirement it declares. */
 export function deviceHandlers(r: Replica, at?: Scope): ManualHandler[] {
-  return libraryArgs(r, at ?? homePath(r)).flatMap(({ name, declaration, value }) => {
-    const allocation = declaration.data.allocation
+  return libraryArgs(r, at ?? homePath(r)).flatMap(({ name, declaration, pattern, value }) => {
+    const allocation = allocationShapeOf(r.store, pattern)
     if (!allocation) return []
-    return [{ id: name, label: declaration.data.description?.content ?? name, capability: 'allocation' as const, resource: allocation.type, device: true, native: value }]
+    return [{ id: name, label: refTitle(r.store, declaration) ?? name, capability: 'allocation' as const, resource: allocation.type, device: true, primitive: value }]
   })
 }
 
@@ -191,7 +196,7 @@ export function exportLibrary(r: Replica, path: Scope): LibraryBundle {
  */
 function canonical(r: Replica): (cid: string) => string {
   const memo = new Map<string, string>()
-  const target = r.store.primitive.targetPointerConstructor.getId(), alias = r.store.primitive.aliasConstructor.getId()
+  const target = primitive(r.store, 'target'), alias = primitive(r.store, 'alias')
   const copy = (cid: string): string => {
     if (memo.has(cid)) return memo.get(cid)!
     let node = content(r.store, cid)

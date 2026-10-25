@@ -1,3 +1,5 @@
+import { fieldRefId } from '@fosforescent/shared/sync/fields'
+import { libraryNode } from '@fosforescent/shared/sync/graph'
 import { publishedTemplateId } from '@fosforescent/shared/sync/index'
 import { MARKET_PEER, addRequirement, addRow, addTask, createReplica, makeLinkAt, setMarketAt } from '@fosforescent/shared/sync/index'
 import { collectRows, indexStore, searchRows, type Embed } from './rowIndex'
@@ -40,7 +42,12 @@ test('rows are collected with paths and market inheritance; supplies and referen
   r = addTask(r, [], 'private groceries', 5, 'g')
   r = addRequirement(r, ['g'], 'confirmation', 6, { capability: 'confirmation' }, 'q')
   const rows = collectRows(r.store)
-  expect(rows.map((x) => [x.aliasId, x.market, x.path.join('/')])).toEqual([['o', true, ''], ['s', true, 'o'], ['g', false, ''], ['q', false, 'g']])
+  // a row's title field is an ordinary row; its id is its field's, the same in every row, so it is indexed as that row's field
+  const title = (row: string) => `${row}:${fieldRefId(libraryNode(r.store, 'title')!)}`
+  expect(rows.map((x) => [x.aliasId, x.market, x.path.join('/')])).toEqual([
+    ['o', true, ''], [title('o'), true, 'o'], ['s', true, 'o'], [title('s'), true, 'o/s'],
+    ['g', false, ''], [title('g'), false, 'g'], ['q', false, 'g'], [title('q'), false, 'g/q']
+  ])
 })
 
 test('constructed comment titles are indexed from their graph fields', () => {
@@ -56,7 +63,7 @@ test('indexing embeds changed rows only, removes vanished rows; search ranks own
   alice = setMarketAt(alice, ['o'], true, 3)
   alice = addTask(alice, [], 'buy flour', 4, 'f')
   let first = await indexStore(prisma, { id: 1, username: 'alice' }, alice.store, embed)
-  expect(first).toEqual({ embedded: 2, removed: 0 })
+  expect(first).toEqual({ embedded: 4, removed: 0 }) // each row and its title field row
   first = await indexStore(prisma, { id: 1, username: 'alice' }, alice.store, embed)
   expect(first).toEqual({ embedded: 0, removed: 0 })
   let bob = createReplica('b')
@@ -64,15 +71,18 @@ test('indexing embeds changed rows only, removes vanished rows; search ranks own
   bob = addTask(bob, [], 'walk the dog', 6, 'b2')
   await indexStore(prisma, { id: 2, username: 'bob' }, bob.store, embed)
   const own = await searchRows(prisma, { userId: 2, query: 'logo', market: false, limit: 5 }, embed)
-  expect(own.map((h) => [h.aliasId, h.owner])).toEqual([['b1', null], ['b2', null]])
+  // each row's title field is indexed like any row, as that row's field
+  const title = `:${fieldRefId(libraryNode(bob.store, 'title')!)}`
+  expect(own.map((h) => [h.aliasId, h.owner])).toEqual([['b1', null], [`b1${title}`, null], ['b2', null], [`b2${title}`, null]])
   const market = await searchRows(prisma, { userId: 2, query: 'logo design', market: true, limit: 5 }, embed)
-  expect(market.slice(0, 2).map((h) => h.aliasId).sort()).toEqual(['b1', 'o'])
+  // the best rows (beside their title fields, which say the same) are bob's and alice's listed offer
+  expect(market.filter((h) => !h.aliasId.endsWith(title)).slice(0, 2).map((h) => h.aliasId).sort()).toEqual(['b1', 'o'])
   expect(market.find((h) => h.aliasId === 'o')?.owner).toBe('alice')
   expect(market.some((h) => h.aliasId === 'f')).toBe(false) // alice's private row never shows for bob
   // alice deletes her offer → removed from the index
   const { deleteTask } = await import('@fosforescent/shared/sync/index')
   alice = deleteTask(alice, [], 'o', 7)
-  expect(await indexStore(prisma, { id: 1, username: 'alice' }, alice.store, embed)).toEqual({ embedded: 0, removed: 1 })
+  expect(await indexStore(prisma, { id: 1, username: 'alice' }, alice.store, embed)).toEqual({ embedded: 0, removed: 2 }) // the row and its title field
 })
 
 test('global search aggregates only handlers offered to the market peer; switching the offer off removes them', async () => {

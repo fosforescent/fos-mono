@@ -28,7 +28,7 @@ function setup(servers: McpServerInfo[]) {
     callTool: async (server, tool, input) => { calls.push([server.id, tool, input]); return `${tool}(${input}) = sunny` },
     now: () => 10
   }
-  // `-tool` requirements run as a native reached through a `complete` event (the web's Run on the requirement)
+  // `-tool` requirements run as a primitive reached through a `complete` event (the web's Run on the requirement)
   const events = createEventService(deps, createEvaluationService(deps, createHostRuntime([mcpToolHandler(deps)])).runNode)
   const run = async (scope: string[], requirementId: string) => {
     let status = 200, json: any
@@ -91,13 +91,13 @@ test('completing a tool requirement calls the attached server; the result is the
   expect(rq.requirement?.satisfied).toBe(true)
   expect(requirementAnswer(replica(), ['proj', 'trip', 'rq'])).toBe('weather(Paris next week) = sunny')
   expect(argumentSupplier(replica(), ['proj', 'trip', 'rq'])).toBe('mcp:5')
-  expect(view(replica(), ['proj'])!.tasks[0]!.blockedBy).toEqual(['tool weather']) // rq2 still open
+  expect(view(replica(), ['proj'])!.tasks.find((t) => t.id === 'trip')!.blockedBy).toEqual(['tool weather']) // rq2 still open
   expect(saved.length).toBeGreaterThan(0)
   // the listener runs what is still open (rq2 explicitly requests weather too)
   const n = await h.runOpenToolRequests({ id: 1, username: 'ada' }, replica().store)
   expect(n).toBe(1)
   expect(calls.at(-1)).toEqual([5, 'weather', 'anything'])
-  expect(view(replica(), ['proj'])!.tasks[0]!.blockedBy).toBeUndefined()
+  expect(view(replica(), ['proj'])!.tasks.find((t) => t.id === 'trip')!.blockedBy).toBeUndefined()
 })
 
 test('a failing call rolls back and leaves the requirement open; the next run calls again, a filled one calls no more', async () => {
@@ -109,12 +109,12 @@ test('a failing call rolls back and leaves the requirement open; the next run ca
   expect((await run(['proj', 'trip'], 'rq')).json.error).toMatch(/offline/)
   const scope = ['proj', 'trip', 'rq']
   expect(evaluationRecord(replica(), scope)?.status).toBe('rolled-back')
-  expect(view(replica(), ['proj', 'trip'])!.tasks[0]!.requirement!.satisfied).toBe(false)
+  expect(view(replica(), ['proj', 'trip'])!.tasks.find((t) => t.id === 'rq')!.requirement!.satisfied).toBe(false)
   deps.callTool = async (server) => { invoked.push(server.id); return 'returned' }
   expect((await run(['proj', 'trip'], 'rq')).json.evaluation.status).toBe('committed')
   expect((await run(['proj', 'trip'], 'rq')).status).toBe(200) // already satisfied: nothing to call
   expect(invoked).toEqual([5, 5])
-  expect(view(replica(), ['proj', 'trip'])!.tasks[0]!.requirement!.satisfied).toBe(true)
+  expect(view(replica(), ['proj', 'trip'])!.tasks.find((t) => t.id === 'rq')!.requirement!.satisfied).toBe(true)
 })
 
 test('unsatisfied dependencies block calls', async () => {

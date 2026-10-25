@@ -1,3 +1,4 @@
+import { createStore } from '../../shared/sync/graph'
 import { createReplica, serializeReplica, type Capability, type Scope } from '../../shared/sync/index'
 import { FosStore } from '../../shared/dag-implementation/store'
 import type { NodeRequest, ProvidedNode } from '../../shared/sync/index'
@@ -113,7 +114,7 @@ export class VirtualPeers {
   register(peer: VirtualPeer): void {
     localStorage.setItem(PREFIX + peer.token + '.connection', JSON.stringify(peer))
     const storage = virtualStorage(peer)
-    storage.saveReplica(serializeReplica(createReplica(peer.id, new FosStore())))
+    storage.saveReplica(serializeReplica(createReplica(peer.id, createStore())))
     storage.savePrefs({ deviceName: peer.name })
     this.host(peer)
   }

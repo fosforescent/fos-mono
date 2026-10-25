@@ -1,6 +1,7 @@
+import { labelRow, textOf } from '@fosforescent/shared/sync/fields'
 import { settingOf } from '@fosforescent/shared/sync/index'
 import { standardHostRef } from '../sync/host-runtime'
-import { sameCapabilityType, primitiveRef, instructionPrimitives, setRefValueAt, acceptSubmission } from '@fosforescent/shared/sync/index'
+import { sameCapabilityType, handlerRef, withInputs, definitionCapability, instructionPrimitives, setRefValueAt, acceptSubmission } from '@fosforescent/shared/sync/index'
 /**
  * MCP peers: an MCP server the account has access to attaches to a node as a member (`mcp:<server id>`),
  * advertises `tool` (and read/edit) there, and runs its tools for "-tool <name> …" requirements under that
@@ -28,7 +29,7 @@ const MCP_TOOL_REF = standardHostRef('mcp:*', 'tool')
 import { editTree, walkRows, type StoreDeps } from './store'
 import type { AccountUser } from '../sync/accountStore'
 import type { HostHandler } from '../sync/host-runtime'
-import type { Native } from '@fosforescent/shared/sync/index'
+import type { PrimitiveFunction } from '@fosforescent/shared/sync/index'
 import { patternInputs } from '@fosforescent/shared/sync/index'
 import { valueOfPattern } from '@fosforescent/shared/sync/structural'
 import { NOTE_TYPE } from '@fosforescent/shared/sync/library-types'
@@ -52,11 +53,11 @@ function handlersAbove(replica: Replica, at: Scope, peerId: string): string[] {
   return discoverHandlers(replica, at).filter(o => o.peerId === peerId && o.enabled && o.capability === 'tool').map(o => o.cid)
 }
 
-/** Create the native handler as a value behind the same ref that can hold a template. */
+/** The tool's handler, a value behind the same ref that can hold a template: the server's tool runner, offered as the tool. */
 function toolHandler(replica: Replica, server: McpServerInfo, tool: string, at: Scope): string {
-  const store = replica.store, type = libAt(store, at).capabilities.tool!
-  return primitiveRef(store, { id: handlerOfferId(`${MCP_PEER_PREFIX}${server.id}`, type, tool), implementation: MCP_TOOL_REF.id,
-    host: `${MCP_PEER_PREFIX}${server.id}`, label: tool, type })
+  // which tool it is fills the capability's `tool` input: the offer is the tool, not every tool
+  const capability = (store: FosStore, scope: Scope) => withInputs(store, definitionCapability(MCP_TOOL_REF, store, scope), { tool })
+  return handlerRef(replica.store, `${MCP_PEER_PREFIX}${server.id}`, { ...MCP_TOOL_REF, label: tool, capability }, at, tool)
 }
 
 /** The server among the account's attached ones that offers `tool`; several is a choice for the owner. */
@@ -67,19 +68,19 @@ async function serverFor(deps: McpPeerDeps, userId: number, tool: string): Promi
   return servers[0]!
 }
 /**
- * The native every attached MCP server's tools run through. A `-tool name input` requirement names the tool as its
+ * The primitive every attached MCP server's tools run through. A `-tool name input` requirement names the tool as its
  * `tool` input and is answered with the result; a call of a tool's own primitive (no hole to fill) runs the tool the
  * primitive names, with its name as the input.
  */
-function toolNative(deps: McpPeerDeps, userId: number): Native {
+function toolPrimitive(deps: McpPeerDeps, userId: number): PrimitiveFunction {
   return async (operands, ctx) => {
     const self = operands.outputs.self
-    const tool = self ? patternInputs(ctx.store, self.pattern).tool : content(ctx.store, operands.left).data.description?.content
+    const tool = self ? patternInputs(ctx.store, self.pattern).tool : textOf(ctx.store, operands.left)
     if (!tool) throw new Error('Name the tool: "-tool name input".')
     const server = await serverFor(deps, userId, tool)
-    const text = await deps.callTool(server, tool, self?.data.description?.content ?? tool)
+    const text = await deps.callTool(server, tool, self?.title ?? tool)
     if (!self) return { outputs: {} as Record<string, string> }
-    return { outputs: { self: valueOfPattern(ctx.store, self.pattern, { description: { content: text.slice(0, 20_000) || '(empty result)' }, peerId: { content: `${MCP_PEER_PREFIX}${server.id}` } }) } }
+    return { outputs: { self: valueOfPattern(ctx.store, self.pattern, { peerId: { content: `${MCP_PEER_PREFIX}${server.id}` } }, [labelRow(ctx.store, text.slice(0, 20_000) || '(empty result)')]) } }
   }
 }
 
@@ -89,7 +90,7 @@ export function mcpToolHandler(deps: McpPeerDeps): HostHandler {
     matches: id => id.startsWith(MCP_PEER_PREFIX),
     handles: step => step.row?.requirement?.capability === 'tool' && step.row.requirement.tool !== 'fos.pull',
     available: async (userId, peerId) => (await deps.servers(userId)).some(s => `${MCP_PEER_PREFIX}${s.id}` === peerId),
-    native: user => toolNative(deps, user.id)
+    run: user => toolPrimitive(deps, user.id)
   }
 }
 
@@ -102,16 +103,16 @@ async function runRequirement(deps: McpPeerDeps, replica: Replica, user: Account
   if (!req.requirement || req.requirement.satisfied || !tool) return { error: 'not an open tool instruction' }
   if (!servers.some(s => s.tools.some(t => t.name === tool))) return { error: 'no attached MCP server offers this tool' }
   try {
-    const native = toolNative(deps, user.id)
+    const run = toolPrimitive(deps, user.id)
     const record = await evaluateNode(scope, {
       get: () => replica,
       save: async next => { replica = next; await deps.saveStore(user, next.store) },
       now: () => deps.now?.() ?? Date.now(),
-      executors: step => JSON.stringify(step.path) === JSON.stringify(scope) ? [{ native }] : [],
+      executors: step => JSON.stringify(step.path) === JSON.stringify(scope) ? [{ run, primitive: MCP_TOOL_REF.id }] : [],
       check: () => []
     })
     const answer = view(replica, at)?.tasks.find(t => t.id === req.id)
-    return record.status === 'committed' ? { replica, text: answer?.requirement?.satisfied ? valueContent(replica.store, resolveScope(replica.store, headCid(replica), scope)!).data.description?.content ?? '' : '' } : { error: record.error ?? 'Tool evaluation needs recovery.' }
+    return record.status === 'committed' ? { replica, text: answer?.requirement?.satisfied ? textOf(replica.store, resolveScope(replica.store, headCid(replica), scope)!) ?? '' : '' } : { error: record.error ?? 'Tool evaluation needs recovery.' }
   } catch (error) { return { error: error instanceof Error ? error.message : String(error) } }
 }
 

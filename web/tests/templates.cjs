@@ -9,7 +9,7 @@ const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'Node', 'Option', 'navigator', 'localStorage', 'sessionStorage', 'location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export {parseRowInput} from './src/rows'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid', 'katex', 'katex/*'] })
 const { App, mountUi, createMemoryStorage, parseRowInput, view, HOME_ID, resolveScope, headCid, requirementOutputs, argumentRefs } = require(path.join(dir, 'app.cjs'))
-const PLAIN_TYPE = 'plain'
+const PLAIN_TYPE = 'title'
 const TEMPLATE_TYPE = 'template'
 const tick = () => new Promise(resolve => setImmediate(resolve))
 async function main() {

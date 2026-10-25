@@ -4,11 +4,10 @@
  */
 import { userView } from './test-helpers'
 import { SERVER_TRANSPORT_CAPABILITIES, readProposals, content, resolveScope, valueContent, identityCid, type Scope } from './graph'
-import { plainEdge } from './patterns'
 import { addMemberAt, addTask, createReplica, headCid, renameTask, view, type Replica } from './replica'
 import { createBranch, setBranchMergeRequest } from './branches'
 import { selectBranch } from './graph'
-import { makeLinkAt, put } from './index'
+import { makeLinkAt, put, isFieldRow, rowTitle } from './index'
 import { acceptSubmission, approvalsOf, attesterKey, missingApprovals, openSubmission, setMergeRule, verifyApproval } from './approvals'
 import { ensureHomeContext } from './replica'
 import { nodeSyncRequest } from './node-sync'
@@ -44,22 +43,22 @@ const context = (r: Replica): NodeSyncContext => ({ peer: r.meta.serverPeerId ??
 test("a peer's branch reaches the owner as its own submission, and main stays as it was", () => {
   const world = setup()
   let bob = drive(world, nodeTreeSync(createReplica('bob'), context(createReplica('bob')), () => 5), authority, 5)
-  expect(userView(bob)!.tasks.map(t => t.title)).toEqual(['first'])
+  expect(userView(bob)!.tasks.map(t => t.title)).toEqual(['project', '', 'first'])
 
   bob = createBranch(bob, ['f'], 'try', 6)
   bob = renameTask(bob, [], 'f', 'first, better', 7)
   bob = drive(world, pullRequest(bob, context(bob), ['f'], 'try', () => 8), authority, 8)
 
   // the owner's main is untouched; the branch is a submission named after it
-  expect(view(world.server, PROJECT)!.tasks.map(t => t.title)).toEqual(['first'])
+  expect(view(world.server, PROJECT)!.tasks.map(t => t.title)).toEqual(['project', '', 'first'])
   const proposals = [...proposalsAt(world.server, PROJECT), ...proposalsAt(world.server, [...PROJECT, 'f'])]
   expect(proposals.map(p => [p.peerId, p.name])).toEqual([['bob', 'try']])
   const proposed = valueContent(world.server.store, proposals[0]!.contentCid)
-  const row = valueContent(world.server.store, identityCid(world.server.store, plainEdge(world.server.store, proposed.children[0]!)))
-  expect(row.data.description?.content).toBe('first, better')
+  const row = proposed.children.find(edge => !isFieldRow(world.server.store, edge))!
+  expect(rowTitle(world.server.store, identityCid(world.server.store, row), null)).toBe('first, better')
 
   // bob's own selection is back where it was; on main, a plain sync proposes nothing of the branch
-  expect(userView(bob)!.tasks[0]!.branches?.selected).toBe('try')
+  expect(userView(bob)!.tasks.find(t => t.id === 'f')!.branches?.selected).toBe('try')
   selectBranch(bob.store, 'f', 'main')
   bob = drive(world, nodeTreeSync(bob, context(bob), () => 9), authority, 9)
   const after = [...proposalsAt(world.server, PROJECT), ...proposalsAt(world.server, [...PROJECT, 'f'])]
@@ -80,7 +79,7 @@ test('a branch marked for merge goes as its pull request with every sync', () =>
   bob = setBranchMergeRequest(bob, ['f'], 'try', true, 8)
   bob = drive(world, nodeTreeSync(bob, context(bob), () => 9), authority, 9)
   expect(proposalsAt(world.server, PROJECT).map(p => p.name)).toEqual(['try'])
-  expect(view(world.server, PROJECT)!.tasks.map(t => t.title)).toEqual(['first'])
+  expect(view(world.server, PROJECT)!.tasks.map(t => t.title)).toEqual(['project', '', 'first'])
 })
 
 test('an owner\'s named submission is a proposal too, never a write to main', () => {
@@ -91,7 +90,7 @@ test('an owner\'s named submission is a proposal too, never a write to main', ()
   laptop = createBranch(laptop, ['proj', 'f'], 'try', 6)
   laptop = renameTask(laptop, ['proj'], 'f', 'owner try', 7)
   laptop = drive(world, pullRequest(laptop, { ...ownerContext, peer: laptop.meta.serverPeerId ?? null }, ['proj', 'f'], 'try', () => 8), owner, 8)
-  expect(view(world.server, PROJECT)!.tasks.map(t => t.title)).toEqual(['first'])
+  expect(view(world.server, PROJECT)!.tasks.map(t => t.title)).toEqual(['project', '', 'first'])
   expect(proposalsAt(world.server, []).map(p => p.name)).toEqual(['try'])
 })
 

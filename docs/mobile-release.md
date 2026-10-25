@@ -1,15 +1,14 @@
 # Mobile Release Guide (iOS + Android)
 
-Cloud builds run on GitHub Actions (`.github/workflows/mobile-android.yml` and
-`.github/workflows/mobile-ios.yml` — one workflow per platform so they can be run
-independently). The Tauri app
-(`desktop/src-tauri/`) wraps the `web/` frontend and ships to:
+The Tauri app (`desktop/src-tauri/`) wraps the `web/` frontend and ships to:
 
 - **iOS**: TestFlight via App Store Connect
 - **Android**: Google Play internal track
 
-Publishing happens automatically on `v*` tag pushes, or via manual `workflow_dispatch`
-(check the `publish` box; unchecked runs build-only and uploads AAB/IPA artifacts).
+Publish by pushing a `v*` tag, or by manual `workflow_dispatch` of
+`.github/workflows/mobile-android.yml` / `mobile-ios.yml` with the `publish` box
+checked (unchecked = build only, AAB/IPA kept as artifacts). Each platform has its
+own workflow so they can be run independently.
 
 ## GitHub secrets and variables
 
@@ -41,18 +40,10 @@ Must be HTTPS — iOS App Transport Security blocks plain HTTP.
 1. developer.apple.com → Identifiers → register bundle ID `com.fosforescent.app`.
 2. App Store Connect → Apps → "+" → New App, bundle ID `com.fosforescent.app`, name "Fosforescent".
 3. App Store Connect → Users and Access → Integrations → App Store Connect API → generate a
-   **Team key** with the **Admin** role. Admin is REQUIRED: Xcode cloud signing fails with
-   "Cloud signing permission error" for App Manager/Developer keys, and per-permission
-   toggles are not available for API keys (only for users). Record Issuer ID + Key ID,
-   download the `.p8` (one-time download).
-4. No certificate or provisioning profile management is needed — the build uses Xcode
-   cloud signing (`-allowProvisioningUpdates` with the API key), which creates and manages
-   the distribution certificate and profile in Apple's cloud automatically. Fallback:
-   explicit signing assets (an Apple Distribution cert issued via the ASC API from a
-   Linux-generated CSR, expires 2027-08-19, plus an `IOS_APP_STORE` profile) exist in the
-   local `.env` as `IOS_CERTIFICATE`/`IOS_CERTIFICATE_PASSWORD`/`IOS_MOBILE_PROVISION`.
-   Using them requires patching the generated Xcode project to manual signing — not
-   currently wired up.
+   **Team key** with the **Admin** role (required for Xcode cloud signing). Record Issuer ID +
+   Key ID, download the `.p8` (one-time download).
+4. Signing should use Xcode cloud signing with the API key, so no certificate or
+   provisioning profile is managed by hand.
 
 ## One-time Google setup
 
@@ -75,29 +66,19 @@ Must be HTTPS — iOS App Transport Security blocks plain HTTP.
    the app with "Release to testing tracks" permission.
 5. Complete Play Console mandatory setup before any rollout (privacy policy URL, data
    safety form, content rating questionnaire).
-6. First upload: despite common advice that the first AAB must go through the Play
-   Console UI, the Publishing API accepted the initial upload fine (edit → upload
-   bundle → internal track → commit). If the API ever rejects a first upload with
-   "package not found", fall back to a manual UI upload of the `android-aab` artifact.
+6. If the Publishing API rejects a first upload with "package not found", upload the
+   `android-aab` artifact manually through the Play Console UI.
 
 ## Release procedure
 
-1. Bump `version` in `desktop/src-tauri/tauri.conf.json` (e.g. `0.0.1` → `0.0.2`), the
-   same version in `desktop/src-tauri/Cargo.toml` and the package.json files, and the
-   build numbers by one: `bundle.android.versionCode` and `bundle.iOS.bundleVersion`
-   (both `1005` for 0.0.1).
-   - The build numbers are set explicitly, not derived from `version`: the app restarted
-     at 0.0.1 after 0.1.4 had been uploaded, and Tauri's defaults
-     (`versionCode = major*1000000 + minor*1000 + patch`, `CFBundleVersion = version`)
-     would have gone back to 1 and `0.0.1`, below the uploaded 1004 and `0.1.4`.
-   - Both Play and TestFlight reject duplicate or lower version codes/build numbers, so
-     every submission needs a bump.
-   - The marketing version (`version`, iOS `CFBundleShortVersionString`, Android
-     `versionName`) restarted at 0.0.1. Play accepts that (only `versionCode` must grow).
-     App Store Connect refuses (ITMS-90062) a marketing version lower than a previously
-     *approved* one; builds that only went to internal TestFlight should not count, but if
-     an upload of 0.0.1 is refused for this, set `version` above 0.1.4 in a
-     `src-tauri/tauri.ios.conf.json` (Tauri merges it for iOS builds only).
+1. Bump `version` in `desktop/src-tauri/tauri.conf.json`, the same version in
+   `desktop/src-tauri/Cargo.toml` and the package.json files, and the build numbers by
+   one: `bundle.android.versionCode` and `bundle.iOS.bundleVersion`.
+   - Build numbers are set explicitly, not derived from `version`, and must grow with
+     every submission: Play and TestFlight reject duplicate or lower ones.
+   - If App Store Connect refuses (ITMS-90062) a marketing version lower than a
+     previously approved one, set a higher `version` in `src-tauri/tauri.ios.conf.json`
+     (merged for iOS builds only).
 2. Commit, then tag and push:
 
    ```bash
@@ -105,55 +86,37 @@ Must be HTTPS — iOS App Transport Security blocks plain HTTP.
    git push origin v0.1.1
    ```
 
-3. The workflow builds both platforms and publishes to Play internal track + TestFlight.
-4. First iOS build: answer the export-compliance (encryption) question in App Store
+3. First iOS build: answer the export-compliance (encryption) question in App Store
    Connect before the TestFlight build becomes available to testers.
-5. Promote to production manually from the Play Console / App Store Connect when ready.
+4. Promote to production manually from the Play Console / App Store Connect when ready.
 
-## Signing details
+## Signing rules
 
-- **Android**: The workflow runs `tauri android init` fresh each build, then
-  `.github/scripts/patch-android-signing.sh` writes `keystore.properties` and patches
-  the generated `build.gradle.kts` with a release `signingConfig`. The script fails
-  loudly if the Tauri CLI template shape changes — an unsigned AAB is never shipped
-  silently.
-- **iOS**: `tauri ios init` runs fresh each build with `APPLE_DEVELOPMENT_TEAM` set
-  job-wide (it is baked into the Xcode project at init time). Signing uses Xcode
-  cloud signing via the Admin ASC API key
-  (`APPLE_API_ISSUER`/`APPLE_API_KEY`/`APPLE_API_KEY_PATH`) — the distribution
-  certificate and profile are cloud-managed by Apple. TestFlight upload uses
-  `xcrun altool` with the same key.
+- An unsigned AAB must never ship silently: the Android signing step must fail loudly if
+  it cannot apply the release signing config.
 
-## Known caveats
+## Before public release
 
-- The 1024px `desktop/src-tauri/app-icon.png` is an upscale of the 512px desktop icon —
-  replace it with real 1024×1024 artwork before public release (`npx tauri icon` in CI
+- Replace `desktop/src-tauri/app-icon.png` with real 1024×1024 artwork (`npx tauri icon`
   regenerates all platform icons from it).
-- `web/src/main.ts` has fallback demo credentials (`user1@fosforescent.com`/`user123`).
-  Review before external distribution; CI intentionally does not set
-  `VITE_API_USERNAME`/`VITE_API_PASSWORD`.
-- The Rust crate builds heavy desktop deps (`webrtc`, `rusqlite`, CLI tooling) for mobile
-  targets. If cross-compilation fails, gate them under
-  `[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]`.
-- `xcrun altool` is deprecated by Apple but still functional; if removed from runner
-  images, switch the upload step to `fastlane pilot`.
+- Review fallback demo credentials in the web app before external distribution; CI must
+  not set `VITE_API_USERNAME`/`VITE_API_PASSWORD`.
+- If cross-compilation of desktop-only Rust dependencies fails for mobile targets, gate them
+  under `[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]`.
+- If `xcrun altool` is removed from runner images, switch the upload step to `fastlane pilot`.
 - Backend CORS must allow Tauri webview origins (`tauri://localhost`,
-  `http://tauri.localhost`) — configured in `backend/index.ts`.
+  `http://tauri.localhost`).
 
 ## Desktop (macOS, Windows, Linux)
 
-`.github/workflows/desktop-release.yml` builds the `fos` binary (GUI + CLI) with
-`tauri-apps/tauri-action` on the same `v*` tag push as the mobile workflows and
-attaches the installers (dmg, msi/nsis exe, deb/rpm/AppImage) plus a bare
+Pushing a `v*` tag runs `.github/workflows/desktop-release.yml`, which should attach the
+`fos` binary's installers (dmg, msi/nsis exe, deb/rpm/AppImage) and a bare
 `fos-<os>.tar.gz`/`.zip` of the executable to the GitHub Release for that tag.
-`workflow_dispatch` builds only and keeps everything as workflow artifacts.
-`DESKTOP_API_URL` (repository variable, falls back to `MOBILE_API_URL`) is baked
-into the web bundle as `VITE_API_URL`.
+`workflow_dispatch` builds only. Set `DESKTOP_API_URL` (repository variable, falls back to
+`MOBILE_API_URL`) to choose the API URL baked into the web bundle.
 
-**Unsigned for now.** macOS: Gatekeeper blocks the first launch; right-click →
-Open, or `xattr -d com.apple.quarantine Fosforescent.app`. Windows: SmartScreen
-shows "unknown publisher". To sign later: macOS needs `APPLE_CERTIFICATE`,
-`APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`,
-`APPLE_PASSWORD`, `APPLE_TEAM_ID` (tauri-action notarizes automatically when
-they are set); Windows needs a code-signing certificate configured under
-`bundle.windows.certificateThumbprint` in `tauri.conf.json`.
+To sign: macOS needs `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`,
+`APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`; Windows needs a
+code-signing certificate configured under `bundle.windows.certificateThumbprint` in
+`tauri.conf.json`. To open an unsigned macOS build: right-click → Open, or
+`xattr -d com.apple.quarantine Fosforescent.app`.

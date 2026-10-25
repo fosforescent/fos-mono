@@ -1,18 +1,21 @@
 /**
  * Proposed writes of one evaluation: pending submissions on the refs it will change, published together at commit.
- * A write addresses a declaration the resolver returned (`ScopedBinding`), never a path a native worked out, and
+ * A write addresses a declaration the resolver returned (`ScopedBinding`), never a path a primitive worked out, and
  * its value must satisfy the declaration's pattern.
  */
+import { primitive } from './primitives'
 import type { FosStore } from '../dag-implementation/store'
 import type { FosNodeContent } from '../types'
-import { bookkeepingOf, commitRoot, content, identityCid, isBookkeepingEdge, isProposalEdge, isRefNode, isRowEdge, proposalContent, put, readProposals, refNodeContent, refValueCid, resolveScope, updateAtScope, valueContent, withPrev, withProposal, type ProposalRecord, type Scope } from './graph'
+import { bookkeepingOf, commitRoot, content, identityCid, isBookkeepingEdge, isProposalEdge, isRefNode, isRowEdge, proposalContent, put, readProposals, refNodeContent, refValueCid, removeProposalByCid, resolveScope, updateAtScope, valueContent, withPrev, withProposal, type ProposalRecord, type Scope } from './graph'
 import { isHandlerStateLeft } from './capabilities'
 import type { FosPathElem } from '../types'
 import { headCid, type Replica } from './replica'
 import { patternIsValuePredicate, refValueCompatible } from './scoped-refs'
 import type { BindingLocation } from './scope-bindings'
 
-const sender = (evaluationId: string) => `transaction:${evaluationId}`
+/** An evaluation's writes are named after it: `<evaluation>:<destination>`, whoever submits them. */
+const writeName = (evaluationId: string, at: Scope) => `${evaluationId}:${JSON.stringify(at)}`
+const ofEvaluation = (proposal: ProposalRecord, evaluationId: string) => !!proposal.name?.startsWith(`${evaluationId}:`)
 
 /**
  * What a write is based on: the ref as accepted, without its proposals and without the handler-state rows inside its
@@ -24,11 +27,14 @@ function writeBase(store: FosStore, node: FosNodeContent): string {
   // a hole the journal alone gave a container to still holds nothing
   const stable = kept && (Object.keys(kept.data).length || kept.children.length) ? put(store, kept) : null
   const { updated: _updated, ...data } = node.data
-  return put(store, { data, children: [...(stable ? [[store.primitive.targetPointerConstructor.getId(), stable] as FosPathElem] : []), ...node.children.filter(edge => edge[0] !== store.primitive.targetPointerConstructor.getId() && !isBookkeepingEdge(store, edge))] })
+  return put(store, { data, children: [...(stable ? [[primitive(store, 'target'), stable] as FosPathElem] : []), ...node.children.filter(edge => edge[0] !== primitive(store, 'target') && !isBookkeepingEdge(store, edge))] })
 }
 
-/** Propose the next value of the declaration `binding`. Nothing reads it as the ref's value until the evaluation commits. */
-export function proposeTransactionWrite(r: Replica, binding: BindingLocation, next: string, evaluationId: string, now: number): Replica {
+/**
+ * `submitter` proposes the next value of the declaration `binding` (a primitive submits its own answers). Nothing reads
+ * it as the ref's value until the evaluation commits.
+ */
+export function proposeTransactionWrite(r: Replica, binding: BindingLocation, next: string, evaluationId: string, now: number, submitter: string): Replica {
   const store = r.store, at = binding.path
   if (binding.store !== store) throw new Error('A transaction writes only declarations of this graph; foreign owners need their own handlers.')
   const cid = resolveScope(store, headCid(r), at)
@@ -39,13 +45,14 @@ export function proposeTransactionWrite(r: Replica, binding: BindingLocation, ne
   // A later step of the same evaluation writes over an earlier step's pending value; the base stays what was accepted.
   const previous = pendingTransactionWrite(store, node, evaluationId)
   const base = previous?.baseCid ?? writeBase(store, node)
-  const proposal = put(store, proposalContent(store, sender(evaluationId), `${evaluationId}:${JSON.stringify(at)}`, next, base, now))
-  commitRoot(store, updateAtScope(store, headCid(r), at, current => withProposal(store, current, sender(evaluationId), proposal), 'node'), now)
+  const name = writeName(evaluationId, at)
+  const proposal = put(store, proposalContent(store, submitter, name, next, base, now))
+  commitRoot(store, updateAtScope(store, headCid(r), at, current => withProposal(store, previous ? withProposal(store, current, previous.peerId, null, name) : current, submitter, proposal, name), 'node'), now)
   return { ...r }
 }
 
 function pendingTransactionWrite(store: FosStore, node: FosNodeContent, evaluationId: string): ProposalRecord | null {
-  return readProposals(store, node).find(proposal => proposal.status === 'open' && proposal.peerId === sender(evaluationId)) ?? null
+  return readProposals(store, node).find(proposal => proposal.status === 'open' && ofEvaluation(proposal, evaluationId)) ?? null
 }
 
 /** The value the ref row at `at` will hold once the evaluation commits, or its current value. */
@@ -55,7 +62,7 @@ export function transactionValue(r: Replica, at: Scope, evaluationId: string): s
   const node = content(r.store, cid)
   const pending = pendingTransactionWrite(r.store, node, evaluationId)
   if (pending) return pending.contentCid
-  const target = node.children.find(([key]) => key === r.store.primitive.targetPointerConstructor.getId())
+  const target = node.children.find(([key]) => key === primitive(r.store, 'target'))
   return target ? target[1] : null
 }
 
@@ -102,7 +109,7 @@ export function commitTransactionWrites(r: Replica, evaluationId: string, now: n
 export function discardTransactionWrites(r: Replica, evaluationId: string, now: number): Replica {
   const store = r.store
   let root = headCid(r), changed = false
-  for (const { path } of transactionWrites(r, evaluationId)) { root = updateAtScope(store, root, path, node => withProposal(store, node, sender(evaluationId), null), 'node'); changed = true }
+  for (const { path, proposal } of transactionWrites(r, evaluationId)) { root = updateAtScope(store, root, path, node => removeProposalByCid(store, node, proposal.cid), 'node'); changed = true }
   if (!changed) return r
   commitRoot(store, root, now)
   return { ...r }

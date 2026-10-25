@@ -3,8 +3,8 @@ import { standardHostRef } from '../sync/host-runtime'
  * Organizing a capture is an effect of this server: the `organize` handler fills an `organize` requirement placed in
  * the target node (shared/sync/organize.ts `requestOrganize`: its text is what the capture is, its `capture` input
  * the captured text). Reached like every other effect, through a `complete` event on the requirement
- * (sync/events.ts → sync/evaluation.ts); there is no route. The handler is a native: it asks the model for a plan
- * (retried once when the answer is not JSON) and answers the request with the plan's rows inside it. Natives see no
+ * (sync/events.ts → sync/evaluation.ts); there is no route. The handler is a run: it asks the model for a plan
+ * (retried once when the answer is not JSON) and answers the request with the plan's rows inside it. Primitives see no
  * tree, so the model gets the capture alone; the target's outline, and the plan as one submission on the target the
  * owner accepts or rejects, await their replacement (current_tasks.md).
  *
@@ -17,7 +17,7 @@ import { withUserLock, type AccountStoreDeps } from '../sync/accountStore'
 import type { HostHandler } from '../sync/host-runtime'
 import { valueOfPattern } from '@fosforescent/shared/sync/structural'
 import { patternInputs, rowTypeAt, newId, organizedRowCount, content } from '@fosforescent/shared/sync/index'
-import { constructForm } from '@fosforescent/shared/sync/forms'
+import { constructTextRow, labelRow } from '@fosforescent/shared/sync/fields'
 import { budgetRefusal, recordSafely, type VoiceDeps, type VoiceUsage } from './voiceNotes'
 
 export type OrganizeInput = { text: string; title: string; outline: OutlineEntry[] }
@@ -41,8 +41,8 @@ export async function organizeCapture(deps: Pick<VoiceDeps, 'complete'>, input: 
 export function organizeHandler(model: () => VoiceDeps, usage?: VoiceUsage): HostHandler {
   return {
     peerId: 'fos', ref: standardHostRef('fos', 'organize'),
-    // the capture is the request's input; the plan's rows are the answer. Natives see no tree, so the outline is the request's own text.
-    native: user => async (operands, ctx) => {
+    // the capture is the request's input; the plan's rows are the answer. Primitives see no tree, so the outline is the request's own text.
+    run: user => async (operands, ctx) => {
       const self = operands.outputs.self
       if (!self) throw new Error('This handler fills an organize requirement.')
       const text = (patternInputs(ctx.store, self.pattern).capture ?? '').trim()
@@ -53,20 +53,17 @@ export function organizeHandler(model: () => VoiceDeps, usage?: VoiceUsage): Hos
       const deps = model(), started = Date.now()
       deps.drain?.()
       let plan: OrganizePlan
-      try { plan = await organizeCapture(deps, { text, title: self.data.description?.content ?? '', outline: [] }) }
+      try { plan = await organizeCapture(deps, { text, title: self.title ?? '', outline: [] }) }
       finally {
         const cost = deps.drain?.() ?? { usd: 0, tokens: 0 }
         if (usage && payer) await recordSafely(usage, payer.id, { usd: cost.usd, tokens: cost.tokens, seconds: (Date.now() - started) / 1000, bytes: text.length, clusters: 0 })
       }
       const rowsAt = (parent: string | null): Array<[string, string]> => plan.items.filter(item => item.parent === parent).map(item => {
         const type = rowTypeAt(ctx.store, item.type, ctx.step), id = newId()
-        const node = content(ctx.store, type).data.form
-          ? constructForm(ctx.store, type, id, { text: item.text }, ctx.now)
-          : { data: { alias: { id }, description: { content: item.text } }, children: [] }
-        return [type, ctx.put({ ...node, children: [...node.children, ...rowsAt(item.ref)] })]
+        return [type, ctx.put(constructTextRow(ctx.store, type, id, item.text, ctx.now, new Map(), rowsAt(item.ref)))]
       })
       const rows = rowsAt(null)
-      return { outputs: { self: valueOfPattern(ctx.store, self.pattern, { description: { content: plan.title || 'Organized' }, peerId: { content: 'fos' } }, rows) } }
+      return { outputs: { self: valueOfPattern(ctx.store, self.pattern, { peerId: { content: 'fos' } }, [labelRow(ctx.store, plan.title || 'Organized'), ...rows]) } }
     }
   }
 }
