@@ -35,7 +35,9 @@ const nodeAt = (r: Replica, path: Scope) => {
 const slots = (r: Replica, cid: string, type: string) => refArguments(r.store, valueContent(r.store, cid), type)
 /** A saved model attempt has a context snapshot, handler binding and return slot. */
 export function isAttempt(r: Replica, cid: string): boolean {
-  return valueContent(r.store, cid).children.some(([left]) => left === libraryNode(r.store, 'capabilities.llm'))
+  // an attempt pins the handler it ran with (the request's own llm slot is a hole until then)
+  const llm = libraryNode(r.store, 'capabilities.llm')
+  return !!llm && slots(r, cid, llm).some(slot => !!slot.targetCid)
     && slots(r, cid, primitive(r.store, 'string')).some(slot => !!slot.targetCid)
     && slots(r, cid, primitive(r.store, 'string')).length > 0
 }
@@ -98,6 +100,8 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
     }
     for (const input of refArguments(store, value, primitive(store, 'string'))) {
       if (settingOf(store, content(store, input.cid))) continue // a device's settings are not inputs
+      // a text input is a named declaration (`{name}`); an unnamed string ref is a plain row, read below
+      if (!content(store, input.cid).data.name) continue
       const resolved = resolveBinding(store, primitive(store, 'string'), input.cid, contextBindings(r, at), undefined, { scope: { replica: r, path: at } })
       if (resolved.status !== 'ready') resolved.problems.forEach(p => blockers.add(p))
       else emit(resolved.cid!, 'Bound input', depth + 1, true)

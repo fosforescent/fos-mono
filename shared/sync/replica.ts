@@ -450,8 +450,12 @@ export function setRowContentAt(replica: Replica, at: Scope, aliasId: string, ty
     const edge = findChildEdge(replica, value, aliasId)
     if (!edge) return value
     const node = valueContent(replica.store, identityCid(replica.store, edge))
-    // a row of a leaf type (a record's number) holds what the text says, as that type
-    if (isLeafType(replica.store, edge[0])) return replaceEdge(replica.store, value, `a:${aliasId}`, withChildValue(replica.store, edge, content(replica.store, leafOfType(replica.store, edge[0], text)), now))
+    // a row of a leaf type that stays one (a plain row's string, a record's number) holds what the text says, as that
+    // type, keeping its rows
+    if (isLeafType(replica.store, edge[0]) && resolveRowType(replica.store, type, at) === edge[0]) {
+      const leaf = content(replica.store, leafOfType(replica.store, edge[0], text))
+      return replaceEdge(replica.store, value, `a:${aliasId}`, withChildValue(replica.store, edge, { ...leaf, children: node.children }, now))
+    }
     const kept = keptRowType(replica.store, edge, type)
     const template = kept ?? resolveRowType(replica.store, type, at)
     const body = text.trim()

@@ -87,7 +87,7 @@ const types: Record<string, string> = {
   // fields and value types, reachable by name
   title, body, author, label, syntax, done, icon, stringAlias, tag, username, displayName, path, markdown,
   amount, unit: unitField, resourceType, start, end, by, at, bank, place, lat, lng, nonce,
-  text: string, number, time: number, boolean, peer
+  string, number, time: number, boolean, peer
 }
 
 /**

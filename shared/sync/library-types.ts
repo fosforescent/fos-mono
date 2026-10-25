@@ -4,8 +4,8 @@
  * compatibility must be checked against graph predicates, not these strings or a reverse library index.
  */
 export const TASK_TYPE = 'task'
-/** The plain row: a row that is its text. Rows of a type this peer does not know render like it. */
-export const PLAIN_TYPE = 'title'
+/** The plain row: a row of the string primitive, whose value is its text. Rows of a type this peer does not know render like it. */
+export const PLAIN_TYPE = 'string'
 /** A note: a title and a Markdown body. */
 /** Rows that are feature specifications (notes a verifier checks after a merge). */
 export const SPECIFICATION_TYPE = 'specification'
@@ -24,7 +24,6 @@ export const DEVICE_ROOT_TYPE = 'deviceRoot'
 /** A library ref's row type: a ref whose value is a library (a library defines it, so a library is told by what it holds). */
 export const LIBRARY_TYPE = 'library'
 export const DOCUMENT_ROOT_TYPE = 'documentRoot'
-export const TEXT_TYPE = 'text'
 /** Text rendered as Markdown (math, diagrams) with `{{name}}` bindings: a note's body. */
 export const MARKDOWN_TYPE = 'markdown'
 export const NUMBER_TYPE = 'number'

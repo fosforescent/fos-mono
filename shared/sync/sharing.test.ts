@@ -7,7 +7,7 @@ import { fieldRefId, rowRecord, textField } from './fields'
 import { markdownTitle, proposeVisitorValues, publish, publication, publishedUrl, writePageBase, unpublish, sharedProjection, SHARED_BODY_LIMIT, VISITOR_SUBMISSION } from './sharing'
 import { HOME_ID, SERVER_MEMBER } from './graph'
 import { membershipPathAt } from './replica'
-import { MARKDOWN_TYPE, PLAIN_TYPE, NOTE_TYPE, TEXT_TYPE } from './library-types'
+import { MARKDOWN_TYPE, PLAIN_TYPE, NOTE_TYPE } from './library-types'
 
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 
@@ -58,7 +58,7 @@ test('empty fields of a published row are inputs of their type; each visitor sub
   const node = sharedProjection(r, ['page'], value => JSON.stringify(value).length.toString())
   expect(node.rows).toEqual([
     { id: 'details', title: 'Your details', depth: 0 },
-    { id: field, title: 'email', depth: 1, type: 'text', body: '' }
+    { id: field, title: 'email', depth: 1, type: PLAIN_TYPE, body: '' }
   ])
   expect(node.inputs).toEqual([{ key: JSON.stringify(['details', field]), path: ['details', field], name: 'email', kind: 'text' }])
   // two visitors (a visit admits each as a member that may run the node): two submissions; a resubmission replaces only its own

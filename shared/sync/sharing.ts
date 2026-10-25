@@ -20,9 +20,9 @@ import { addMemberAt, createReplica, deleteTask, homePath, addRow, proposeRefAt,
 import { FosStore } from '../dag-implementation/store'
 import { isCid } from '../dag-implementation/cid'
 import type { FosPathElem } from '../types'
-import { MARKDOWN_TYPE, NUMBER_TYPE, TEXT_TYPE, VISITOR_SUBMISSION } from './published-types'
+import { MARKDOWN_TYPE, NUMBER_TYPE, PLAIN_TYPE, VISITOR_SUBMISSION } from './published-types'
 export * from './published-types'
-import { PLAIN_TYPE, REF_TYPE, TEMPLATE_TYPE } from './library-types'
+import { REF_TYPE, TEMPLATE_TYPE } from './library-types'
 import { isRowEdge, membershipPath, newId, SERVER_MEMBER, aliasIdOf, identityCid, typeIdOf, libAt, nestScope, commitRoot, content, hasCapability, importNodes, makeLink, memberFor, proposalContent, put, reachableNodes, readMembers, readProposals, resolveScope, isRefNode, refValueCid, rootTargetCid, updateAtScope, valueContent, withProposal, type Capability, type Scope } from './graph'
 
 export type Audience = 'public' | 'users'
@@ -366,7 +366,7 @@ export function sharedProjection(r: Replica, path: Scope, revision: (value: unkn
       for (const field of row.fields ?? []) {
         // a field of the row: a filled one is shown; an open one is asked of the visitor, who submits a candidate value
         const relative = [...childPath.slice(path.length), field.id], label = field.key ?? ''
-        rows.push({ id: field.id, depth: depth + 1, type: typeof field.value === 'number' ? NUMBER_TYPE : TEXT_TYPE, title: label, ...(shown ? { body: String(field.value ?? '').slice(0, 8000) } : {}) })
+        rows.push({ id: field.id, depth: depth + 1, type: typeof field.value === 'number' ? NUMBER_TYPE : PLAIN_TYPE, title: label, ...(shown ? { body: String(field.value ?? '').slice(0, 8000) } : {}) })
         if (field.open && shown) fields.push({ key: JSON.stringify(relative), path: relative, name: label || 'Value', kind: 'text' })
       }
       const definition = edge && store.table.has(edge[0]) ? content(store, edge[0]) : null

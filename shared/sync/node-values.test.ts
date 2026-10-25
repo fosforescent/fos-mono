@@ -25,7 +25,8 @@ import {
   isRowEdge,
   setRowContentAt,
   bindingProperties,
-  PLAIN_TYPE
+  PLAIN_TYPE,
+  NUMBER_TYPE
 } from './index'
 import { constructNodeValue, readGraphValue, nodeValueType } from './node-values'
 import { assertCompiledGraph, compileRefGraph } from './ref-compiler'
@@ -60,7 +61,7 @@ test('records and lists are addressable typed refs with scalar leaves and generi
   const nested = value.children.find(([, cid]) => content(r.store, cid).data.name?.content === 'nested')![1]
   const nestedId = content(r.store, nested).data.alias!.id
   const countId = content(r.store, leaf.locations[0]!.cid).data.alias!.id
-  const edited = setRowContentAt(r, [id, nestedId], countId, PLAIN_TYPE, '9', {}, 2)
+  const edited = setRowContentAt(r, [id, nestedId], countId, NUMBER_TYPE, '9', {}, 2)
   expect(readNodeValue(edited, [], 'settings')).toEqual({ ...input, nested: { count: 9, yes: true } })
 })
 

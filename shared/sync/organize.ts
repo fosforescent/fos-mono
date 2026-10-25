@@ -49,7 +49,7 @@ type Rows = Pick<TaskView, 'id' | 'title' | 'childCount'> & Partial<Pick<TaskVie
 
 /** Rows a capture may be placed into: content the owner edits here, not requirements (they ask for something) or a handler's state rows, a row's own fields (scalar leaves), reference rows standing for other nodes or rows not received yet. A row that is a mutable ref of its own (every row node sync brought to the account is one) is content like any other. */
 export function organizableRow(row: Rows): boolean {
-  return !row.requirement && !row.construction?.evaluation && !row.scalar && !row.refId && !row.refOwner && !row.refPeer && !row.missingTemplate
+  return !row.requirement && !row.construction?.evaluation && !row.refId && !row.refOwner && !row.refPeer && !row.missingTemplate
 }
 
 /** A row's title as one short line (notes project their whole Markdown body). */
@@ -171,7 +171,7 @@ export type OrganizedResult = { rows: number; title: string }
 export function organizedRowCount(replica: Replica, path: Scope): number {
   const pattern = view(replica, path.slice(0, -1))?.tasks.find(row => row.id === path.at(-1))?.typeCid
   const inputs = new Set(pattern ? viewNode(replica.store, pattern).tasks.map(row => row.id) : [])
-  const count = (at: Scope): number => (view(replica, at)?.tasks ?? []).filter(row => !row.scalar)
+  const count = (at: Scope): number => (view(replica, at)?.tasks ?? [])
     .reduce((total, row) => inputs.has(row.id) ? total : total + 1 + count([...at, row.id]), 0)
   return count(path)
 }

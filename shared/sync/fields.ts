@@ -49,6 +49,8 @@ function leafHolder(store: FosStore, cid: string): FosNodeContent | undefined {
  * hole (a tag) takes none.
  */
 export function fieldText(store: FosStore, field: string, leaf: string | number): string {
+  // a leaf type (a plain row's string) is its own value
+  if (isLeafType(store, field)) return put(store, { data: { scalar: typeof leaf === 'number' ? { type: 'number', value: leaf } : { type: 'text', value: leaf } }, children: [] })
   const rows = typeRows(store, field)
   const index = rows.findIndex(([, right]) => isLeafType(store, right))
   if (index < 0) throw new Error('This field holds no value.')
@@ -201,9 +203,9 @@ export function titleField(store: FosStore, type: string): string | null {
   for (const [field] of typeRows(store, type)) if (typeRows(store, field).some(([, right]) => isLeafType(store, right))) return field
   return null
 }
-/** Whether `type` is itself a text field (a plain row's type: its value is the text). */
+/** Whether `type` is itself a text field: the string primitive (a plain row's type: its value is the text), or a field holding a leaf. */
 export function isTextField(store: FosStore, type: string): boolean {
-  return typeRows(store, type).some(([, right]) => isLeafType(store, right))
+  return primitiveName(store, type) === 'string' || typeRows(store, type).some(([, right]) => isLeafType(store, right))
 }
 
 /**

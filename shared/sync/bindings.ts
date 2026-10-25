@@ -60,7 +60,8 @@ export function resolveBinding(store: FosStore, type: string | null, target: str
   const compatible = (_declared: string, wanted: string | null, cid: string): boolean => wanted !== null && matchesGraph(store, wanted, cid)
   const choose = (wanted: string | null, label?: string, excluded?: string, anonymous = false): BindingResolution => {
     const matches = [...new Set(candidates.filter(c => c.cid !== excluded && (!label || c.binding?.nameVisible !== false) &&
-      (label && c.name === label || compatible(c.type, wanted, c.cid) && (!label || anonymous && (!c.name || !!c.refIds)))).map(c => c.cid))]
+      // a declaration inside another ref is reached by its path, never selected by its type
+      (label && c.name === label || compatible(c.type, wanted, c.cid) && (c.binding?.refPath.length ?? 1) <= 1 && (!label || anonymous && (!c.name || !!c.refIds)))).map(c => c.cid))]
     if (!matches.length) return fail('missing', `Missing binding${label ? `: ${label}` : ''}`)
     if (matches.length > 1) {
       matches.forEach(cid => sources.add(cid))

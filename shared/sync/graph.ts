@@ -419,7 +419,7 @@ export function rowTitle(store: FosStore, nodeCid: string, type: string | null):
   if (held) return leafText(store, held) ?? ''
   if (field) return ''
   // a value without field refs (compiled, closed): its text field's row, else its own text
-  const text = value.children.find(([left]) => isTextField(store, left))
+  const text = value.children.find(edge => isTextField(store, edge[0]) && !isRowEdge(store, edge))
   return (text ? leafText(store, text[1]) : null) ?? textOf(store, nodeCid) ?? ''
 }
 /** Whether a row is done: its `done` field holds unit. */
@@ -1521,7 +1521,8 @@ export function rowView(store: FosStore, nodeCid: string, edge?: FosPathElem): T
     const name = author ? fieldViews(store, typeCid, value).find(field => field.field === author)?.value : null
     if (typeof name === 'string' && name) view.author = { id: `user:${name}`, name, time: created }
   }
-  if (value.data.scalar) view.scalar = value.data.scalar.type
+  // a leaf other than text (a record's number) edits as that leaf; text is a plain row's own text
+  if (value.data.scalar && value.data.scalar.type !== 'text') view.scalar = value.data.scalar.type
   if (held) { view.refPeer = identity.data.ref!.peer; view.title = textOf(store, nodeCid) ?? 'Peer-held node' }
   const activeEdge = isBranchChoice(store, identity) ? branchEdge(store, nodeCid) : null
   const constructor = activeEdge ? content(store, identityCid(store, activeEdge)) : identity

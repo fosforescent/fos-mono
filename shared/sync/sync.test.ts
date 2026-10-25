@@ -425,7 +425,6 @@ import { TASK_TYPE, PLAIN_TYPE, NOTE_TYPE, COMMENT_TYPE, QUERY_TYPE, RESOURCE_TY
 import { addAllocation, addBank, addRequirement, argumentSupplier, supplyRequirement } from './arguments'
 import { TASK_DEMAND } from './test-helpers'
 import { REF_TYPE } from './library-types'
-import { TEXT_TYPE } from './library-types'
 
 const ids = (r: Replica, at: string[] = []) => (at.length ? view(r, at) : userView(r))!.tasks.map((t) => t.id)
 
