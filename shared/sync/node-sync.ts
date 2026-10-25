@@ -1,3 +1,4 @@
+import { primitive } from './primitives'
 import { exchangeNodeContext } from './node-context'
 import { pinnedLiteralEdge } from './node-provider'
 import { primitiveValue } from './primitives'
@@ -122,7 +123,7 @@ function installMemberEntry(r: Replica, path: Scope, shape: NodeShape, now: numb
   if (!resolveScope(s, headCid(r), path.slice(0, -1))) throw new NodeAccessError('Node no longer exists.')
   const before = cid && !isPeerReference(content(s, cid)) ? content(s, cid) : { data: {}, children: [] }
   const rows = new Map(before.children.filter(e => exchangedValueEdge(r, e)).map(e => [content(s, identityCid(s, e)).data.alias?.id, e]))
-  const grantTypes = [s.primitive.capabilityNode.getId(), s.primitive.acceptsNode.getId()]
+  const grantTypes = [primitive(s, 'grants'), primitive(s, 'accepts')]
   const children = shape.children.map(child => {
     if (child.pinned) {
       if (!grantTypes.includes(child.template)) return pinnedLiteralEdge(s, child)
@@ -252,7 +253,7 @@ export function acceptSubmissionRows(r: Replica, at: Scope, additions: Array<{ p
 }
 
 function heldHistory(store: Replica['store'], held: FosNodeContent, heldCid: string): FosNodeContent['children'] {
-  const prev = store.primitive.previousVersion.getId(), kept = bookkeepingOf(store, held)
+  const prev = primitive(store, 'previous'), kept = bookkeepingOf(store, held)
   return kept.some(([i]) => i === prev) ? [...kept.filter(([i]) => i !== prev), [prev, heldCid]] : kept
 }
 
@@ -542,7 +543,7 @@ function keepAsHeld(r: Replica, request: NodeRequest, authority: NodeAuthority, 
   const node = content(r.store, cid)
   if (!(isPeerReference(node) && node.data.ref?.peer === request.peerId)) {
     const ref = { id, peer: request.peerId, version: 'unloaded', scope: path }
-    const held = { data: { alias: { id }, ref }, children: [[r.store.primitive.previousVersion.getId(), cid]] as FosNodeContent['children'] }
+    const held = { data: { alias: { id }, ref }, children: [[primitive(r.store, 'previous'), cid]] as FosNodeContent['children'] }
     commitRoot(r.store, updateAtScope(r.store, headCid(r), path, () => held, 'replace'), now)
     r = { ...r }
   }
@@ -592,7 +593,7 @@ function historicalChild(r: Replica, path: Scope): string | null {
     const node = content(r.store, root), target = refValueCid(r.store, node)
     const cid = target && resolveScope(r.store, target, path)
     if (cid) return cid
-    root = node.children.find(e => e[0] === r.store.primitive.previousVersion.getId())?.[1]
+    root = node.children.find(e => e[0] === primitive(r.store, 'previous'))?.[1]
   }
   return null
 }

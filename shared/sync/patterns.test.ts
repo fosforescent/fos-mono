@@ -1,4 +1,5 @@
 /** What types accept (their pattern rows), and the type errors a row in the wrong place makes. */
+import { createStore } from './graph'
 import { upgradeLibrary } from './library'
 import { FosStore } from '../dag-implementation/store'
 import { HOME_ID, LIBRARY_ID, content, constructorPattern, nestScope, put, refNodeContent, refValueCid, resolveScope, rootStoredTarget, rowTypeAt, typeIdOf, valueContent } from './graph'
@@ -11,7 +12,7 @@ import { userView } from './test-helpers'
 const device = () => addTask(ensureHomeContext(createReplica('d'), 1), [HOME_ID], 'Task', 2, 't')
 /** A document root (a project's), nested in a device root for its row types. */
 function documentRoot(): Replica {
-  const host = createReplica('host'), store = new FosStore()
+  const host = createReplica('host'), store = createStore()
   nestScope(store, { store: host.store, root: headCid(host), at: [] })
   return createReplica('doc', store)
 }
@@ -109,7 +110,7 @@ test('a pattern matches a row type, and can pin the versions of it that match', 
 })
 
 test('placement predicates work without any library or constructor names', () => {
-  const store = new FosStore(), patternType = constructorPattern(store, PATTERN_TYPE)
+  const store = createStore(), patternType = constructorPattern(store, PATTERN_TYPE)
   const key = put(store, { data: { scalar: { type: 'text', value: 'unit' } }, children: [] })
   const unit = (value: string) => put(store, { data: { scalar: { type: 'text', value } }, children: [] })
   const predicate = put(store, { data: {}, children: [[key, unit('hour')]] })
@@ -123,7 +124,7 @@ test('placement predicates work without any library or constructor names', () =>
 })
 
 test('malformed placement policies fail instead of becoming unrestricted', () => {
-  const store = new FosStore(), patternType = constructorPattern(store, PATTERN_TYPE)
+  const store = createStore(), patternType = constructorPattern(store, PATTERN_TYPE)
   const child = constructorPattern(store, TASK_TYPE)
   const value = put(store, { data: { alias: { id: 'row' } }, children: [] })
   const parent = (rule: string) => put(store, { data: {}, children: [[patternType, rule]] })
@@ -136,7 +137,7 @@ test('malformed placement policies fail instead of becoming unrestricted', () =>
 })
 
 test('placement matches scalar instructions as definitions, not as scalar values', () => {
-  const store = new FosStore(), policy = constructorPattern(store, PATTERN_TYPE)
+  const store = createStore(), policy = constructorPattern(store, PATTERN_TYPE)
   const numeric = put(store, { data: { form: { primitive: 'number' } }, children: [] })
   const text = put(store, { data: { form: { primitive: 'text' } }, children: [] })
   const numericValue = put(store, { data: { scalar: { type: 'number', value: 3 } }, children: [] })
@@ -148,7 +149,7 @@ test('placement matches scalar instructions as definitions, not as scalar values
 })
 
 test('a bare root (as the seed and registration write it) commits as a document root, its rows accepted', () => {
-  const store = new FosStore(), host = createReplica('host')
+  const store = createStore(), host = createReplica('host')
   nestScope(store, { store: host.store, root: headCid(host), at: [] })
   store.rootNodeId = put(store, { data: { alias: { id: 'ws' }, description: { content: 'workspace' } }, children: [] })
   const r = addTask(createReplica('server', store), [], 'first', 1, 'a')

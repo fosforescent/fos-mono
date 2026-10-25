@@ -1,3 +1,4 @@
+import { primitive } from '../../shared/sync/primitives'
 import { localGitControls, canVerifySpecifications, openSpecificationVerification } from './local-git'
 import { configureWorkflowDialog, requestProjectCoding, workflowStatus } from './project-workflow'
 import { projectWorkflow, workflowAt } from '../../shared/sync/project-workflow'
@@ -831,7 +832,7 @@ function constructorOptions(app: App): ConstructorItem[] {
     { id: 'trigger:public', label: 'Public template endpoint', icon: 'broadcast', output: 'trigger', group: 'triggers' },
     { id: 'trigger:users', label: 'Fos template endpoint', icon: 'user-check', output: 'trigger', group: 'triggers' },
     ...ROW_SEEDS.map(([label, seed, icon]) => ({ id: `seed:${seed}`, label, icon, output: 'row', group: 'device' })),
-    ...app.handlerOffers().filter(o => !content(app.state.replica.store,o.type).data.triggerDefinition).map(o => { const presentation = capabilityPresentation(app.state.replica.store, o.type); return { id: `handler:${o.cid}`, label: o.label, icon: presentation.icon ?? 'handler', description: presentation.description, output: o.type === app.state.replica.store.primitive.templateField.getId() ? 'template' : o.capability ?? o.type, group: offerGroup(o.peerId) } }),
+    ...app.handlerOffers().filter(o => !content(app.state.replica.store,o.type).data.triggerDefinition).map(o => { const presentation = capabilityPresentation(app.state.replica.store, o.type); return { id: `handler:${o.cid}`, label: o.label, icon: presentation.icon ?? 'handler', description: presentation.description, output: o.type === primitive(app.state.replica.store, 'template') ? 'template' : o.capability ?? o.type, group: offerGroup(o.peerId) } }),
     ...(canVerifySpecifications(app,app.constructorContext()) ? [{id:'verify-specifications',label:'Verify specifications',icon:'verify',output:'tool',group:'device'}] : []),
     { id: 'feature-specification', label: 'Feature specification', icon: 'specification', output: 'note', group: 'device' },
     ...CONSTRUCTORS.map(c => ({ ...c, output: c.id === 'integration' ? 'peer' : c.id === 'repository' ? 'repo' : c.id, group: c.id === 'repository' ? github : 'device' })),
@@ -2294,7 +2295,7 @@ function renderRows(node: NodeView, at: Scope, depth: number, state: AppState, a
   const matches = (row: TaskView, path: Scope): boolean => (matchesSearch(row, query) && (insideMatch || patternMatches(app, row, [...state.view, ...path]))) || (path.length < 64 && !!viewAt(state.replica, [...state.view, ...path])?.tasks.some(child => matches(child, [...path, child.id])))
   if (query || capabilityPattern(app).applied.length) node = { ...node, tasks: node.tasks.filter(row => matches(row, [...at, row.id])) }
   const rows: HTMLElement[] = []
-  const argumentsById = new Map((node.tasks.some(row => row.typeCid === state.replica.store.primitive.documentField.getId()) ? app.textArguments(at) : []).map(arg => [arg.id, arg]))
+  const argumentsById = new Map((node.tasks.some(row => row.typeCid === primitive(state.replica.store, 'string')) ? app.textArguments(at) : []).map(arg => [arg.id, arg]))
   // the device root is a settings page: its rows stay rows, shown in groups
   if (state.atRoot && !at.length && !query) {
     const groupOf = (task: TaskView): string => {

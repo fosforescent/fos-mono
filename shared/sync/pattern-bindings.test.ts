@@ -1,3 +1,4 @@
+import { primitive } from './primitives'
 import {
   addRefAt, addRow, addTask, applyProposalAt, choosePatternBindingAt, content, createReplica, findEdge, headCid, identityCid, loadReplica,
   patternBindings, PLAIN_TYPE, put, readProposals, refNodeContent, refValueCid, resolveScope, serializeReplica, solveAt, unify,
@@ -17,7 +18,7 @@ function person(r: Replica, at: string[], id: string, city: string): Replica {
 test('using a pattern with a node submits its values to the pattern refs by position, as options in that scope', () => {
   let r = addTask(createReplica('device'), [], 'Trip', 1, 'trip')
   r = person(r, ['trip'], 'alice', 'Paris')
-  const plain = r.store.primitive.documentField.getId()
+  const plain = primitive(r.store, 'string')
   const hole = put(r.store, refNodeContent(r.store, { alias: { id: 'where' }, name: { content: 'where' } }, null))
   const pattern = put(r.store, { data: {}, children: [[plain, hole]] })
   const used = usePatternAt(r, ['trip'], 'alice', pattern, 'device', 3)
@@ -55,7 +56,7 @@ test('a value that does not fit the ref is not submitted', () => {
 
 test('unify binds placeholders and requires the same placeholder to meet the same value', () => {
   const r = createReplica('device')
-  const text = r.store.primitive.documentField.getId(), key = leaf(r, 'key')
+  const text = primitive(r.store, 'string'), key = leaf(r, 'key')
   const x = put(r.store, refNodeContent(r.store, { alias: { id: 'x' } }, null))
   const twice = put(r.store, { data: {}, children: [[key, x], [text, x]] })
   const same = put(r.store, { data: {}, children: [[key, leaf(r, 'a')], [text, leaf(r, 'a')]] })
@@ -73,7 +74,7 @@ test('solve submits every solution in scope, ancestors included, to the placehol
   r = person(r, ['trip'], 'alice', 'Paris')
   r = person(r, ['trip'], 'bob', 'Rome')
   r = addTask(r, ['trip'], 'Nobody', 1, 'nobody')
-  const plain = r.store.primitive.documentField.getId()
+  const plain = primitive(r.store, 'string')
   r = addTask(r, ['trip'], 'Where can we go?', 3, 'solve')
   r = addRefAt(r, ['trip', 'solve'], 'city', plain, 4, null, 'city')
   const solved = solveAt(r, ['trip', 'solve'], 'device', 5)

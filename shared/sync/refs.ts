@@ -1,4 +1,5 @@
 /** Common ref-property view over existing storage. No new on-disk representation. */
+import { primitive } from './primitives'
 import type { FosStore } from '../dag-implementation/store'
 import { memberPeerOf } from './graph'
 import { advertisedRows, content, identityCid, isMemberEdge, isGrantEdge, isRowEdge, memberEdgesOf, refValueCid, valueContent } from './graph'
@@ -16,7 +17,7 @@ export function refProperties(store: FosStore, cid: string, select: 'all' | 'arg
   if (select === 'all') for (const edge of memberEdgesOf(store, cid)) if (!edges.some(e => e[0] === edge[0] && e[1] === edge[1])) edges.push(edge)
   return edges.flatMap((edge): RefProperty[] => {
     const member = isMemberEdge(store, edge), grant = isGrantEdge(store, edge)
-    if (grant && advertisedRows(store, edge[1]).length) return refProperties(store, edge[1], 'arguments').map(property => ({ ...property, direction: edge[0] === store.primitive.acceptsNode.getId() ? 'from' as const : 'to' as const }))
+    if (grant && advertisedRows(store, edge[1]).length) return refProperties(store, edge[1], 'arguments').map(property => ({ ...property, direction: edge[0] === primitive(store, 'accepts') ? 'from' as const : 'to' as const }))
     const id = member || grant ? edge[1] : identityCid(store, edge), node = content(store, id)
     const argument = isRowEdge(store, edge) && !member
     const type = edge[0]
@@ -25,7 +26,7 @@ export function refProperties(store: FosStore, cid: string, select: 'all' | 'arg
     return [{ id: node.data.alias.id, cid: id, name: node.data.name?.content ?? valueContent(store, id).data.name?.content ?? node.data.alias.id,
       type, value: refValueCid(store, node), member, argument,
       ...(member ? { peer: memberPeerOf(store, edge) } : node.data.peerId?.content || node.data.ref?.peer ? { peer: node.data.peerId?.content ?? node.data.ref!.peer } : {}),
-      ...(grant ? { direction: edge[0] === store.primitive.acceptsNode.getId() ? 'from' as const : 'to' as const } : {}) }]
+      ...(grant ? { direction: edge[0] === primitive(store, 'accepts') ? 'from' as const : 'to' as const } : {}) }]
   })
 }
 

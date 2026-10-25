@@ -1,3 +1,5 @@
+import { createStore } from './graph'
+import { primitive } from './primitives'
 import { valueOfPattern } from './structural'
 import { userView, installTestHandler } from './test-helpers'
 import { setHandlerEnabledAt, discoverHandlers, setMemberCapabilitiesAt, proposeRefAt, applyProposalAt, argumentRefs, renameTask, setRowContentAt, libAt, addMemberAt, addRefAt, addRow, addTask, addSubtasksTemplate, beginTaskWork, content, contextBindings, createReplica, decideTaskResult, headCid, instantiateTemplate, proposeTaskResult, put, refNodeContent, resolveBinding, resolveScope, resolveText, taskWorkContext, view, workAttempts, workHandler, nestScope } from './index'
@@ -8,7 +10,7 @@ import { addRequirement } from './arguments'
 const literal = (r: ReturnType<typeof createReplica>, text: string) => put(r.store, { data: { description: { content: text } }, children: [] })
 
 test('data and handlers use the same recursively resolved arguments; missing dependencies and cycles stay blocked', () => {
-  const r = createReplica(), s = r.store, text = s.primitive.documentField.getId(), callable = put(s, { data: {}, children: [] })
+  const r = createReplica(), s = r.store, text = primitive(s, 'string'), callable = put(s, { data: {}, children: [] })
   const value = literal(r, 'context')
   const arg = put(s, refNodeContent(s, { alias: { id: 'input' }, name: { content: 'mytext' } }, null, []))
   const body = put(s, { data: {}, children: [[text, arg]] })
@@ -22,7 +24,7 @@ test('data and handlers use the same recursively resolved arguments; missing dep
 })
 
 test('explicit bindings stay pinned and multiple providers are a choice', () => {
-  const r = createReplica(), type = r.store.primitive.documentField.getId()
+  const r = createReplica(), type = primitive(r.store, 'string')
   const a = literal(r, 'a'), b = literal(r, 'b'), candidates = [a,b].map(cid => ({ cid, type }))
   expect(resolveBinding(r.store, type, null, candidates).status).toBe('ambiguous')
   expect(resolveBinding(r.store, type, a, candidates).cid).toBe(a)
@@ -30,7 +32,7 @@ test('explicit bindings stay pinned and multiple providers are a choice', () => 
 })
 
 test('following a binding uses its declaration scope, not a caller override', () => {
-  let r = createReplica(), type = r.store.primitive.documentField.getId()
+  let r = createReplica(), type = primitive(r.store, 'string')
   r = addRefAt(r, [], 'outer-value', type, 1, literal(r, 'Outer'), 'value')
   const expression = put(r.store, { data: { refExpression: { up: 0, path: ['value'], lexical: true } }, children: [] })
   r = addRefAt(r, [], 'source', type, 2, expression, 'source')
@@ -43,7 +45,7 @@ test('following a binding uses its declaration scope, not a caller override', ()
 })
 
 test('named text arguments substitute through templates; duplicate assertions report both sources', () => {
-  let r = createReplica(); const type = r.store.primitive.documentField.getId()
+  let r = createReplica(); const type = primitive(r.store, 'string')
   r = addRow(r, [], TEMPLATE_TYPE, 'Letter', 1, { id: 'template' })
   r = addRefAt(r, ['template'], 'arg', type, 2, literal(r, 'Ada'), 'mytext')
   r = addTask(r, [], 'Letter to Ada', 3, 'instance')
@@ -77,13 +79,13 @@ test('text names bind only to declarations: key-value titles and frontmatter are
   let r = addRow(createReplica(), [], NOTE_TYPE, '---\nmytext: default\n---\nHello {{mytext}}', 1, { id: 'note' })
   r = addRow(r, ['note'], PLAIN_TYPE, 'mytext: child', 2, { id: 'child' })
   expect(resolveText(r, ['note'], 'Hello {{mytext}}').bindings[0]!.status).toBe('missing')
-  r = addRefAt(r, ['note'], 'declared', r.store.primitive.documentField.getId(), 3, literal(r, 'declared'), 'mytext')
+  r = addRefAt(r, ['note'], 'declared', primitive(r.store, 'string'), 3, literal(r, 'declared'), 'mytext')
   expect(resolveText(r, ['note'], 'Hello {{mytext}}').text).toBe('Hello declared')
 })
 
 test('a nearer name hides an outer one of another type; an unfilled nearer one is a hole bound from further out', () => {
   let r = addTask(createReplica(), [], 'Child', 1, 'child')
-  const text = r.store.primitive.documentField.getId(), other = put(r.store, { data: { description: { content: 'other type' } }, children: [] })
+  const text = primitive(r.store, 'string'), other = put(r.store, { data: { description: { content: 'other type' } }, children: [] })
   r = addRefAt(r, [], 'outer', text, 2, literal(r, 'Ada'), 'who')
   expect(resolveText(r, ['child'], '{{who}}').text).toBe('Ada')
   r = addRefAt(r, ['child'], 'hole', text, 3, null, 'who')
@@ -94,8 +96,8 @@ test('a nearer name hides an outer one of another type; an unfilled nearer one i
 
 test('nested stores bind names through their enclosing scope, like library and handler lookups', () => {
   let outer = addTask(createReplica(), [], 'Context', 1, 'context')
-  outer = addRefAt(outer, ['context'], 'name', outer.store.primitive.documentField.getId(), 2, literal(outer, 'Ada'), 'who')
-  const inner = createReplica('draft', new FosStore())
+  outer = addRefAt(outer, ['context'], 'name', primitive(outer.store, 'string'), 2, literal(outer, 'Ada'), 'who')
+  const inner = createReplica('draft', createStore())
   nestScope(inner.store, { store: outer.store, root: headCid(outer), at: ['context'] })
   expect(resolveText(inner, [], 'Hello {{who}}').text).toBe('Hello Ada')
 })
@@ -141,10 +143,10 @@ test('editing memberships preserves typed handlers in their original direction',
   const r = createReplica(), store = r.store, type = libAt(store).capabilities.llm!
   const to = put(store, refNodeContent(store, { alias: { id: 'to' } }, literal(r, 'to'), []))
   const from = put(store, refNodeContent(store, { alias: { id: 'from' } }, literal(r, 'from'), []))
-  const member = put(store, { data: { alias: { id: 'peer-entry' } }, children: [[store.primitive.capabilityNode.getId(), advertisement(store, type, to)], [store.primitive.acceptsNode.getId(), advertisement(store, type, from)]] })
+  const member = put(store, { data: { alias: { id: 'peer-entry' } }, children: [[primitive(store, 'grants'), advertisement(store, type, to)], [primitive(store, 'accepts'), advertisement(store, type, from)]] })
   const updated = withMember(store, { data: {}, children: [[peerNode(store, 'peer'), member]] }, 'peer', 'Peer', ['llm'], [], ['llm'])
-  expect(memberHandlers(store, updated, 'peer', store.primitive.capabilityNode.getId())).toEqual([to])
-  expect(memberHandlers(store, updated, 'peer', store.primitive.acceptsNode.getId())).toEqual([from])
+  expect(memberHandlers(store, updated, 'peer', primitive(store, 'grants'))).toEqual([to])
+  expect(memberHandlers(store, updated, 'peer', primitive(store, 'accepts'))).toEqual([from])
 })
 
 
@@ -153,7 +155,7 @@ test('single-brace parameters create stable mutable-ref children through all tex
   const args = () => argumentRefs(r.store, resolveScope(r.store, headCid(r), ['letter'])!)
   expect(args().map(a => a.name)).toEqual(['customer'])
   const original = args()[0]!
-  expect(original.type).toBe(r.store.primitive.documentField.getId())
+  expect(original.type).toBe(primitive(r.store, 'string'))
   expect(resolveText(r, ['letter'], 'Hello {customer}').bindings[0]!.status).toBe('missing')
   r = renameTask(r, [], 'letter', 'Letter {customer} to {recipient}', 2)
   expect(args().map(a => a.name)).toEqual(['customer', 'recipient'])
@@ -165,6 +167,6 @@ test('single-brace parameters create stable mutable-ref children through all tex
   r = setRowContentAt(r, [], 'letter', TEMPLATE_TYPE, 'Only {recipient}', {}, 4)
   expect(args().map(a => a.name)).toEqual(['customer', 'recipient'])
   expect(resolveText(r, ['letter'], 'Hello {customer}').text).toBe('Hello Ada')
-  const bound = addRefAt(createReplica(), [], 'named', r.store.primitive.documentField.getId(), 4, null, 'name')
+  const bound = addRefAt(createReplica(), [], 'named', primitive(r.store, 'string'), 4, null, 'name')
   expect(argumentRefs(bound.store, headCid(bound))[0]!.name).toBe('name')
 })

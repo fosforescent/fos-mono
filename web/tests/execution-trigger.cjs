@@ -12,7 +12,7 @@ async function main() {
   } }] })
   const c = require(path.join(dir, 'test.cjs'))
   let host = c.addRow(c.createReplica('user:host'), [], TEMPLATE_TYPE, 'Research form', 1, { id: 'form' })
-  host = c.addRefAt(host, ['form'], 'answer', host.store.primitive.documentField.getId(), 2, null, 'Research question')
+  host = c.addRefAt(host, ['form'], 'answer', c.primitive(host.store, 'string'), 2, null, 'Research question')
   host = c.addRequirement(host, ['form'], 'Confirm participation', 2, { capability: 'confirmation' }, 'confirm')
   host = c.addRequirement(host, ['form'], 'Choose topic', 2, { capability: 'choice', options: ['Graphs', 'Biology'] }, 'choice')
   // What visitors may use is a grant of the host's shelf, held by a handle row the form refers to. The host's

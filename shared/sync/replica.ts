@@ -1,3 +1,5 @@
+import { createStore } from './graph'
+import { primitive } from './primitives'
 import { sameCapabilityType } from './capabilities'
 import { refValueCompatible } from './scoped-refs'
 import { matchesGraph } from './structural'
@@ -14,7 +16,7 @@ import { nodeBranches, materializedNodePaths, nodeShape, sameNodeShape, nodeSync
  * with a PREV link, so the local history is a proper chain in the graph.
  */
 
-import { FosStore } from '../dag-implementation/store'
+import { storeOf, type FosStore } from '../dag-implementation/store'
 import { UnsupportedDataVersionError, hashContent } from '../dag-implementation/cid'
 import type { FosContextData, FosNodeContent, FosPathElem } from '../types'
 import { constructForm, formFields, formText, formTitle, formValueAt, positionFormRows, setFormTitle, type FormInput } from './forms'
@@ -136,7 +138,7 @@ export type SerializedReplica = { meta: ReplicaMeta; context: FosContextData }
  * root (`nestScope`) and resolve their rows through it.
  */
 export function createReplica(peerId: string = newId(), existing?: FosStore): Replica {
-  const store = existing ?? new FosStore()
+  const store = existing ?? createStore()
   if (!existing) ensureLibraryRow(store)
   return { store, meta: { peerId, scope: [], scopeNames: [], lastSyncAt: null, serverPeerId: null } }
 }
@@ -160,7 +162,7 @@ export function serializeReplica(replica: Replica): SerializedReplica {
  */
 export function loadReplica(input: unknown): Replica {
   // a bare root: whether a loaded replica is a device root is the caller's to say (`ensureDeviceLibrary`)
-  const fresh = createReplica(undefined, new FosStore())
+  const fresh = createReplica(undefined, createStore())
   if (!input || typeof input !== 'object') return fresh
   const raw = input as Partial<SerializedReplica>
   const meta = raw.meta
@@ -171,7 +173,7 @@ export function loadReplica(input: unknown): Replica {
   try {
     const ctx = raw.context
     if (!ctx || typeof ctx !== 'object' || typeof ctx.rootNodeId !== 'string') throw new Error('no context')
-    store = new FosStore({ fosCtxData: { fosData: { nodes: ctx.nodes ?? {}, route: [], rootNodeId: ctx.rootNodeId }, trellisData: fresh.store.trellisData } })
+    store = storeOf(ctx.nodes ?? {}, ctx.rootNodeId)
     rootTargetCid(store) // validates the root alias shape
     normalizeReplicaRefs(store)
     // rows a type does not accept (an older replica, or one written elsewhere) become type errors
@@ -363,7 +365,7 @@ function withTextParameters(store: FosStore, node: FosNodeContent): FosNodeConte
     try { node.data.refExpression = parseRefExpression(text) } catch { /* Ordinary prose. */ }
   }
   const names = [...new Set(textRefExpressions(text).filter(expression => expression.declaration).map(expression => expression.source))]
-  const type = store.primitive.documentField.getId(), children = [...node.children]
+  const type = primitive(store, 'string'), children = [...node.children]
   for (const name of names) {
     if (name === undefined) continue
     if (children.some(edge => { const child = content(store, identityCid(store, edge)); return child.data.name?.content === name && edge[0] === type })) continue
@@ -839,7 +841,7 @@ export function deleteTask(replica: Replica, at: Scope, taskId: string, now: num
   // a membership row is removed as the member it is
   const membership = parent && memberEdgesOf(replica.store, parent).find(e => content(replica.store, e[1]).data.alias?.id === taskId)
   if (membership) return removeMemberAt(replica, at, memberPeerOf(replica.store, membership), now)
-  if (edge && edge[0] === replica.store.primitive.peerField.getId()) return editNode(replica, at, now, node => replaceEdge(replica.store, node, `a:${taskId}`, null))
+  if (edge && edge[0] === primitive(replica.store, 'member')) return editNode(replica, at, now, node => replaceEdge(replica.store, node, `a:${taskId}`, null))
   return edit(replica, at, now, (value) => {
     if (!findChildEdge(replica, value, taskId)) return value
     return replaceEdge(replica.store, value, `a:${taskId}`, null)
@@ -931,7 +933,7 @@ function localMember(replica: Replica, at: Scope, node: FosNodeContent, peerId: 
 
 /** Publish typed offers without requiring registration in the built-in capability vocabulary. */
 export function setHandlerOffersAt(replica: Replica, at: Scope, peerId: string, type: string, handlers: string[], now: number, direction: 'from' | 'to' = 'from'): Replica {
-  const s = replica.store, marker = direction === 'from' ? s.primitive.acceptsNode.getId() : s.primitive.capabilityNode.getId()
+  const s = replica.store, marker = direction === 'from' ? primitive(s, 'accepts') : primitive(s, 'grants')
   if (!s.table.has(type) || handlers.some(cid => !s.table.has(cid) || !matchesGraph(s, type, cid))) throw new Error('Handler value does not match its advertised pattern.')
   return editPolicy(replica, at, now, node => {
     node = localMember(replica, at, node, peerId)

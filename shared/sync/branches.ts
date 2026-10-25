@@ -1,4 +1,5 @@
 /** Editable alternatives use the existing choice pointers and three-way merge. */
+import { primitive } from './primitives'
 import { mergeRequestEdge, branchEdge, readProposal, readProposals, valueContent, commitRoot, content, findAliasEdge, identityCid, isBranchChoice, putBranches, readChoice, resolveScope, selectBranch, updateAtScope, withIdentity, type Scope, type ChoiceOption } from './graph'
 import { headCid, type Replica } from './replica'
 import { mergeNodes } from './merge'
@@ -17,7 +18,7 @@ export function createBranch(r: Replica, at: Scope, name: string, now: number, b
     const active = record ? branchEdge(store, cid)! : found.edge
     const options = record?.options ?? [{ peerId: baseName, edge: found.edge }]
     const choice = putBranches(store, id, base, [...options, { peerId: name, edge: active, base: active }], record?.defaultName ?? baseName)
-    return { ...value, children: value.children.map((edge, i) => i === found.index ? [store.primitive.choiceTarget.getId(), choice] : edge) }
+    return { ...value, children: value.children.map((edge, i) => i === found.index ? [primitive(store, 'choice'), choice] : edge) }
   })
   commitRoot(store, next, now)
   selectBranch(store, id, name)
@@ -33,7 +34,7 @@ export function mergeBranch(r: Replica, at: Scope, source: string, target: strin
   const sourceBase = proposed?.base ?? record.options.find(o => o.peerId === source)?.base ?? record.base
   const merged = mergeNodes(store, sourceBase ? identityCid(store, sourceBase) : null, identityCid(store, to), identityCid(store, from), { ours: target, theirs: source })
   const nextChoice = putBranches(store, record.id, record.base, record.options.map(o => o.peerId === target ? { ...o, edge: withIdentity(store, to, merged.cid), base: from } : o.peerId === source ? { ...o, base: from } : o), record.defaultName)
-  const next = updateAtScope(store, headCid(r), at.slice(0, -1), value => ({ ...value, children: value.children.map(edge => identityCid(store, edge) === cid ? [store.primitive.choiceTarget.getId(), nextChoice] : edge) }))
+  const next = updateAtScope(store, headCid(r), at.slice(0, -1), value => ({ ...value, children: value.children.map(edge => identityCid(store, edge) === cid ? [primitive(store, 'choice'), nextChoice] : edge) }))
   commitRoot(store, next, now)
   selectBranch(store, record.id, target)
   return { ...r }
@@ -64,7 +65,7 @@ export function setBranchMergeRequest(r: Replica, at: Scope, name: string, reque
   if (target !== undefined && (target === name || !record.options.some(o => o.peerId === target))) throw new Error('Choose another branch to merge into.')
   const request = (o: ChoiceOption) => !requested ? undefined : target === undefined && o.requestMerge ? o.requestMerge : mergeRequestEdge(store, `${record.id}:${name}`, target)[1]
   const nextChoice = putBranches(store, record.id, record.base, record.options.map(o => o.peerId === name ? { ...o, requestMerge: request(o) } : o), record.defaultName)
-  const next = updateAtScope(store, headCid(r), at.slice(0, -1), value => ({ ...value, children: value.children.map(edge => identityCid(store, edge) === cid ? [store.primitive.choiceTarget.getId(), nextChoice] : edge) }))
+  const next = updateAtScope(store, headCid(r), at.slice(0, -1), value => ({ ...value, children: value.children.map(edge => identityCid(store, edge) === cid ? [primitive(store, 'choice'), nextChoice] : edge) }))
   commitRoot(store, next, now)
   return { ...r }
 }

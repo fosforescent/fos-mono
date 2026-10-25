@@ -1,4 +1,5 @@
 /** One declaration view for lexical arguments, explicit references, and advertised handlers. */
+import { primitive } from './primitives'
 import type { FosStore } from '../dag-implementation/store'
 import { fieldNode } from '../library-names'
 import {
@@ -103,7 +104,7 @@ export function bindingProperties(location: BindingLocation & { policy?: Readonl
       const id = child.data.alias?.id ?? name ?? childCid
       // A ref's own properties precede the properties of its accepted target.
       if (shadowed.has(id)) continue
-      const field = libraryField ? fieldNode(key => store.table.get(key), edge, store.primitive.targetPointerConstructor.getId(), store.primitive.aliasConstructor.getId()) : null
+      const field = libraryField ? fieldNode(key => store.table.get(key), edge, primitive(store, 'target'), primitive(store, 'alias')) : null
       const target = field?.node ?? childCid, pattern = rowTypeOf(store, edge) ?? edge[0]
       result.bindings.push({ ...declaration({ store, cid: target, path: [...path, id], ...(libraryField ? { libraryField: true as const } : {}) },
         pattern, access, peerId, !libraryField && isRowEdge(store, edge) && declares(store, pattern, childCid), name, location.policy),
@@ -133,7 +134,7 @@ export function bindingLayers(r: Context, at: Scope, access: BindingAccess = {})
   for (const member of members) {
     const layer = layers[member.depth]!
     if (access.canRead && !access.canRead(member.store, member.cid, member.scope)) { layer.blocked = true; continue }
-    for (const edge of content(member.store, member.cid).children) if (edge[0] === member.store.primitive.acceptsNode.getId()) {
+    for (const edge of content(member.store, member.cid).children) if (edge[0] === primitive(member.store, 'accepts')) {
       for (const [pattern, cid] of advertisedRows(member.store, edge[1])) {
         const node = content(member.store, cid), id = node.data.alias?.id
         if (!id) continue

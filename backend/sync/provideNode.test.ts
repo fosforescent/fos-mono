@@ -1,3 +1,4 @@
+import { createStore } from '@fosforescent/shared/sync/graph'
 import { publishedTemplateId } from '@fosforescent/shared/sync/index'
 import { membershipPathAt } from '@fosforescent/shared/sync/index'
 import { asAccountStore } from './deviceRoot'
@@ -37,7 +38,7 @@ function makeDeps(loadDelayMs = 0) {
     async loadStore(username) {
       if (username !== 'alice') return null
       if (loadDelayMs) await new Promise((r) => setTimeout(r, loadDelayMs))
-      const store = stores.get(7) ?? asAccountStore(new FosStore())
+      const store = stores.get(7) ?? asAccountStore(createStore())
       stores.set(7, store)
       return { user: { id: 7, username }, store }
     },
@@ -77,7 +78,7 @@ const homeTitles = (store: FosStore) => view(createReplica('server', store), [HO
 describe('node provider', () => {
   it('refreshes GitHub on an authorized node load, persists the Fos merge and notifies other devices', async () => {
     const { deps, stores, notifications } = makeDeps()
-    let server = bindRepository(addTask(ensureHomeContext(createReplica('user:alice', asAccountStore(new FosStore())), 0), [HOME_ID], 'Project', 1, 'project'), [HOME_ID, 'project'], 'acme/project', 2)
+    let server = bindRepository(addTask(ensureHomeContext(createReplica('user:alice', asAccountStore(createStore())), 0), [HOME_ID], 'Project', 1, 'project'), [HOME_ID, 'project'], 'acme/project', 2)
     server = createBranch(server, [HOME_ID, 'project'], 'feature', 3)
     server = addTask(server, [HOME_ID, 'project'], 'Phone note', 4, 'note')
     selectBranch(server.store, 'project', 'main')
@@ -146,7 +147,7 @@ describe('node provider', () => {
       async loadStore(username) {
         const id = username === 'user2' ? 2 : username === 'user3' ? 3 : null
         if (!id) return null
-        const store = stores.get(username) ?? asAccountStore(new FosStore())
+        const store = stores.get(username) ?? asAccountStore(createStore())
         stores.set(username, store)
         return { user: { id, username }, store }
       },
@@ -162,7 +163,7 @@ describe('node provider', () => {
 
 test('a device opens an existing account in Home without losing its rows', async () => {
   const { deps, stores } = makeDeps()
-  stores.set(7, addTask(createReplica('old-device', asAccountStore(new FosStore())), [], 'Existing project', 1, 'project').store)
+  stores.set(7, addTask(createReplica('old-device', asAccountStore(createStore())), [], 'Existing project', 1, 'project').store)
   const client = await sync(createNodeProvider(deps), ensureHomeContext(createReplica('new-device'), 0), { username: 'alice' }, false)
   // the device's root ships its own library; the account's rows are under Home
   expect(view(client, [])!.tasks.map((row) => row.id)).toEqual([LIBRARY_ID, HOME_ID])
@@ -171,7 +172,7 @@ test('a device opens an existing account in Home without losing its rows', async
 
 test('the server keeps its own root and shares only Home', async () => {
   const { deps, stores } = makeDeps()
-  let server = ensureHomeContext(createReplica('fos', asAccountStore(new FosStore())), 1)
+  let server = ensureHomeContext(createReplica('fos', asAccountStore(createStore())), 1)
   server = addTask(server, [], 'server-only settings', 2, 'server-settings')
   server = writeNodeValue(server, [], 'server-input', 'server value', 3)
   stores.set(7, server.store)
@@ -212,7 +213,7 @@ test('a message one device leaves for another waits in that peer\'s queue on the
   const { deps, stores } = makeDeps()
   deps.runtime = createHostRuntime([relayHandler()])
   // the account knows the desktop's agent peer on the hub
-  let account = ensureHomeContext(createReplica('user:alice', asAccountStore(new FosStore())), 0, deps.runtime.hostOffers())
+  let account = ensureHomeContext(createReplica('user:alice', asAccountStore(createStore())), 0, deps.runtime.hostOffers())
   account = addTask(account, [HOME_ID], 'Hub', 1, 'hub')
   account = addMemberAt(account, [HOME_ID, 'hub'], 'desktop-agent', 'Desktop agent', ['read', 'edit'], 2)
   stores.set(7, account.store)

@@ -1,4 +1,5 @@
 /** Native values at the API boundary; records and sequences are ordinary typed ref rows in the graph. */
+import { primitive } from './primitives'
 import type { FosStore } from '../dag-implementation/store'
 import { hashContent } from '../dag-implementation/cid'
 import type { FosNodeContent, FosPathElem } from '../types'
@@ -118,7 +119,7 @@ export function readGraphValue(store: FosStore, cid: string, depth = 0, active =
         names = new Set<string>()
       for (const [type, child] of node.children) {
         // Literal constraints and links are not mutable record fields.
-        if (type === store.primitive.linkField.getId() || !isRowEdge(store, [type, child])) continue
+        if (type === primitive(store, 'link') || !isRowEdge(store, [type, child])) continue
         const field = content(store, child),
           name = field.data.name?.content ?? valueContent(store, child).data.name?.content
         if (name === undefined) return undefined
@@ -126,12 +127,12 @@ export function readGraphValue(store: FosStore, cid: string, depth = 0, active =
         names.add(name)
         const value = readGraphValue(store, child, depth + 1, active)
         if (value === undefined) return undefined
-        const primitive = content(store, type).data.form?.primitive
+        const leaf = content(store, type).data.form?.primitive
         if (
-          primitive &&
-          (primitive === 'null'
+          leaf &&
+          (leaf === 'null'
             ? value !== null
-            : typeof value !== (primitive === 'number' || primitive === 'time' ? 'number' : primitive === 'boolean' ? 'boolean' : 'string'))
+            : typeof value !== (leaf === 'number' || leaf === 'time' ? 'number' : leaf === 'boolean' ? 'boolean' : 'string'))
         )
           return undefined
         entries.push([name, value, valueContent(store, child).data.position?.value ?? field.data.position?.value ?? Number(name)])

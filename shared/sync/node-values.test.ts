@@ -1,3 +1,4 @@
+import { primitive } from './primitives'
 import {
   addRefAt,
   createReplica,
@@ -93,14 +94,14 @@ test('list ordering follows ordinary row moves, including after reload', () => {
 test('JSON-looking text is not a record; linked records preserve fields and graph links', () => {
   let r = createReplica('device')
   const legacy = put(r.store, { data: { description: { content: '{"count":1}' } }, children: [] })
-  r = addRefAt(r, [], 'settings', r.store.primitive.documentField.getId(), 1, legacy, 'settings')
+  r = addRefAt(r, [], 'settings', primitive(r.store, 'string'), 1, legacy, 'settings')
   expect(readNodeValue(r, [], 'settings')).toBeNull()
   r = writeLinkedNodeValue(r, [], 'settings', { count: 2 }, 2, { source: { id: 'external', owner: 'peer' } })
   expect(readNodeValue(r, [], 'settings')).toEqual({ count: 2 })
   const ref = content(r.store, resolveScope(r.store, headCid(r), ['settings'])!)
   const target = content(r.store, refValueCid(r.store, ref)!)
   expect(target.data.description).toBeUndefined()
-  expect(target.children.some(([type]) => type === r.store.primitive.linkField.getId())).toBe(true)
+  expect(target.children.some(([type]) => type === primitive(r.store, 'link'))).toBe(true)
 })
 
 test('malformed scalar types, cycles and nonfinite numbers are rejected; sparse lists and long field names are valid', () => {

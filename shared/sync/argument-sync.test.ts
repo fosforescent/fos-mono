@@ -1,3 +1,4 @@
+import { primitive } from './primitives'
 import { createReplica, ensureHomeContext, shareHome, addRefAt, HOME_ID, put, refValueCid, content, resolveScope, headCid, argumentRefs, proposeRefAt, applyProposalAt, nodeShape, provideNode, SERVER_TRANSPORT_CAPABILITIES, writeNodeValue, addMemberAt, setNodeLinkMask, readNodeValue, type Replica } from './index'
 import { syncWith } from './test-helpers'
 import { acceptProvidedNode, resolveRefExpression, readGraphValue, bindingProperties } from './index'
@@ -8,7 +9,7 @@ const argument = (r: Replica, id: string) => content(r.store, resolveScope(r.sto
 
 test('immutable graph constraints survive shallow loading and respect the child mask', () => {
   const source = device('source'), s = source.store
-  const key = s.primitive.nameField.getId()
+  const key = primitive(s, 'name')
   const literal = put(s, { data: { scalar: { type: 'text', value: 'literal constraint' } }, children: [] })
   commitRoot(s, updateAtScope(s, headCid(source), [HOME_ID], node => ({ ...node, children: [...node.children, [key, literal]] })), 1)
   const request = { peerId: 'receiver', scope: [HOME_ID], path: [] as string[], linkId: 'literal-load' }
@@ -69,7 +70,7 @@ test('loading a binding on demand preserves its type and name on the receiving n
 test('unbound and bound row arguments retain their identity, names, types and values through account exchange', () => {
   const account = ensureHomeContext(createReplica('user:alice'), 0)
   let a = device('a'), b = device('b')
-  const type = a.store.primitive.documentField.getId()
+  const type = primitive(a.store, 'string')
   a = addRefAt(a, [HOME_ID], 'input', type, 1, null, 'input')
   a = syncWith(a, account, { now: 2 }); b = syncWith(b, account, { now: 3 })
   expect(refValueCid(b.store, argument(b, 'input'))).toBeNull()

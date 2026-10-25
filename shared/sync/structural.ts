@@ -1,4 +1,5 @@
 /** Patterns are graphs. Required rows are products; choices are sums. */
+import { primitive } from './primitives'
 import type { FosStore } from '../dag-implementation/store'
 import type { FosNodeContent, FosPathElem } from '../types'
 import { content, isBookkeepingEdge, isBranchChoice, isChoiceEdge, isHandle, isRefNode, put, readChoice, refValueCid } from './graph'
@@ -10,7 +11,7 @@ export function namedRefPattern(store: FosStore, title: string): string {
   const empty = put(store, { data: {}, children: [] })
   const titleKey = put(store, { data: { description: { content: 'title' } }, children: [] })
   const titleValue = put(store, { data: { scalar: { type: 'text', value: title } }, children: [] })
-  return put(store, { data: {}, children: [[store.primitive.aliasConstructor.getId(), empty], [titleKey, titleValue]] })
+  return put(store, { data: {}, children: [[primitive(store, 'alias'), empty], [titleKey, titleValue]] })
 }
 
 const incidental = new Set(['alias', 'created', 'updated', 'position', 'presentation', 'parameter', 'capabilityDefinition', 'triggerDefinition'])
@@ -21,7 +22,7 @@ function properties(pattern: unknown, value: unknown): boolean {
 }
 
 /** A constructor's name row: a string for people and the library's field index, never part of what a value must be. */
-export function isNameRow(store: FosStore, edge: FosPathElem): boolean { return edge[0] === store.primitive.nameField.getId() }
+export function isNameRow(store: FosStore, edge: FosPathElem): boolean { return edge[0] === primitive(store, 'name') }
 
 /**
  * A tag row `[node, unit]`: a node (a capability) on the left and the empty unit on the right. What a value is tagged
@@ -79,7 +80,7 @@ export function matchesGraph(store: FosStore, pattern: string, value: string, op
   const active = new Set<string>(), memo = new Map<string, boolean>()
   let remaining = 20000
   const rows = (node: FosNodeContent, classified = false) => node.children.filter(edge => !isBookkeepingEdge(store, edge) &&
-    edge[0] !== store.primitive.targetPointerConstructor.getId() && edge[0] !== store.primitive.instructionPointerConstructor.getId() &&
+    edge[0] !== primitive(store, 'target') && edge[0] !== primitive(store, 'instruction') &&
     !(classified && isClassifyingRow(store, edge, node)))
   const alternatives = (edge: FosPathElem): FosPathElem[] => {
     edge = plainEdge(store, edge)
@@ -113,7 +114,7 @@ export function matchesGraph(store: FosStore, pattern: string, value: string, op
         if (patternTarget) return match(patternTarget, actual, false, depth + 1)
         // Partial assignments can retain UUID holes on the right. This is
         // compatibility, not proof of a complete executable input.
-        if (options.allowHoles && v.data.alias && isRefNode(store, v) && rows(v).every(edge => edge[0] === store.primitive.aliasConstructor.getId())) return true
+        if (options.allowHoles && v.data.alias && isRefNode(store, v) && rows(v).every(edge => edge[0] === primitive(store, 'alias'))) return true
       }
       if (isBranchChoice(store, v)) {
         const options = readChoice(store, actual).options
@@ -129,17 +130,17 @@ export function matchesGraph(store: FosStore, pattern: string, value: string, op
         // pattern (one without tags of its own) therefore requires that tag; a refinement carries the tag as a row.
         const bare = p.data.capabilityDefinition && !tagsOf(store, p).length && !p.children.some(edge => store.table.get(edge[0])?.data.parameterDefinition)
         if (bare && expected !== actual && !tagsOf(store, v).includes(expected)) return false
-        if (isRefNode(store, p) && rows(p).every(edge => edge[0] === store.primitive.aliasConstructor.getId())) return true
+        if (isRefNode(store, p) && rows(p).every(edge => edge[0] === primitive(store, 'alias'))) return true
         if (p.data.parameter) return true
         // A template is graph content to instantiate; it imposes no leaf predicate.
-        if (expected === store.primitive.templateField.getId()) return true
+        if (expected === primitive(store, 'template')) return true
         // A node with a `primitive` parameter row holds that native value; its other parameters (negative, …) say
         // which way it goes, not what it is.
-        const primitive = primitiveOf(store, expected)
-        if (primitive) return match(primitive, actual, false, depth + 1)
+        const leafPattern = primitiveOf(store, expected)
+        if (leafPattern) return match(leafPattern, actual, false, depth + 1)
         // Native scalar constructors check the leaf value, never a declared type.
         const scalar = p.data.form?.primitive
-        const text = [store.primitive.documentField.getId(), store.primitive.labelField.getId()].includes(expected)
+        const text = expected === primitive(store, 'string')
         if (scalar || text) {
           const leaf = v.data.scalar ? v.data.scalar.value : v.data.description?.content
           return scalar === 'null' ? leaf === null : typeof leaf === (scalar === 'number' || scalar === 'time' ? 'number' : scalar === 'boolean' ? 'boolean' : 'string')

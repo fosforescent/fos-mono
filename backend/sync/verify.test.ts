@@ -1,3 +1,4 @@
+import { createStore } from '@fosforescent/shared/sync/graph'
 import { readFileSync } from 'node:fs'
 import * as path from 'node:path'
 import type { Request, Response } from 'express'
@@ -19,7 +20,7 @@ const verify = verifyHandler({ findUser: async username => accounts[username] ??
 
 /** An account `alice` on a host with this runtime: its event route (owners' `complete`) and its node provider. */
 function host(runtime = createHostRuntime([verify])) {
-  let store = asAccountStore(new FosStore())
+  let store = asAccountStore(createStore())
   const deps: AccountStoreDeps = {
     async loadStore(username) { return username === 'alice' ? { user: { id: 1, username }, store } : null },
     async saveStore(_user, next) { store = next },

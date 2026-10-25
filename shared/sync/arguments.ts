@@ -11,6 +11,7 @@
  * The handler is the `allocateNative`: it checks conservation over compiled operands and proposes the owner's next
  * value and the issued grants; the evaluator publishes them together when the evaluation commits.
  */
+import { primitive } from './primitives'
 import { view as viewRows, headCid as rootCid } from './replica'
 import { resolveScope as scopeCid, valueContent as valueAt } from './graph'
 import type { FosStore } from '../dag-implementation/store'
@@ -228,7 +229,7 @@ export function grantValue(store: FosStore, pattern: string, contract: string, a
   // a grant is content: nothing the compiler strips (an alias, an edit time) may be part of it, or compiled and stored grants would differ
   const { alias: _alias, updated: _updated, ref: _ref, refExpression: _expression, refRole: _role, ...kept } = data
   return valueOfPattern(store, pattern, { ...kept, allocation, nonce: { value: newId() } },
-    [contractPin(store, contract), ...lineage.map(cid => [store.primitive.previousVersion.getId(), cid] as FosPathElem)], [contract])
+    [contractPin(store, contract), ...lineage.map(cid => [primitive(store, 'previous'), cid] as FosPathElem)], [contract])
 }
 
 /** The grant a value is, or null for any other value. */
@@ -252,7 +253,7 @@ function grantRows(store: FosStore, state: string, ownerPath: Scope): Grant[] {
     const value = content(store, entry.cid)
     return { id: entry.id, cid: entry.cid, contract: entry.contract, allocation: entry.allocation, ownerPath,
       ...(value.data.peerId ? { issuer: value.data.peerId.content } : {}),
-      lineage: value.children.filter(edge => edge[0] === store.primitive.previousVersion.getId()).map(edge => edge[1]) }
+      lineage: value.children.filter(edge => edge[0] === primitive(store, 'previous')).map(edge => edge[1]) }
   })
 }
 

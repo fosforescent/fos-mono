@@ -4,7 +4,7 @@
  * receives. Nothing here is a type annotation: these are ordinary nodes, matched structurally (structural.ts reads the
  * `primitive` row to check leaf values; other parameters such as `negative` say which way a value goes).
  */
-import type { FosStore } from '../dag-implementation/store'
+import { putNode, type FosStore } from '../dag-implementation/store'
 import type { FosDataContent } from '../types'
 
 type ParameterKind = NonNullable<FosDataContent['parameterDefinition']>['kind']
@@ -45,8 +45,8 @@ export function invertPolarity(store: FosStore, node: string, negativeKey: strin
   if (store.table.get(negativeKey)?.data.parameterDefinition?.kind !== 'negative') throw new Error('The negative parameter is unavailable in this scope.')
   const negative = isNegative(store, node)
   const children = definition.children.filter(([left]) => store.table.get(left)?.data.parameterDefinition?.kind !== 'negative')
-  if (!negative) children.push([negativeKey, store.create({ data: {}, children: [] }).getId()])
-  return store.create({ ...definition, children }).getId()
+  if (!negative) children.push([negativeKey, putNode(store, { data: {}, children: [] })])
+  return putNode(store, { ...definition, children })
 }
 
 /**

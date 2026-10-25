@@ -1,3 +1,4 @@
+import { primitive } from './primitives'
 import { declareTestCapability } from './test-helpers'
 import {
   addMemberAt, addRefAt, addRequirement, supplyRequirement, addTask, applyProposalAt, libAt, content, contextBindings, nativeRef, publishNativeRef, primitiveExecutors,
@@ -64,7 +65,7 @@ test('declarations in sibling documents are not ambient capabilities', () => {
 
 test('nearest names shadow for value and type lookup; distinct declarations remain alternatives', () => {
   let r = addTask(createReplica(), [], 'Child', 1, 'child')
-  const text = r.store.primitive.documentField.getId()
+  const text = primitive(r.store, 'string')
   r = addRefAt(r, [], 'outer', text, 2, leaf(r, 'Ada'), 'recipient')
   r = addRefAt(r, ['child'], 'inner', text, 3, leaf(r, 'Grace'), 'recipient')
   expect(resolveText(r, ['child'], 'Hello {recipient}').text).toBe('Hello Grace')
@@ -121,7 +122,7 @@ test('arbitrary extension names do not accidentally invoke Object prototype prop
 
 test('an old nominal annotation cannot satisfy a structural pattern', () => {
   let r = createReplica('device')
-  const old = r.store.primitive.llmCapability.getId(), value = leaf(r, 'model')
+  const old = primitive(r.store, 'llm'), value = leaf(r, 'model')
   r = addRefAt(r, [], 'old-model', old, 1, value)
   expect(resolveBinding(r.store, libAt(r.store).capabilities.llm!, null, contextBindings(r, [])).status).toBe('missing')
 })

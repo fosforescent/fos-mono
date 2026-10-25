@@ -1,3 +1,4 @@
+import { primitive } from './primitives'
 import { addRefAt, addRow, addTask, createReplica, discoverHandlers, put, resourceHandlers, RESOURCE_TYPE, PLAIN_TYPE, setRowContentAt, setRowType } from './index'
 
 test('banks are ordinary handlers and sibling subtrees do not contribute ambient resources', () => {
@@ -15,7 +16,7 @@ test('a nearer binding shadows a same-name bank, including a value of a differen
   r = addRow(r, ['group'], RESOURCE_TYPE, 'Tools', 3, { id: 'inner', resource: { type: 'inventory', unit: 'drill' } })
   expect(resourceHandlers(r, ['group']).map(handler => handler.row.id)).toEqual(['inner'])
   r = addTask(r, ['group'], 'Nested', 4, 'nested')
-  r = addRefAt(r, ['group', 'nested'], 'text', r.store.primitive.documentField.getId(), 5, put(r.store, { data: { description: { content: 'Unavailable here' } }, children: [] }), 'Tools')
+  r = addRefAt(r, ['group', 'nested'], 'text', primitive(r.store, 'string'), 5, put(r.store, { data: { description: { content: 'Unavailable here' } }, children: [] }), 'Tools')
   expect(resourceHandlers(r, ['group', 'nested'])).toEqual([])
 })
 

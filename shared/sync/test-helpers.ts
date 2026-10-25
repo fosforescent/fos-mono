@@ -1,4 +1,5 @@
 /** Test helpers. */
+import { primitive } from './primitives'
 import { supplyValue } from './arguments'
 import type { Native } from './native'
 /** A native that answers the requirement it runs for with a value of its pattern, as `by`. */
@@ -26,7 +27,7 @@ export const TASK_DEMAND: Demand = { capability: 'task', contains: { data: { tod
 export function declareTestCapability(r: Replica, name: string, at: Scope = [], data: import('../types').FosDataContent = {}): Replica {
   const store = r.store, binding = libraryBindingAt(store, at)!, library = content(store, binding.library)
   const group = libAt(store, at).field('capabilities'), namespace = content(store, group)
-  const operation = store.primitive.nameField.getId()
+  const operation = primitive(store, 'name')
   const kind = put(store, { data: { scalar: { type: 'text', value: `capabilities.${name}` } }, children: [] })
   const type = put(store, { data: { capabilityDefinition: { name, label: name }, ...data }, children: [[operation, kind]] })
   const declaration = put(store, refNodeContent(store, { name: { content: name } }, null))

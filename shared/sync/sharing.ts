@@ -5,6 +5,8 @@
  * execute view (`sharedProjection`), and their inputs are stored in typed refs on it. A published template is an
  * endpoint: each visitor who starts it gets a private execution, a node of which only that visitor is a member.
  */
+import { createStore } from './graph'
+import { primitive } from './primitives'
 import { settingOf } from './graph'
 import { nodeLinkMaskAt } from './node-provider'
 import { handleAt } from './arguments'
@@ -162,7 +164,7 @@ export type SharedNode = {
 export function sharedInputs(r: Replica, path: Scope): SharedInput[] {
   const cid = resolveScope(r.store, headCid(r), path)
   if (!cid) return []
-  const text = argumentRefs(r.store, cid).filter(a => a.type === r.store.primitive.documentField.getId() && !refValueCid(r.store, content(r.store, a.cid)) && a.name && !settingOf(r.store, content(r.store, a.cid))).map(a => ({ key: content(r.store, a.cid).data.alias!.id, name: a.name!, kind: 'text' as const }))
+  const text = argumentRefs(r.store, cid).filter(a => a.type === primitive(r.store, 'string') && !refValueCid(r.store, content(r.store, a.cid)) && a.name && !settingOf(r.store, content(r.store, a.cid))).map(a => ({ key: content(r.store, a.cid).data.alias!.id, name: a.name!, kind: 'text' as const }))
   // a choice requirement asks the visitor to choose; an allocation requirement asks for an amount
   const choices = (view(r, path)?.tasks ?? []).flatMap(row => row.requirement?.capability === 'choice' && !row.requirement.satisfied && row.requirement.options?.length ? [{ key: row.id, path: [row.id], name: row.title, kind: 'choice' as const, options: row.requirement.options.slice(0, 100) }] : [])
   const allocations = (view(r, path)?.tasks ?? []).flatMap(row => row.requirement?.capability === 'allocation' ? [{ key: row.id, name: row.title, kind: 'allocation' as const, type: row.requirement.resource ?? 'inventory', unit: row.requirement.unit ?? 'unit', amount: row.requirement.amount, ...(row.requirement.start !== undefined ? { start: row.requirement.start } : {}), ...(row.requirement.end !== undefined ? { end: row.requirement.end } : {}) }] : [])
@@ -211,7 +213,7 @@ export function executionInputs(r: Replica, root: Scope): SharedInput[] {
       if (rows.some(row => row.id === id && row.requirement)) continue
       const relative = [...path.slice(root.length), id]
       if (!refValueCid(r.store, ref)) result.push({ key: JSON.stringify(relative), path: relative, name: arg.name ?? id,
-        kind: arg.type === r.store.primitive.documentField.getId() ? 'text' : 'ref', type: arg.type, role: ref.data.refRole ?? 'input' })
+        kind: arg.type === primitive(r.store, 'string') ? 'text' : 'ref', type: arg.type, role: ref.data.refRole ?? 'input' })
       else {
         // an argument forwarding an allocation (a passed handle) is offered for use like any handle row
         const held = offered([...path, id], id)
@@ -260,7 +262,7 @@ export function proposeVisitorValues(r: Replica, path: Scope, peer: string, valu
   }
   if (!rows.length) return r
   const store = r.store, root = headCid(r), cid = resolveScope(store, root, path)!
-  const base = put(store, valueContent(store, cid)), draftStore = new FosStore()
+  const base = put(store, valueContent(store, cid)), draftStore = createStore()
   importNodes(draftStore, reachableNodes(store, [base]))
   commitRoot(draftStore, base, now)
   nestScope(draftStore, { store, root, at: path })
@@ -436,7 +438,7 @@ export function ensureInviteRequest(r: Replica, owner: string, aliasId: string, 
   }))
   if (pending) return { replica: r, path: hostPath, proposalCid: pending.cid }
   // the proposal's content: the row's current value plus the ref, built in a scratch store rooted at that value
-  const base = put(store, valueContent(store, hostCid)), draftStore = new FosStore()
+  const base = put(store, valueContent(store, hostCid)), draftStore = createStore()
   importNodes(draftStore, reachableNodes(store, [base]))
   commitRoot(draftStore, base, now)
   nestScope(draftStore, { store, root, at: hostPath })

@@ -1,8 +1,10 @@
+import { createStore } from './graph'
+import { primitive } from './primitives'
 import { memberEdgesOf, memberPeerOf, peerNode } from './graph'
 import { userView } from './test-helpers'
 import { unverifiedUser } from './users'
 import { LIBRARY_ID } from './graph'
-import { FosStore } from '../dag-implementation/store'
+import type { FosStore } from '../dag-implementation/store'
 import type { FosPathElem } from '../types'
 import { parseToml, peerPolicyOf, serverPolicyOf, type FosProjectConfig } from './project'
 import {
@@ -85,11 +87,22 @@ function fixtures(store: FosStore) {
   return { task, node, part }
 }
 
+/** The root aliases before the current one, newest first, following each root's `previous` row. */
+function previousRoots(store: FosStore): string[] {
+  const out: string[] = []
+  let at = store.rootNodeId
+  for (;;) {
+    const previous = store.table.get(at)?.children.find(([i]) => i === primitive(store, 'previous'))?.[1]
+    if (!previous || !store.table.get(previous)?.children.length) return out
+    out.push(previous); at = previous
+  }
+}
+
 describe('mergeNodes', () => {
   let store: FosStore
   let f: ReturnType<typeof fixtures>
   beforeEach(() => {
-    store = new FosStore()
+    store = createStore()
     ensureLibraryRow(store)
     f = fixtures(store)
   })
@@ -295,8 +308,8 @@ describe('replica + account end to end', () => {
     phone = addTask(phone, [], 'two', 2)
     phone = world.sync(phone)
     const root = content(world.server.store, world.server.store.rootNodeId)
-    expect(root.children.find(([i]) => i === world.server.store.primitive.previousVersion.getId())).toBeDefined()
-    expect(world.server.store.getPrevList(world.server.store.rootNodeId).length).toBeGreaterThanOrEqual(2)
+    expect(root.children.find(([i]) => i === primitive(world.server.store, 'previous'))).toBeDefined()
+    expect(previousRoots(world.server.store).length).toBeGreaterThanOrEqual(2)
   })
 
   it('a field changed on both devices is refused on the second device, which keeps its change', () => {
@@ -388,7 +401,7 @@ describe('replica + account end to end', () => {
     const all = r.store.table.size
     const kept = Object.keys(serializeReplica(r).context.nodes).length
     expect(kept).toBeLessThanOrEqual(all)
-    expect(loadReplica(JSON.parse(JSON.stringify(serializeReplica(r)))).store.getPrevList(r.store.rootNodeId).length).toBeGreaterThanOrEqual(20)
+    expect(previousRoots(loadReplica(JSON.parse(JSON.stringify(serializeReplica(r)))).store).length).toBeGreaterThanOrEqual(20)
   })
 })
 
@@ -536,8 +549,8 @@ describe('link nodes: history, members and proposals', () => {
     const reviewer = nodeContent(store, memberships.find((e) => memberPeerOf(store, e) === 'reviewer')![1])
     expect(reviewer.data).not.toHaveProperty('actor')
     expect(reviewer.children).toEqual([
-      [store.primitive.capabilityNode.getId(), libAt(store).capabilities.read!],
-      [store.primitive.capabilityNode.getId(), libAt(store).capabilities.edit!]
+      [primitive(store, 'grants'), libAt(store).capabilities.read!],
+      [primitive(store, 'grants'), libAt(store).capabilities.edit!]
     ])
     // deciding proposals is how edit is exercised on a node with several peers: no grant of its own
     expect(hasCapability(store, linkValue, 'reviewer', 'edit')).toBe(true)
@@ -724,9 +737,9 @@ describe('mutable references: root, link rows and reference rows are one node sh
     const legacy = put(store, {
       data: { ...inline.data, link: { createdAt: 0 } },
       children: [...inline.children,
-        [peerNode(store, 'guest'), put(store, { data: { alias: { id: 'guest-entry' } }, children: [[store.primitive.capabilityNode.getId(), store.primitive.proposeAction.getId()]] })],
-        [store.primitive.peerField.getId(), put(store, { data: { peerId: { content: 'guest' } }, children: [] })],
-        [store.primitive.previousVersion.getId(), olderVersion]]
+        [peerNode(store, 'guest'), put(store, { data: { alias: { id: 'guest-entry' } }, children: [[primitive(store, 'grants'), primitive(store, 'propose')]] })],
+        [primitive(store, 'member'), put(store, { data: { peerId: { content: 'guest' } }, children: [] })],
+        [primitive(store, 'previous'), olderVersion]]
     })
     const rootValue = content(store, headCid(r))
     const edge = rootValue.children.find((e) => edgeKey(store, e) === 'a:sh')!

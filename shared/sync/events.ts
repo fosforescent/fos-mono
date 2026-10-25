@@ -27,6 +27,7 @@
  *
  * Capabilities as session types over this grammar come later; for now events are independent requests.
  */
+import { createStore } from './graph'
 import { FosStore } from '../dag-implementation/store'
 import { NOTE_TYPE, PLAIN_TYPE, TASK_TYPE, TEMPLATE_TYPE } from './library-types'
 import type { FosPathElem } from '../types'
@@ -204,7 +205,7 @@ function descend(store: FosStore, cid: string, path: Scope): string {
   }
   return cid
 }
-const bookkeeping = new Set(['alias', 'ref', 'versionControl', 'disabledCapabilities', 'peerId'])
+const bookkeeping = new Set(['alias', 'ref', 'disabledCapabilities', 'peerId'])
 
 /**
  * Apply one event to a replica on behalf of `principal`. Pure over the replica: the host wraps it in its own lock,
@@ -415,7 +416,7 @@ function dispatch(r: Replica, event: FosEvent, principal: Principal, now: number
       const request = newId()
       const identity = content(store, selectedIdentity(store, attached!))
       if (readProposals(store, identity).some(p => p.peerId === principal.peerId && p.status === 'open' && submittedRequest(store, p.contentCid, path))) throw new EventError('This evaluation is already requested.')
-      const base = put(store, valueContent(store, attached!)), draftStore = new FosStore()
+      const base = put(store, valueContent(store, attached!)), draftStore = createStore()
       importNodes(draftStore, reachableNodes(store, [base]))
       commitRoot(draftStore, base, now)
       nestScope(draftStore, { store, root, at: canonical })
@@ -526,7 +527,7 @@ function dispatch(r: Replica, event: FosEvent, principal: Principal, now: number
     const proposalName = event.name ? textOf(event.name, 100) : `${principal.name ?? principal.peerId} ${new Date(now).toISOString()}`
     const identity = content(store, selectedIdentity(store, attached!))
     if (readProposals(store, identity).some(p => p.peerId === principal.peerId && p.name === proposalName)) throw new EventError('That proposal name already exists. Review it or choose a new name.')
-    const base = put(store, valueContent(store, attached!)), draftStore = new FosStore()
+    const base = put(store, valueContent(store, attached!)), draftStore = createStore()
     importNodes(draftStore, reachableNodes(store, [base]))
     commitRoot(draftStore, base, now)
     nestScope(draftStore, { store, root, at: canonical })

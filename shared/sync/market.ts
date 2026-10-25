@@ -8,6 +8,7 @@
  * the verified nodes; the market appends them (`applyBid`) to a branch of the node and records that as the bidder's
  * proposal. Nothing here knows what kinds of rows a bid holds.
  */
+import { createStore } from './graph'
 import { FosStore } from '../dag-implementation/store'
 import type { FosNodesData, FosPathElem } from '../types'
 import {
@@ -44,7 +45,7 @@ export type MarketBid = { nodes: FosNodesData; rows: Array<{ under: Scope; edge:
  * from there); `under(id)` says where each top-level row goes in the receiving node.
  */
 export function draftBid(r: Replica, at: Scope, now: number, build: (draft: Replica) => Replica, under: (id: string) => Scope = () => []): MarketBid {
-  const store = new FosStore()
+  const store = createStore()
   commitRoot(store, put(store, { data: {}, children: [] }), now)
   nestScope(store, { store: r.store, root: headCid(r), at })
   const draft = build(createReplica(r.meta.peerId, store))

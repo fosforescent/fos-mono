@@ -1,3 +1,4 @@
+import { primitive } from './primitives'
 import { declareTestCapability } from './test-helpers'
 import {
   addRefAt, addTask, applyProposalAt, libAt, compileRefGraph, compileRow, content, createReplica,
@@ -15,7 +16,7 @@ test('dot and application syntax agree, and ascent is counted before property lo
   expect(parseRefExpression('....ref1.ref2')).toEqual({ up: 3, path: ['ref1', 'ref2'], lexical: false })
   expect(parseRefExpression('(ref2 (ref1 (.. (.. .))))')).toEqual(parseRefExpression('...ref1.ref2'))
   expect(() => parseRefExpression('(ref1 .) trailing')).toThrow()
-  let r = createReplica(), type = r.store.primitive.documentField.getId()
+  let r = createReplica(), type = primitive(r.store, 'string')
   const name = put(r.store, refNodeContent(r.store, { alias: { id: 'name-id' }, name: { content: 'name' } }, text(r, 'Ada'), []))
   r = addRefAt(r, [], 'profile-id', text(r, 'profile type'), 1, put(r.store, { data: {}, children: [[type, name]] }), 'profile')
   r = addTask(r, [], 'Child', 2, 'child')
@@ -26,7 +27,7 @@ test('dot and application syntax agree, and ascent is counted before property lo
 })
 
 test('row shorthand constructs expression refs without flattening property names into inputs', () => {
-  let r = createReplica(), type = r.store.primitive.documentField.getId()
+  let r = createReplica(), type = primitive(r.store, 'string')
   r = addRefAt(r, [], 'name', type, 1, text(r, 'Ada'), 'name')
   r = addTask(r, [], 'Hello {..name}', 2, 'hello')
   const parameters = content(r.store, at(r, ['hello'])).children.map(edge => content(r.store, edge[1]))
@@ -39,7 +40,7 @@ test('row shorthand constructs expression refs without flattening property names
 
 test('UUID links use enclosing declarations and cannot search sibling subtrees', () => {
   let r = addTask(createReplica(), [], 'Folder', 1, 'folder')
-  const id = '550e8400-e29b-41d4-a716-446655440000', type = r.store.primitive.documentField.getId()
+  const id = '550e8400-e29b-41d4-a716-446655440000', type = primitive(r.store, 'string')
   r = addRefAt(r, ['folder'], id, type, 2, text(r, 'Nested value'), 'value')
   const link = put(r.store, { data: { ref: { id } }, children: [] })
   expect(resolveRefIdentity(r, [], id).status).toBe('missing')
@@ -52,7 +53,7 @@ test('UUID links use enclosing declarations and cannot search sibling subtrees',
 })
 
 test('compilation produces a stable partial CID and retains editor locations only in diagnostics', () => {
-  let r = createReplica(), type = r.store.primitive.documentField.getId()
+  let r = createReplica(), type = primitive(r.store, 'string')
   r = addRefAt(r, [], '550e8400-e29b-41d4-a716-446655440000', type, 1, null, 'input')
   const partial = compileRefGraph(r, at(r, ['550e8400-e29b-41d4-a716-446655440000']))
   expect(partial.holes).toEqual(expect.arrayContaining([expect.objectContaining({ id: '550e8400-e29b-41d4-a716-446655440000', reason: 'unbound' })]))
@@ -74,7 +75,7 @@ test('compilation produces a stable partial CID and retains editor locations onl
 
 test('compiled dependencies and holes do not depend on editor UUIDs; edits require recompilation', () => {
   const build = (id: string) => {
-    let r = createReplica(), type = r.store.primitive.documentField.getId()
+    let r = createReplica(), type = primitive(r.store, 'string')
     r = addRefAt(r, [], id, type, 1, text(r, 'Before'), 'source')
     const link = put(r.store, { data: { alias: { id: `${id}-use` }, ref: { id } }, children: [] })
     const compiled = compileRefGraph(r, link, ['consumer'])
@@ -93,7 +94,7 @@ test('compiled dependencies and holes do not depend on editor UUIDs; edits requi
 
 test('constructor calls compile references and explicit overrides while keeping output locations out of the graph', () => {
   let r = addTask(createReplica(), [], 'Fetch', 1, 'call')
-  const constructor = libAt(r.store).capabilities.fetch!, type = r.store.primitive.documentField.getId()
+  const constructor = libAt(r.store).capabilities.fetch!, type = primitive(r.store, 'string')
   r = addRefAt(r, [], '550e8400-e29b-41d4-a716-446655440000', type, 2, text(r, 'https://example.com'), 'endpoint')
   r = constructAt(r, ['call'], constructor, { method: 'POST' }, 3)
   const url = openRefs(r.store, constructor).find(ref => ref.name === 'url')!
@@ -112,7 +113,7 @@ test('constructor calls compile references and explicit overrides while keeping 
 })
 
 test('nested product holes are execute inputs and may be filled without replacing sibling properties', async () => {
-  let r = addTask(createReplica(), [], 'Work', 1, 'work'), type = r.store.primitive.documentField.getId()
+  let r = addTask(createReplica(), [], 'Work', 1, 'work'), type = primitive(r.store, 'string')
   const answer = put(r.store, refNodeContent(r.store, { alias: { id: 'answer' }, name: { content: 'Answer' }, refRole: 'output' }, null, []))
   const sibling = put(r.store, refNodeContent(r.store, { alias: { id: 'sibling' }, name: { content: 'Sibling' } }, text(r, 'Keep'), []))
   r = addRefAt(r, ['work'], 'record', put(r.store, { data: {}, children: [] }), 2, put(r.store, { data: {}, children: [[type, answer], [type, sibling]] }), 'record')
@@ -128,7 +129,7 @@ test('nested product holes are execute inputs and may be filled without replacin
 })
 
 test('a nested output may remain open during execution', async () => {
-  let r = addTask(createReplica(), [], 'Work', 1, 'work'), type = r.store.primitive.documentField.getId()
+  let r = addTask(createReplica(), [], 'Work', 1, 'work'), type = primitive(r.store, 'string')
   const output = put(r.store, refNodeContent(r.store, { alias: { id: 'result' }, name: { content: 'Result' }, refRole: 'output' }, null, []))
   r = addRefAt(r, ['work'], 'record', put(r.store, { data: {}, children: [] }), 2, put(r.store, { data: {}, children: [[type, output]] }), 'record')
   const completed = await evaluateNode(['work'], { get: () => r, save: next => { r = next }, now: () => 3, executors: () => [], check: () => [] })
@@ -137,7 +138,7 @@ test('a nested output may remain open during execution', async () => {
 })
 
 test('cached but forbidden values stay holes and are absent from compiled content', () => {
-  let r = createReplica(), type = r.store.primitive.documentField.getId(), secret = text(r, 'private body')
+  let r = createReplica(), type = primitive(r.store, 'string'), secret = text(r, 'private body')
   r = addRefAt(r, [], 'secret', type, 1, secret, 'secret')
   const compiled = compileRefGraph(r, at(r, ['secret']), ['secret'], { canRead: (_store, cid) => cid !== secret })
   expect(compiled.complete).toBe(false)
@@ -166,7 +167,7 @@ test('branches form sums, rows form products, and capability and handler assignm
 })
 
 test('Run requires a closed left side while the right can retain output holes', () => {
-  let r = addTask(createReplica(), [], 'Run', 1, 'run'), type = r.store.primitive.documentField.getId()
+  let r = addTask(createReplica(), [], 'Run', 1, 'run'), type = primitive(r.store, 'string')
   const missing = put(r.store, refNodeContent(r.store, { alias: { id: 'instruction-input' }, name: { content: 'source' } }, null, []))
   const instruction = put(r.store, { data: {}, children: [[type, missing]] })
   commitRoot(r.store, updateAtScope(r.store, headCid(r), [], node => ({ ...node, children: node.children.map(edge => content(r.store, edge[1]).data.alias?.id === 'run' ? [instruction, edge[1]] : edge) })), 2)

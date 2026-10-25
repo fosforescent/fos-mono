@@ -1,3 +1,4 @@
+import { createStore } from './sync/graph'
 import * as sourceJson from '../.fos/library.json'
 import * as generated from './sync/library.generated.json'
 import { compileLibrary, type LibrarySource } from './library-compiler'
@@ -29,7 +30,7 @@ test('a data-only definition edit changes constructed fields and UI projections'
   const rootNodeId = rewrite(source.rootNodeId)
   const compiled = compileLibrary({ ...source, rootNodeId, nodes })
   // a device whose library ref holds the edited library: its comment is the edited node
-  let r = ensureDeviceLibrary(createReplica('new', new FosStore()), { version: compiled.version, root: compiled.rootNodeId, nodes: compiled.nodes }, 1)
+  let r = ensureDeviceLibrary(createReplica('new', createStore()), { version: compiled.version, root: compiled.rootNodeId, nodes: compiled.nodes }, 1)
   const definition = compiled.refs['comment']!
   expect(rowTypeAt(r.store, COMMENT_TYPE)).toBe(definition)
   r = addConstructedRow(r, [], definition, { text: 'From data', texts: ['One'] }, 1, 'message')

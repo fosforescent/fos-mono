@@ -1,3 +1,4 @@
+import { primitive } from './primitives'
 import { createReplica, put, namedRefPattern, matchesGraph, putBranches, refNodeContent, addRefAt, proposeRefAt, applyProposalAt, resolveScope, headCid, content, compileRow, compileRefGraph, refValueCompatible, addRow, instantiateTemplateValue, templateValuePattern, addRequirement } from './index'
 
 const setup = () => {
@@ -16,7 +17,7 @@ test('a named ref on the left and an empty right match an actual property, not a
   expect(matchesGraph(s, pattern, product([key('complete'), text('anything')]))).toBe(true)
   expect(matchesGraph(s, pattern, product([key('other'), text('anything')]))).toBe(false)
   expect(matchesGraph(s, pattern, empty)).toBe(false)
-  const impostor = put(s, { data: {}, children: [[s.primitive.instructionPointerConstructor.getId(), pattern]] })
+  const impostor = put(s, { data: {}, children: [[primitive(s, 'instruction'), pattern]] })
   expect(matchesGraph(s, pattern, impostor)).toBe(false)
 })
 
@@ -24,7 +25,7 @@ test('row choices are sums, required rows are products, and matching recurses on
   const { s, empty, key, text, product, sum } = setup()
   const a = product([key('a'), empty]), b = product([key('b'), empty]), c = product([key('c'), text('yes')])
   const alternatives = putBranches(s, 'row-choice', null, [{ peerId: 'a', edge: [key('a'), empty] }, { peerId: 'b', edge: [key('b'), empty] }])
-  const pattern = product([s.primitive.choiceTarget.getId(), alternatives], [key('c'), text('yes')])
+  const pattern = product([primitive(s, 'choice'), alternatives], [key('c'), text('yes')])
   expect(matchesGraph(s, pattern, product([key('a'), empty], [key('c'), text('yes')]))).toBe(true)
   expect(matchesGraph(s, pattern, product([key('b'), empty], [key('c'), text('yes')]))).toBe(true)
   expect(matchesGraph(s, pattern, a)).toBe(false)
@@ -70,7 +71,7 @@ test('submissions validate the enclosing row and refs carry no independent type'
   const pattern = product([key('complete'), empty])
   let replica = addRefAt(r, [], 'result', pattern, 1)
   const ref = content(s, resolveScope(s, headCid(replica), ['result'])!)
-  expect(ref.children.some(([left]) => left === s.primitive.instructionPointerConstructor.getId())).toBe(false)
+  expect(ref.children.some(([left]) => left === primitive(s, 'instruction'))).toBe(false)
   const bad = proposeRefAt(replica, ['result'], product([key('other'), text('no')]), 'owner', 2)
   expect(() => applyProposalAt(bad.replica, ['result'], bad.proposalCid, 'owner', 3)).toThrow(/incompatible/)
   const good = proposeRefAt(replica, ['result'], product([key('complete'), text('yes')]), 'owner', 4)

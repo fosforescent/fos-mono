@@ -1,40 +1,63 @@
 import { matchesGraph, tag } from './structural'
-/** Host-language implementations are opaque execute-only values, constructed as graph refs. */
-import type { FosStore } from '../dag-implementation/store'
-import { content, put, refNodeContent, isRefNode, resolveScope } from './graph'
-import { libAt, sameCapabilityType } from './capabilities'
-import { addRow, headCid, type Replica } from './replica'
+import { putNode, type FosStore } from '../dag-implementation/store'
+import { content, put, refNodeContent, isRefNode } from './graph'
+import { addRow, type Replica } from './replica'
 import type { EvaluationStep } from './evaluation'
 import { refSubmissions } from './scoped-refs'
 
-export type Primitive = { implementation: string; host: string; access: 'execute' }
-
-export function primitiveConstructor(store: FosStore): string {
-  return put(store, { data: { name: { content: 'fos:constructor:primitive' }, description: { content: 'Host primitive' } }, children: [] })
+/**
+ * Primitives are the only nodes host code reads: `{ ["primitive", "<name>"] }`, a row whose left is the string
+ * "primitive" and whose right names what host code means by it. Everything else is matched structurally in the graph.
+ */
+const text = (store: FosStore, value: string) => putNode(store, { data: { scalar: { type: 'text', value } }, children: [] })
+const cached = new WeakMap<FosStore, Map<string, string>>()
+export function primitive(store: FosStore, name: string): string {
+  let names = cached.get(store)
+  if (!names) cached.set(store, names = new Map())
+  const known = names.get(name)
+  if (known && store.table.has(known)) return known
+  const cid = putNode(store, { data: {}, children: [[text(store, 'primitive'), text(store, name)]] })
+  names.set(name, cid)
+  return cid
+}
+/** The name of a primitive node, or null when the node is not one. */
+export function primitiveName(store: FosStore, cid: string): string | null {
+  const node = store.table.get(cid)
+  if (!node || node.children.length !== 1 || Object.keys(node.data).length) return null
+  const [left, right] = node.children[0]!
+  const marker = store.table.get(left)?.data.scalar, name = store.table.get(right)?.data.scalar
+  return marker?.value === 'primitive' && name?.type === 'text' && typeof name.value === 'string' ? name.value : null
 }
 
-/** The constructor carries an implementation identity, never executable source or host credentials. */
-export function primitiveRef(store: FosStore, input: { id: string; implementation?: string; type: string; host: string; label?: string; native?: unknown }): string {
-  const primitive = put(store, { data: { primitive: { implementation: input.implementation ?? input.id, host: input.host, access: 'execute' } }, children: [] })
-  if (input.native) store.getNodeByAddress(primitive)!.nativeImplementation = { value: input.native, type: input.type }
+/** A handler: a value of its capability whose `implementation` row names the primitive host code runs for it. */
+export type Primitive = { implementation: string; host: string }
+
+/** The handler ref; it carries an implementation identity, never executable source or host credentials. */
+export function primitiveRef(store: FosStore, input: { id: string; implementation?: string; type: string; host: string; label?: string; implement?: unknown }): string {
+  const implementation = primitive(store, input.implementation ?? input.id)
+  if (input.implement) store.implementations.set(implementation, { value: input.implement, type: input.type })
   const { alias: _alias, capabilityDefinition: _capability, ...properties } = content(store, input.type).data
   if (_capability || properties.form) { delete properties.name; delete properties.description }
   // a handler is a value of its capability: it carries the capability's tag, and the primitive that gives it meaning here
-  const value = put(store, { data: { ...properties, peerId: { content: input.host }, description: properties.description ?? { content: input.label ?? input.id } }, children: [...content(store, input.type).children, tag(store, input.type), [primitiveConstructor(store), primitive]] })
+  const value = put(store, { data: { ...properties, peerId: { content: input.host }, description: properties.description ?? { content: input.label ?? input.id } }, children: [...content(store, input.type).children, tag(store, input.type), [primitive(store, 'implementation'), implementation]] })
   return put(store, refNodeContent(store, { alias: { id: input.id }, name: { content: input.label ?? input.id } }, value, []))
 }
 
-/** The local meaning lives on the runtime graph node, not in a handler-name lookup table. */
+/** The primitive a handler value names in its `implementation` row. */
+export function implementationOf(store: FosStore, value: string): string | null {
+  return store.table.get(value)?.children.find(([left]) => left === primitive(store, 'implementation'))?.[1] ?? null
+}
+
+/** What host code means by the handler value's implementation in this store, when this host has one. */
 export function primitiveImplementation<T>(store: FosStore, value: string): { value: T; type: string } | undefined {
-  const edge = store.table.get(value)?.children.find(([type]) => type === primitiveConstructor(store))
-  return edge ? store.getNodeByAddress(edge[1])?.nativeImplementation as { value: T; type: string } | undefined : undefined
+  const implementation = implementationOf(store, value)
+  return implementation ? store.implementations.get(implementation) as { value: T; type: string } | undefined : undefined
 }
 
 export function primitiveValue(store: FosStore, cid: string): Primitive | null {
-  const node = store.table.get(cid)
-  const edge = node?.children.find(([type]) => type === primitiveConstructor(store))
-  const primitive = edge && store.table.get(edge[1])?.data.primitive
-  return primitive?.access === 'execute' && !!primitive.implementation && !!primitive.host ? primitive : null
+  const implementation = implementationOf(store, cid), name = implementation && primitiveName(store, implementation)
+  const host = store.table.get(cid)?.data.peerId?.content
+  return name && host ? { implementation: name, host } : null
 }
 
 /** A row's instruction is its left node: a handler ref, or the capability a requirement asks for. */

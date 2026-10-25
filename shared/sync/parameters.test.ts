@@ -1,3 +1,4 @@
+import { createStore } from './graph'
 import { FosStore } from '../dag-implementation/store'
 import {
   content, createReplica, commitRoot, headCid, libAt, libraryBindingAt,
@@ -6,7 +7,7 @@ import {
 } from './index'
 
 test('parameter semantics travel with the graph without any installed library or familiar names', () => {
-  const store = new FosStore()
+  const store = createStore()
   const key = put(store, { data: { parameterDefinition: { kind: 'primitive' } }, children: [] })
   const negative = put(store, { data: { parameterDefinition: { kind: 'negative' } }, children: [] })
   const predicate = put(store, { data: { form: { primitive: 'number' } }, children: [] })
@@ -46,7 +47,7 @@ test('library field names cannot confer parameter behavior on an otherwise ordin
 })
 
 test('conflicting parameter declarations fail instead of selecting the first', () => {
-  const store = new FosStore()
+  const store = createStore()
   const key = put(store, { data: { parameterDefinition: { kind: 'primitive' } }, children: [] })
   const text = put(store, { data: { form: { primitive: 'text' } }, children: [] })
   const number = put(store, { data: { form: { primitive: 'number' } }, children: [] })

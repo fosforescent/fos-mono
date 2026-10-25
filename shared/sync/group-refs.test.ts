@@ -1,3 +1,4 @@
+import { primitive } from './primitives'
 import {
   addRef, addRefAt, addRow, addTask, compileRefGraph, content, copyNode, createReplica,
   discoverHandlers, headCid, libAt, loadReplica, nativeRef, nodeTransportAt, offerNodeTransport,
@@ -34,7 +35,7 @@ test('a sibling link declares the shared ref in the group, visible from both par
 
 test('linking refuses to capture private dependencies; copying closes them without changing their source', () => {
   let r = group()
-  r = addRefAt(r, ['group', 'alice'], 'secret', r.store.primitive.documentField.getId(), 5, leaf(r, 'Private value'), 'secret')
+  r = addRefAt(r, ['group', 'alice'], 'secret', primitive(r.store, 'string'), 5, leaf(r, 'Private value'), 'secret')
   r = addRow(r, ['group', 'alice'], 'plain', '.secret', 6, { id: 'dependent' })
   const before = headCid(r)
   expect(() => addRef(r, ['group', 'bob'], 'dependent', 7)).toThrow(/dependencies.*shared scope/)
@@ -49,7 +50,7 @@ test('linking refuses to capture private dependencies; copying closes them witho
 })
 
 test('passing an outer ref creates an ordinary local declaration whose handler can be overridden locally', () => {
-  let r = group(), type = r.store.primitive.documentField.getId()
+  let r = group(), type = primitive(r.store, 'string')
   r = addRefAt(r, [], 'outside', type, 5, leaf(r, 'Outer'), 'outside')
   r = passRefAt(r, ['group'], 'shared', 'outside', 6, 'shared')
   r = passRefAt(r, ['group', 'alice'], 'local', 'shared', 7, 'local')
@@ -65,7 +66,7 @@ test('passing an outer ref creates an ordinary local declaration whose handler c
 })
 
 test('copying an enclosing store binding preserves its declaration scope and closes the value', () => {
-  let outer = group(), type = outer.store.primitive.documentField.getId()
+  let outer = group(), type = primitive(outer.store, 'string')
   outer = addRefAt(outer, ['group'], 'outer-value', type, 5, leaf(outer, 'Outer'), 'value')
   outer = addRefAt(outer, ['group'], 'source', type, 6, put(outer.store, { data: { refExpression: { up: 0, path: ['value'], lexical: true } }, children: [] }), 'source')
   let inner = createReplica()

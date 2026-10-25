@@ -64,7 +64,7 @@ async function main() {
 
   // a template used as a pattern: the row's values are submitted to the template's refs, and its view lists them
   r = c.addRow(app.state.replica, home, c.TEMPLATE_TYPE, 'Destination', 4, { id: 'destination' })
-  r = c.addRefAt(r, [...home, 'destination'], 'where', r.store.primitive.documentField.getId(), 5, null, 'where')
+  r = c.addRefAt(r, [...home, 'destination'], 'where', c.primitive(r.store, 'string'), 5, null, 'where')
   app.set({ replica: r, view: trip, templatePicker: { path: [...trip, 'alice'] } })
   app.usePattern('destination'); await tick()
   app.set({ view: [...trip, 'alice'] }); await tick()

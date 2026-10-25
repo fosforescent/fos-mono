@@ -1,4 +1,5 @@
 /** Rows are made from the nodes the nearest standard library ref names: shipped in every device root, linked in Home. */
+import { createStore } from './graph'
 import { FosStore } from '../dag-implementation/store'
 import { HOME_ID, LIBRARY_ID, SERVER_MEMBER, content, namesInLibrary, readProposals, put, refNodeContent, resolveScope, rowTypeAt, typeIdOf, valueCidOf, valueContent } from './graph'
 import { exchangeNode, nodeShape, templateNodesAt } from './node-sync'
@@ -57,7 +58,7 @@ test('the nearest library wins: one linked in Home overrides the shipped one und
 })
 
 test('a root with no library above a row makes no rows', () => {
-  const r = createReplica('p', new FosStore())
+  const r = createReplica('p', createStore())
   expect(() => rowTypeAt(r.store, TASK_TYPE)).toThrow(/No standard library/)
   expect(() => addTask(r, [], 'Nothing to make it from', 1, 'x')).toThrow(/No standard library/)
 })
@@ -124,7 +125,7 @@ test('an exported library is a submission another device takes as it is, so it m
   owner = upgradeLibrary(acceptSubmission(submitted.replica, [LIBRARY_ID], submitted.proposalCid, owner.meta.peerId, 2).replica, [], [LIBRARY_ID], 2)
   const bundle = exportLibrary(owner, [LIBRARY_ID])
   // a device that never synced takes the bundle as its first library value
-  const fresh = new FosStore()
+  const fresh = createStore()
   let device = createReplica('device', fresh)
   device = ensureDeviceLibrary(device, bundle, 4)
   expect(named(device, [LIBRARY_ID], NOTE_TYPE)).toBe(named(owner, [LIBRARY_ID], NOTE_TYPE))

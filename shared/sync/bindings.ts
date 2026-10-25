@@ -1,4 +1,5 @@
 /** Shared, read-only resolution for data arguments and callable values. */
+import { primitive } from './primitives'
 import { discoverHandlers, type HandlerEnvironment } from './handlers'
 import { formText } from './forms'
 import type { FosStore } from '../dag-implementation/store'
@@ -135,7 +136,7 @@ export function resolveBinding(store: FosStore, type: string | null, target: str
         return followDeclaration(location, null)
       }
       if (isRefNode(store, node)) {
-        const targets = [...new Set(node.children.filter(e => e[0] === store.primitive.targetPointerConstructor.getId()).map(e => e[1]))]
+        const targets = [...new Set(node.children.filter(e => e[0] === primitive(store, 'target')).map(e => e[1]))]
         if (!targets.length) return explicit ? fail('missing', 'The explicitly referenced declaration has no supplied value') : choose(wanted, node.data.name?.content, cid, true)
         // a ref row's value sees the declarations inside that row (an answer written inside a requirement), so it resolves from the row's own path
         const inner: BindingScope | undefined = occurrence ? { store, path: occurrence } : scope
@@ -167,7 +168,7 @@ export function resolveBinding(store: FosStore, type: string | null, target: str
 export function resolveText(r: Replica, at: Scope, text: string, defaults: BindingCandidate[] = [], environment: BindingEnvironment = {}): { text: string; bindings: BindingResolution[] } {
   const candidates = contextBindings(r, at, environment), bindings: BindingResolution[] = []
   for (const candidate of defaults) if (!candidates.some(c => c.type === candidate.type && c.name === candidate.name)) candidates.push(candidate)
-  const type = r.store.primitive.documentField.getId()
+  const type = primitive(r.store, 'string')
   let rendered = '', previous = 0
   for (const expression of textRefExpressions(text)) {
     const name = expression.source, parsed = parseRefExpression(name)

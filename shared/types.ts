@@ -1,17 +1,3 @@
-import { Delta, DiffOptions } from "@n1ru4l/json-patch-plus"
-
-
-export interface TrellisSerializedData {
-  focusRoute: FosPath,
-  focusChar: number | null,
-  collapsedList: FosPath[],
-  rowDepth: number,
-  dragInfo: DragInfo,
-  view: "Queue" | "Query" | "Tree" | "Focus" | "Settings" | "Browse",
-  activity: string,
-  mode: string,
-}
-
 
 
 /** Client text capabilities selected by graph definitions, independent of domain types. */
@@ -43,15 +29,6 @@ export type FosDataContent = {
   presentation?: { title?: string[]; headline?: string[]; attribution?: { id: string[]; name: string[] }; sequence?: boolean; icon?: string };
   created?: { time: number };
   position?: { value: number };
-  versionControl?: {
-    delta: Delta,
-    branches: string[],
-    tags: string[],
-  }
-  reversion?: {
-    reversionedToAddress: string,
-    nStepsBack: number,
-  }
   error?: {
     target: string;
     instruction: string;
@@ -59,14 +36,6 @@ export type FosDataContent = {
     instructionIsError: boolean;
     message: string;
   }
-  duration?: {
-    plannedMarginal: number;
-    entries: {
-      start: number;
-      stop: number;
-      notes: string;
-    }[]
-  };
   cost?: {
     budget?: {
       available: number;
@@ -76,10 +45,6 @@ export type FosDataContent = {
       time: number;
       amount: number;
     }[]
-  };
-  probability?: {
-    marginSuccess: number;
-    marginFailure: number;
   };
   document?: {
     content: string;
@@ -182,9 +147,6 @@ export type FosDataContent = {
   refRole?: 'input' | 'output',
   /** A compiler-local binder. References to it use this node's CID, never an editing alias. */
   refHole?: { slot: number; role: 'input' | 'output' },
-  /** A declaration in a compiled lexical frame. Its handler/value is the right side of its binding edge. */
-  refDeclaration?: { slot: number },
-  /** Rows in this node submit alternative handlers to the capability on their left. They are not equalities. */
   refAlternatives?: true,
   refCompilation?: { cid: string },
   /** A signature over this value's unsigned node by the key named; made and checked through the sign and verify-signature capabilities. */
@@ -264,18 +226,8 @@ export type FosDataContent = {
     completed: boolean;
     time: number;
   }
-  reactClient?: {
-    collapsed: boolean;
-  }
   updated?: {
     time: number;
-  }
-  webView?: {
-    focus: boolean;
-    focusChar: number | null;
-    zoomed: boolean;
-    selectedModule: string;
-    collapsed: boolean;
   }
   // Linear resource types
   budget?: {
@@ -358,44 +310,6 @@ export type FosDataContent = {
     capabilities: string[];
     providedModalities: string[];
   }
-  // Recurring event data
-  recurringDeposit?: {
-    id: string;
-    amount: number;
-    currency: string;
-    interval: 'hourly' | 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'yearly';
-    startDate: string;
-    endDate?: string;
-    description?: string;
-    dayOfWeek?: string;
-    dayOfMonth?: number;
-    active: boolean;
-  }
-  recurringExpense?: {
-    id: string;
-    amount: number;
-    currency: string;
-    interval: 'hourly' | 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'yearly';
-    startDate: string;
-    endDate?: string;
-    description?: string;
-    budgetId?: string;
-    dayOfWeek?: string;
-    dayOfMonth?: number;
-    active: boolean;
-  }
-  recurringCalendarEvent?: {
-    id: string;
-    name: string;
-    durationMinutes: number;
-    interval: 'hourly' | 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'yearly';
-    startDate: string;
-    endDate?: string;
-    timeOfDay: string;
-    daysOfWeek?: string[];
-    calendarId?: string;
-    active: boolean;
-  }
   // Peer consensus fields
   /** Members who can propose/approve changes to this node (peer IDs = Ed25519 public keys) */
   members?: {
@@ -414,13 +328,6 @@ export type FosDataContent = {
   name?: {
     content: string;
   };
-  // Peer connection persistence
-  /** SDP offer for reconnecting to this peer */
-  peerSdpOffer?: {
-    content: string;
-    timestamp: number;
-    active: boolean;
-  };
 }
 
 
@@ -433,66 +340,16 @@ export type FosNodeContent = {
   children: FosPathElem[];  // Ordered today: row order still contributes to CID v4.
 }
 
-/**
- * Forward declaration for FosNode (actual class in node.ts)
- * Used for runtime object references
- */
-export interface IFosNode {
-  getId(): string
-  getEdges(): FosPathElem[]
-  getData(): FosDataContent
-}
-
-/**
- * Runtime edge with direct object references (no CID lookup needed)
- */
-export type FosEdge<T extends IFosNode = IFosNode> = [T, T]
-
-
-// export type FosNodeData = {
-//   selectedOption: number;
-//   description: string;
-//   collapsed: boolean;
-//   mergeNode?: string;
-//   options: [FosNodeContent, ...FosNodeContent[]]
-// }
-
-
-export type SelectionPath = {
-  [key: string]: SelectionPath
-}
-
-export type NodeAddress = `${string}-${string}-${string}-${string}-${string}`
-export type ContentId = string
-export type FosNodeId = ContentId
-
-
-
-
-/** A row: [instruction node CID, target node CID], used in memory and in serialization. */
-export type FosPathElem = [FosNodeId, FosNodeId]
-export type FosPath = FosPathElem[]
-export type FosRoute = [FosPathElem, ...FosPath]
+/** A row: [left node cid, right node cid], used in memory and in serialization. */
+export type FosPathElem = [string, string]
 
 /** Serialized form of the in-memory Map<CID, FosNodeContent>. */
-export type FosNodesData = { [key: FosNodeId]: FosNodeContent }
+export type FosNodesData = { [cid: string]: FosNodeContent }
 
 export type FosContextData = {
   nodes: FosNodesData,
-  route: FosPath,
-  rootNodeId: FosNodeId,
-
+  rootNodeId: string,
 }
-
-
-export type FosPeer = {
-  type: "server",
-  id: string,
-} | {
-  type: "webRtc",
-  id: string,
-}
-
 
 
 export type SubscriptionInfo = {
@@ -523,57 +380,6 @@ export type InfoState = {
 }
 
 
-export type AppStateInitial = {
-  apiUrl: string
-  info: InfoState
-  theme: string
-  auth: AuthState
-  data: null
-  loaded: false
-  loggedIn: boolean
-}
-
-export type AppStateLoaded = {
-  apiUrl: string
-  info: InfoState
-  theme: string
-  auth: AuthState
-  data: { fosData: FosContextData, trellisData: TrellisSerializedData }
-  loaded: true
-  loggedIn: boolean
-}
-
-export type AppState = AppStateInitial | AppStateLoaded
-
-
-export type AuthState = {
-  username: string,
-  remember: boolean,
-  jwt?: string,
-  jwtDecoded?: {
-    exp: number,
-    username: string
-  }
-  password?: string,
-  email: string,
-  /** True when using local-only mode without server authentication */
-  offlineMode?: boolean
-}
-
-
-export type DragInfo = {
-  dragging: {
-    id: string
-    nodeRoute: FosPath
-    breadcrumb: boolean
-  } | null
-  dragOverInfo: {
-    id: string
-    nodeRoute: FosPath
-    position: 'above' | 'below' | 'on' | 'breadcrumb'
-  } | null
-}
-
 export type UserProfile = {
   displayName: string,
 
@@ -584,57 +390,3 @@ export type LoginResult = {
   access_token: string,
   type: string,
 } & InfoState
-
-
-
-export type ContextType = {
-  data: AppStateLoaded,
-  setData: (data: AppStateLoaded) => void,
-  options: Partial<{
-    canPromptGPT: boolean,
-    promptGPT: (systemPrompt: string, userPrompt: string, options?: { temperature?: number }) => Promise<{
-      choices: { message: { content: string, role: string }, finishReason: string }[]
-    }>,
-    toast: (toastOpts: {
-      title: string,
-      description: string,
-      duration: number
-    }) => void,
-    canUndo: boolean,
-    undo: () => void,
-    canRedo: boolean,
-    redo: () => void,
-
-    theme: "light" | "dark" | "system",
-    locked: boolean
-  }>,
-  nodeRoute: FosPath,
-  dialogueProps: {
-    loading: boolean,
-    setLoading: (loading: boolean) => void,
-    showCookies: boolean,
-    setShowCookies: (showCookies: boolean) => void,
-    showTerms: { open: boolean, fromRegisterForm: boolean, setAcceptTerms: (accept: boolean) => void },
-    setShowTerms: (showTerms: { open: boolean, fromRegisterForm: boolean, setAcceptTerms: (accept: boolean) => void }) => void,
-    showPrivacy: { open: boolean, fromRegisterForm: boolean },
-    setShowPrivacy: (showPrivacy: { open: boolean, fromRegisterForm: boolean }) => void,
-    showClearData: boolean,
-    setShowClearData: (showClearData: boolean) => void,
-    showDeleteAccount: boolean,
-    setShowDeleteAccount: (showDeleteAccount: boolean) => void,
-    showEmailConfirm: { open: boolean, email: string },
-    setShowEmailConfirm: (showEmailConfirm: { open: boolean, email: string }) => void,
-  },
-  tokens: {
-    emailConfirmationToken?: string,
-    passwordResetToken?: string
-  }
-};
-
-export type MockEvent = {
-  type: string;
-  payload: {
-    fosData: Partial<FosContextData>;
-    trellisData: Partial<TrellisSerializedData>;
-  };
-};

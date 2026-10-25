@@ -1,3 +1,4 @@
+import { primitive } from './primitives'
 import {
   createReplica, ensureHomeContext, shareHome, HOME_ID, addRefAt, put, content, refNodeContent,
   headCid, resolveScope, valueContent, commitRoot, updateAtScope, view, refProperties,
@@ -9,7 +10,7 @@ import {
 
 test('a native constructor and its unfilled right argument are an ordinary editable row', () => {
   let r = createReplica('owner')
-  const left = r.store.primitive.documentField.getId()
+  const left = primitive(r.store, 'string')
   r = addRefAt(r, [], 'input', left, 1, null, 'input')
   expect(view(r, [])!.tasks.find(row => row.id === 'input')?.typeCid).toBe(left)
   expect(refProperties(r.store, headCid(r)).find(row => row.id === 'input')).toMatchObject({ type: left, argument: true })
@@ -22,7 +23,7 @@ test('a native constructor and its unfilled right argument are an ordinary edita
 test('submitting to an ordinary property ref uses the row left and preserves value alternatives', () => {
   let r = writeNodeValue(createReplica('owner'), [], 'settings', { count: 1, untouched: true }, 1)
   const property = resolveRefExpression(r, [], '.settings.count').locations[0]!
-  expect(content(r.store, property.cid).children.some(([key]) => key === r.store.primitive.instructionPointerConstructor.getId())).toBe(false)
+  expect(content(r.store, property.cid).children.some(([key]) => key === primitive(r.store, 'instruction'))).toBe(false)
   const next = put(r.store, { data: { scalar: { type: 'number', value: 2 } }, children: [] })
   const proposed = proposeRefAt(r, property.path, next, 'owner', 2)
   r = applyProposalAt(proposed.replica, property.path, proposed.proposalCid, 'owner', 3)
@@ -54,7 +55,7 @@ test('the enclosing left instruction is the only pattern carried through node ex
   const load = { ...request, path: ['handler'], linkId: 'value' }
   receiver = acceptProvidedNode(receiver, [HOME_ID, 'handler'], load, provideNode(source, load, authority, 4).node, 5)
   const received = resolveScope(receiver.store, headCid(receiver), [HOME_ID, 'handler'])!
-  expect(content(receiver.store, received).children.some(([key]) => key === receiver.store.primitive.instructionPointerConstructor.getId())).toBe(false)
+  expect(content(receiver.store, received).children.some(([key]) => key === primitive(receiver.store, 'instruction'))).toBe(false)
   expect(view(receiver, [HOME_ID])!.tasks.find(row => row.id === 'handler')?.typeCid).toBe(left)
   expect(valueContent(receiver.store, received).data.scalar?.value).toBe('handler value')
   expect(compileInstructions(receiver, [HOME_ID, 'handler']).cid).toBe(left)

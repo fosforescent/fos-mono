@@ -1,3 +1,4 @@
+import { primitive } from '@fosforescent/shared/sync/primitives'
 import type { Request, Response } from 'express'
 import { verify } from 'jsonwebtoken'
 import { HOME_ID, approvalsOf, handlerResult, sharedLinkAt, addMemberAt, addAllocation, addRequirement, addRow, addTask, addRefAt, createReplica, publish, unpublish, sharedProjection, writeNodeValue, participation, headCid, argumentRefs, content, refValueCid, removeMemberAt, setMemberCapabilitiesAt, renameTask, ensureSharedLink, sharedAddressAt, ensureHomeContext, view, readNodeValue, resolveScope, valueContent, put, withProposal, proposalContent, commitRoot, updateAtScope, putStripped, readProposals, type Replica } from '@fosforescent/shared/sync/index'
@@ -13,7 +14,7 @@ function setup(audience: 'public' | 'users' = 'public', mode: 'approval' | 'rank
   host = publish(host, ['poll'], audience, 2)
   void mode
   host = writeNodeValue(host, [], 'secret', 'host-only-secret', 4)
-  host = addRefAt(host, ['poll'], 'comment-slot', host.store.primitive.documentField.getId(), 4, undefined, 'Comment')
+  host = addRefAt(host, ['poll'], 'comment-slot', primitive(host.store, 'string'), 4, undefined, 'Comment')
   let guest = addTask(createReplica('user:guest'), [], 'Visible text', 1, 'source')
   guest = addTask(guest, ['source'], 'private-child-secret', 2, 'private')
   guest = writeNodeValue(guest, [], 'private-token', 'guest-secret', 3)

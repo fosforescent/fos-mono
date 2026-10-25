@@ -1,4 +1,5 @@
 /** Library definitions are editable values. Runtime consumers must use explicitly pinned instances. */
+import { primitive } from './primitives'
 import type { ResourceType } from './graph'
 import { homePath, proposeRefAt, view, type Replica } from './replica'
 import { commitRoot, content, ensureLibraryRow, importNodes, reachableNodes, enclosingScopes, nearestInScope, libraryBindingAt, libraryTypeAt, viewNode, isLibraryDefinition, isPeerReference, libraryInstanceEdge, libraryInstanceOf, libraryRowOf, updateAtScope, put, refValueCid, resolveScope, valueContent, SERVER_MEMBER, type Scope } from './graph'
@@ -114,7 +115,7 @@ export function libraryArgs(r: Replica, at: Scope): Array<{ name: string; declar
   const instance = libraryBindingAt(r.store, at)
   if (!instance) return []
   const store = r.store
-  const target = store.primitive.targetPointerConstructor.getId(), alias = store.primitive.aliasConstructor.getId(), get = (id: string) => store.table.get(id)
+  const target = primitive(store, 'target'), alias = primitive(store, 'alias'), get = (id: string) => store.table.get(id)
   const group = namesInLibrary(store, instance.library).byName.get(LIBRARY_REQUIRES)
   const args = refValueCid(store, content(store, instance.cid))
   if (!group || !args) return []
@@ -131,7 +132,7 @@ export function libraryArgs(r: Replica, at: Scope): Array<{ name: string; declar
 export function libraryFieldPath(r: Replica, field: string, at?: Scope): Scope | null {
   const path = libraryPath(r, at), cid = path && resolveScope(r.store, headCid(r), path)
   if (!path || !cid) return null
-  const target = r.store.primitive.targetPointerConstructor.getId(), alias = r.store.primitive.aliasConstructor.getId()
+  const target = primitive(r.store, 'target'), alias = primitive(r.store, 'alias')
   const edge = valueContent(r.store, cid).children.find(e => fieldNode(id => r.store.table.get(id), e as [string, string], target, alias)?.name === field)
   const id = edge && content(r.store, edge[1]).data.alias?.id
   return id ? [...path, id] : null
@@ -191,7 +192,7 @@ export function exportLibrary(r: Replica, path: Scope): LibraryBundle {
  */
 function canonical(r: Replica): (cid: string) => string {
   const memo = new Map<string, string>()
-  const target = r.store.primitive.targetPointerConstructor.getId(), alias = r.store.primitive.aliasConstructor.getId()
+  const target = primitive(r.store, 'target'), alias = primitive(r.store, 'alias')
   const copy = (cid: string): string => {
     if (memo.has(cid)) return memo.get(cid)!
     let node = content(r.store, cid)

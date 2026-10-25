@@ -1,3 +1,4 @@
+import { primitive } from './primitives'
 import { syncWith, userView } from './test-helpers'
 import { addMemberAt, addTask, createReplica, deleteTask, headCid, isDirty, loadReplica, serializeReplica, setMemberCapabilitiesAt, view, type Replica } from './index'
 import { content, isPeerReference, resolveScope } from './graph'
@@ -79,7 +80,7 @@ test('switching persistence off sends the node blank: the server holds it as the
   expect(held(server, ['group'])).toBe(true)
   const blanked = resolveScope(server.store, headCid(server), ['group'])!
   expect(content(server.store, blanked).data.ref?.peer).toBe('host')
-  expect(content(server.store, blanked).children).toEqual([[server.store.primitive.previousVersion.getId(), shared]])
+  expect(content(server.store, blanked).children).toEqual([[primitive(server.store, 'previous'), shared]])
   let other = syncWith(createReplica('other-device'), server)
   expect(userView(other)!.tasks.find(t => t.id === 'group')!.refPeer).toBe('host')
   // nothing more is sent while it stays private
@@ -91,7 +92,7 @@ test('switching persistence off sends the node blank: the server holds it as the
   r = syncWith(r, server)
   expect(view(server, ['group'])!.tasks.map(t => t.title)).toEqual(['Shared child', 'Never shared'])
   // its history runs back through the reference to what was shared before
-  const prev = server.store.primitive.previousVersion.getId(), history: string[] = []
+  const prev = primitive(server.store, 'previous'), history: string[] = []
   for (let cid: string | undefined = resolveScope(server.store, headCid(server), ['group'])!; cid && history.length < 20; cid = content(server.store, cid).children.find(([i]) => i === prev)?.[1]) history.push(cid)
   expect(history.indexOf(blanked)).toBeGreaterThan(0)
   expect(history.indexOf(shared)).toBe(history.indexOf(blanked) + 1)

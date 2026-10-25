@@ -3,6 +3,7 @@
  * A write addresses a declaration the resolver returned (`ScopedBinding`), never a path a native worked out, and
  * its value must satisfy the declaration's pattern.
  */
+import { primitive } from './primitives'
 import type { FosStore } from '../dag-implementation/store'
 import type { FosNodeContent } from '../types'
 import { bookkeepingOf, commitRoot, content, identityCid, isBookkeepingEdge, isProposalEdge, isRefNode, isRowEdge, proposalContent, put, readProposals, refNodeContent, refValueCid, resolveScope, updateAtScope, valueContent, withPrev, withProposal, type ProposalRecord, type Scope } from './graph'
@@ -24,7 +25,7 @@ function writeBase(store: FosStore, node: FosNodeContent): string {
   // a hole the journal alone gave a container to still holds nothing
   const stable = kept && (Object.keys(kept.data).length || kept.children.length) ? put(store, kept) : null
   const { updated: _updated, ...data } = node.data
-  return put(store, { data, children: [...(stable ? [[store.primitive.targetPointerConstructor.getId(), stable] as FosPathElem] : []), ...node.children.filter(edge => edge[0] !== store.primitive.targetPointerConstructor.getId() && !isBookkeepingEdge(store, edge))] })
+  return put(store, { data, children: [...(stable ? [[primitive(store, 'target'), stable] as FosPathElem] : []), ...node.children.filter(edge => edge[0] !== primitive(store, 'target') && !isBookkeepingEdge(store, edge))] })
 }
 
 /** Propose the next value of the declaration `binding`. Nothing reads it as the ref's value until the evaluation commits. */
@@ -55,7 +56,7 @@ export function transactionValue(r: Replica, at: Scope, evaluationId: string): s
   const node = content(r.store, cid)
   const pending = pendingTransactionWrite(r.store, node, evaluationId)
   if (pending) return pending.contentCid
-  const target = node.children.find(([key]) => key === r.store.primitive.targetPointerConstructor.getId())
+  const target = node.children.find(([key]) => key === primitive(r.store, 'target'))
   return target ? target[1] : null
 }
 

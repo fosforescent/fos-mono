@@ -1,3 +1,4 @@
+import { primitive } from '../../shared/sync/primitives'
 import { resourceHandlers } from '../../shared/sync/resource-bindings'
 import { invertPolarity } from '../../shared/sync/parameters'
 import { capabilityPresentation } from './capability-presentation'
@@ -2169,7 +2170,7 @@ export class App {
       const { name: _name, ...data } = identity.data
       const typed = content(r.store, valueOfPattern(r.store, pattern, value.data))
       return refNodeContent(r.store, { ...data, ...(handler !== undefined ? { name: { content: handler || 'peer' } } : {}) },
-        put(r.store, handler === undefined ? value : { ...typed, children: [...typed.children, ...value.children.filter(edge => !typed.children.some(row => row[0] === edge[0] && row[1] === edge[1]))] }), [...bookkeepingOf(r.store, identity), [r.store.primitive.previousVersion.getId(), cid]])
+        put(r.store, handler === undefined ? value : { ...typed, children: [...typed.children, ...value.children.filter(edge => !typed.children.some(row => row[0] === edge[0] && row[1] === edge[1]))] }), [...bookkeepingOf(r.store, identity), [primitive(r.store, 'previous'), cid]])
     }, 'node')
     const root = handler !== undefined && path.length ? updateAtScope(r.store, next, path.slice(0, -1), node => ({ ...node, children: node.children.map(edge => content(r.store, edge[1]).data.alias?.id === path.at(-1) ? [pattern, edge[1]] : edge) })) : next
     commitRoot(r.store, root, this.now()); return { ...r }
@@ -2573,7 +2574,7 @@ export class App {
   insertHandler(cid: string, path = this.constructorContext()): void {
     const offer = this.handlerOffers(path).find(o => o.cid === cid && o.enabled && o.active)
     if (!offer) throw new Error('This handler is unavailable.')
-    if (offer.type !== this.state.replica.store.primitive.templateField.getId()) {
+    if (offer.type !== primitive(this.state.replica.store, 'template')) {
       const r = this.state.replica, cid = resolveScope(r.store, headCid(r), path)
       if (cid && matchesGraph(r.store, offer.type, cid)) {
         this.edit(setRefValueAt(r, path, offer.cid, this.now()))
@@ -3095,7 +3096,7 @@ export class App {
     const path = [...this.state.view, ...at], r = this.state.replica
     const cid = resolveScope(r.store, headCid(r), path)
     if (!cid) return []
-    return argumentRefs(r.store, cid).filter(arg => arg.type === r.store.primitive.documentField.getId() && !content(r.store, arg.cid).data.ref && content(r.store, arg.cid).data.name?.content && !settingOf(r.store, content(r.store, arg.cid))).map(arg => {
+    return argumentRefs(r.store, cid).filter(arg => arg.type === primitive(r.store, 'string') && !content(r.store, arg.cid).data.ref && content(r.store, arg.cid).data.name?.content && !settingOf(r.store, content(r.store, arg.cid))).map(arg => {
       const result = resolveText(r, path, `{{${arg.name}}}`)
       return { id: content(r.store, arg.cid).data.alias!.id, name: arg.name!, text: result.bindings[0]?.status === 'ready' ? result.text : '', problems: result.bindings.flatMap(b => b.problems) }
     })
@@ -3115,7 +3116,7 @@ export class App {
     if (!/^[A-Za-z_][\w.-]*$/.test(name)) { this.notify('error', 'Use letters, digits, underscores, dots or hyphens for the argument name.'); return }
     const store = this.state.replica.store
     const value = text ? put(store, { data: { description: { content: text } }, children: [] }) : null
-    this.edit(addRefAt(this.state.replica, [...this.state.view, ...at], newId(), store.primitive.documentField.getId(), this.now(), value, name))
+    this.edit(addRefAt(this.state.replica, [...this.state.view, ...at], newId(), primitive(store, 'string'), this.now(), value, name))
     this.notify('info', `Text argument ${name} added. Use {{${name}}} in notes in this context.`)
   }
   addPlaceholder(name: string, typeName: string, destination = this.state.view): void {
@@ -3129,7 +3130,7 @@ export class App {
       const cid = library?.cid ?? (local && resolveScope(r.store, headCid(r), [...local.path, local.row.id]))
       if (!cid) throw new Error('This template is unavailable in the enclosing scope.')
       type = templateValuePattern(r.store, cid)
-    } else if (typeName === 'text') type = r.store.primitive.documentField.getId()
+    } else if (typeName === 'text') type = primitive(r.store, 'string')
     else {
       // A declaration's pattern is available even when its value is still an unfilled parameter.
       const found = selectBinding(bindingLayers(r, destination), typeName.trim(), false, true)
@@ -3177,7 +3178,7 @@ export class App {
       id: content(r.store, a.cid).data.alias!.id, name: a.name ?? 'Value',
       branches: refBranches(r.store, content(r.store, a.cid)),
       child: (() => { const target = refValueCid(r.store, content(r.store, a.cid)); return target && isRefNode(r.store, content(r.store, target)) ? content(r.store, target).data.name?.content ?? 'Value' : null })(),
-      type: a.type === r.store.primitive.documentField.getId() ? 'text' : capabilityOfTarget(r.store, a.type) ?? content(r.store, a.type).data.name?.content ?? 'Named type',
+      type: a.type === primitive(r.store, 'string') ? 'text' : capabilityOfTarget(r.store, a.type) ?? content(r.store, a.type).data.name?.content ?? 'Named type',
       status: resolveBinding(r.store, a.type, content(r.store, a.cid).data.refExpression ? a.cid : refValueCid(r.store, content(r.store, a.cid)), candidates, a.name, { isPeerActive: id => this.isOnline(id), scope: { replica: r, path } }).status,
       candidates: candidates.filter(c => c.cid !== a.cid && matchesGraph(r.store, a.type, c.cid)).map(c => ({ cid: c.cid, label: c.name ?? content(r.store, c.cid).data.description?.content ?? 'Matching handler' }))
     }))

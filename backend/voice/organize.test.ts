@@ -1,3 +1,4 @@
+import { createStore } from '@fosforescent/shared/sync/graph'
 import type { Request, Response } from 'express'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
 import { argumentSupplier, addRow, createReplica, ensureHomeContext, evaluationRecord, HOME_ID, requestOrganize, requirementAnswer, view, type Replica } from '@fosforescent/shared/sync/index'
@@ -61,7 +62,7 @@ function host(initial: Replica, handler = organizeHandler(() => model())) {
 const rows = (r: Replica, at: string[]) => view(r, at)!.tasks.filter(t => !t.scalar).map(t => t.title)
 
 function garden(): Replica {
-  let r = ensureHomeContext(createReplica('user:alice', asAccountStore(new FosStore())), 1, { server: ['organize'] })
+  let r = ensureHomeContext(createReplica('user:alice', asAccountStore(createStore())), 1, { server: ['organize'] })
   r = addRow(r, [HOME_ID], PLAIN_TYPE, 'Project', 2, { id: 'project' })
   r = addRow(r, [HOME_ID, 'project'], PLAIN_TYPE, 'Budget', 3, { id: 'budget' })
   r = addRow(r, [HOME_ID], PLAIN_TYPE, 'Unrelated', 4, { id: 'unrelated' })
@@ -133,7 +134,7 @@ test('over the free budget the request is refused and rolled back; a failing mod
 })
 
 test('texted messages go through the same handler: the filled request waits in Home holding the rows', async () => {
-  let r = ensureHomeContext(createReplica('user:alice', asAccountStore(new FosStore())), 1, { server: ['organize'] })
+  let r = ensureHomeContext(createReplica('user:alice', asAccountStore(createStore())), 1, { server: ['organize'] })
   r = addRow(r, [HOME_ID], PLAIN_TYPE, 'Groceries', 2, { id: 'groceries' })
   r = addRow(r, [HOME_ID, 'groceries'], PLAIN_TYPE, 'milk', 3, { id: 'milk' })
   const fake = model(JSON.stringify({ title: 'Errands', items: [{ ref: 'n1', parent: 'groceries', type: 'plain', text: 'eggs' }, { ref: 'n2', parent: null, type: 'plain', text: 'Hardware store' }, { ref: 'n3', parent: 'n2', type: 'plain', text: 'hinges' }] }))

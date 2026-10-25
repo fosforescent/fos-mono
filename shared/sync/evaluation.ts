@@ -1,4 +1,5 @@
 /** Evaluation uses ordinary typed refs for its journal and ordinary tasks for compensation. */
+import { primitive } from './primitives'
 import { compileOperands, type Native } from './native'
 import { isOutputPattern } from './parameters'
 import type { BindingLocation } from './scope-bindings'
@@ -48,11 +49,11 @@ export function writeNodeValue(r: Replica, path: Scope, name: string, value: unk
   const peer = handler?.peer ?? (arg ? valueContent(r.store, arg.cid).data.peerId?.content : undefined)
   const alias = previous?.data.alias?.id ?? hashContent({ data: { name: { content: name }, ...(peer ? { peerId: { content: peer } } : {}) }, children: [] })
   const built = constructNodeValue(r.store, value, alias, arg?.cid)
-  const type = handler?.type ?? (arg && arg.type !== r.store.primitive.documentField.getId() && !isNodeValueType(r.store, arg.type) ? arg.type : built.type)
+  const type = handler?.type ?? (arg && arg.type !== primitive(r.store, 'string') && !isNodeValueType(r.store, arg.type) ? arg.type : built.type)
   const target = peer ? put(r.store, { ...content(r.store, built.cid), data: { ...content(r.store, built.cid).data, peerId: { content: peer } } }) : built.cid
   if (!arg) return addRefAt(r, path, alias, type, now, target, name)
-  const declarations = previous!.children.filter(([key]) => key !== r.store.primitive.targetPointerConstructor.getId() && key !== r.store.primitive.instructionPointerConstructor.getId() && key !== r.store.primitive.previousVersion.getId())
-  const next = put(r.store, refNodeContent(r.store, previous!.data, target, [...declarations, [r.store.primitive.previousVersion.getId(), arg.cid]]))
+  const declarations = previous!.children.filter(([key]) => key !== primitive(r.store, 'target') && key !== primitive(r.store, 'instruction') && key !== primitive(r.store, 'previous'))
+  const next = put(r.store, refNodeContent(r.store, previous!.data, target, [...declarations, [primitive(r.store, 'previous'), arg.cid]]))
   commitRoot(r.store, updateAtScope(r.store, headCid(r), path, node => ({ ...node, children: node.children.map(edge => identityCid(r.store, edge) === arg.cid ? [type, next] : edge) })), now)
   return { ...r }
 }
@@ -66,11 +67,11 @@ export function writeLinkedNodeValue(r: Replica, path: Scope, name: string, valu
   const cid = resolveScope(r.store, headCid(r), path)!
   const arg = argumentRefs(r.store, cid).find(a => a.name === name)!
   const ref = content(r.store, arg.cid), target = valueContent(r.store, arg.cid)
-  const children: typeof target.children = Object.entries(links).map(([key, link]) => [r.store.primitive.linkField.getId(), put(r.store, {
+  const children: typeof target.children = Object.entries(links).map(([key, link]) => [primitive(r.store, 'link'), put(r.store, {
     data: { alias: { id: `${ref.data.alias!.id}:${key}` }, name: { content: key }, ref: link }, children: []
   })])
-  const declarations = ref.children.filter(([key]) => key !== r.store.primitive.targetPointerConstructor.getId() && key !== r.store.primitive.instructionPointerConstructor.getId() && key !== r.store.primitive.previousVersion.getId())
-  const next = put(r.store, refNodeContent(r.store, ref.data, put(r.store, { ...target, children: [...target.children.filter(([key]) => key !== r.store.primitive.linkField.getId()), ...children] }), [...declarations, [r.store.primitive.previousVersion.getId(), arg.cid]]))
+  const declarations = ref.children.filter(([key]) => key !== primitive(r.store, 'target') && key !== primitive(r.store, 'instruction') && key !== primitive(r.store, 'previous'))
+  const next = put(r.store, refNodeContent(r.store, ref.data, put(r.store, { ...target, children: [...target.children.filter(([key]) => key !== primitive(r.store, 'link')), ...children] }), [...declarations, [primitive(r.store, 'previous'), arg.cid]]))
   commitRoot(r.store, updateAtScope(r.store, headCid(r), path, node => ({ ...node, children: node.children.map(edge => identityCid(r.store, edge) === arg.cid ? [arg.type, next] : edge) })), now)
   return { ...r }
 }

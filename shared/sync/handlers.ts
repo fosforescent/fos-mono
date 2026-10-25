@@ -1,4 +1,5 @@
 /** Bindings, menus, and executors must discover handlers through the same scoped declarations. */
+import { primitive } from './primitives'
 import { peerNode } from './graph'
 import { TEMPLATE_TYPE, REF_TYPE } from './library-types'
 import type { FosStore } from '../dag-implementation/store'
@@ -50,7 +51,7 @@ export function publishTemplate(r: Replica, at: Scope, templatePath: Scope, labe
   if (!cid || !templatePath.length) throw new Error('Select a template to publish.')
   const parent = resolveScope(r.store, headCid(r), templatePath.slice(0, -1))
   if (!parent || !valueContent(r.store, parent).children.some(e => identityCid(r.store, e) === cid && isRowOfType(r.store, e, TEMPLATE_TYPE))) throw new Error('Only template rows can be published.')
-  const type = r.store.primitive.templateField.getId(), peerId = r.meta.peerId
+  const type = primitive(r.store, 'template'), peerId = r.meta.peerId
   const id = publishedTemplateId(peerId, templatePath.at(-1)!)
   const publishedValue = transferRefGraph(r, cid, templatePath, [...at, id], true)
   if (!contextMemberRefs(r, at).has(peerId)) r = addMemberAt(r, at, peerId, peerId, [], now)
@@ -60,7 +61,7 @@ export function publishTemplate(r: Replica, at: Scope, templatePath: Scope, labe
   if (!market) return r
   if (!marketMemberOf(r.store, resolveScope(r.store, headCid(r), at)!)) r = addMemberAt(r, at, MARKET_PEER, 'Fos market', marketGrantsAt(r.store, headCid(r), at), now)
   const node = content(r.store, policyIdentity(r.store, resolveScope(r.store, headCid(r), at)!))
-  const published = memberHandlerRows(r.store, node, MARKET_PEER, r.store.primitive.capabilityNode.getId()).filter(([pattern, h]) => sameCapabilityType(r.store, pattern, type) && content(r.store, h).data.alias?.id !== id).map(([, h]) => h)
+  const published = memberHandlerRows(r.store, node, MARKET_PEER, primitive(r.store, 'grants')).filter(([pattern, h]) => sameCapabilityType(r.store, pattern, type) && content(r.store, h).data.alias?.id !== id).map(([, h]) => h)
   return setHandlerOffersAt(r, at, MARKET_PEER, type, [...published, handler], now, 'to')
 }
 
@@ -80,7 +81,7 @@ export function marketplaceOffers(r: Replica): Array<HandlerOffer & { path: Scop
       const node = content(s, policyIdentity(s, cid))
       const member = membershipOf(s, node, MARKET_PEER)
       const disabled = member ? content(s, member[1]).data.disabledCapabilities?.content ?? [] : []
-      for (const [type, h] of member ? memberHandlerRows(s, node, MARKET_PEER, s.primitive.capabilityNode.getId()) : []) {
+      for (const [type, h] of member ? memberHandlerRows(s, node, MARKET_PEER, primitive(s, 'grants')) : []) {
         const offer = content(s, h), id = offer.data.alias?.id ?? h
         if (!disabled.includes(id)) result.set(id, { id, cid: h, type, peerId: MARKET_PEER, label: offer.data.name?.content ?? valueContent(s, h).data.description?.content ?? 'Capability', enabled: true, active: true, path })
       }

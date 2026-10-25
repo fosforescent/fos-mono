@@ -1,3 +1,4 @@
+import { primitive } from './primitives'
 import { branchEdge, copyOuterScope, commitRoot, content, identityCid, importNodes, isBranchChoice, isHandle, isPeerReference, put, putBranches, readChoice, readMembers, memberFor, readProposals, reachableNodes, resolveScope, rowEdgeAt, updateAtScope, withIdentity, withBranches, withMainBranchPolicy, type Scope, type Capability } from './graph'
 import { PLAIN_TYPE } from './library-types'
 import { createBranch } from './branches'
@@ -91,7 +92,7 @@ export function exchangeNodeContext(r: Replica, input: NodeRequest, authority: N
       const value = resolveScope(fork.store, headCid(fork), wrapper.scope)!
       const choice = readChoice(fork.store, wrapper.cid)
       const next = value === wrapper.before ? wrapper.cid : putBranches(fork.store, choice.id, choice.base, choice.options.map(o => o.peerId === wrapper.name ? { ...o, edge: withIdentity(fork.store, o.edge!, value) } : o), choice.defaultName)
-      replaceBranchAt(fork, wrapper.scope, next, [fork.store.primitive.choiceTarget.getId(), next], now)
+      replaceBranchAt(fork, wrapper.scope, next, [primitive(fork.store, 'choice'), next], now)
     }
   }
   importNodes(r.store, reachableNodes(fork.store, [fork.store.rootNodeId]))

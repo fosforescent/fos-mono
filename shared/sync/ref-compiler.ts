@@ -1,4 +1,5 @@
 /** Resolve editor references into immutable graph edges. Editor locations belong only to diagnostics. */
+import { primitive } from './primitives'
 import { settingOf } from './graph'
 import { isHandlerStateLeft } from './capabilities'
 import type { FosPathElem } from '../types'
@@ -145,7 +146,7 @@ export function compileRefGraph(r: Replica, cid: string, at: Scope = [], options
       }
       const children: FosPathElem[] = []
       for (const edge of node.children) {
-        if (edge[0] === store.primitive.previousVersion.getId() || isProposalEdge(store, edge) || isMemberEdge(store, edge)) continue
+        if (edge[0] === primitive(store, 'previous') || isProposalEdge(store, edge) || isMemberEdge(store, edge)) continue
         // a tag names a capability by identity; the capability's own declarations are not this node's to fill
         if (isTagRow(store, edge)) { children.push(edge); continue }
         const child = store.table.get(edge[1])
@@ -202,6 +203,6 @@ export function compileRow(r: Replica, path: Scope, options: CompileRefOptions =
 /** Persist the residual and its reachable immutable graph together, not just an orphan CID. */
 export function saveRefCompilation(r: Replica, path: Scope, id: string, compiled: CompiledRef, now: number): Replica {
   const type = put(r.store, { data: { description: { content: 'Compiled ref' } }, children: [] })
-  const envelope = put(r.store, { data: { refCompilation: { cid: compiled.cid } }, children: [[r.store.primitive.targetPointerConstructor.getId(), compiled.cid]] })
+  const envelope = put(r.store, { data: { refCompilation: { cid: compiled.cid } }, children: [[primitive(r.store, 'target'), compiled.cid]] })
   return addRefAt(r, path, id, type, now, envelope)
 }

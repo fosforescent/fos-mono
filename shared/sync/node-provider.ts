@@ -1,3 +1,4 @@
+import { primitive } from './primitives'
 import { approvalsOf } from './approvals'
 import type { FosDataContent, FosNodeContent, FosNodesData, FosPathElem } from '../types'
 import { hashContent, isCid } from '../dag-implementation/cid'
@@ -51,8 +52,8 @@ export function rightChild(r: Replica, edge: FosPathElem): NodeChild['right'] {
 /** Immutable value graphs travel with their edge. Mutable descendants require their own authorized load. */
 export function isLiteralEdge(store: Replica['store'], edge: FosPathElem): boolean {
   if (isBookkeepingEdge(store, edge) || isGrantEdge(store, edge) || isMemberEdge(store, edge) || [
-    store.primitive.targetPointerConstructor.getId(), store.primitive.instructionPointerConstructor.getId(),
-    store.primitive.aliasConstructor.getId(), store.primitive.linkField.getId()
+    primitive(store, 'target'), primitive(store, 'instruction'),
+    primitive(store, 'alias'), primitive(store, 'link')
   ].includes(edge[0])) return false
   const seen = new Set<string>()
   const immutable = (cid: string): boolean => {
@@ -95,7 +96,7 @@ export type NodeAuthority = {
   proposeOnly?: boolean
   capabilities: Capability[]
 }
-const forbiddenFields = new Set(['alias', 'ref', 'versionControl', 'disabledCapabilities', 'peerId'])
+const forbiddenFields = new Set(['alias', 'ref', 'disabledCapabilities', 'peerId'])
 export class NodeAccessError extends Error {}
 
 function validPath(value: unknown): value is Scope {
@@ -192,13 +193,12 @@ export function setNodeLinkMask(r: Replica, path: Scope, peer: string, remoteId:
     alias: { id: previous ? content(r.store, previous.cid).data.alias!.id : id },
     nodeLink: { node: sourceId(r, path), ...(previous && content(r.store, previous.cid).data.nodeLink?.projection ? { projection: true } : {}) },
     ref: { id: remoteId, peer }
-  }, policy, previous ? [[r.store.primitive.previousVersion.getId(), previous.cid]] : []))
+  }, policy, previous ? [[primitive(r.store, 'previous'), previous.cid]] : []))
   if (previous && content(r.store, previous.cid).data.ref?.id === remoteId && refValueCid(r.store, content(r.store, previous.cid)) === policy) return r
   // Endpoint refs belong to this peer's root alias, outside its shared TARGETPOINTER.
   // They persist locally but never become another peer's mergeable policy.
   const root = content(r.store, r.store.rootNodeId)
   r.store.rootNodeId = put(r.store, { ...root, children: [...root.children.filter(e => !previous || e[1] !== previous.cid), [libAt(r.store).capabilities.provideNode!, ref]] })
-  r.store.updateCtxCallback?.(r.store.exportContext([]))
   return { ...r }
 }
 
@@ -236,7 +236,7 @@ export function decidingMember(store: Replica['store'], value: FosNodeContent, a
 export function grantsOf(store: Replica['store'], value: FosNodeContent, member: MemberRecord): boolean {
   if (member.capabilities.length) return true
   const entry = membershipOf(store, value, member.peerId), node = entry && content(store, entry[1])
-  return !(node && (isPeerReference(node) || node.children.some(e => e[0] === store.primitive.acceptsNode.getId())))
+  return !(node && (isPeerReference(node) || node.children.some(e => e[0] === primitive(store, 'accepts'))))
 }
 
 function permitted(r: Replica, cid: string, authority: Pick<NodeAuthority, 'peerId' | 'owner'>, inherited: boolean): boolean {
@@ -277,7 +277,7 @@ export function exchangedMember(store: Replica['store'], edge: FosPathElem): boo
 }
 /** A peer's transport offered here (`offerNodeTransport`): a native `provideNode` value, this device's connection to that peer, never exchanged. */
 export function isTransportOffer(store: Replica['store'], edge: FosPathElem): boolean {
-  if (edge[0] !== store.primitive.acceptsNode.getId()) return false
+  if (edge[0] !== primitive(store, 'accepts')) return false
   return advertisedRows(store, edge[1]).some(([left, ref]) => typeIdOf(store, left) === 'capabilities.provideNode' && refSubmissions(store, ref).some(value => primitiveValue(store, value)))
 }
 export function exchangedChildren(r: Replica, cid: string, path: Scope): Array<{ id: string; edge: FosPathElem; member?: true; grant?: true; literal?: true }> {

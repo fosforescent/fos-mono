@@ -1,3 +1,4 @@
+import { primitive } from './primitives'
 import { membershipPathAt } from './index'
 import { addRefAt, addMemberAt, addTask, bindRefInputs, content, contextMemberRefs, createBranch, createReplica, headCid, put, refProperties, resolveScope, setHandlerOffersAt, refNodeContent, selectBranch, commitRoot, updateAtScope, withMember, type Replica } from './index'
 
@@ -5,7 +6,7 @@ const properties = (r: Replica, path: string[]) => refProperties(r.store, resolv
 
 test('local bindings and remote members expose properties through the same ref traversal', () => {
   let r = addTask(createReplica('owner'), [], 'Project', 1, 'project')
-  const type = r.store.primitive.documentField.getId()
+  const type = primitive(r.store, 'string')
   r = addRefAt(r, ['project'], 'input', type, 2, null, 'input')
   r = addMemberAt(r, ['project'], 'remote', 'Remote', ['read'], 3)
   expect(properties(r, ['project'])).toEqual(expect.arrayContaining([
@@ -20,7 +21,7 @@ test('local bindings and remote members expose properties through the same ref t
 
 test('same-name submissions and types remain separate; reading a feature does not grant its peers main authority', () => {
   let r = addTask(createReplica('owner'), [], 'Project', 1, 'project')
-  for (const id of ['first', 'second']) r = addRefAt(r, ['project'], id, r.store.primitive.documentField.getId(), 2, put(r.store, { data: { description: { content: id } }, children: [] }), 'shared')
+  for (const id of ['first', 'second']) r = addRefAt(r, ['project'], id, primitive(r.store, 'string'), 2, put(r.store, { data: { description: { content: id } }, children: [] }), 'shared')
   expect(properties(r, ['project']).filter(p => p.name === 'shared').map(p => content(r.store, p.value!).data.description?.content).sort()).toEqual(['first', 'second'])
   r = addMemberAt(r, ['project'], 'main-peer', 'Main', ['read'], 3)
   r = createBranch(r, ['project'], 'feature', 4)

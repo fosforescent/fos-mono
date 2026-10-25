@@ -1,4 +1,5 @@
 /** Lexically scoped declarations and their accepted submissions. No capability vocabulary. */
+import { primitive } from './primitives'
 import { isHandlerStateLeft } from './capabilities'
 import type { FosStore } from '../dag-implementation/store'
 import { isTemplateType, isLibraryRef, content, identityCid, isBranchChoice, readChoice, isRefNode, refValueCid, typeIdOf, valueContent } from './graph'
@@ -29,7 +30,7 @@ export function refSubmissionSet(store: FosStore, cid: string): { values: string
           walk(isRefNode(store, right) && !refValueCid(store, right) && right.data.alias?.id === node.data.alias?.id ? option.edge[0] : identityCid(store, option.edge))
         }
       } else if (isRefNode(store, node)) {
-        for (const [key, target] of node.children) if (key === store.primitive.targetPointerConstructor.getId()) walk(target)
+        for (const [key, target] of node.children) if (key === primitive(store, 'target')) walk(target)
       } else values.add(current)
     } finally { visiting.delete(current) }
   }

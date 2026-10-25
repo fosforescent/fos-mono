@@ -1,4 +1,5 @@
 /** The standard library: a mutable ref like any other, found by what it holds, changed by accepted submissions. */
+import { createStore } from './graph'
 import { nativeRef } from './native-refs'
 import { primitiveImplementation } from './primitives'
 import { libAt, handlerOfferId } from './graph'
@@ -81,7 +82,7 @@ test('a nearer library without a field cannot borrow manual handlers or row type
   expect(libraryTypeAt(r.store, TASK_TYPE, ['workspace'])).toBeNull()
   expect(() => rowTypeAt(r.store, TASK_TYPE, ['workspace'])).toThrow('row type task')
   expect(manualHandlers(r, []).length).toBeGreaterThan(0)
-  expect(libraryTypeAt(new FosStore(), TASK_TYPE)).toBeNull()
+  expect(libraryTypeAt(createStore(), TASK_TYPE)).toBeNull()
 })
 
 test('a device root has its library ref, a row of the Library type, found by what it holds', () => {
@@ -125,7 +126,7 @@ test('a library shared by a group is an ordinary ref: members submit, the ref\'s
   expect(view(r, [HOME_ID])!.tasks.find(t => t.id === 'shop')!.type).toBe(TASK_TYPE)
   // exported, it is the content a new device's library takes, and the build source Home sees
   const bundle = exportLibrary(r, [HOME_ID, TEAM])
-  const device = ensureDeviceLibrary(createReplica('user:dave', new FosStore()), bundle, 7)
+  const device = ensureDeviceLibrary(createReplica('user:dave', createStore()), bundle, 7)
   expect(taskTitle(device, [])).toBe('Errand')
   const source = exportLocalLibrary(r)
   expect(content(r.store, rowTypeAt(r.store, TASK_TYPE, [HOME_ID])).data).toEqual(source.nodes[namesInLibrary(r.store, source.rootNodeId).byName.get(TASK_TYPE)!]!.data)

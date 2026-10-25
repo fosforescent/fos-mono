@@ -7,7 +7,7 @@ import { contextMemberRefs, discoverHandlers } from './handlers'
 import { sameCapabilityType } from './capabilities'
 import type { EvaluationStep } from './evaluation'
 import { refSubmissions, refValueCompatible } from './scoped-refs'
-import { primitiveConstructor, primitiveRef, primitiveValue, primitiveImplementation, matchesInstructionRef, instructionPrimitives } from './primitives'
+import { primitiveRef, primitiveValue, primitiveImplementation, implementationOf, matchesInstructionRef, instructionPrimitives } from './primitives'
 import type { Native } from './native'
 
 export type NativeImplementation<Context = unknown> = {
@@ -35,7 +35,7 @@ export type PrimitiveDefinition<Context> = NativeImplementation<Context> & {
 
 export function nativeRef<Context>(store: FosStore, host: string, definition: PrimitiveDefinition<Context>, native: NativeImplementation<Context> = definition, at: Scope = []): string {
   const type = definition.type(store, at)
-  return primitiveRef(store, { id: handlerOfferId(host, type, definition.id), implementation: definition.id, type, host, label: definition.label, native })
+  return primitiveRef(store, { id: handlerOfferId(host, type, definition.id), implementation: definition.id, type, host, label: definition.label, implement: native })
 }
 
 /** Restore only published native values, retaining the capability version each offer pinned. */
@@ -46,8 +46,7 @@ export function restoreNativeRef<Context>(replica: Replica, at: Scope, host: str
     for (const value of refSubmissions(store, offer.cid)) {
       const primitive = primitiveValue(store, value)
       if (primitive?.host !== host || primitive.implementation !== implementation) continue
-      const edge = content(store, value).children.find(([left]) => left === primitiveConstructor(store))!
-      store.getNodeByAddress(edge[1])!.nativeImplementation = { value: native, type: offer.type }
+      store.implementations.set(implementationOf(store, value)!, { value: native, type: offer.type })
     }
   }
 }

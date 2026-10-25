@@ -14,6 +14,7 @@
  * that would introduce one are refused instead (`assertNoNewTypeErrors`).
  */
 
+import { primitive } from './primitives'
 import type { FosStore } from '../dag-implementation/store'
 import type { FosNodeContent, FosPathElem } from '../types'
 import { matchesGraph } from './structural'
@@ -21,14 +22,14 @@ import { DOCUMENT_ROOT_TYPE, PATTERN_TYPE } from './library-types'
 import { shippedRef, content, valueContent, isHandle, isRefNode, refValueCid, put, isRowEdge, isRowOfType, aliasIdOf, isChoiceEdge, missingTemplateOf } from './graph'
 
 export function isTypeErrorEdge(store: FosStore, edge: FosPathElem): boolean {
-  return edge[0] === store.primitive.typeErrorConstructor.getId()
+  return edge[0] === primitive(store, 'typeError')
 }
 
 /** The row edge a type error stands for. */
 export function typeErrorInner(store: FosStore, edge: FosPathElem): FosPathElem {
   const node = content(store, edge[1])
-  const ip = node.children.find(([i]) => i === store.primitive.instructionPointerConstructor.getId())?.[1]
-  const tp = node.children.find(([i]) => i === store.primitive.targetPointerConstructor.getId())?.[1]
+  const ip = node.children.find(([i]) => i === primitive(store, 'instruction'))?.[1]
+  const tp = node.children.find(([i]) => i === primitive(store, 'target'))?.[1]
   if (!ip || !tp) throw new Error('Malformed type error node.')
   return [ip, tp]
 }
@@ -46,8 +47,8 @@ export function typeErrorOf(store: FosStore, edge: FosPathElem): string[] | null
 /** A store root's type: its root alias's instruction; a bare root (no alias yet) is the document root its first commit makes it. */
 export function rootTypeOf(store: FosStore): string {
   const root = content(store, store.rootNodeId)
-  const isAlias = root.children.some(([i]) => i === store.primitive.targetPointerConstructor.getId())
-  const type = isAlias ? root.children.find(([i]) => i === store.primitive.instructionPointerConstructor.getId())?.[1] : undefined
+  const isAlias = root.children.some(([i]) => i === primitive(store, 'target'))
+  const type = isAlias ? root.children.find(([i]) => i === primitive(store, 'instruction'))?.[1] : undefined
   return type ?? shippedRef(store, DOCUMENT_ROOT_TYPE)!
 }
 
@@ -60,7 +61,7 @@ export function rootTypeError(store: FosStore, target: string): string[] | null 
 export function unwrapRootTarget(store: FosStore, target: string): string {
   const node = content(store, target)
   if (!node.data.typeError) return target
-  return node.children.find(([i]) => i === store.primitive.targetPointerConstructor.getId())?.[1] ?? target
+  return node.children.find(([i]) => i === primitive(store, 'target'))?.[1] ?? target
 }
 
 type Pattern = { any: true } | { any: false; predicates: string[]; exact: boolean }
@@ -132,8 +133,8 @@ export function rejectedChildren(store: FosStore, typeCid: string, value: FosNod
 
 function typeErrorEdge(store: FosStore, row: FosPathElem, rejected: string[]): FosPathElem {
   const alias = content(store, row[1]).data.alias
-  const node = put(store, { data: { ...(alias ? { alias } : {}), typeError: { rejected } }, children: [[store.primitive.instructionPointerConstructor.getId(), row[0]], [store.primitive.targetPointerConstructor.getId(), row[1]]] })
-  return [store.primitive.typeErrorConstructor.getId(), node]
+  const node = put(store, { data: { ...(alias ? { alias } : {}), typeError: { rejected } }, children: [[primitive(store, 'instruction'), row[0]], [primitive(store, 'target'), row[1]]] })
+  return [primitive(store, 'typeError'), node]
 }
 
 /** A node with `edgeFn` applied to its children (through a ref node to its value), memoized per store in `memos`. */
@@ -157,7 +158,7 @@ function mapChildren(store: FosStore, cid: string, memos: WeakMap<FosStore, Map<
       })
       if (changed) {
         const nextValue = put(store, { ...value, children })
-        result = ref ? put(store, { ...node, children: node.children.map(([i, t]): FosPathElem => i === store.primitive.targetPointerConstructor.getId() && t === valueCid ? [i, nextValue] : [i, t]) }) : nextValue
+        result = ref ? put(store, { ...node, children: node.children.map(([i, t]): FosPathElem => i === primitive(store, 'target') && t === valueCid ? [i, nextValue] : [i, t]) }) : nextValue
       }
     }
   }
@@ -201,7 +202,7 @@ export function canonicalTypeErrors(store: FosStore, target: string, rootType: s
   const inner = canonicalNode(store, unwrapRootTarget(store, target))
   const rejected = rejectedChildren(store, rootType, valueContent(store, inner))
   if (!rejected.length) return inner
-  return put(store, { data: { typeError: { rejected } }, children: [[store.primitive.targetPointerConstructor.getId(), inner]] })
+  return put(store, { data: { typeError: { rejected } }, children: [[primitive(store, 'target'), inner]] })
 }
 
 const NONE: ReadonlySet<string> = new Set()

@@ -1,3 +1,4 @@
+import { primitive } from './primitives'
 import { addConstructedRow, addRow, createReplica, headCid, loadReplica, moveNode, renameTask, serializeReplica, setRowContentAt, view } from './replica'
 import { content, formValueAt, isRefNode, put, reachableNodes, importNodes, resolveScope, rowTypeAt, valueContent, copyRowContent, commitRoot, constructorPattern, matchesGraph, formRecord } from './index'
 import { constructForm, formText, formTitle } from './forms'
@@ -46,7 +47,7 @@ test('notes are a title line plus a Markdown body row, bindings, and ordinary ch
   expect(definition.data.form).toEqual({ open: true, headline: ['body'] })
   // the body field's type is the library's Markdown text
   expect(content(r.store, rowTypeAt(r.store, MARKDOWN_TYPE)).data.form).toEqual({ primitive: 'text', text: { mediaType: 'text/markdown', interpolate: true } })
-  r = addRefAt(r, [], 'name', r.store.primitive.documentField.getId(), 1, put(r.store, { data: { description: { content: 'Ada' } }, children: [] }), 'name')
+  r = addRefAt(r, [], 'name', primitive(r.store, 'string'), 1, put(r.store, { data: { description: { content: 'Ada' } }, children: [] }), 'name')
   r = addRow(r, [], NOTE_TYPE, '# Hello {name}\n\nDear {name}, $x^2$.', 2, { id: 'document' })
   r = addRow(r, ['document'], NOTE_TYPE, 'Child document', 3, { id: 'child' })
   const node = () => valueContent(r.store, resolveScope(r.store, headCid(r), ['document'])!)
@@ -76,7 +77,7 @@ test('a note pinned to a retired type with no graph identity reads as a plain ro
   const type = put(r.store, retiredType('Note', 'note'))
   const old = put(r.store, { data: { alias: { id: 'old-note' }, description: { content: '# Old {name}' } }, children: [] })
   commitRoot(r.store, put(r.store, { ...valueContent(r.store, headCid(r)), children: [...valueContent(r.store, headCid(r)).children, [type, old]] }), 1)
-  r = addRefAt(r, ['old-note'], 'old-binding', r.store.primitive.documentField.getId(), 2, put(r.store, { data: { description: { content: 'Grace' } }, children: [] }), 'name')
+  r = addRefAt(r, ['old-note'], 'old-binding', primitive(r.store, 'string'), 2, put(r.store, { data: { description: { content: 'Grace' } }, children: [] }), 'name')
   r = addRow(r, ['old-note'], PLAIN_TYPE, 'Keep child', 3, { id: 'child' })
   const child = resolveScope(r.store, headCid(r), ['old-note', 'child'])
   r = renameTask(r, [], 'old-note', '# New {name}', 4)
@@ -89,7 +90,7 @@ test('a note pinned to a retired type with no graph identity reads as a plain ro
 test('a graph note inherits shared context after node exchange and supports remote editing', () => {
   let a = createReplica('a'), server = createReplica('server'), b = createReplica('b')
   a = addRow(a, [], NOTE_TYPE, '# Hello {name}', 1, { id: 'document' })
-  a = addRefAt(a, [], 'name', a.store.primitive.documentField.getId(), 2, put(a.store, { data: { description: { content: 'Ada' } }, children: [] }), 'name')
+  a = addRefAt(a, [], 'name', primitive(a.store, 'string'), 2, put(a.store, { data: { description: { content: 'Ada' } }, children: [] }), 'name')
   a = syncWith(a, server)
   b = syncWith(b, server)
   const row = () => view(b, [])!.tasks.find(row => row.id === 'document')!
@@ -151,7 +152,7 @@ test('list entries can be added, edited and reordered through ordinary row opera
   const list = valueContent(r.store, resolveScope(r.store, headCid(r), path)!)
   expect(fields(r.store, list).map(e => valueContent(r.store, e[1]).data.position?.value)).toEqual([0, 1])
   expect(fields(r.store, list).every(e => isRefNode(r.store, content(r.store, e[1])))).toBe(true)
-  const name = list.children.find(([left]) => left === r.store.primitive.nameField.getId())!
+  const name = list.children.find(([left]) => left === primitive(r.store, 'name'))!
   expect(content(r.store, name[1]).data.position).toBeUndefined()
 })
 

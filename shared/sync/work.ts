@@ -1,4 +1,5 @@
 /** A bounded, local planning-agent flow built from rows, refs, templates and proposals. */
+import { primitive } from './primitives'
 import { instantiateLibraryTemplate } from './replica'
 import { settingOf } from './graph'
 import { isHandlerStateLeft } from './capabilities'
@@ -34,8 +35,8 @@ const slots = (r: Replica, cid: string, type: string) => refArguments(r.store, v
 /** A saved model attempt has a context snapshot, handler binding and return slot. */
 export function isAttempt(r: Replica, cid: string): boolean {
   return valueContent(r.store, cid).children.some(([left]) => typeIdOf(r.store, left) === 'capabilities.llm')
-    && slots(r, cid, r.store.primitive.descriptionField.getId()).some(slot => !!slot.targetCid)
-    && slots(r, cid, r.store.primitive.documentField.getId()).length > 0
+    && slots(r, cid, primitive(r.store, 'string')).some(slot => !!slot.targetCid)
+    && slots(r, cid, primitive(r.store, 'string')).length > 0
 }
 
 /** Shared resolution, with the primitive Fos advertisement adapted to a native value. */
@@ -93,9 +94,9 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
         emit(target, 'Referenced input', depth + 1, true, false, [...found.path, found.row.id])
       }
     }
-    for (const input of refArguments(store, value, store.primitive.documentField.getId())) {
+    for (const input of refArguments(store, value, primitive(store, 'string'))) {
       if (settingOf(store, content(store, input.cid))) continue // a device's settings are not inputs
-      const resolved = resolveBinding(store, store.primitive.documentField.getId(), input.cid, contextBindings(r, at), undefined, { scope: { replica: r, path: at } })
+      const resolved = resolveBinding(store, primitive(store, 'string'), input.cid, contextBindings(r, at), undefined, { scope: { replica: r, path: at } })
       if (resolved.status !== 'ready') resolved.problems.forEach(p => blockers.add(p))
       else emit(resolved.cid!, 'Bound input', depth + 1, true)
     }
@@ -141,8 +142,8 @@ export function workAttempts(r: Replica, requestPath: Scope) {
   return (view(r, requestPath)?.tasks ?? []).flatMap((row) => {
     const path = [...requestPath, row.id], { cid } = nodeAt(r, path)
     if (!isAttempt(r, cid)) return []
-    const result = slots(r, cid, r.store.primitive.documentField.getId())[0]!
-    const snapshot = slots(r, cid, r.store.primitive.descriptionField.getId())[0]?.targetCid
+    const result = slots(r, cid, primitive(r.store, 'string'))[0]!
+    const snapshot = slots(r, cid, primitive(r.store, 'string'))[0]?.targetCid
     if (!snapshot) return []
     const saved = valueContent(r.store, snapshot)
     const systemEdge = saved.children.find((edge) => isRowOfType(r.store, edge, NOTE_TYPE))
@@ -166,13 +167,13 @@ export function beginTaskWork(r: Replica, requestPath: Scope, preview: WorkConte
   r = addRow(r, requestPath, PLAIN_TYPE, `Agent attempt ${workAttempts(r, requestPath).length + 1}`, now, { id })
   r = addRow(r, path, NOTE_TYPE, current.prompt, now, { id: contextId })
   r = addRow(r, [...path, contextId], NOTE_TYPE, WORK_SYSTEM, now)
-  for (const source of current.sources) r = addRefAt(r, [...path, contextId], newId(), store.primitive.documentField.getId(), now, source)
+  for (const source of current.sources) r = addRefAt(r, [...path, contextId], newId(), primitive(store, 'string'), now, source)
   const snapshot = nodeAt(r, [...path, contextId]).cid
-  r = addRefAt(r, path, newId(), store.primitive.descriptionField.getId(), now, snapshot)
+  r = addRefAt(r, path, newId(), primitive(store, 'string'), now, snapshot)
   const handlerId = newId()
   r = addRefAt(r, path, handlerId, type, now)
   r = setRefValueAt(r, [...path, handlerId], put(store, refNodeContent(store, {}, handler, [])), now)
-  r = addRefAt(r, path, resultId, store.primitive.documentField.getId(), now)
+  r = addRefAt(r, path, resultId, primitive(store, 'string'), now)
   return { replica: r, path, resultPath: [...path, resultId], prompt: current.prompt, system: WORK_SYSTEM }
 }
 

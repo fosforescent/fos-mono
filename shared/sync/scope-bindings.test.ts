@@ -1,3 +1,4 @@
+import { primitive } from './primitives'
 import {
   addMemberAt, addRefAt, addRequirement, addTask, demandPattern, supplyRequirement, supplyValue,
   compileRefGraph, content, contextBindings, createReplica, discoverHandlers, headCid, put, refNodeContent,
@@ -9,7 +10,7 @@ const at = (r: ReturnType<typeof createReplica>, path: string[]) => resolveScope
 const literal = (r: ReturnType<typeof createReplica>, value: string) => put(r.store, { data: { description: { content: value } }, children: [] })
 
 test('explicit arguments and structural ancestor paths retain their target while bare names resolve locally', () => {
-  let r = createReplica(), type = r.store.primitive.documentField.getId()
+  let r = createReplica(), type = primitive(r.store, 'string')
   r = addRefAt(r, [], 'outer', type, 1, literal(r, 'Outer tools'), 'Tools')
   r = addTask(r, [], 'Child', 2, 'child')
   r = addRefAt(r, ['child'], 'inner', type, 3, literal(r, 'Inner tools'), 'Tools')
@@ -28,7 +29,7 @@ test('explicit arguments and structural ancestor paths retain their target while
 })
 
 test('all reference consumers retain conflicting same-ref assignments instead of selecting by traversal order', () => {
-  let r = createReplica(), type = r.store.primitive.documentField.getId()
+  let r = createReplica(), type = primitive(r.store, 'string')
   r = addRefAt(r, [], 'one', type, 1, literal(r, 'Same'), 'Tools')
   r = addRefAt(r, [], 'two', type, 2, literal(r, 'Same'), 'Tools')
   const reference = put(r.store, { data: { ref: { id: 'one' } }, children: [] })
@@ -70,7 +71,7 @@ test('supplies, arguments and handler discovery share a peer declaration and its
 })
 
 test('empty explicit refs never borrow a different same-name provider', () => {
-  let r = createReplica(), type = r.store.primitive.documentField.getId()
+  let r = createReplica(), type = primitive(r.store, 'string')
   r = addRefAt(r, [], 'outer', type, 1, literal(r, 'Outer'), 'Tools')
   r = addTask(r, [], 'Child', 2, 'child')
   r = addRefAt(r, ['child'], 'unfilled', type, 3, null, 'Tools')
@@ -82,7 +83,7 @@ test('empty explicit refs never borrow a different same-name provider', () => {
 })
 
 test('denied nearer declarations block outer providers across lookup and compilation', () => {
-  let r = createReplica(), type = r.store.primitive.documentField.getId()
+  let r = createReplica(), type = primitive(r.store, 'string')
   r = addRefAt(r, [], 'outer', type, 1, literal(r, 'Outer'), 'Tools')
   r = addTask(r, [], 'Child', 2, 'child')
   r = addRefAt(r, ['child'], 'inner', type, 3, literal(r, 'Secret'), 'Tools')

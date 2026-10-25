@@ -1,3 +1,5 @@
+import { createStore } from './graph'
+import { primitive } from './primitives'
 import { FosStore } from '../dag-implementation/store'
 import {
   addTask, addRefAt, addRow, compileRow, content, createReplica, commitRoot, headCid, libAt,
@@ -9,7 +11,7 @@ import {
 import { declareTestCapability } from './test-helpers'
 
 test('lookup requires a declared library and never installs missing fields', () => {
-  const store = new FosStore(), before = store.table.size
+  const store = createStore(), before = store.table.size
   expect(() => libAt(store)).toThrow('No library binding')
   expect(store.table.size).toBe(before)
   const r = createReplica()
@@ -49,7 +51,7 @@ test('two libraries in one scope are ambiguous, including identical definitions'
 test('nested stores resolve through their enclosing graph and recognize imported pinned fields', () => {
   let outer = addTask(createReplica(), [], 'Context', 1, 'context')
   outer = declareTestCapability(outer, 'paint', ['context'])
-  const inner = createReplica('draft', new FosStore())
+  const inner = createReplica('draft', createStore())
   nestScope(inner.store, { store: outer.store, root: headCid(outer), at: ['context'] })
   const type = libAt(inner.store).capabilities.paint!
   expect(type).toBe(libAt(outer.store, ['context']).capabilities.paint)
@@ -74,7 +76,7 @@ test('native restoration keeps the offered capability version after a library up
 })
 
 test('both sides of a row resolve from its parent; children see its declarations', () => {
-  let r = createReplica(), text = r.store.primitive.documentField.getId()
+  let r = createReplica(), text = primitive(r.store, 'string')
   const literal = (value: string) => put(r.store, { data: { description: { content: value } }, children: [] })
   r = addRefAt(r, [], 'outer', text, 1, literal('parent'), 'chosen')
   const expression = put(r.store, { data: { refExpression: { up: 0, path: ['chosen'], lexical: true } }, children: [] })
@@ -156,7 +158,7 @@ test('library aliases cannot reclassify pinned constructors, including after rel
 })
 
 test('constructor names are explicit string rows and ambiguous names fail', () => {
-  const store = new FosStore(), key = store.primitive.nameField.getId()
+  const store = createStore(), key = primitive(store, 'name')
   const text = (value: string) => put(store, { data: { scalar: { type: 'text', value } }, children: [] })
   const unnamed = put(store, { data: { name: { content: 'task' } }, children: [] })
   expect(typeIdOf(store, unnamed)).toBeNull()
@@ -180,7 +182,7 @@ test('every lookup by name stops at the nearest scope that answers: ambiguous an
 })
 
 test('a ref path denied at a nearer scope does not resolve from an outer one', () => {
-  let r = addTask(createReplica(), [], 'Child', 1, 'child'), text = r.store.primitive.documentField.getId()
+  let r = addTask(createReplica(), [], 'Child', 1, 'child'), text = primitive(r.store, 'string')
   const literal = (value: string) => put(r.store, { data: { description: { content: value } }, children: [] })
   r = addRefAt(r, [], 'outer', text, 2, literal('outer'), 'chosen')
   r = addRefAt(r, ['child'], 'inner', text, 3, literal('inner'), 'chosen')

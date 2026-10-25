@@ -1,3 +1,4 @@
+import { primitive } from './primitives'
 import { syncWith, userView } from './test-helpers'
 import { FosStore } from '../dag-implementation/store'
 import { addRow, addTask, createBranch, createReplica, headCid, importNodes, loadReplica, mergeBranch, mergeNodes, commitRoot, reachableNodes, renameTask, selectBranch, serializeReplica, setBranchMergeRequest, setTaskDone, view } from './index'
@@ -119,7 +120,7 @@ test('merge requests are typed children of branch constructors and survive edits
   expect(record.options.filter(o => o.requestMerge).map(o => o.peerId)).toEqual(['feature'])
   // the request is a row of the approve action on the branch's option: what it is, is its left
   const pointers = content(r.store, choice).children.map(e => content(r.store, e[1]))
-  expect(pointers.flatMap(pointer => pointer.children).filter(([key]) => key === r.store.primitive.approveAction.getId())).toHaveLength(1)
+  expect(pointers.flatMap(pointer => pointer.children).filter(([key]) => key === primitive(r.store, 'approve'))).toHaveLength(1)
   r = renameTask(r, [], 'p', 'Changed on feature', 4)
   r = loadReplica(serializeReplica(r))
   expect(userView(r)!.tasks[0]!.branches?.mergeRequests).toEqual(['feature'])

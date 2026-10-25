@@ -14,6 +14,7 @@
  * children, ours' order wins (no choice is raised for pure reorders).
  */
 
+import { primitive } from './primitives'
 import { FosStore } from '../dag-implementation/store'
 import type { FosDataContent, FosNodeContent, FosPathElem } from '../types'
 import {
@@ -155,7 +156,7 @@ function mergeNode(
     // bookkeeping only (members, peers, proposals) is not a version, so the existing PREV edges
     // are kept as they are (unioned, like any other bookkeeping).
     const valueChanged = mergedValue !== oursValue || mergedValue !== theirsValue
-    const prevEdge = (cid: string): FosPathElem => [store.primitive.previousVersion.getId(), cid]
+    const prevEdge = (cid: string): FosPathElem => [primitive(store, 'previous'), cid]
     const existingPrev = (r: { node: FosNodeContent } | null): FosPathElem[] => (r ? r.node.children.filter((e) => isPrevEdge(store, e)) : [])
     const prev: FosPathElem[] = valueChanged
       ? (o.cid === t.cid ? [prevEdge(o.cid)] : [prevEdge(o.cid), prevEdge(t.cid)])
@@ -183,7 +184,6 @@ function mergeData(base: FosDataContent, ours: FosDataContent, theirs: FosDataCo
   const t = theirs as Record<string, unknown>
 
   for (const key of keys) {
-    if (key === 'versionControl') continue
     if (key === 'updated') {
       const time = Math.max(timeOf(o[key]), timeOf(t[key]), timeOf(b[key]))
       if (time > 0) out[key] = { time }
@@ -276,7 +276,7 @@ function mergeChildren(
     ]
     const choiceCid = putChoice(store, id, b && (!isChoiceEdge(store, b) || isBranchChoice(store, content(store, b[1]))) ? b : null, options)
     newChoiceCids.push(choiceCid)
-    out.push([store.primitive.choiceTarget.getId(), choiceCid])
+    out.push([primitive(store, 'choice'), choiceCid])
   }
   return out
 }
@@ -328,15 +328,15 @@ export function resolveChoiceIn(store: FosStore, value: FosNodeContent, choiceId
     if (existing !== edge) { children.push(existing); continue }
     if (pick === null) continue
     const choice = content(store, edge[1])
-    const alternatives = choice.children.filter(([i]) => i === store.primitive.optionNotSelectedConstructor.getId())
+    const alternatives = choice.children.filter(([i]) => i === primitive(store, 'notSelected'))
     const alt = alternatives[pick]
     if (!alt) throw new Error(`choice ${choiceId} has no option ${pick}`)
     const pointer = content(store, alt[1])
     let instr: string | null = null
     let target: string | null = null
     for (const [i, t] of pointer.children) {
-      if (i === store.primitive.instructionPointerConstructor.getId()) instr = t
-      if (i === store.primitive.targetPointerConstructor.getId()) target = t
+      if (i === primitive(store, 'instruction')) instr = t
+      if (i === primitive(store, 'target')) target = t
     }
     if (!instr || !target) continue // the picked option was "deleted"
     const picked: FosPathElem = [instr, target]
