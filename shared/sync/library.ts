@@ -155,7 +155,7 @@ export function deviceHandlers(r: Replica, at?: Scope): ManualHandler[] {
   return libraryArgs(r, at ?? homePath(r)).flatMap(({ name, declaration, pattern, value }) => {
     const allocation = allocationShapeOf(r.store, pattern)
     if (!allocation) return []
-    return [{ id: name, label: refTitle(r.store, declaration) ?? name, capability: 'allocation' as const, resource: allocation.type, device: true, run: value }]
+    return [{ id: name, label: refTitle(r.store, declaration) ?? name, capability: 'allocation' as const, resource: allocation.type, device: true, primitive: value }]
   })
 }
 

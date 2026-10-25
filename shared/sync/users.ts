@@ -58,7 +58,7 @@ export function unverifiedUser(username: string): UserRecord {
 
 /** A user object's fields, read through its type's fields. */
 export function readUser(store: FosStore, typeCid: string, node: FosNodeContent): UserRecord | null {
-  const r = rowRecord(store, typeCid, node.data.alias?.id ?? '', node)
+  const r = rowRecord(store, typeCid, node)
   if (typeof r.username !== 'string' || !r.username) return null
   const verification = typeof r.attestation === 'string' && r.attestation
     ? { by: String(r.verifiedBy ?? ''), method: String(r.verifyMethod ?? ''), issuedAt: Number(r.issuedAt ?? 0), attestation: r.attestation }

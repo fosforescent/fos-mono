@@ -448,7 +448,7 @@ export function setRowContentAt(replica: Replica, at: Scope, aliasId: string, ty
       const values = new Map<string, string>(), title = titleField(replica.store, template), done = rowVocabulary(replica.store)?.done
       if (title && body) values.set(title, fieldText(replica.store, title, body))
       if (done && completes(replica.store, template)) values.set(done, extras.done ? put(replica.store, { data: {}, children: [] }) : primitive(replica.store, 'void'))
-      const rebuilt = built ? { ...built, children: [...built.children, ...node.children.filter(e => isRowEdge(replica.store, e) && !isFieldRow(replica.store, aliasId, e))] } : rebuildRow(replica.store, template, aliasId, node, values, now)
+      const rebuilt = built ? { ...built, children: [...built.children, ...node.children.filter(e => isRowEdge(replica.store, e) && !isFieldRow(replica.store, e))] } : rebuildRow(replica.store, template, aliasId, node, values, now)
       const next = withChildValue(replica.store, edge, userBound(replica, at, withTextParameters(replica.store, withKindData(replica.store, rebuilt, type, body, extras), body), extras), now)
       return replaceEdge(replica.store, value, `a:${aliasId}`, rowEdge(replica.store, identityCid(replica.store, next), template))
     }
@@ -628,7 +628,7 @@ export function attachmentAt(replica: Replica, path: Scope): Attachment | null {
   const parent = resolveScope(replica.store, headCid(replica), path.slice(0, -1))
   const edge = parent ? findEdge(replica.store, valueContent(replica.store, parent), `a:${path.at(-1)}`) : null
   if (!edge || !isLibraryType(replica.store, edge[0], ATTACHMENT_TYPE)) return null
-  const record = rowRecord(replica.store, edge[0], path.at(-1)!, valueContent(replica.store, identityCid(replica.store, edge)))
+  const record = rowRecord(replica.store, edge[0], valueContent(replica.store, identityCid(replica.store, edge)))
   const { filename: name, mediaType: type, data, size } = record
   return typeof name === 'string' && typeof type === 'string' && typeof data === 'string' && typeof size === 'number' ? { name, type, data, size } : null
 }
@@ -658,7 +658,7 @@ function fileReferenceRow(replica: Replica, at: Scope, rowId: string): { edge: F
   const edge = parent ? findEdge(replica.store, valueContent(replica.store, parent), `a:${rowId}`) : null
   if (!edge || !isLibraryType(replica.store, edge[0], FILE_REFERENCE_TYPE)) return null
   const node = valueContent(replica.store, identityCid(replica.store, edge))
-  const { path, sha256, size } = rowRecord(replica.store, edge[0], rowId, node)
+  const { path, sha256, size } = rowRecord(replica.store, edge[0], node)
   return typeof path === 'string' && typeof sha256 === 'string' && typeof size === 'number' ? { edge, node, file: { path, sha256, size } } : null
 }
 /** The file the row at `path` references, when it is a file-reference row whose fields are here. */
@@ -677,7 +677,7 @@ export function setRowFieldsAt(replica: Replica, at: Scope, rowId: string, input
   const edge = parent ? findEdge(replica.store, valueContent(replica.store, parent), `a:${rowId}`) : undefined
   const type = edge && rowTypeOf(replica.store, edge)
   if (!type) throw new Error('This row has no fields.')
-  return updateTask(replica, at, rowId, now, row => withFieldValues(replica.store, type, rowId, row, input, now))
+  return updateTask(replica, at, rowId, now, row => withFieldValues(replica.store, type, row, input, now))
 }
 
 /** Copy the row `aliasId` (with its subtree, fresh ids) from `fromPath` to `toPath` at `position`. */
@@ -753,7 +753,7 @@ export function renameTask(replica: Replica, at: Scope, taskId: string, title: s
   return updateTask(replica, at, taskId, now, (task) => {
     if (edge && rowTitle(replica.store, identityCid(replica.store, edge), rowTypeOf(replica.store, edge)) === trimmed) return null
     // a row that holds text (a field, or its own) takes the new text there; one still on its description keeps it there
-    return withRowText(replica.store, taskId, task, trimmed, now) ?? withLabel(replica.store, task, trimmed)
+    return withRowText(replica.store, task, trimmed, now) ?? withLabel(replica.store, task, trimmed)
   })
 }
 

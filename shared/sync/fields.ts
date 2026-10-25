@@ -21,9 +21,12 @@ export function isLeafType(store: FosStore, cid: string): boolean {
 export function typeRows(store: FosStore, type: string): FosPathElem[] {
   return store.table.get(type)?.children ?? []
 }
-/** The identity of row `id`'s ref for `field`. */
-export function fieldRefId(id: string, field: string): string {
-  return hashContent({ data: { alias: { id } }, children: [[field, field]] })
+/**
+ * The identity of a row's ref for `field`: the field's own. A row's fields are refs in its value, so the field tells
+ * them apart there, wherever the row is (copied, projected into another peer's tree); a child row has an id of its own.
+ */
+export function fieldRefId(field: string): string {
+  return hashContent({ data: { name: { content: 'field' } }, children: [[field, field]] })
 }
 /** The value a ref (or a plain node) stands for. */
 function valueOf(store: FosStore, cid: string): string {
@@ -88,8 +91,8 @@ export function withLabel(store: FosStore, node: FosNodeContent, text: string): 
 }
 /** A ref's own title row: what an argument row (a requirement, an allocation) is called, whatever its ref holds. */
 function refTitleEdge(store: FosStore, ref: FosNodeContent): FosPathElem | null {
-  const title = libraryNode(store, 'title'), id = ref.data.alias?.id
-  return title && id ? ref.children.find(edge => edge[0] === title && isFieldRow(store, id, edge)) ?? null : null
+  const title = libraryNode(store, 'title')
+  return title ? ref.children.find(edge => edge[0] === title && isFieldRow(store, edge)) ?? null : null
 }
 /** The title a ref carries itself (an argument row's text), or null. */
 export function refTitle(store: FosStore, ref: FosNodeContent): string | null {
@@ -98,9 +101,9 @@ export function refTitle(store: FosStore, ref: FosNodeContent): string | null {
 }
 /** The ref with its own title row holding `text` (added when it has none). */
 export function withRefTitle(store: FosStore, ref: FosNodeContent, text: string): FosNodeContent {
-  const title = libraryNode(store, 'title'), id = ref.data.alias?.id
-  if (!title || !id) throw new Error('A titled ref needs an identity and a library title field.')
-  const row: FosPathElem = [title, put(store, refNodeContent(store, { alias: { id: fieldRefId(id, title) } }, fieldText(store, title, text)))]
+  const title = libraryNode(store, 'title')
+  if (!title) throw new Error('A titled ref needs a library title field.')
+  const row: FosPathElem = [title, put(store, refNodeContent(store, { alias: { id: fieldRefId(title) } }, fieldText(store, title, text)))]
   const old = refTitleEdge(store, ref)
   return { ...ref, children: old ? ref.children.map(edge => edge === old ? row : edge) : [...ref.children, row] }
 }
@@ -114,7 +117,7 @@ export function constructRow(store: FosStore, type: string, id: string, values: 
   const rows = typeRows(store, type).map(([field, value]): FosPathElem => {
     const open = value === never || value === unit
     const held = values.get(field) ?? (open ? null : value)
-    return [field, put(store, refNodeContent(store, { alias: { id: fieldRefId(id, field) } }, held))]
+    return [field, put(store, refNodeContent(store, { alias: { id: fieldRefId(field) } }, held))]
   })
   return { data: { alias: { id }, created: { time: now }, updated: { time: now } }, children: [...rows, ...children] }
 }
@@ -131,22 +134,22 @@ export function constructTextRow(store: FosStore, type: string, id: string, text
   return constructRow(store, type, id, values, now)
 }
 
-/** Whether `edge` in row `id`'s value is one of that row's own fields (not a child row with the same left). */
-export function isFieldRow(store: FosStore, id: string, edge: FosPathElem): boolean {
-  return store.table.get(edge[1])?.data.alias?.id === fieldRefId(id, edge[0])
+/** Whether `edge` in a row's value is one of that row's own fields (not a child row with the same left). */
+export function isFieldRow(store: FosStore, edge: FosPathElem): boolean {
+  return store.table.get(edge[1])?.data.alias?.id === fieldRefId(edge[0])
 }
 /** Row `id`'s ref for `field` among the rows of `value`, or null. */
-export function fieldEdge(store: FosStore, id: string, value: FosNodeContent, field: string): FosPathElem | null {
-  return value.children.find(edge => edge[0] === field && isFieldRow(store, id, edge)) ?? null
+export function fieldEdge(store: FosStore, value: FosNodeContent, field: string): FosPathElem | null {
+  return value.children.find(edge => edge[0] === field && isFieldRow(store, edge)) ?? null
 }
 /** What row `id` holds for `field` (through its ref): void for an open hole, null when the row has no such field. */
-export function fieldValue(store: FosStore, id: string, value: FosNodeContent, field: string): string | null {
-  const edge = fieldEdge(store, id, value, field)
+export function fieldValue(store: FosStore, value: FosNodeContent, field: string): string | null {
+  const edge = fieldEdge(store, value, field)
   return edge ? valueOf(store, edge[1]) : null
 }
 /** Row `id`'s value with `field`'s ref now holding `held` (a new value of the same ref). */
-export function withFieldValue(store: FosStore, id: string, value: FosNodeContent, field: string, held: string, now: number): FosNodeContent {
-  const edge = fieldEdge(store, id, value, field)
+export function withFieldValue(store: FosStore, value: FosNodeContent, field: string, held: string, now: number): FosNodeContent {
+  const edge = fieldEdge(store, value, field)
   if (!edge) throw new Error('This row has no such field.')
   const ref = content(store, edge[1])
   const next = put(store, refNodeContent(store, { ...ref.data, updated: { time: now } }, held))
@@ -167,9 +170,9 @@ export function isTextField(store: FosStore, type: string): boolean {
  * Row `id`'s value with its text set: its title field's ref holds `text` (a typed row), or its own leaf is `text` (a
  * plain row). Null when the row holds no text.
  */
-export function withRowText(store: FosStore, id: string, value: FosNodeContent, text: string, now: number): FosNodeContent | null {
-  const field = value.children.find(edge => isFieldRow(store, id, edge) && isTextField(store, edge[0]))?.[0]
-  if (field) return withFieldValue(store, id, value, field, fieldText(store, field, text), now)
+export function withRowText(store: FosStore, value: FosNodeContent, text: string, now: number): FosNodeContent | null {
+  const field = value.children.find(edge => isFieldRow(store, edge) && isTextField(store, edge[0]))?.[0]
+  if (field) return withFieldValue(store, value, field, fieldText(store, field, text), now)
   const index = value.children.findIndex(([, right]) => store.table.get(right)?.data.scalar?.type === 'text')
   if (index < 0) return null
   const leaf = put(store, { data: { scalar: { type: 'text', value: text } }, children: [] })
@@ -196,19 +199,19 @@ export function fieldValues(store: FosStore, type: string, input: Readonly<Recor
   return values
 }
 /** What row `id` (of `type`) holds in its fields, by the fields' names; open holes are left out. */
-export function rowRecord(store: FosStore, type: string, id: string, value: FosNodeContent): Record<string, string | number> {
+export function rowRecord(store: FosStore, type: string, value: FosNodeContent): Record<string, string | number> {
   const record: Record<string, string | number> = {}
   for (const [field] of typeRows(store, type)) {
-    const key = fieldKey(store, field), held = fieldValue(store, id, value, field)
+    const key = fieldKey(store, field), held = fieldValue(store, value, field)
     const leaf = held ? leafValue(store, held) : null
     if (key !== null && leaf !== null) record[key] = leaf
   }
   return record
 }
 /** Row `id`'s value with the named fields of `type` holding `input` (fields left out keep what they hold). */
-export function withFieldValues(store: FosStore, type: string, id: string, value: FosNodeContent, input: Readonly<Record<string, string | number>>, now: number): FosNodeContent {
+export function withFieldValues(store: FosStore, type: string, value: FosNodeContent, input: Readonly<Record<string, string | number>>, now: number): FosNodeContent {
   let next = value
-  for (const [field, held] of fieldValues(store, type, input)) next = withFieldValue(store, id, next, field, held, now)
+  for (const [field, held] of fieldValues(store, type, input)) next = withFieldValue(store, next, field, held, now)
   return next
 }
 /**
@@ -216,8 +219,8 @@ export function withFieldValues(store: FosStore, type: string, id: string, value
  * are new (holes, or what `values` supplies); its child rows and identity stay.
  */
 export function rebuildRow(store: FosStore, type: string, id: string, previous: FosNodeContent, values: ReadonlyMap<string, string>, now: number): FosNodeContent {
-  const own = previous.children.filter(edge => isFieldRow(store, id, edge))
-  const children = previous.children.filter(edge => !isFieldRow(store, id, edge) && !(store.table.get(edge[1])?.data.scalar))
+  const own = previous.children.filter(edge => isFieldRow(store, edge))
+  const children = previous.children.filter(edge => !isFieldRow(store, edge) && !(store.table.get(edge[1])?.data.scalar))
   const built = constructRow(store, type, id, values, now, children)
   const rows = built.children.map((edge): FosPathElem => values.has(edge[0]) ? edge : own.find(([field]) => field === edge[0]) ?? edge)
   return { data: { ...previous.data, alias: { id }, updated: { time: now } }, children: rows }
@@ -233,10 +236,10 @@ function textFields(store: FosStore, type: string): string[] {
  */
 export function rowText(store: FosStore, nodeCid: string, type: string | null): string {
   if (type && isTextField(store, type)) return leafText(store, nodeCid) ?? ''
-  const value = content(store, valueOf(store, nodeCid)), id = content(store, nodeCid).data.alias?.id ?? value.data.alias?.id ?? nodeCid
-  const fields = type ? textFields(store, type) : value.children.filter(edge => isFieldRow(store, id, edge) && isTextField(store, edge[0])).map(([field]) => field)
+  const value = content(store, valueOf(store, nodeCid))
+  const fields = type ? textFields(store, type) : value.children.filter(edge => isFieldRow(store, edge) && isTextField(store, edge[0])).map(([field]) => field)
   for (const field of [...fields].reverse()) {
-    const held = fieldValue(store, id, value, field), text = held ? leafText(store, held) : null
+    const held = fieldValue(store, value, field), text = held ? leafText(store, held) : null
     if (text) return text
   }
   return type ? '' : leafText(store, nodeCid) ?? ''
@@ -245,26 +248,26 @@ export function rowText(store: FosStore, nodeCid: string, type: string | null): 
 export function rowBody(store: FosStore, nodeCid: string, type: string): string | null {
   const fields = textFields(store, type)
   if (fields.length < 2) return null
-  const value = content(store, valueOf(store, nodeCid)), id = content(store, nodeCid).data.alias?.id ?? value.data.alias?.id ?? nodeCid
-  const held = fieldValue(store, id, value, fields.at(-1)!)
+  const value = content(store, valueOf(store, nodeCid))
+  const held = fieldValue(store, value, fields.at(-1)!)
   return held ? leafText(store, held) ?? '' : ''
 }
 /** The value a single-value row holds in its first text field (a message's addressee, an acknowledged message id). */
 export function rowLeaf(store: FosStore, edge: FosPathElem): string | number | null {
   const field = textFields(store, edge[0])[0]
   if (!field) return null
-  const value = content(store, valueOf(store, edge[1])), id = content(store, edge[1]).data.alias?.id ?? value.data.alias?.id ?? edge[1]
-  const held = fieldValue(store, id, value, field)
+  const value = content(store, valueOf(store, edge[1]))
+  const held = fieldValue(store, value, field)
   return held ? leafValue(store, held) : null
 }
 /** The fields of row `id` (of `type`) as a view shows them: name, value, and whether it is still open. */
 export type FieldView = { id: string; field: string; key: string | null; value: string | number | null; open: boolean }
-export function fieldViews(store: FosStore, type: string, id: string, value: FosNodeContent): FieldView[] {
+export function fieldViews(store: FosStore, type: string, value: FosNodeContent): FieldView[] {
   const never = primitive(store, 'void')
   return typeRows(store, type).flatMap(([field]): FieldView[] => {
-    const edge = fieldEdge(store, id, value, field)
+    const edge = fieldEdge(store, value, field)
     if (!edge) return []
     const held = valueOf(store, edge[1])
-    return [{ id: fieldRefId(id, field), field, key: fieldKey(store, field), value: held === never ? null : leafValue(store, held), open: held === never }]
+    return [{ id: fieldRefId(field), field, key: fieldKey(store, field), value: held === never ? null : leafValue(store, held), open: held === never }]
   })
 }

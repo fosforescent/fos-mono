@@ -21,6 +21,8 @@ const P = (name: string) => primitive(store, name)
 const name = P('name'), string = P('string'), number = P('number'), boolean = P('boolean'), never = P('void')
 const text = (value: string) => put({ data: { scalar: { type: 'text', value } }, children: [] })
 const node = (...rows: FosPathElem[]) => put({ data: {}, children: rows })
+/** A field ref's identity: its field's (fields.ts `fieldRefId`). */
+const fieldRefId = (field: string) => hashContent({ data: { name: { content: 'field' } }, children: [[field, field]] })
 /** A ref named `label`, holding `value` (none: declared, unfilled). */
 const ref = (label: string, value: string | null = null) => {
   const children: FosPathElem[] = value ? [[P('target'), value]] : []
@@ -129,7 +131,7 @@ const capability = (capabilityName: string, c: Capability) => tagged(capabilityN
 /** The ref a capability is assigned to: its pattern as its value, its title, syntax and icon as its own rows. */
 const capabilityRef = (capabilityName: string, c: Capability, pattern: string) => {
   const own = ref(capabilityName, pattern), id = content(own).data.alias!.id
-  const titled = put({ data: { alias: { id: hashContent({ data: { alias: { id } }, children: [[title, title]] }) } }, children: [[P('target'), fill('title', c.label)], [P('alias'), unit]] })
+  const titled = put({ data: { alias: { id: fieldRefId(title) } }, children: [[P('target'), fill('title', c.label)], [P('alias'), unit]] })
   return put({ ...content(own), children: [...content(own).children, [title, titled], ...c.syntax.map((s): FosPathElem => [syntax, fill('syntax', s)]),
     ...(c.icon ? [[icon, fill('fontAwesomeId', c.icon)] as FosPathElem] : []), ...(c.hidden ? [[tagOf('hidden'), unit] as FosPathElem] : []),
     // a trigger starts evaluations: a new instance of its template, or (resume) the one waiting on it
@@ -141,16 +143,15 @@ const capabilityGroup = node(...Object.entries(capabilities).map(([capabilityNam
   return [pattern, capabilityRef(capabilityName, c, pattern)]
 }))
 
-// rows as the kernel builds them (fields.ts): a field ref per type row, its id the row's and the field's
-const fieldRefId = (id: string, field: string) => hashContent({ data: { alias: { id } }, children: [[field, field]] })
+// rows as the kernel builds them (fields.ts): a field ref per type row, its id the field's
 const refNode = (data: FosNodeContent['data'], value: string | null, rows: FosPathElem[] = []) =>
   put({ data, children: [...(value ? [[P('target'), value] as FosPathElem] : []), [P('alias'), unit], ...rows] })
-const fieldRef = (id: string, field: string, value: string | null) => refNode({ alias: { id: fieldRefId(id, field) } }, value)
-const titleRow = (id: string, words: string): FosPathElem => [title, fieldRef(id, title, fill('title', words))]
+const fieldRef = (field: string, value: string | null) => refNode({ alias: { id: fieldRefId(field) } }, value)
+const titleRow = (id: string, words: string): FosPathElem => [title, fieldRef(title, fill('title', words))]
 const plainRow = (id: string, words: string): FosPathElem => [title, refNode({ alias: { id } }, fill('title', words))]
-const taskRow = (id: string, words: string): FosPathElem => [types.task!, put({ data: { alias: { id } }, children: [titleRow(id, words), [done, fieldRef(id, done, null)]] })]
+const taskRow = (id: string, words: string): FosPathElem => [types.task!, put({ data: { alias: { id } }, children: [titleRow(id, words), [done, fieldRef(done, null)]] })]
 const noteRow = (id: string, heading: string, markdown: string, data: FosNodeContent['data'] = {}): FosPathElem =>
-  [types.note!, put({ data: { alias: { id }, ...data }, children: [titleRow(id, heading), [body, fieldRef(id, body, fill('body', markdown))]] })]
+  [types.note!, put({ data: { alias: { id }, ...data }, children: [titleRow(id, heading), [body, fieldRef(body, fill('body', markdown))]] })]
 /** A requirement: `pattern` asked for, its ref a hole titled `words` (or holding the rows typed inside it). */
 const ask = (id: string, pattern: string, words: string, inside: FosPathElem[] | null = null, name?: string): FosPathElem =>
   [pattern, refNode({ alias: { id }, ...(name ? { name: { content: name } } : {}) }, inside ? node(...inside) : null, [titleRow(id, words)])]

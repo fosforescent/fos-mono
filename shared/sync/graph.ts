@@ -389,34 +389,34 @@ export function completes(store: FosStore, type: string): boolean {
 }
 /** A row's title: its own text (a plain row), the title its ref carries (an argument row), else what its title field holds. */
 export function rowTitle(store: FosStore, nodeCid: string, type: string | null): string {
-  const value = valueContent(store, nodeCid), id = aliasIdOf(content(store, nodeCid)) ?? aliasIdOf(value) ?? nodeCid
+  const value = valueContent(store, nodeCid)
   if (type && isTextField(store, type)) return leafText(store, nodeCid) ?? ''
   const own = refTitle(store, content(store, nodeCid))
   if (own !== null) return own
-  const field = type ? titleField(store, type) : value.children.find(edge => isFieldRow(store, id, edge) && isTextField(store, edge[0]))?.[0]
-  const held = field ? fieldValue(store, id, value, field) : null
+  const field = type ? titleField(store, type) : value.children.find(edge => isFieldRow(store, edge) && isTextField(store, edge[0]))?.[0]
+  const held = field ? fieldValue(store, value, field) : null
   return (held ? leafText(store, held) : null) ?? (field ? null : textOf(store, nodeCid)) ?? ''
 }
 /** Whether a row is done: its `done` field holds unit. */
 export function rowDone(store: FosStore, nodeCid: string): boolean {
   const done = rowVocabulary(store)?.done
   if (!done) return false
-  const value = valueContent(store, nodeCid), id = aliasIdOf(content(store, nodeCid)) ?? aliasIdOf(value) ?? nodeCid
-  const held = fieldValue(store, id, value, done)
+  const value = valueContent(store, nodeCid)
+  const held = fieldValue(store, value, done)
   return !!held && !Object.keys(content(store, held).data).length && !content(store, held).children.length
 }
 /** Whether the row at `nodeCid` has a done field (it completes). */
 export function hasDone(store: FosStore, nodeCid: string): boolean {
   const done = rowVocabulary(store)?.done, value = valueContent(store, nodeCid)
-  return !!done && !!fieldEdge(store, aliasIdOf(content(store, nodeCid)) ?? aliasIdOf(value) ?? nodeCid, value, done)
+  return !!done && !!fieldEdge(store, value, done)
 }
 /** Row `id`'s value with its done field holding unit (done) or void; null when it has no done field or already holds that. */
 export function withDone(store: FosStore, id: string, value: FosNodeContent, done: boolean, now: number): FosNodeContent | null {
   const field = rowVocabulary(store)?.done
-  if (!field || !fieldEdge(store, id, value, field)) return null
+  if (!field || !fieldEdge(store, value, field)) return null
   const unit = put(store, { data: {}, children: [] })
-  if ((fieldValue(store, id, value, field) === unit) === done) return null
-  return withFieldValue(store, id, value, field, done ? unit : primitive(store, 'void'), now)
+  if ((fieldValue(store, value, field) === unit) === done) return null
+  return withFieldValue(store, value, field, done ? unit : primitive(store, 'void'), now)
 }
 
 /** A structural predicate on a constructor's name row; it carries its own graph meaning. */
@@ -1470,7 +1470,7 @@ export function rowView(store: FosStore, nodeCid: string, edge?: FosPathElem): T
     done: task && rowDone(store, nodeCid),
     createdAt: created,
     updatedAt: value.data.updated?.time ?? created,
-    childCount: value.children.filter((e) => isRowEdge(store, e) && !isFieldRow(store, rowId, e)).length,
+    childCount: value.children.filter((e) => isRowEdge(store, e) && !isFieldRow(store, e)).length,
     childChoices: value.children.filter((e) => isChoiceEdge(store, e)).length,
     subtreeTasks: sub.tasks,
     subtreeDone: sub.done,
@@ -1480,7 +1480,7 @@ export function rowView(store: FosStore, nodeCid: string, edge?: FosPathElem): T
     // the title, the body and done are shown by the row itself
     const body = rowBody(store, nodeCid, typeCid), texts = typeRows(store, typeCid).map(([field]) => field).filter(field => isTextField(store, field))
     const shown = new Set([titleField(store, typeCid), rowVocabulary(store)?.done, ...(body !== null ? [texts.at(-1)] : [])])
-    const fields = fieldViews(store, typeCid, rowId, value).filter(field => !shown.has(field.field))
+    const fields = fieldViews(store, typeCid, value).filter(field => !shown.has(field.field))
     if (fields.length) view.fields = fields
     if (body !== null) view.body = body
   }
@@ -1765,10 +1765,9 @@ export function viewNode(store: FosStore, cid: string, constructors = false): No
   const identity = content(store, cid)      // ref node for link rows (bookkeeping lives here)
   const value = valueContent(store, cid)    // the content: text, rows
   const link = isLink(store, identity)
-  const ownId = aliasIdOf(identity) ?? aliasIdOf(value) ?? cid
   const view: NodeView = {
     name: rowTitle(store, cid, null) || null,
-    done: rowVocabulary(store)?.done && fieldEdge(store, ownId, value, rowVocabulary(store)!.done!) ? rowDone(store, cid) : null,
+    done: rowVocabulary(store)?.done && fieldEdge(store, value, rowVocabulary(store)!.done!) ? rowDone(store, cid) : null,
     tasks: [], choices: [], peers: [],
     isLink: link,
     members: link || isPeerReference(identity) ? readMembers(store, identity) : [],
@@ -1785,7 +1784,7 @@ export function viewNode(store: FosStore, cid: string, constructors = false): No
   }
   for (const edge of value.children) {
     // the node's own fields are part of it, not rows inside it
-    if (isFieldRow(store, ownId, edge)) continue
+    if (isFieldRow(store, edge)) continue
     // a library instance is the library's binding, a container, not one of the node's rows (Settings lists it)
     if (isRowEdge(store, edge) && !constructors && isLibraryInstance(store, content(store, identityCid(store, edge)))) continue
     // a handler's own state rows (the evaluator's journal) and a value's contract pin are not rows of the node either
@@ -2476,10 +2475,10 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
       if (isRefNode(store, content(store, child)) && (!rowTypeIdOf(store, edge) || capabilityName(store, edge[0]) !== null)) argumentsToCopy.add(child)
       // Nested templates remain definitions when their containing workflow is instantiated.
       if (isRowOfType(store, edge, TEMPLATE_TYPE)) definitions.add(child)
-      // a field stays a ref of its own, whose id is its row's: it follows the row's new id
-      if (id && isFieldRow(store, id, edge)) {
+      // a field stays a ref of its own, with the id its field gives it
+      if (isFieldRow(store, edge)) {
         argumentsToCopy.add(child)
-        ids.set(aliasIdOf(content(store, child))!, fieldRefId(ids.get(id)!, edge[0]))
+        ids.set(aliasIdOf(content(store, child))!, aliasIdOf(content(store, child))!)
         if (edge[0] === doneField) reopened.add(child)
       }
       collect(child)
@@ -2530,8 +2529,7 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
     }
     const valueCopy = { data, children }
     // an argument's own fields (its title) stay with it, re-identified for the copy
-    const own = type ? identity.children.filter(edge => isFieldRow(store, aliasIdOf(identity) ?? '', edge)).map(([field, ref]): FosPathElem =>
-      [field, put(store, refNodeContent(store, { alias: { id: fieldRefId(data.alias.id, field) } }, refValueCid(store, content(store, ref))))]) : []
+    const own = type ? identity.children.filter(edge => isFieldRow(store, edge)) : []
     const result = put(store, type ? refNodeContent(store, data, bound, own)
       : isRefNode(store, identity) && !isHandle(identity) && (value.data.scalar || value.data.presentation)
         ? refNodeContent(store, { alias: data.alias, ...(data.name ? { name: data.name } : {}) }, put(store, valueCopy))

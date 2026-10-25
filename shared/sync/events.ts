@@ -499,7 +499,7 @@ function dispatch(r: Replica, event: FosEvent, principal: Principal, now: number
           const text = textOf(change.text)
           if (!at.length) {
             const head = headCid(draft)
-            commitRoot(draftStore, updateAtScope(draftStore, head, base, value => withRowText(draftStore, value.data.alias?.id ?? '', value, text, now) ?? withLabel(draftStore, value, text)), now)
+            commitRoot(draftStore, updateAtScope(draftStore, head, base, value => withRowText(draftStore, value, text, now) ?? withLabel(draftStore, value, text)), now)
             draft = { ...draft }
           } else draft = renameTask(draft, target.slice(0, -1), target.at(-1)!, text, now)
         } else if (change.operation === 'complete' && typeof change.done === 'boolean') {

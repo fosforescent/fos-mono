@@ -7,7 +7,7 @@ import { SERVER_TRANSPORT_CAPABILITIES, readProposals, content, resolveScope, va
 import { addMemberAt, addTask, createReplica, headCid, renameTask, view, type Replica } from './replica'
 import { createBranch, setBranchMergeRequest } from './branches'
 import { selectBranch } from './graph'
-import { makeLinkAt, put } from './index'
+import { makeLinkAt, put, isFieldRow, rowTitle } from './index'
 import { acceptSubmission, approvalsOf, attesterKey, missingApprovals, openSubmission, setMergeRule, verifyApproval } from './approvals'
 import { ensureHomeContext } from './replica'
 import { nodeSyncRequest } from './node-sync'
@@ -54,8 +54,8 @@ test("a peer's branch reaches the owner as its own submission, and main stays as
   const proposals = [...proposalsAt(world.server, PROJECT), ...proposalsAt(world.server, [...PROJECT, 'f'])]
   expect(proposals.map(p => [p.peerId, p.name])).toEqual([['bob', 'try']])
   const proposed = valueContent(world.server.store, proposals[0]!.contentCid)
-  const row = valueContent(world.server.store, identityCid(world.server.store, proposed.children[0]!))
-  expect(row.data.description?.content).toBe('first, better')
+  const row = proposed.children.find(edge => !isFieldRow(world.server.store, edge))!
+  expect(rowTitle(world.server.store, identityCid(world.server.store, row), null)).toBe('first, better')
 
   // bob's own selection is back where it was; on main, a plain sync proposes nothing of the branch
   expect(userView(bob)!.tasks[0]!.branches?.selected).toBe('try')

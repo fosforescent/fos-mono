@@ -106,7 +106,7 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
       const child = identityCid(store, edge)
       // Runtime values (`fos:evaluation`, triggers, …) are not task context; they change while the task is worked on.
       if (settingOf(store, content(store, child)) || isHandlerStateLeft(store, edge[0])) continue
-      if (isFieldRow(store, identity.data.alias?.id ?? cid, edge)) continue
+      if (isFieldRow(store, edge)) continue
       // Other work requests are context only once accepted, when explicitly referenced.
       if (!content(store, child).data.ref && requirementViewOf(store, edge, child)?.capability === 'llm' && child !== request.cid && !external) continue
       // the rows a value carries as a value of its pattern have no identity and are no context
