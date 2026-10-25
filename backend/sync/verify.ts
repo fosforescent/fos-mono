@@ -87,7 +87,7 @@ export function verifyHandler(deps: VerifyDeps, key: IdentityKey, peer = 'fos'):
       return user.verification?.method === USER_SERVER_ATTESTATION && verifyUser(user, { servers: { [peer]: key.publicKey }, verify: verifyEd25519 }).ok
     },
     // the request's user field (the user as typed) is an operand; the answer carries the attested object as its user field
-    native: () => async (operands, ctx) => {
+    run: () => async (operands, ctx) => {
       const self = operands.outputs.self
       if (!self) throw new Error('This handler fills a verify requirement.')
       const type = userType(ctx.store, ctx.step)

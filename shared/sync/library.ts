@@ -43,9 +43,9 @@ export function exportLocalLibrary(r: Replica, at: Scope | null = libraryPath(r)
 
 /**
  * A fallback the library offers for a kind of requirement: the row's text is the button, its requirement the kind it
- * fills. `native`: a native the device passed the library (`setLibraryArg`), which does it; else the person does it.
+ * fills. `primitive`: a primitive the device passed the library (`setLibraryArg`), which does it; else the person does it.
  */
-export type ManualHandler = { id: string; label: string; capability?: string; resource?: ResourceType; device: boolean; native?: string }
+export type ManualHandler = { id: string; label: string; capability?: string; resource?: ResourceType; device: boolean; primitive?: string }
 
 /**
  * The library definition a row at `at` sees, by nearest ancestor: one referenced in Home (once its content is here)
@@ -84,12 +84,12 @@ export function upgradeLibrary(r: Replica, at: Scope, definition: Scope, now: nu
   return { ...r }
 }
 
-/** The library's field declaring what it needs passed in by the device that uses it (its natives). */
+/** The library's field declaring what it needs passed in by the device that uses it (its primitives). */
 export const LIBRARY_REQUIRES = 'requires'
 
 /**
- * Pass `value` (a native this device registered, `nativeRef`) into the library instance of the node at `at` as its
- * argument `name`: what the library's `requires.<name>` declares. The library never calls a native itself; it uses
+ * Pass `value` (a primitive this device registered, `primitiveRef`) into the library instance of the node at `at` as its
+ * argument `name`: what the library's `requires.<name>` declares. The library never calls a primitive itself; it uses
  * what it was passed.
  */
 export function setLibraryArg(r: Replica, at: Scope, name: string, value: string, now: number): Replica {
@@ -109,7 +109,7 @@ export function setLibraryArg(r: Replica, at: Scope, name: string, value: string
 
 /**
  * What the nearest library instance at `at` was passed for its `requires` declarations: each declaration (its name
- * and node) with the native the device passed, when it passed one.
+ * and node) with the primitive the device passed, when it passed one.
  */
 export function libraryArgs(r: Replica, at: Scope): Array<{ name: string; declaration: FosNodeContent; value: string }> {
   const instance = libraryBindingAt(r.store, at)
@@ -149,12 +149,12 @@ export function manualHandlers(r: Replica, at?: Scope): ManualHandler[] {
   })
 }
 
-/** The device's fallbacks: the natives it passed the library for what the library requires, each filling the requirement it declares. */
+/** The device's fallbacks: the primitives it passed the library for what the library requires, each filling the requirement it declares. */
 export function deviceHandlers(r: Replica, at?: Scope): ManualHandler[] {
   return libraryArgs(r, at ?? homePath(r)).flatMap(({ name, declaration, value }) => {
     const allocation = declaration.data.allocation
     if (!allocation) return []
-    return [{ id: name, label: declaration.data.description?.content ?? name, capability: 'allocation' as const, resource: allocation.type, device: true, native: value }]
+    return [{ id: name, label: declaration.data.description?.content ?? name, capability: 'allocation' as const, resource: allocation.type, device: true, run: value }]
   })
 }
 

@@ -102,7 +102,7 @@ test('the organize handler answers the request with the plan\'s rows inside it; 
   const done = await h.complete(asked.path)
   if (!done.body.evaluation) throw new Error(`organize failed: ${JSON.stringify(done.body)}`)
   expect(done.body.evaluation.status).toBe('committed')
-  // a native sees no tree: the model gets the capture alone (the target's outline awaits its replacement, current_tasks.md)
+  // a primitive sees no tree: the model gets the capture alone (the target's outline awaits its replacement, current_tasks.md)
   expect(fake.asked[0]!.user).toBe('Target: Voice note\n\nSubtree:\n(empty)\n\nCapture:\nkickoff transcript')
   const r = h.get()
   // the target is unchanged but for the filled request, which holds the plan's rows

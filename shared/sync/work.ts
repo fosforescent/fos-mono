@@ -39,7 +39,7 @@ export function isAttempt(r: Replica, cid: string): boolean {
     && slots(r, cid, primitive(r.store, 'string')).length > 0
 }
 
-/** Shared resolution, with the primitive Fos advertisement adapted to a native value. */
+/** Shared resolution, with the primitive Fos advertisement adapted to a host value. */
 export function workHandler(r: Replica, requestPath: Scope, environment: BindingEnvironment = {}) {
   const store = r.store, type = libAt(store, requestPath).capabilities.llm!
   const request = nodeAt(r, requestPath)

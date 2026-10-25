@@ -1,4 +1,4 @@
-/** Native values at the API boundary; records and sequences are ordinary typed ref rows in the graph. */
+/** Host values at the API boundary; records and sequences are ordinary typed ref rows in the graph. */
 import { primitive } from './primitives'
 import type { FosStore } from '../dag-implementation/store'
 import { hashContent } from '../dag-implementation/cid'
@@ -19,7 +19,7 @@ export function nodeValueType(store: FosStore, shape: ValueShape): string {
 }
 
 const VALUE_SHAPES: ValueShape[] = ['text', 'number', 'boolean', 'null', 'record', 'sequence']
-/** Whether `cid` is one of the native value types (`nodeValueType`): told by identity. */
+/** Whether `cid` is one of the host value types (`nodeValueType`): told by identity. */
 export function isNodeValueType(store: FosStore, cid: string): boolean {
   return VALUE_SHAPES.some(shape => nodeValueType(store, shape) === cid)
 }

@@ -1,7 +1,7 @@
 import { capabilityName, sameCapabilityType, triggerDefinitionOf, isTriggerLeft } from './capabilities'
 export { triggerDefinitionOf, isTriggerLeft } from './capabilities'
 import { discoverHandlers } from './handlers'
-import { nativeRefValues } from './native-refs'
+import { primitiveValues } from './primitives'
 import { primitiveValue } from './primitives'
 import { refSubmissions } from './scoped-refs'
 import { isRefNode } from './graph'
@@ -49,7 +49,7 @@ export function triggerObserver(r: Replica, path: Scope, t: NodeTrigger): Trigge
     (o) => o.enabled && o.active && o.peerId === t.peer && (t.handler ? o.cid === t.handler : !!t.observer && sameCapabilityType(r.store, o.type, t.observer))
   )
   if (offers.length !== 1) return null
-  return nativeRefValues<unknown>(r, path, t.peer).find((value) => value.ref === offers[0]!.cid)?.native.trigger ?? null
+  return primitiveValues(r, path, t.peer).find((value) => value.ref === offers[0]!.cid)?.implementation.trigger ?? null
 }
 function definitionOf(t: NodeTrigger): TriggerDefinition | undefined {
   return t.definition
@@ -106,7 +106,7 @@ export function setTriggerEnabled(r: Replica, path: Scope, enabled: boolean, now
 }
 
 /** Bind the trigger declarations an applied template brought along (its trigger rows), again from the declaration each
- * was first bound from. Whole placeholders preserve native values (for example a node path), rather than stringifying them. */
+ * was first bound from. Whole placeholders preserve host values (for example a node path), rather than stringifying them. */
 export function bindTemplateTriggers(r: Replica, path: Scope, bindings: Record<string, unknown>, now: number): Replica {
   let count = 0
   const walk = (at: Scope) => {
@@ -173,7 +173,7 @@ export function setNodeTrigger(r: Replica, path: Scope, trigger: TriggerInput, n
     throw new Error('This observer instantiates a template.')
   if (missingSchedule(config) && trigger.enabled)
     throw new Error('Set its schedule (' + missingSchedule(config) + ') before enabling the trigger.')
-  const observer = nativeRefValues<unknown>(r, path, trigger.peer).find((v) => v.ref === offer.cid)?.native.trigger
+  const observer = primitiveValues(r, path, trigger.peer).find((v) => v.ref === offer.cid)?.implementation.trigger
   observer?.validate?.({ replica: r, path, config, now, previous: triggerState(r, path) })
   const { kind: _kind, handler: _handler, observer: _observer, definition: _definition, ...fields } = trigger
   // what it keeps across a new configuration: its state, and the declaration a template bound it from

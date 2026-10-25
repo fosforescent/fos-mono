@@ -179,12 +179,12 @@ export function executionInputs(r: Replica, root: Scope): SharedInput[] {
   const current = root.length ? view(r, root.slice(0, -1))?.tasks.find(row => row.id === root.at(-1)) ?? null : null
   // A grant an invocation row below the root already consumes is taken, whether or not that row has run yet.
   const taken = new Set<string>()
-  const nativeRows = new Set<string>()
+  const primitiveRows = new Set<string>()
   const collect = (path: Scope, depth: number) => {
     if (depth > 8) return
     for (const row of view(r, path)?.tasks ?? []) {
       if (instructionPrimitives(r, { path: [...path, row.id], row }).length) {
-        nativeRows.add(JSON.stringify([...path, row.id]))
+        primitiveRows.add(JSON.stringify([...path, row.id]))
         for (const input of view(r, [...path, row.id])?.tasks ?? []) if (input.refId) {
           taken.add(input.id)
           const grant = handleAt(r, [...path, row.id, input.id])
@@ -194,7 +194,7 @@ export function executionInputs(r: Replica, root: Scope): SharedInput[] {
       if (row.refId === undefined && row.type !== TEMPLATE_TYPE) collect([...path, row.id], depth + 1)
     }
   }
-  if (instructionPrimitives(r, { path: root, row: current }).length) nativeRows.add(JSON.stringify(root))
+  if (instructionPrimitives(r, { path: root, row: current }).length) primitiveRows.add(JSON.stringify(root))
   collect(root, 0)
   const offered = (rowPath: Scope, id: string) => {
     if (taken.has(id)) return null
@@ -205,10 +205,10 @@ export function executionInputs(r: Replica, root: Scope): SharedInput[] {
     if (depth > 8 || result.length >= 32) return
     const cid = resolveScope(r.store, headCid(r), path)
     const rows = view(r, path)?.tasks ?? []
-    const native = nativeRows.has(JSON.stringify(path))
+    const primitiveRow = primitiveRows.has(JSON.stringify(path))
     for (const arg of cid ? argumentRefs(r.store, cid) : []) {
       const ref = content(r.store, arg.cid), id = ref.data.alias?.id
-      if (!id || settingOf(r.store, ref) || ref.data.ref || ref.data.refExpression || native && ref.data.refRole === 'output' && !refValueCid(r.store, ref)) continue
+      if (!id || settingOf(r.store, ref) || ref.data.ref || ref.data.refExpression || primitiveRow && ref.data.refRole === 'output' && !refValueCid(r.store, ref)) continue
       // Requirement refs have their own input controls below; do not also expose them as generic reference slots.
       if (rows.some(row => row.id === id && row.requirement)) continue
       const relative = [...path.slice(root.length), id]
@@ -224,7 +224,7 @@ export function executionInputs(r: Replica, root: Scope): SharedInput[] {
     for (const row of rows) {
       if (result.length >= 32) break
       const child = resolveScope(r.store, headCid(r), [...path, row.id])
-      if (native && child) {
+      if (primitiveRow && child) {
         const ref = content(r.store, child)
         if (ref.data.refRole === 'output' && !refValueCid(r.store, ref)) continue
       }

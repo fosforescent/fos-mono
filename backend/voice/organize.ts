@@ -3,8 +3,8 @@ import { standardHostRef } from '../sync/host-runtime'
  * Organizing a capture is an effect of this server: the `organize` handler fills an `organize` requirement placed in
  * the target node (shared/sync/organize.ts `requestOrganize`: its text is what the capture is, its `capture` input
  * the captured text). Reached like every other effect, through a `complete` event on the requirement
- * (sync/events.ts → sync/evaluation.ts); there is no route. The handler is a native: it asks the model for a plan
- * (retried once when the answer is not JSON) and answers the request with the plan's rows inside it. Natives see no
+ * (sync/events.ts → sync/evaluation.ts); there is no route. The handler is a run: it asks the model for a plan
+ * (retried once when the answer is not JSON) and answers the request with the plan's rows inside it. Primitives see no
  * tree, so the model gets the capture alone; the target's outline, and the plan as one submission on the target the
  * owner accepts or rejects, await their replacement (current_tasks.md).
  *
@@ -41,8 +41,8 @@ export async function organizeCapture(deps: Pick<VoiceDeps, 'complete'>, input: 
 export function organizeHandler(model: () => VoiceDeps, usage?: VoiceUsage): HostHandler {
   return {
     peerId: 'fos', ref: standardHostRef('fos', 'organize'),
-    // the capture is the request's input; the plan's rows are the answer. Natives see no tree, so the outline is the request's own text.
-    native: user => async (operands, ctx) => {
+    // the capture is the request's input; the plan's rows are the answer. Primitives see no tree, so the outline is the request's own text.
+    run: user => async (operands, ctx) => {
       const self = operands.outputs.self
       if (!self) throw new Error('This handler fills an organize requirement.')
       const text = (patternInputs(ctx.store, self.pattern).capture ?? '').trim()

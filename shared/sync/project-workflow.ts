@@ -23,7 +23,7 @@ export type ProjectWorkflow = {
   project: Scope; repo: string; device: string; provider: 'claude' | 'codex'; main: string
   url: string; environment: string; verifier: 'claude' | 'claude-desktop'; enabled: boolean
 }
-/** The native agent adapter's inputs. The library composes these into workflows. */
+/** The host agent adapter's inputs. The library composes these into workflows. */
 export type AgentRequest = {
   provider: 'claude' | 'codex' | 'claude-desktop'; prompt: string
   branch?: string; worktree?: boolean; readOnly?: boolean; chrome?: boolean

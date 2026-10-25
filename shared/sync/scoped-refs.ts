@@ -48,7 +48,7 @@ export function declares(store: FosStore, type: string, cid: string): boolean {
   const node = content(store, cid)
   // A library ref is a container: its names resolve as its fields (namesInLibrary), never as lexical bindings.
   if (isLibraryRef(store, node)) return false
-  // a native handler's state rows (an execute row's journal, a trigger row) are no bindings
+  // a primitive handler's state rows (an execute row's journal, a trigger row) are no bindings
   if (isHandlerStateLeft(store, type)) return false
   if (node.data.name || valueContent(store, cid).data.name) return true
   const pattern = store.table.get(type)

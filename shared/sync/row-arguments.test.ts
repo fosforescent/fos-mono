@@ -8,7 +8,7 @@ import {
   missingTemplatesAt, templateNodesAt, acceptTemplateNodes
 } from './index'
 
-test('a native constructor and its unfilled right argument are an ordinary editable row', () => {
+test('a primitive constructor and its unfilled right argument are an ordinary editable row', () => {
   let r = createReplica('owner')
   const left = primitive(r.store, 'string')
   r = addRefAt(r, [], 'input', left, 1, null, 'input')

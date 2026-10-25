@@ -1,5 +1,5 @@
 /**
- * A peer is reached like any capability: its connection is the native of its `provideNode` offer on its row, and what
+ * A peer is reached like any capability: its connection is the primitive of its `provideNode` offer on its row, and what
  * reaches it from a node is that offer found by scope search (`nodeTransportAt`), not a choice made from its id.
  */
 import { setMemberCapabilitiesAt, membershipPathAt, nodeShape, addTask, createReplica, discoverHandlers, handlerOfferId, libAt, nodeTransportAt, offerNodeTransport, setHandlerEnabledAt, type NodeTransport, type ProvidedNode } from './index'

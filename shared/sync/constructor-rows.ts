@@ -43,7 +43,7 @@ export function assignedValue(r: Replica, row: Scope, alias: string): string | n
   return constructor ? openRefs(r.store, constructor).find(ref => ref.alias === alias)?.defaultValue ?? null : null
 }
 
-/** Bind the editor's assignments once. Native evaluation consumes the CID graph; edits use the separate source map. */
+/** Bind the editor's assignments once. Primitive evaluation consumes the CID graph; edits use the separate source map. */
 export function compileConstructorCall(r: Replica, row: Scope) {
   const constructor = rowConstructor(r, row)
   if (!constructor) throw new Error('The row has no constructor.')
@@ -87,7 +87,7 @@ export function constructAt(r: Replica, row: Scope, constructor: string, values:
   for (const ref of openRefs(r.store, constructor)) {
     const text = values[ref.name]
     // Each call owns its argument refs, including defaulted inputs and initially empty outputs.
-    // Native results must bind this call's output, never the shared constructor definition.
+    // Primitive results must bind this call's output, never the shared constructor definition.
     r = assignRefAt(r, row, ref.alias, text !== undefined ? put(r.store, { data: { description: { content: text } }, children: [] }) : ref.defaultValue, now)
   }
   return r

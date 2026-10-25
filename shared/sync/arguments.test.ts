@@ -1,18 +1,18 @@
-/** Requirements and allocations are one kind of row, inverses of each other; authority moves through the allocate native. */
+/** Requirements and allocations are one kind of row, inverses of each other; authority moves through the allocate primitive. */
 import { addTask, createReplica, headCid, view, type Replica } from './replica'
 import { content, libAt, resolveScope, valueContent } from './graph'
-import { nativeRef, publishNativeRef, primitiveExecutors } from './native-refs'
+import { primitiveRef, publishPrimitive, primitiveExecutors } from './primitives'
 import { evaluateNode, evaluationSteps, type EvaluationDriver } from './evaluation'
-import { addAllocation, addBank, addRequirement, allocateNative, bindArgument, consumeAllocation, debitGrant, handleAt, issueGrant, ownerGrants, supplyRequirement } from './arguments'
+import { addAllocation, addBank, addRequirement, allocatePrimitive, bindArgument, consumeAllocation, debitGrant, handleAt, issueGrant, ownerGrants, supplyRequirement } from './arguments'
 import { transactionWrites } from './transactions'
 import { setTaskDone, addRow } from './replica'
 import { TASK_TYPE } from './library-types'
 import { TASK_DEMAND } from './test-helpers'
 
-/** A host's allocate handler: the shared native, published as a native ref like a device's fetch or solve. */
+/** A host's allocate handler: the shared primitive, published as a primitive ref like a device's fetch or solve. */
 function installAllocate(r: Replica, host: string, at: string[] = []): Replica {
-  const definition = { id: `${host}:allocate`, label: 'allocate', type: (store: Replica['store'], scope: string[]) => libAt(store, scope).capabilities.allocate! }
-  return publishNativeRef(r, at, host, nativeRef(r.store, host, definition, { ...definition, native: allocateNative }, at), 0)
+  const definition = { id: `${host}:allocate`, label: 'allocate', capability: (store: Replica['store'], scope: string[]) => libAt(store, scope).capabilities.allocate! }
+  return publishPrimitive(r, at, host, primitiveRef(r.store, host, definition, { ...definition, run: allocatePrimitive }, at), 0)
 }
 
 function fixture() {
@@ -23,7 +23,7 @@ function fixture() {
   let clock = 10
   const driver: EvaluationDriver = {
     get: () => r, save: next => { r = next }, now: () => ++clock, check: () => [],
-    executors: step => primitiveExecutors(r, step, 'owner').map(value => ({ native: value.native.native! }))
+    executors: step => primitiveExecutors(r, step, 'owner').map(value => ({ run: value.implementation.run! }))
   }
   return { get: () => r, set: (next: Replica) => { r = next }, driver, amounts: () => ownerGrants(r, ['bank']).map(grant => grant.allocation.amount).sort((a, b) => a - b) }
 }

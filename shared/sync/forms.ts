@@ -1,6 +1,6 @@
 /** Generic graph-template construction and field projections. No domain type names live here.
  * A product is a template's parameter rows. A repeated parameter expands into
- * positioned mutable refs. Only scalar leaves require native implementations.
+ * positioned mutable refs. Only scalar leaves require primitive implementations.
  * Instances use ordinary row/ref edges so node exchange, history and merge work unchanged.
  */
 import type { FosNodeContent, FosPathElem } from '../types'

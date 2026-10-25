@@ -1,6 +1,6 @@
 /**
  * Proposed writes of one evaluation: pending submissions on the refs it will change, published together at commit.
- * A write addresses a declaration the resolver returned (`ScopedBinding`), never a path a native worked out, and
+ * A write addresses a declaration the resolver returned (`ScopedBinding`), never a path a primitive worked out, and
  * its value must satisfy the declaration's pattern.
  */
 import { primitive } from './primitives'

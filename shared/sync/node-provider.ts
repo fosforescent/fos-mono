@@ -275,7 +275,7 @@ export function exchangedMember(store: Replica['store'], edge: FosPathElem): boo
   if (right.children.some(e => capabilityOf(store, e) === 'local')) return false
   return !(right.children.length && right.children.every(e => isTransportOffer(store, e)))
 }
-/** A peer's transport offered here (`offerNodeTransport`): a native `provideNode` value, this device's connection to that peer, never exchanged. */
+/** A peer's transport offered here (`offerNodeTransport`): a primitive `provideNode` value, this device's connection to that peer, never exchanged. */
 export function isTransportOffer(store: Replica['store'], edge: FosPathElem): boolean {
   if (edge[0] !== primitive(store, 'accepts')) return false
   return advertisedRows(store, edge[1]).some(([left, ref]) => typeIdOf(store, left) === 'capabilities.provideNode' && refSubmissions(store, ref).some(value => primitiveValue(store, value)))

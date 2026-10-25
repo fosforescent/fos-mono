@@ -230,7 +230,7 @@ export const LIBRARY_ID = hashContent({ data: { description: { content: 'Standar
  * A library takes two rows. Its **definition** is a ref whose value is the library (the namespace that defines the
  * Library type): a mutable ref like any other, edited by submissions. Its **instance** is the row `[library, lib]`:
  * the library version it pins on its left, and on its right the ref `lib`, the binding code reaches the library by
- * (`lib.task`, ...), whose value passes the library what it needs from the device (its natives). Upgrading an
+ * (`lib.task`, ...), whose value passes the library what it needs from the device (its primitives). Upgrading an
  * instance moves its left to a newer value of the definition.
  */
 export const LIBRARY_BINDING = 'lib'
@@ -397,7 +397,7 @@ export function rowTypeOf(store: FosStore, edge: FosPathElem): string | null {
   const [type, target] = edge
   if (!store.table.has(type) || !store.table.has(target)) return null
   if (isPrimitive(store, type)) {
-    // Native data constructors can be the left side too. Pointer/history/policy
+    // Built-in data constructors can be the left side too. Pointer/history/policy
     // edges describe the ref itself rather than applying a constructor to a right node.
     if (isBookkeepingEdge(store, edge) || isGrantEdge(store, edge) || [
       primitive(store, 'target'), primitive(store, 'instruction'),
@@ -784,7 +784,7 @@ export type RowExtras = {
 }
 
 /**
- * Content of a new row of the library type `typeId` (the native data that type's rows carry). `text` is the title;
+ * Content of a new row of the library type `typeId` (the data that type's rows carry). `text` is the title;
  * a reference ignores it. Argument rows (requirements and allocations) are made by sync/arguments.ts, not here.
  */
 export function rowContent(typeId: string, id: string, text: string, now: number, extra: RowExtras = {}): FosNodeContent {
@@ -850,7 +850,7 @@ export function convertRow(store: FosStore, value: FosNodeContent, typeId: strin
   return typeId === TEMPLATE_TYPE ? converted : { ...converted, children: converted.children.filter((edge) => !isRowOfType(store, edge, PATTERN_TYPE)) }
 }
 
-/** Same node as a row of the library type `typeId`: the native data of its old type dropped, the new type's added. */
+/** Same node as a row of the library type `typeId`: the data of its old type dropped, the new type's added. */
 export function convertRowContent(value: FosNodeContent, typeId: string, now: number, extra: Omit<RowExtras, 'store'> = {}): FosNodeContent {
   const { todo: _todo, comment: _comment, ref: _ref, query: _q, resource: _rs, allocation: _al, ...rest } = value.data
   const data: FosNodeContent['data'] = { ...rest, updated: { time: now } }
@@ -1320,7 +1320,7 @@ export function exportReachableContext(store: FosStore, extraRoots: Array<string
 // View model: what the UI sees (opaque ids, no cids)
 
 export type TaskView = {
-  /** Native leaf editor chosen by the graph constructor. */
+  /** Leaf editor chosen by the graph constructor. */
   scalar?: NonNullable<FosDataContent['scalar']>['type'];
   form?: FormElement;
   /** A headline row (a note): its text is one title line; the field at this path is its body, shown as a row of its own. */
@@ -1444,7 +1444,7 @@ export function isListed(store: FosStore, nodeCid: string): boolean {
   return childRows(store, nodeCid).some(row => { const view = requirementViewOf(store, row.edge, row.cid); return !!view && view.capability === 'market' && view.satisfied })
 }
 /**
- * The native projection of the named argument ref `name` on the node `nodeCid` (what `readNodeValue` reads, without a
+ * The host-value projection of the named argument ref `name` on the node `nodeCid` (what `readNodeValue` reads, without a
  * replica). Null when the node has no such value.
  */
 export function namedValueOf<T>(store: FosStore, nodeCid: string, name: string): T | null {
@@ -1927,8 +1927,8 @@ export const CONNECTION_CAPABILITIES: Capability[] = ['direct', 'http', 'ws', 'r
 export const SERVER_TRANSPORT_CAPABILITIES: Capability[] = ['http', 'ws', 'relay', 'peer', 'persist', 'provideNode', 'sync']
 /** What a host (the account server) currently offers: its own services and, per integration peer id, that peer's handlers. */
 export type HostOffers = {
-  /** Native refs are ordinary incoming sub-refs of their host peer. Names below are wire projections. */
-  native?: { peers: Record<string, FosPathElem[]>; nodes: FosNodesData }
+  /** Primitive refs are ordinary incoming sub-refs of their host peer. Names below are wire projections. */
+  primitives?: { peers: Record<string, FosPathElem[]>; nodes: FosNodesData }
   server?: Capability[]
   integrations?: Record<string, Capability[]>
   /**
@@ -2399,7 +2399,7 @@ export function relinkContent(store: FosStore, previous: FosNodeContent, previou
   if (previous.data.name) data.name = previous.data.name
   // a declaration's own text (a requirement's title) stays with the identity, whatever value it is bound to
   if (previous.data.description) data.description = previous.data.description
-  if (previous.data.nativeDefaults) data.nativeDefaults = previous.data.nativeDefaults
+  if (previous.data.primitiveDefaults) data.primitiveDefaults = previous.data.primitiveDefaults
   const branches = refBranches(store, previous)
   const active = branches && branchEdge(store, branches.cid)
   const value = put(store, strippedContent)

@@ -113,7 +113,7 @@ test('a fos-points reward pays the user the row names and is filled by the serve
   r = addRequirement(r, [HOME_ID, 'survey'], 'reward', 2, { capability: 'allocation', resource: 'points', amount: 5, unit: 'ff' }, 'pay')
   const transfers: unknown[] = []
   const transfer = jest.fn(async (from: { username: string }, to: string, amount: number) => { transfers.push([from.username, to, amount]) })
-  // nobody is named: nothing to pay (paying whoever answered the task awaits its replacement: a native sees no other rows)
+  // nobody is named: nothing to pay (paying whoever answered the task awaits its replacement: a primitive sees no other rows)
   const early = host(fresh(r), createHostRuntime([pointsHandler({ transfer }, identity)]))
   expect(String((await early.complete([HOME_ID, 'survey'], ['pay'])).body.error)).toMatch(/Name who the fos points go to/)
   expect(transfer).not.toHaveBeenCalled()
@@ -187,7 +187,7 @@ test('a title requirement summarizes the text it carries; the title is its answe
   expect(requirementAnswer(h.get(), asked.path)).toBe('Garden check: dry soil, tomato stakes')
 })
 
-test('the allocate native credits a bank in Home, splits a grant conserving the amount, and refuses a split that leaks', async () => {
+test('the allocate primitive credits a bank in Home, splits a grant conserving the amount, and refuses a split that leaks', async () => {
   const runtime = createHostRuntime([allocateHandler()])
   let r = ensureHomeContext(createReplica('user:owner'), 1, runtime.hostOffers())
   r = addBank(r, [HOME_ID], 'Budget', 2, { type: 'account', unit: 'USD' }, 'bank')

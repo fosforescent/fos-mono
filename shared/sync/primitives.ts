@@ -1,14 +1,22 @@
+/**
+ * Primitives: the only nodes host code reads, and the only way host code reaches the graph. A primitive is
+ * `{ ["primitive", "<name>"] }`, a row whose left is the string "primitive" and whose right names what host code means
+ * by it; everything else is matched structurally in the graph. A host registers what it implements as definitions:
+ * each is published as a handler ref under the host's member entry in a scope, through the same declaration every
+ * handler goes through, and its local meaning is attached to the primitive its value names.
+ */
 import { matchesGraph, tag } from './structural'
 import { putNode, type FosStore } from '../dag-implementation/store'
-import { content, put, refNodeContent, isRefNode } from './graph'
-import { addRow, type Replica } from './replica'
-import type { EvaluationStep } from './evaluation'
-import { refSubmissions } from './scoped-refs'
+import { content, enclosingScopes, handlerOfferId, libAt, put, refNodeContent, isRefNode, type Scope } from './graph'
+import { addMemberAt, addRow, headCid, setHandlerOffersAt, type Replica } from './replica'
+import { contextMemberRefs, discoverHandlers } from './handlers'
+import { sameCapabilityType } from './capabilities'
+import type { EvaluationStep, StepExecutor } from './evaluation'
+import type { NodeProvider } from './node-provider'
+import type { PrimitiveFunction } from './operands'
+import type { TriggerObserver } from './triggers'
+import { refSubmissions, refValueCompatible } from './scoped-refs'
 
-/**
- * Primitives are the only nodes host code reads: `{ ["primitive", "<name>"] }`, a row whose left is the string
- * "primitive" and whose right names what host code means by it. Everything else is matched structurally in the graph.
- */
 const text = (store: FosStore, value: string) => putNode(store, { data: { scalar: { type: 'text', value } }, children: [] })
 const cached = new WeakMap<FosStore, Map<string, string>>()
 export function primitive(store: FosStore, name: string): string {
@@ -29,35 +37,148 @@ export function primitiveName(store: FosStore, cid: string): string | null {
   return marker?.value === 'primitive' && name?.type === 'text' && typeof name.value === 'string' ? name.value : null
 }
 
+/**
+ * How node exchange reaches a peer from this device (a connection: the account session, a direct link, another store on
+ * this machine, ...). `attachment`: the part of an address on that peer this device is attached at (a request's scope);
+ * `available`: whether the connection can carry a request now.
+ */
+export type NodeTransport = Omit<NodeProvider, 'id'> & { attachment(address: Scope): Scope; available(): boolean }
+/** What host code means by a primitive in this store. */
+export type PrimitiveImplementation = {
+  /** Compiled operands in, values out (sync/operands.ts). */
+  run?: PrimitiveFunction
+  trigger?: TriggerObserver
+  /** Narrows which rows of the capability it runs, while the library's patterns are not refined enough to say. */
+  handles?(step: EvaluationStep, replica: Replica): boolean
+  /** A peer's node transport: the local meaning of its `provideNode` offer (`nodeTransportAt`). */
+  provideNode?: NodeTransport
+}
+export type PrimitiveDefinition = PrimitiveImplementation & {
+  /** The host's name for it (`device:fetch`, `fos:search`): the primitive its handler value names. */
+  id: string
+  label?: string
+  /** The library capability it implements, by field name, or the capability node itself for a scope. */
+  capability: string | ((store: FosStore, at: Scope) => string)
+}
+/** The capability node a definition implements, in the scope of `at`. */
+export const definitionCapability = (definition: Pick<PrimitiveDefinition, 'capability'>, store: FosStore, at: Scope): string =>
+  typeof definition.capability === 'function' ? definition.capability(store, at) : libAt(store, at).capabilities[definition.capability]!
+
 /** A handler: a value of its capability whose `implementation` row names the primitive host code runs for it. */
 export type Primitive = { implementation: string; host: string }
 
-/** The handler ref; it carries an implementation identity, never executable source or host credentials. */
-export function primitiveRef(store: FosStore, input: { id: string; implementation?: string; type: string; host: string; label?: string; implement?: unknown }): string {
-  const implementation = primitive(store, input.implementation ?? input.id)
-  if (input.implement) store.implementations.set(implementation, { value: input.implement, type: input.type })
-  const { alias: _alias, capabilityDefinition: _capability, ...properties } = content(store, input.type).data
+/**
+ * The handler ref for a definition, as graph content only: a value of its capability naming the definition's primitive.
+ * It carries an implementation identity, never executable source or host credentials. `name`: what the offer is called
+ * when one implementation backs several offers (an MCP server's tools); the definition's id by default.
+ */
+export function handlerRef(store: FosStore, host: string, definition: Pick<PrimitiveDefinition, 'id' | 'label' | 'capability'>, at: Scope = [], name = definition.id): string {
+  const type = definitionCapability(definition, store, at), label = definition.label ?? definition.id
+  const named = primitive(store, definition.id)
+  const { alias: _alias, capabilityDefinition: _capability, ...properties } = content(store, type).data
   if (_capability || properties.form) { delete properties.name; delete properties.description }
   // a handler is a value of its capability: it carries the capability's tag, and the primitive that gives it meaning here
-  const value = put(store, { data: { ...properties, peerId: { content: input.host }, description: properties.description ?? { content: input.label ?? input.id } }, children: [...content(store, input.type).children, tag(store, input.type), [primitive(store, 'implementation'), implementation]] })
-  return put(store, refNodeContent(store, { alias: { id: input.id }, name: { content: input.label ?? input.id } }, value, []))
+  const value = put(store, { data: { ...properties, peerId: { content: host }, description: properties.description ?? { content: label } }, children: [...content(store, type).children, tag(store, type), [primitive(store, 'implementation'), named]] })
+  return put(store, refNodeContent(store, { alias: { id: handlerOfferId(host, type, name) }, name: { content: label } }, value, []))
+}
+/** The handler ref a host publishes for a definition, with what it means here (`implementation`, the definition by default). */
+export function primitiveRef(store: FosStore, host: string, definition: PrimitiveDefinition, implementation: unknown = definition, at: Scope = []): string {
+  const ref = handlerRef(store, host, definition, at)
+  store.implementations.set(primitive(store, definition.id), { value: implementation, type: definitionCapability(definition, store, at) })
+  return ref
 }
 
 /** The primitive a handler value names in its `implementation` row. */
 export function implementationOf(store: FosStore, value: string): string | null {
   return store.table.get(value)?.children.find(([left]) => left === primitive(store, 'implementation'))?.[1] ?? null
 }
-
 /** What host code means by the handler value's implementation in this store, when this host has one. */
 export function primitiveImplementation<T>(store: FosStore, value: string): { value: T; type: string } | undefined {
   const implementation = implementationOf(store, value)
   return implementation ? store.implementations.get(implementation) as { value: T; type: string } | undefined : undefined
 }
-
 export function primitiveValue(store: FosStore, cid: string): Primitive | null {
   const implementation = implementationOf(store, cid), name = implementation && primitiveName(store, implementation)
   const host = store.table.get(cid)?.data.peerId?.content
   return name && host ? { implementation: name, host } : null
+}
+
+/** Explicit graph mutation: publish a ref under its host. Merely constructing a primitive advertises nothing. */
+export function publishPrimitive(replica: Replica, at: Scope, host: string, ref: string, now: number, label = host): Replica {
+  const node = content(replica.store, ref), type = refSubmissions(replica.store, ref).map(cid => primitiveImplementation(replica.store, cid)?.type).find(Boolean)
+  if (!node.data.alias || !type) throw new Error('Expected a typed ref declaration.')
+  if (!contextMemberRefs(replica, at).has(host)) replica = addMemberAt(replica, at, host, label, [], now)
+  const offers = discoverHandlers(replica, at).filter(offer => offer.peerId === host && sameCapabilityType(replica.store, offer.type, type))
+  if (offers.some(offer => offer.cid === ref)) return replica
+  return setHandlerOffersAt(replica, at, host, type, [...offers.filter(offer => offer.id !== node.data.alias!.id).map(offer => offer.cid), ref], now)
+}
+/** Publish a host's definition in `at` (once) and give it its local meaning. */
+export function registerPrimitive(r: Replica, at: Scope, host: string, definition: PrimitiveDefinition, now: number, label = host, implementation: unknown = definition): Replica {
+  return publishPrimitive(r, at, host, primitiveRef(r.store, host, definition, implementation, at), now, label)
+}
+export function registerPrimitives(r: Replica, at: Scope, host: string, definitions: PrimitiveDefinition[], now: number, label = host): Replica {
+  for (const definition of definitions) r = registerPrimitive(r, at, host, definition, now, label)
+  return r
+}
+/** After a reload or a store swap: published refs keep their pinned capability; only the local meaning is restored. */
+export function restorePrimitive(replica: Replica, at: Scope, host: string, definition: PrimitiveDefinition, implementation: unknown = definition): void {
+  const store = replica.store
+  for (const offer of discoverHandlers(replica, at).filter(offer => offer.peerId === host)) {
+    for (const value of refSubmissions(store, offer.cid)) {
+      const published = primitiveValue(store, value)
+      if (published?.host !== host || published.implementation !== definition.id) continue
+      store.implementations.set(implementationOf(store, value)!, { value: implementation, type: offer.type })
+    }
+  }
+}
+export function restorePrimitives(r: Replica, at: Scope, host: string, definitions: PrimitiveDefinition[]): void {
+  for (const definition of definitions) restorePrimitive(r, at, host, definition)
+}
+
+/** The local meanings of the primitives published in scope, with their hosts and refs. */
+export function primitiveValues<T = PrimitiveImplementation>(replica: Replica, at: Scope, host?: string): Array<{ implementation: T; host: string; ref: string }> {
+  const result: Array<{ implementation: T; host: string; ref: string }> = []
+  const stores = [...new Set(enclosingScopes(replica.store, headCid(replica), at).map(scope => scope.store))]
+  for (const offer of discoverHandlers(replica, at).filter(offer => offer.enabled && offer.active && (!host || offer.peerId === host))) {
+    for (const cid of refSubmissions(replica.store, offer.cid)) {
+      const published = primitiveValue(replica.store, cid)
+      if (!published || published.host !== offer.peerId) continue
+      const bound = stores.map(store => primitiveImplementation<T>(store, cid)).find(value => !!value)
+      if (!bound || !refValueCompatible(replica.store, offer.type, cid)) continue
+      result.push({ implementation: bound.value, host: published.host, ref: offer.cid })
+    }
+  }
+  return result
+}
+/** The primitives (as their local meanings) that can run a step, with their hosts. */
+export function primitiveExecutors<T extends Pick<PrimitiveImplementation, 'handles'> & { run?: unknown } = PrimitiveImplementation>(replica: Replica, step: EvaluationStep, host?: string): Array<{ implementation: T; host: string; ref: string }> {
+  const parent = step.path.slice(0, -1), offers = discoverHandlers(replica, parent)
+  return primitiveValues<T>(replica, parent, host).filter(value => {
+    if (!value.implementation.run) return false
+    const offer = offers.find(offer => offer.cid === value.ref && offer.peerId === value.host)!
+    return instructionPrimitives(replica, step).length ? matchesInstructionRef(replica, step, offer) : value.implementation.handles ? value.implementation.handles(step, replica) : matchesInstructionRef(replica, step, offer)
+  }).filter((value, index, values) => values.findIndex(other => other.implementation === value.implementation && other.host === value.host) === index)
+}
+/** The executors a host offers a step, as the evaluator takes them. */
+export function stepExecutors(r: Replica, step: EvaluationStep, host?: string): StepExecutor[] {
+  return primitiveExecutors(r, step, host).flatMap(value => value.implementation.run ? [{ run: value.implementation.run }] : [])
+}
+
+/**
+ * Offer `peer`'s node transport in the chosen scope: a primitive of the `provideNode` capability, published once; later
+ * calls only give it its local meaning again.
+ */
+export function offerNodeTransport(replica: Replica, peer: string, transport: NodeTransport, now: number, at: Scope = []): Replica {
+  return registerPrimitive(replica, at, peer, { id: 'transport', label: peer, capability: 'provideNode' }, now, peer, { provideNode: transport })
+}
+/** What reaches `peer` from the node at `at`: the transport of its enabled `provideNode` offer in scope, when it can carry a request now. */
+export function nodeTransportAt(replica: Replica, at: Scope, peer: string): (NodeProvider & Pick<NodeTransport, 'attachment'>) | null {
+  const type = libAt(replica.store, at).capabilities.provideNode!
+  const offers = new Set(discoverHandlers(replica, at).filter(offer => offer.peerId === peer && sameCapabilityType(replica.store, offer.type, type)).map(offer => offer.cid))
+  const candidates = primitiveValues(replica, at, peer).filter(value => offers.has(value.ref) && value.implementation.provideNode?.available())
+  const transports = [...new Set(candidates.map(value => value.implementation.provideNode!))]
+  if (transports.length > 1) throw new Error('Choose a node transport handler in this scope.')
+  return transports.length ? { id: peer, ...transports[0]! } : null
 }
 
 /** A row's instruction is its left node: a handler ref, or the capability a requirement asks for. */
@@ -65,13 +186,11 @@ export function instructionRefType(replica: Replica, step: EvaluationStep): stri
   const left = step.row?.typeCid ?? step.row?.type
   return left && replica.store.table.has(left) ? left : null
 }
-
 export function instructionPrimitives(replica: Replica, step: EvaluationStep): Primitive[] {
   const left = step.row?.typeCid ?? step.row?.type
   if (!left || !replica.store.table.has(left)) return []
   return refSubmissions(replica.store, left).flatMap(cid => { const value = primitiveValue(replica.store, cid); return value ? [value] : [] })
 }
-
 export function matchesInstructionRef(replica: Replica, step: EvaluationStep, offered: { type: string; cid?: string }): boolean {
   const wanted = instructionRefType(replica, step)
   if (!wanted) return false
@@ -79,7 +198,7 @@ export function matchesInstructionRef(replica: Replica, step: EvaluationStep, of
   if (pinned.length) {
     if (!offered.cid) return false
     const expected = refSubmissions(replica.store, (step.row?.typeCid ?? step.row?.type)!)
-    // One native implementation can back several tools; its accepted value identifies the selected tool.
+    // One implementation can back several tools; its accepted value identifies the selected tool.
     if (!refSubmissions(replica.store, offered.cid).some(cid => expected.includes(cid))) return false
   }
   // the offer's capability generalizes the row's left: a refined pattern (a requirement for 50 USD) is still a row of its capability

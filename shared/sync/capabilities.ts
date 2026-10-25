@@ -31,7 +31,7 @@ export function triggerDefinitionOf(store: FosStore, left: string | null | undef
 export function isTriggerLeft(store: FosStore, left: string | null | undefined): boolean { return !!triggerDefinitionOf(store, left) }
 
 /**
- * A row holding a native handler's own state for its node: the evaluator's execute row (its journal), a trigger row
+ * A row holding a primitive handler's own state for its node: the evaluator's execute row (its journal), a trigger row
  * (its configuration and state). Such a row is no binding in scope, no argument, no step, no task context and no
  * data to solve over: it is how the handler keeps track of this node.
  */

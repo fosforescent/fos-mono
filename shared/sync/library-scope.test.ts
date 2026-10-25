@@ -3,9 +3,9 @@ import { primitive } from './primitives'
 import { FosStore } from '../dag-implementation/store'
 import {
   addTask, addRefAt, addRow, compileRow, content, createReplica, commitRoot, headCid, libAt,
-  libraryBindingAt, libraryInstanceEdge, libraryInstanceOf, libraryTypeAt, loadReplica, nativeRef,
-  nestScope, publishNativeRef, primitiveExecutors, put, refNodeContent, resolveRefExpression,
-  restoreNativeRef, rowTypeAt, serializeReplica, typeIdOf, updateAtScope, valueContent,
+  libraryBindingAt, libraryInstanceEdge, libraryInstanceOf, libraryTypeAt, loadReplica, primitiveRef,
+  nestScope, publishPrimitive, primitiveExecutors, put, refNodeContent, resolveRefExpression,
+  restorePrimitive, rowTypeAt, serializeReplica, typeIdOf, updateAtScope, valueContent,
   capabilityName, triggerDefinitionOf, handlerOfferId, discoverHandlers, addRefCall, evaluationSteps, findTemplateByName, TEMPLATE_TYPE, enclosingScopes, lookupInScope, nearestInScope, type EvaluationStep
 } from './index'
 import { declareTestCapability } from './test-helpers'
@@ -59,19 +59,19 @@ test('nested stores resolve through their enclosing graph and recognize imported
   expect(libraryInstanceOf(inner.store, headCid(inner))).toBeNull()
 })
 
-test('native restoration keeps the offered capability version after a library upgrade', () => {
+test('primitive restoration keeps the offered capability version after a library upgrade', () => {
   let r = declareTestCapability(createReplica('host'), 'paint')
-  const native = async () => ({}), definition = { id: 'paint-native', type: (store: FosStore, at: string[]) => libAt(store, at).capabilities.paint!, native }
-  const ref = nativeRef(r.store, 'host', definition), original = libAt(r.store).capabilities.paint!
-  r = publishNativeRef(r, [], 'host', ref, 1)
+  const primitive = async () => ({}), definition = { id: 'paint-primitive', capability: (store: FosStore, at: string[]) => libAt(store, at).capabilities.paint!, primitive }
+  const ref = primitiveRef(r.store, 'host', definition), original = libAt(r.store).capabilities.paint!
+  r = publishPrimitive(r, [], 'host', ref, 1)
   r = addRow(r, [], ref, 'Paint', 2, { id: 'call' })
   r = declareTestCapability(r, 'paint', [], { description: { content: 'Revised definition' } })
   expect(libAt(r.store).capabilities.paint).not.toBe(original)
   expect(handlerOfferId('host', original, definition.id)).not.toBe(handlerOfferId('host', libAt(r.store).capabilities.paint!, definition.id))
   r = loadReplica(serializeReplica(r))
-  restoreNativeRef(r, [], 'host', definition)
+  restorePrimitive(r, [], 'host', definition)
   const step = { path: ['call'], row: { typeCid: ref } } as EvaluationStep
-  expect(primitiveExecutors(r, step).map(value => value.native.native)).toEqual([native])
+  expect(primitiveExecutors(r, step).map(value => value.implementation.run)).toEqual([primitive])
   expect(discoverHandlers(r, []).find(offer => offer.cid === ref)?.type).toBe(original)
 })
 
@@ -97,10 +97,10 @@ test('library fields are reachable through graph refs with no encoded node ids',
 
 test('a row cannot execute through its own declarations, but its children can', () => {
   let r = createReplica('host')
-  const definition = { id: 'local-effect', type: (store: FosStore) => libAt(store).capabilities.llm!, native: async () => ({}) }
-  const ref = nativeRef(r.store, 'host', definition)
+  const definition = { id: 'local-effect', capability: (store: FosStore) => libAt(store).capabilities.llm!, run: async () => ({}) }
+  const ref = primitiveRef(r.store, 'host', definition)
   r = addRefCall(r, [], ref, 1, 'call')
-  r = publishNativeRef(r, ['call'], 'host', ref, 2)
+  r = publishPrimitive(r, ['call'], 'host', ref, 2)
   r = addRefCall(r, ['call'], ref, 3, 'child')
   expect(primitiveExecutors(r, evaluationSteps(r, ['call'])[0]!, 'host')).toEqual([])
   expect(primitiveExecutors(r, evaluationSteps(r, ['call', 'child'])[0]!, 'host')).toHaveLength(1)

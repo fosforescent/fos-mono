@@ -35,7 +35,7 @@ export function rowsWithLeft(store: FosStore, cid: string, left: LeftMatch): Arr
   })
 }
 
-/** The value the row with `left` at `path` holds, read as a native value. */
+/** The value the row with `left` at `path` holds, read as a host value. */
 export function readRowValue<T>(r: Replica, path: Scope, left: LeftMatch): T | null {
   const cid = resolveScope(r.store, headCid(r), path)
   const row = cid ? rowWithLeft(r.store, cid, left) : null

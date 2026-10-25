@@ -32,7 +32,7 @@ export function compileLibrary(source: LibrarySource): CompiledLibrary {
     nodes[cid] = node
   }
   visit(source.rootNodeId)
-  // The native mutable-ref pointer has a stable content identity, shared with the store.
+  // The built-in mutable-ref pointer has a stable content identity, shared with the store.
   const target = hashContent({ data: { description: { content: 'Target Constructor Node' } }, children: [] })
   const alias = hashContent({ data: { description: { content: 'Alias Constructor Node' } }, children: [] })
   // the names the library gives its nodes (refs in the graph; see library-names.ts)

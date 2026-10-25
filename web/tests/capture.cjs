@@ -51,7 +51,7 @@ async function main() {
     let r = app.state.replica
     const result = await c.evaluateNode(at, {
       get: () => r, save: next => { r = next }, now: () => 20, check: () => [],
-      executors: () => [{ native: async (operands, ctx) => {
+      executors: () => [{ run: async (operands, ctx) => {
         const type = c.rowTypeAt(ctx.store, PLAIN_TYPE, at)
         const child = ctx.put({ data: { alias: { id: 'bin' }, description: { content: 'Buy a bin' } }, children: [] })
         const group = ctx.put({ data: { alias: { id: 'compost' }, description: { content: 'Compost' } }, children: [[type, child]] })

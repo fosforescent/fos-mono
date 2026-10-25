@@ -1,4 +1,4 @@
-/** Compatibility only. New comments have no comment payload or native comment behavior. */
+/** Compatibility only. New comments have no comment payload or built-in comment behavior. */
 import type { FosNodeContent, FosPathElem } from '../types'
 import type { FosStore } from '../dag-implementation/store'
 import { constructForm } from './forms'

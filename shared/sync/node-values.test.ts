@@ -29,7 +29,7 @@ import {
 import { constructNodeValue, readGraphValue, nodeValueType } from './node-values'
 import { assertCompiledGraph, compileRefGraph } from './ref-compiler'
 
-test('native records and sequences have the same meaning after compilation without editor identities', () => {
+test('primitive records and sequences have the same meaning after compilation without editor identities', () => {
   const r = createReplica('device'), input = { nested: { count: 3 }, list: [null, 'hello', false] }
   const editable = constructNodeValue(r.store, input, 'editor-uuid')
   const compiled = compileRefGraph(r, editable.cid)

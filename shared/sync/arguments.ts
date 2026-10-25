@@ -8,7 +8,7 @@
  * A value that pins a checking contract (a grant: a child row whose left is the `allocate` capability) is linear. It
  * is bound only by an invocation of that contract's handler, which consumes it from its owner (a bank: a ref row
  * whose value declares the contract and holds its grants as argument rows) and issues what is bound in its place.
- * The handler is the `allocateNative`: it checks conservation over compiled operands and proposes the owner's next
+ * The handler is the `allocatePrimitive`: it checks conservation over compiled operands and proposes the owner's next
  * value and the issued grants; the evaluator publishes them together when the evaluation commits.
  */
 import { primitive } from './primitives'
@@ -28,7 +28,7 @@ import { isNegative } from './parameters'
 import { isClassifyingRow, isKindRow, tag, tagsOf, valueOfPattern } from './structural'
 import { transactionValue } from './transactions'
 import { REF_TYPE, RESOURCE_TYPE } from './library-types'
-import type { Native } from './native'
+import type { PrimitiveFunction } from './operands'
 
 export type Allocation = NonNullable<FosDataContent['allocation']>
 export type Amount = Pick<Allocation, 'type' | 'amount' | 'unit'> & Partial<Pick<Allocation, 'start' | 'end'>>
@@ -161,7 +161,7 @@ function bindAccepted(r: Replica, path: Scope, value: string, by: string, now: n
 /**
  * Bind a grant a host minted outside the graph (a payment the provider confirmed, points moved on the server's
  * ledger). This is the one place authority enters without an allocate invocation; it is for legacy effects until
- * those are natives whose bank is a row.
+ * those are primitives whose bank is a row.
  */
 export function bindIssuedAuthority(r: Replica, path: Scope, grant: string, by: string, now: number): Replica {
   if (!grantOf(r.store, grant, allocateCapability(r.store, path.slice(0, -1)))) throw new Error('Bind a grant.')
@@ -391,7 +391,7 @@ export function consumeAllocation(r: Replica, at: Scope, handle: Scope | { owner
  * issued grants. Inputs are consumed exactly once from one owner; outputs conserve the amount; every grant keeps the
  * contract the owner declares. Without inputs the invocation credits or debits the owner itself.
  */
-export const allocateNative: Native = async (operands, context) => {
+export const allocatePrimitive: PrimitiveFunction = async (operands, context) => {
   const store = context.store
   const state = operands.inputs.owner
   if (!state) throw new Error('An allocation invocation names the bank it moves authority within.')

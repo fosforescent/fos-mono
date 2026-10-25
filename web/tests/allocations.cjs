@@ -49,7 +49,7 @@ async function main() {
   const grantsNow = ownerGrants(app.state.replica, [HOME_ID, task, bank.id])
   assert.deepEqual(grantsNow.map(g => g.allocation.amount).sort((a, b) => a - b), [-5, 3, 5, 7])
   assert.equal(view(app.state.replica, [HOME_ID, task]).tasks.find(t => t.resource).resource.held, 10)
-  // (grants issued by the allocate native carry no issuer peer; see shared/sync/arguments.ts grantValue)
+  // (grants issued by the allocate primitive carry no issuer peer; see shared/sync/arguments.ts grantValue)
 
   // using more than a handle holds is refused before anything is authored
   const before = JSON.stringify(view(app.state.replica, [HOME_ID, task]).tasks.map(t => t.id))

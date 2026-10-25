@@ -3,7 +3,7 @@ import { libAt, resolveScope, valueContent } from './graph'
 import { headCid, view } from './replica'
 import { evaluationRecord } from './evaluation'
 import { watchedRefValue, type TriggerObserver } from './triggers'
-import type { PrimitiveDefinition } from './native-refs'
+import type { PrimitiveDefinition } from './primitives'
 
 /** Numeric five-field UTC cron; lists, ranges and steps. Day-of-month/day-of-week use cron's OR rule. */
 export function cronMatches(expression: string, now: number): boolean {
@@ -133,9 +133,9 @@ const deviceObservers: Array<[string, TriggerObserver]> = [
   ['response', responseObserver],
   ['ref-change', refChangeObserver]
 ]
-export const deviceTriggerDefinitions: PrimitiveDefinition<unknown>[] = deviceObservers.map(([name, observer]) => ({
+export const deviceTriggerDefinitions: PrimitiveDefinition[] = deviceObservers.map(([name, observer]) => ({
   id: 'device:' + name,
   label: name,
-  type: (store, at) => libAt(store, at).capabilities[name]!,
+  capability: name,
   trigger: observer
 }))

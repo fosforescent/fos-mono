@@ -9,7 +9,7 @@ import { join, relative } from 'node:path'
 
 const root = join(__dirname, '..', '..')
 const KERNEL = new Set(['shared/sync/bindings.ts', 'shared/sync/scope-bindings.ts', 'shared/sync/ref-paths.ts', 'shared/sync/ref-compiler.ts', 'shared/sync/structural.ts',
-  'shared/sync/native.ts', 'shared/sync/evaluation.ts', 'shared/sync/transactions.ts', 'shared/sync/replica.ts', 'shared/sync/approvals.ts', 'shared/sync/kernel.ts', 'shared/sync/graph.ts'])
+  'shared/sync/operands.ts', 'shared/sync/evaluation.ts', 'shared/sync/transactions.ts', 'shared/sync/replica.ts', 'shared/sync/approvals.ts', 'shared/sync/kernel.ts', 'shared/sync/graph.ts'])
 
 /** What only the kernel may do, and the files still doing it (to be shortened, never lengthened). */
 const RULES: Array<{ name: string; pattern: RegExp; allow: string[] }> = [

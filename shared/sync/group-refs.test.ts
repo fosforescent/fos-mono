@@ -1,7 +1,7 @@
 import { primitive } from './primitives'
 import {
   addRef, addRefAt, addRow, addTask, compileRefGraph, content, copyNode, createReplica,
-  discoverHandlers, headCid, libAt, loadReplica, nativeRef, nodeTransportAt, offerNodeTransport,
+  discoverHandlers, headCid, libAt, loadReplica, primitiveRef, nodeTransportAt, offerNodeTransport,
   passRefAt, put, renameTask, resolveRefIdentity, resolveScope, serializeReplica, setRefValueAt,
   valueContent, view, nestScope, type NodeTransport
 } from './index'
@@ -85,7 +85,7 @@ test('a receiver supplies a message transport to the same group ref using an ord
   const calls: string[] = []
   const transport: NodeTransport = { capabilities: ['provideNode'], available: () => true, attachment: () => ['group'],
     request: async request => { calls.push(request.path.join('/')); return { peerId: 'alice' } as never } }
-  const handler = nativeRef(receiver.store, 'alice', { id: 'forward', type: () => type }, { provideNode: transport }, ['group'])
+  const handler = primitiveRef(receiver.store, 'alice', { id: 'forward', capability: () => type }, { provideNode: transport }, ['group'])
   receiver = setRefValueAt(receiver, ['group', 'shared-node'], handler, 6)
   const provider = nodeTransportAt(receiver, ['group', 'bob'], 'alice')!
   await provider.request({ peerId: 'bob', scope: ['group'], path: ['group', 'work'], linkId: 'link' })
@@ -100,7 +100,7 @@ test('transport offers are scoped and competing available handlers require a cho
   expect(nodeTransportAt(r, ['group', 'alice'], 'remote')).not.toBeNull()
   expect(nodeTransportAt(r, ['other'], 'remote')).toBeNull()
   const type = libAt(r.store, ['group']).capabilities.provideNode!
-  const other = nativeRef(r.store, 'remote', { id: 'another', type: () => type }, { provideNode: transport() }, ['group'])
+  const other = primitiveRef(r.store, 'remote', { id: 'another', capability: () => type }, { provideNode: transport() }, ['group'])
   r = addRefAt(r, ['group'], 'another-route', type, 6, other)
   expect(() => nodeTransportAt(r, ['group', 'bob'], 'remote')).toThrow(/Choose/)
 })

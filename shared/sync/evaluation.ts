@@ -1,6 +1,6 @@
 /** Evaluation uses ordinary typed refs for its journal and ordinary tasks for compensation. */
 import { primitive } from './primitives'
-import { compileOperands, type Native } from './native'
+import { compileOperands, type PrimitiveFunction } from './operands'
 import { isOutputPattern } from './parameters'
 import type { BindingLocation } from './scope-bindings'
 import { proposeTransactionWrite } from './transactions'
@@ -39,7 +39,7 @@ export function readNodeValue<T>(r: Replica, path: Scope, name: string, holder?:
 }
 /**
  * Write the value named `name` at `path`. `handler.peer` is who holds it (a device's setting: found by its name and
- * holder, `settingOf`), `handler.type` its constructor when not a native value.
+ * holder, `settingOf`), `handler.type` its constructor when not a primitive value.
  */
 export function writeNodeValue(r: Replica, path: Scope, name: string, value: unknown, now: number, handler?: { type?: string; peer: string }): Replica {
   const cid = resolveScope(r.store, headCid(r), path)
@@ -136,10 +136,10 @@ export function evaluationRecord(r: Replica, path: Scope): EvaluationRecord | nu
 
 export type EvaluationStep = { path: Scope; row: TaskView | null }
 /**
- * What runs a step: a native, the one shape every host implementation has (sync/native.ts). It sees compiled operands
+ * What runs a step: a primitive, the one shape every host implementation has (sync/operands.ts). It sees compiled operands
  * and answers values, which the evaluator submits as the evaluation's pending writes; discarding them reverts it.
  */
-export type StepExecutor = { native: Native }
+export type StepExecutor = { run: PrimitiveFunction }
 /** The one executor that runs a step, or why there is none to run. Every host selects through this. */
 export function selectExecutor<E>(executors: E[]): { executor: E } | { executor: null; problem: string | null } {
   if (executors.length === 1) return { executor: executors[0]! }
@@ -274,15 +274,15 @@ const instruction = (r: Replica, path: Scope) => {
 }
 
 /**
- * Run a native: compile the step's operands, hand them over, and submit what it answers as this evaluation's pending
+ * Run a run: compile the step's operands, hand them over, and submit what it answers as this evaluation's pending
  * writes, each to the declaration the compiler named and checked against that declaration's pattern. Outputs win
  * over proposals for one destination (a remainder rebinding the handle it came from).
  */
-async function runNative(native: Native, step: EvaluationStep, evaluation: string, driver: EvaluationDriver): Promise<void | 'pending'> {
+async function runPrimitive(run: PrimitiveFunction, step: EvaluationStep, evaluation: string, driver: EvaluationDriver): Promise<void | 'pending'> {
   const before = driver.get()
   // the compiler sees only the binding environment; the driver's other fields (its `outputs(step)`) are not compile options
   const { compiled, sources } = compileOperands(before, step.path, { ...(driver.canRead ? { canRead: driver.canRead } : {}), ...(driver.isPeerActive ? { isPeerActive: driver.isPeerActive } : {}) })
-  const result = await native(compiled, { evaluation, step: step.path, now: driver.now(), store: before.store, put: node => put(before.store, node) })
+  const result = await run(compiled, { evaluation, step: step.path, now: driver.now(), store: before.store, put: node => put(before.store, node) })
   const writes = new Map<string, { binding: BindingLocation; value: string }>()
   for (const [name, value] of Object.entries(result.proposals ?? {})) {
     const binding = sources[name]
@@ -343,8 +343,8 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
       const effect = { path: step.path, title: current.row?.title ?? 'Ref', status: 'attempting' as EvaluationRecord['effects'][number]['status'] }
       record.effects.push(effect); await save() // persist before sending, including an uncertain failed response
       applied.add(JSON.stringify(step.path))
-      // a native's answers are this evaluation's pending writes: checked against their declarations now, live at commit
-      const outcome = await runNative(executor.native, step, record.id, driver)
+      // a primitive's answers are this evaluation's pending writes: checked against their declarations now, live at commit
+      const outcome = await runPrimitive(executor.run, step, record.id, driver)
       if (outcome === 'pending') { effect.status = 'pending-review'; awaiting = true; await save(); continue }
       effect.status = 'applied'; await save()
     }
@@ -379,7 +379,7 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
     }
     record.error = error instanceof Error ? error.message : String(error)
     try { await driver.save(discardTransactionWrites(driver.get(), record.id, driver.now())) } catch { /* the pending writes stay visible as open submissions */ }
-    // every native's writes were pending submissions, discarded above; what a native did outside the graph is its own to compensate
+    // every primitive's writes were pending submissions, discarded above; what a primitive did outside the graph is its own to compensate
     for (const effect of [...record.effects].reverse()) effect.status = 'reverted'
     for (const step of [...opened].reverse()) {
       try { await driver.abort?.(fresh(step), record.id) }

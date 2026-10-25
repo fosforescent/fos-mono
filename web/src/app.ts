@@ -3,16 +3,16 @@ import { resourceHandlers } from '../../shared/sync/resource-bindings'
 import { invertPolarity } from '../../shared/sync/parameters'
 import { capabilityPresentation } from './capability-presentation'
 import { setLibraryArg } from '../../shared/sync/library'
-import { nodeTransportAt, offerNodeTransport, type NodeTransport } from '../../shared/sync/native-refs'
-import { nativeOffer } from '../../shared/sync/natives'
+import { nodeTransportAt, offerNodeTransport, type NodeTransport } from '../../shared/sync/primitives'
+import { primitiveRef } from '../../shared/sync/primitives'
 import type { FosStore } from '../../shared/dag-implementation/store'
 import { primitiveImplementation } from '../../shared/sync/primitives'
 import { handlerOfferId } from '../../shared/sync/graph'
-/** A device's location reader: the native it passes its library for `requires.deviceLocation`. */
+/** A device's location reader: the primitive it passes its library for `requires.deviceLocation`. */
 type DeviceLocation = { available(): boolean; locate(): Promise<{ lat: number; lng: number }> }
 import { settingOf, isTemplateType } from '../../shared/sync/graph'
 import { hashContent } from '../../shared/dag-implementation/cid'
-import { nativeRefValues } from '../../shared/sync/native-refs'
+import { primitiveValues } from '../../shared/sync/primitives'
 import { sameValue } from '../../shared/sync/merge'
 import { parseRowInput } from './rows'
 import { isHandlerStateLeft } from '../../shared/sync/capabilities'
@@ -462,14 +462,14 @@ export class App {
       await this.saveWorkflowReplica(queueAgentEffect(this.state.replica, path, `${evaluation}:${JSON.stringify(path)}`, this.now()))
       this.notify('info', 'Execution queued for the configured desktop. Track its status in the project workflow.')
     },
-    // A network request made by this device (the desktop shell natively, the browser with fetch); the native binds the body to the row's `response` output.
+    // A network request made by this device (the desktop shell natively, the browser with fetch); the primitive binds the body to the row's `response` output.
     fetch: (url, method) => this.fetchUrl(url, method)
   })
   /** One request from this device. The desktop shell makes it natively (no browser CORS); the browser uses fetch. */
   async fetchUrl(url: string, method: string): Promise<{ status: number; body: string }> {
     if (!/^https?:\/\//i.test(url)) throw new Error('Only http and https addresses can be fetched.')
-    const native = tauriInvoke<{ status: number; body: string }>('fetch_url', { url, method })
-    if (native) return native
+    const desktop = tauriInvoke<{ status: number; body: string }>('fetch_url', { url, method })
+    if (desktop) return desktop
     const response = await fetch(url, { method })
     return { status: response.status, body: (await response.text()).slice(0, 1_000_000) }
   }
@@ -625,20 +625,20 @@ export class App {
    * root; it is nested in the browser's and resolves its rows through it.
    */
   private withRootContext(replica: Replica): Replica {
-    if (!this.config.deviceRoot && !this.config.scopedDocument) return this.deviceHandlers.publish(this.passDeviceNatives(ensureDeviceLibrary(replica, LIBRARY_BUNDLE as LibraryBundle, Date.now())), [], replica.meta.peerId, 0, undefined, 'this-device')
+    if (!this.config.deviceRoot && !this.config.scopedDocument) return this.deviceHandlers.publish(this.passDevicePrimitives(ensureDeviceLibrary(replica, LIBRARY_BUNDLE as LibraryBundle, Date.now())), [], replica.meta.peerId, 0, undefined, 'this-device')
     if (!this.deviceRoot) {
       const stored = this.config.deviceRoot?.serialized
-      this.deviceRoot = this.passDeviceNatives(ensureDeviceLibrary(stored ? loadReplica(stored) : createReplica(), LIBRARY_BUNDLE as LibraryBundle, Date.now()))
+      this.deviceRoot = this.passDevicePrimitives(ensureDeviceLibrary(stored ? loadReplica(stored) : createReplica(), LIBRARY_BUNDLE as LibraryBundle, Date.now()))
     }
     this.deviceRoot = this.deviceHandlers.publish(this.deviceRoot, [], replica.meta.peerId, 0, undefined, 'this-device')
     nestScope(replica.store, { store: this.deviceRoot.store, root: headCid(this.deviceRoot), at: [] })
     return replica
   }
   /**
-   * What this device passes the standard library it uses (its `lib` instance on the device root): the natives the
+   * What this device passes the standard library it uses (its `lib` instance on the device root): the primitives the
    * library requires, registered here. The library never calls device code itself; it uses what it is passed.
    */
-  private passDeviceNatives(r: Replica): Replica {
+  private passDevicePrimitives(r: Replica): Replica {
     const peer = r.meta.peerId
     const reader: DeviceLocation = {
       available: () => typeof navigator !== 'undefined' && !!navigator.geolocation,
@@ -648,13 +648,13 @@ export class App {
         geolocation.getCurrentPosition(position => resolve({ lat: Math.round(position.coords.latitude * 1e5) / 1e5, lng: Math.round(position.coords.longitude * 1e5) / 1e5 }), reject, { timeout: 15_000, maximumAge: 60_000 })
       })
     }
-    const native = nativeOffer(r.store, peer, { id: 'location', label: 'This device', type: (store: FosStore, at: Scope) => libAt(store, at).capabilities.allocation! }, reader as never)
-    try { return setLibraryArg(r, [], 'deviceLocation', native, 0) } catch { return r }
+    const location = primitiveRef(r.store, peer, { id: 'location', label: 'This device', capability: (store: FosStore, at: Scope) => libAt(store, at).capabilities.allocation! }, reader as never)
+    try { return setLibraryArg(r, [], 'deviceLocation', location, 0) } catch { return r }
   }
-  /** The native a device fallback runs (what this device passed its library), when the device can run it now. */
-  deviceNative(handler: ManualHandler): DeviceLocation | null {
-    if (!handler.native) return null
-    const value = primitiveImplementation<DeviceLocation>(this.state.replica.store, valueCidOf(this.state.replica.store, handler.native))?.value
+  /** The primitive a device fallback runs (what this device passed its library), when the device can run it now. */
+  devicePrimitive(handler: ManualHandler): DeviceLocation | null {
+    if (!handler.primitive) return null
+    const value = primitiveImplementation<DeviceLocation>(this.state.replica.store, valueCidOf(this.state.replica.store, handler.primitive))?.value
     return value && value.available() ? value : null
   }
   /** The device root a virtual peer's document is nested in (read only). */
@@ -2947,7 +2947,7 @@ export class App {
         save: async replica => { valid(); this.set({ replica }); await this.config.storage.flush?.(); valid(); this.scheduleSync() },
         now: () => this.now(), isPeerActive: id => this.isOnline(id),
         check: step => localPull(step) && !this.pullPeers().some(p => p.id === step.row?.requirement?.peer) ? ['The Pull peer is not connected.'] : [],
-        // every device native answers values; the evaluator writes them. A native that reads this app does so through its closure, never the tree.
+        // every device primitive answers values; the evaluator writes them. A primitive that reads this app does so through its closure, never the tree.
         executors: step => this.deviceHandlers.executors(this.state.replica, step, this.state.replica.meta.peerId)
       })
       if (record.status !== 'committed' && record.status !== 'awaiting-review') throw new Error(record.error ?? 'Evaluation needs recovery.')
@@ -3030,9 +3030,9 @@ export class App {
       if (schedule && value !== undefined)
         trigger[schedule.field] = schedule.input === 'datetime-local' ? (value ? Date.parse(value) : undefined) : value
       if (missingSchedule({ ...trigger, definition: offer.definition })) trigger.enabled = false
-      nativeRefValues(source, destination, offer.peerId)
+      primitiveValues(source, destination, offer.peerId)
         .find((v) => v.ref === offer.cid)
-        ?.native.trigger?.validate?.({ replica: source, path, config: trigger, now: this.now(), previous: null })
+        ?.implementation.trigger?.validate?.({ replica: source, path, config: trigger, now: this.now(), previous: null })
       if (id) r = addRow(r, destination, TEMPLATE_TYPE, offer.definition.label, this.now(), { id })
       r = setNodeTrigger(r, path, trigger, this.now())
       if (arg) {

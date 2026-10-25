@@ -2829,7 +2829,7 @@ function manualControls(app: App, state: AppState, at: Scope, task: TaskView, ab
   const controls: HTMLElement[] = []
   // the library this requirement sees: Home's linked one under Home, the root's shipped one elsewhere
   for (const handler of manualHandlersFor(state.replica, req, absolute ? at : [...state.view, ...at])) {
-    if (handler.device && !app.deviceNative(handler)) continue
+    if (handler.device && !app.devicePrimitive(handler)) continue
     const record = button('secondary small manual-handler', handler.label, () => void app.applyManualHandler(at, task, handler, undefined, absolute)); record.dataset.handler = handler.id
     record.title = handler.device ? 'Records this device\'s position as the place' : 'Records that you did this by hand; no peer is involved'
     controls.push(record)

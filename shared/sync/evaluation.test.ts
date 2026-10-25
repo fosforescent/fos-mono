@@ -28,22 +28,22 @@ test('an unresolved confirmation stops all effects before opening a transaction'
   await expect(evaluateNode(['parent'], s.driver)).rejects.toThrow(/Unfulfilled confirmation/)
   expect(s.events).toEqual([])
 })
-test('a native that fails leaves nothing behind: its writes were pending, the run rolls back and can be repeated after reload', async () => {
+test('a primitive that fails leaves nothing behind: its writes were pending, the run rolls back and can be repeated after reload', async () => {
   const s = setup()
   s.set(addRequirement(s.get(), ['parent'], 'Create issue', 3, { capability: 'repo' }, 'req'))
-  s.driver.executors = step => step.row?.requirement?.capability === 'repo' ? [{ native: async () => { throw new Error('Response lost after sending') } }] : []
+  s.driver.executors = step => step.row?.requirement?.capability === 'repo' ? [{ run: async () => { throw new Error('Response lost after sending') } }] : []
   const result = await evaluateNode(['parent'], s.driver)
   expect(result.status).toBe('rolled-back')
   expect(result.error).toMatch(/Response lost/)
   expect(userView(s.get())!.tasks[0]!.done).toBe(false)
   s.set(loadReplica(serializeReplica(s.get())))
-  s.driver.executors = step => step.row?.requirement?.capability === 'repo' ? [{ native: answering('test') }] : []
+  s.driver.executors = step => step.row?.requirement?.capability === 'repo' ? [{ run: answering('test') }] : []
   expect((await evaluateNode(['parent'], s.driver)).status).toBe('committed')
 })
-test('a failed commit discards every native\'s answers: no requirement stays filled, no task done', async () => {
+test('a failed commit discards every primitive\'s answers: no requirement stays filled, no task done', async () => {
   const s = setup()
   for (const id of ['a', 'b']) s.set(addRequirement(s.get(), ['parent'], id, 3, { capability: 'repo' }, id))
-  s.driver.executors = step => step.row?.requirement?.capability === 'repo' ? [{ native: answering('test') }] : []
+  s.driver.executors = step => step.row?.requirement?.capability === 'repo' ? [{ run: answering('test') }] : []
   s.driver.commit = async () => { throw new Error('Commit failed') }
   const result = await evaluateNode(['parent'], s.driver)
   expect(result.status).toBe('rolled-back')
@@ -108,7 +108,7 @@ test('a plain amount typed inside a resource requirement is data and does not fu
 test('a step with several executors is a choice for its owner, never the first one a host lists', async () => {
   const s = setup(), ran: string[] = []
   s.set(addRequirement(s.get(), ['parent'], 'Create issue', 3, { capability: 'repo' }, 'req'))
-  const executor = (name: string) => ({ native: async () => { ran.push(name); return {} } })
+  const executor = (name: string) => ({ run: async () => { ran.push(name); return {} } })
   s.driver.executors = step => step.row?.requirement?.capability === 'repo' ? [executor('first'), executor('second')] : []
   await expect(evaluateNode(['parent'], s.driver)).rejects.toThrow(/2 handlers can run this step/)
   expect(ran).toEqual([])

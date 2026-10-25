@@ -28,7 +28,7 @@ function setup(servers: McpServerInfo[]) {
     callTool: async (server, tool, input) => { calls.push([server.id, tool, input]); return `${tool}(${input}) = sunny` },
     now: () => 10
   }
-  // `-tool` requirements run as a native reached through a `complete` event (the web's Run on the requirement)
+  // `-tool` requirements run as a primitive reached through a `complete` event (the web's Run on the requirement)
   const events = createEventService(deps, createEvaluationService(deps, createHostRuntime([mcpToolHandler(deps)])).runNode)
   const run = async (scope: string[], requirementId: string) => {
     let status = 200, json: any

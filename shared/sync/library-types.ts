@@ -1,5 +1,5 @@
 /**
- * Standard constructor names used by native adapters. A constructor must carry its own name as a string row;
+ * Standard constructor names used by host adapters. A constructor must carry its own name as a string row;
  * library field names are lookup bindings and must not assign meaning to the node they expose. Structural
  * compatibility must be checked against graph predicates, not these strings or a reverse library index.
  */

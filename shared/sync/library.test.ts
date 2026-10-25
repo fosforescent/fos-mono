@@ -1,6 +1,6 @@
 /** The standard library: a mutable ref like any other, found by what it holds, changed by accepted submissions. */
 import { createStore } from './graph'
-import { nativeRef } from './native-refs'
+import { primitiveRef } from './primitives'
 import { primitiveImplementation } from './primitives'
 import { libAt, handlerOfferId } from './graph'
 import { FosStore } from '../dag-implementation/store'
@@ -158,21 +158,21 @@ test('the library carries manual fallback handlers for every kind of requirement
     'allocation:account', 'allocation:calendar', 'allocation:inventory', 'allocation:location', 'allocation:points', 'llm', 'mail', 'market', 'repo', 'search', 'tool'
   ])
   expect(manualHandlersFor(r, { capability: 'allocation', resource: 'account' }).map(h => h.label)).toEqual(['Paid outside Fos'])
-  // a place is entered by hand; the device's position only once the device passed the library its native
+  // a place is entered by hand; the device's position only once the device passed the library its primitive
   expect(manualHandlersFor(r, { capability: 'allocation', resource: 'location' }).map(h => h.device)).toEqual([false])
   expect(manualHandlersFor(r, { capability: 'mail' }).map(h => h.label)).toEqual(['Sent it myself'])
   expect(manualHandlersFor(r, { capability: 'confirmation' })).toEqual([])
 })
 
-test('the library requires natives the device passes in: its lib instance carries them, and they fill what they are declared for', () => {
+test('the library requires primitives the device passes in: its lib instance carries them, and they fill what they are declared for', () => {
   let r = ensureHomeContext(createReplica('user:device'), 1)
   const locate = { locate: async () => ({ lat: 1, lng: 2 }) }
-  const native = nativeRef(r.store, r.meta.peerId, { id: 'location', label: 'This device', type: store => libAt(store).capabilities.allocation! }, locate as never)
-  expect(() => setLibraryArg(r, [], 'nothingDeclared', native, 2)).toThrow(/requires no/)
-  r = setLibraryArg(r, [], 'deviceLocation', native, 2)
-  expect(headCid(setLibraryArg(r, [], 'deviceLocation', native, 3))).toBe(headCid(r))
+  const primitive = primitiveRef(r.store, r.meta.peerId, { id: 'location', label: 'This device', capability: store => libAt(store).capabilities.allocation! }, locate as never)
+  expect(() => setLibraryArg(r, [], 'nothingDeclared', primitive, 2)).toThrow(/requires no/)
+  r = setLibraryArg(r, [], 'deviceLocation', primitive, 2)
+  expect(headCid(setLibraryArg(r, [], 'deviceLocation', primitive, 3))).toBe(headCid(r))
   const device = manualHandlersFor(r, { capability: 'allocation', resource: 'location' }).find(h => h.device)!
-  expect(device).toMatchObject({ label: "Use this device's location", native })
-  // the native is what the device registered: the library holds no code, only what it was passed
-  expect(primitiveImplementation(r.store, valueCidOf(r.store, device.native!))?.value).toBe(locate)
+  expect(device).toMatchObject({ label: "Use this device's location", primitive })
+  // the primitive is what the device registered: the library holds no code, only what it was passed
+  expect(primitiveImplementation(r.store, valueCidOf(r.store, device.primitive!))?.value).toBe(locate)
 })

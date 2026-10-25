@@ -1,20 +1,20 @@
 /** Test helpers. */
 import { primitive } from './primitives'
 import { supplyValue } from './arguments'
-import type { Native } from './native'
-/** A native that answers the requirement it runs for with a value of its pattern, as `by`. */
-export const answering = (by: string, receipt?: string): Native => async (operands, context) => {
+import type { PrimitiveFunction } from './operands'
+/** A primitive that answers the requirement it runs for with a value of its pattern, as `by`. */
+export const answering = (by: string, receipt?: string): PrimitiveFunction => async (operands, context) => {
   const self = operands.outputs.self
-  if (!self) throw new Error('This native fills a requirement row.')
+  if (!self) throw new Error('This primitive fills a requirement row.')
   return { outputs: { self: supplyValue(context.store, self.pattern, by, receipt) } }
 }
-/** A native that answers nothing (an effect with no graph result). */
-export const silent: Native = async () => ({})
+/** A primitive that answers nothing (an effect with no graph result). */
+export const silent: PrimitiveFunction = async () => ({})
 import { libraryInstanceOf, libraryRowOf, SERVER_TRANSPORT_CAPABILITIES, type NodeView, type Scope } from './graph'
 import { headCid, view, type Replica } from './replica'
 import { accountContextAbove, exchangeNode, nodeTreeSync } from './node-sync'
 import type { NodeBranch, NodeRequest } from './node-provider'
-import { nativeRef, publishNativeRef } from './native-refs'
+import { primitiveRef, publishPrimitive } from './primitives'
 import { deviceTriggerDefinitions, cronObserver } from './trigger-primitives'
 import { libAt, libraryBindingAt, libraryInstanceEdge, commitRoot, updateAtScope, content, put, refNodeContent } from './graph'
 import type { Demand } from './arguments'
@@ -42,15 +42,15 @@ export function declareTestCapability(r: Replica, name: string, at: Scope = [], 
 
 /** Services are registered explicitly; granting permission must never manufacture a handler. */
 export function installTestHandler(r: Replica, peer: string, capability: string, at: Scope = []): Replica {
-  const definition = { id: `test:${capability}`, label: capability, type: (store: Replica['store'], scope: Scope) => libAt(store, scope).capabilities[capability]! }
-  return publishNativeRef(r, at, peer, nativeRef(r.store, peer, definition, {}, at), 0)
+  const definition = { id: `test:${capability}`, label: capability, capability: (store: Replica['store'], scope: Scope) => libAt(store, scope).capabilities[capability]! }
+  return publishPrimitive(r, at, peer, primitiveRef(r.store, peer, definition, {}, at), 0)
 }
 
 /** Explicit host setup for tests exercising observers; construction alone never registers them. */
 export function installTestObservers(r: Replica, peers = [r.meta.peerId], publish = true): Replica {
-  for (const peer of peers) for (const definition of [...deviceTriggerDefinitions, { id: 'test:cron', type: (store: Replica['store']) => libAt(store).capabilities.cron!, trigger: cronObserver }]) {
-    const ref = nativeRef(r.store, peer, definition)
-    if (publish) r = publishNativeRef(r, [], peer, ref, 0)
+  for (const peer of peers) for (const definition of [...deviceTriggerDefinitions, { id: 'test:cron', capability: (store: Replica['store']) => libAt(store).capabilities.cron!, trigger: cronObserver }]) {
+    const ref = primitiveRef(r.store, peer, definition)
+    if (publish) r = publishPrimitive(r, [], peer, ref, 0)
   }
   return r
 }

@@ -89,7 +89,7 @@ test('partial assignments retain holes without proving an executable input', () 
   expect(refValueCompatible(s, pattern, product([key('other'), empty]))).toBe(false)
 })
 
-test('native scalar constructors check values and remain distinct on the left', () => {
+test('primitive scalar constructors check values and remain distinct on the left', () => {
   const { s, empty, text, product } = setup()
   const number = put(s, { data: { form: { primitive: 'number' } }, children: [] })
   const string = put(s, { data: { form: { primitive: 'text' } }, children: [] })

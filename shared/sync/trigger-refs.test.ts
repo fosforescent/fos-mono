@@ -1,8 +1,8 @@
 import {
   addTask, content,
   createReplica,
-  nativeRef,
-  publishNativeRef,
+  primitiveRef,
+  publishPrimitive,
   put,
   setNodeTrigger,
   triggerOccurrence,
@@ -20,14 +20,14 @@ import {
   setHandlerEnabledAt,
   type PrimitiveDefinition
 } from './index'
-import { ensureHomeContext, shareHome, HOME_ID } from './index'
+import { ensureHomeContext, shareHome, HOME_ID , libAt } from './index'
 import { syncWith } from './test-helpers'
 
-function definition(label = 'A custom event'): PrimitiveDefinition<unknown> {
+function definition(label = 'A custom event'): PrimitiveDefinition {
   return {
     id: 'user-authored-observer',
     label,
-    type: (store) =>
+    capability: (store) =>
       put(store, {
         data: {
           name: { content: 'user:event-pattern' },
@@ -42,10 +42,10 @@ function definition(label = 'A custom event'): PrimitiveDefinition<unknown> {
 test('an unfamiliar observer executes only through its scoped declaration, pinned as the call instruction', () => {
   let r = addTask(createReplica('host'), [], 'Listen', 1, 'task')
   const def = definition(),
-    ref = nativeRef(r.store, 'host', def)
+    ref = primitiveRef(r.store, 'host', def)
   const config = { handler: ref, peer: 'host', enabled: true, created: 1 }
   expect(() => setNodeTrigger(r, ['task'], config, 1)).toThrow(/available observer/)
-  r = publishNativeRef(r, [], 'host', ref, 1)
+  r = publishPrimitive(r, [], 'host', ref, 1)
   r = setNodeTrigger(r, ['task'], config, 1)
   expect(triggerOffers(r, ['task']).map((o) => o.cid)).toEqual([ref])
   // a trigger given one observer's declaration is pinned to it: the row's left is that offer
@@ -56,10 +56,10 @@ test('an unfamiliar observer executes only through its scoped declaration, pinne
   r = setHandlerEnabledAt(r, [], 'host', content(r.store, ref).data.alias!.id, true, 2)
   r = loadReplica(serializeReplica(r))
   expect(triggerOccurrence(r, ['task'], nodeTrigger(r, ['task'])!, 2)).toBeNull()
-  nativeRef(r.store, 'host', def) // restore the host meaning without registering anything
+  primitiveRef(r.store, 'host', def) // restore the host meaning without registering anything
   expect(triggerOccurrence(r, ['task'], nodeTrigger(r, ['task'])!, 2)).toBe('custom-event')
   r = removeMemberAt(r, [], 'host', 3)
-  nativeRef(r.store, 'host', def)
+  primitiveRef(r.store, 'host', def)
   expect(triggerOccurrence(r, ['task'], nodeTrigger(r, ['task'])!, 4)).toBeNull()
 })
 
@@ -77,8 +77,8 @@ test('an observer failure is journalled for review and does not stop other obser
         }
       }
     }
-    const ref = nativeRef(r.store, 'host', def)
-    r = publishNativeRef(r, [], 'host', ref, 1)
+    const ref = primitiveRef(r.store, 'host', def)
+    r = publishPrimitive(r, [], 'host', ref, 1)
     r = setNodeTrigger(r, [id], { handler: ref, peer: 'host', enabled: true, created: 1 }, 1)
   }
   const runs: string[][] = []
@@ -103,11 +103,11 @@ test('a selected observer never silently switches to another declaration of the 
   let r = addTask(createReplica('host'), [], 'Listen', 1, 'task')
   const first = definition(),
     second = { ...first, id: 'other-observer', trigger: { observe: () => ({ id: 'wrong-event' }) } }
-  const one = nativeRef(r.store, 'host', first),
-    two = nativeRef(r.store, 'host', second)
-  r = publishNativeRef(publishNativeRef(r, [], 'host', one, 1), [], 'host', two, 1)
+  const one = primitiveRef(r.store, 'host', first),
+    two = primitiveRef(r.store, 'host', second)
+  r = publishPrimitive(publishPrimitive(r, [], 'host', one, 1), [], 'host', two, 1)
   r = setNodeTrigger(r, ['task'], { handler: one, peer: 'host', enabled: true, created: 1 }, 1)
-  r = setHandlerOffersAt(r, [], 'host', first.type(r.store, []), [two], 2)
+  r = setHandlerOffersAt(r, [], 'host', libAt(r.store).capabilities[first.capability as string]!, [two], 2)
   expect(triggerOccurrence(r, ['task'], nodeTrigger(r, ['task'])!, 3)).toBeNull()
 })
 
@@ -116,8 +116,8 @@ test('node exchange preserves the exact observer instruction and independent con
   let a = shareHome(ensureHomeContext(createReplica('a'), 0)),
     b = shareHome(ensureHomeContext(createReplica('b'), 0))
   const def = definition(),
-    ref = nativeRef(a.store, 'a', def)
-  a = publishNativeRef(a, [HOME_ID], 'a', ref, 1)
+    ref = primitiveRef(a.store, 'a', def)
+  a = publishPrimitive(a, [HOME_ID], 'a', ref, 1)
   a = addTask(a, [HOME_ID], 'Listen', 1, 'task')
   a = setNodeTrigger(a, [HOME_ID, 'task'], { handler: ref, peer: 'a', enabled: true, created: 1, threshold: 7 }, 1)
   a = syncWith(a, account, { now: 2 })
@@ -125,6 +125,6 @@ test('node exchange preserves the exact observer instruction and independent con
   const config = nodeTrigger(b, [HOME_ID, 'task'])!
   expect(config).toMatchObject({ handler: ref, threshold: 7 })
   expect(triggerOccurrence(b, [HOME_ID, 'task'], config, 4)).toBeNull()
-  nativeRef(b.store, 'a', def) // this test host explicitly supplies the native implementation
+  primitiveRef(b.store, 'a', def) // this test host explicitly supplies the primitive implementation
   expect(triggerOccurrence(b, [HOME_ID, 'task'], config, 4)).toBe('custom-event')
 })

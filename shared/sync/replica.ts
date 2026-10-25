@@ -208,15 +208,15 @@ export function homePath(replica: Replica): Scope {
 }
 
 /** Remember initialization in the graph so reopening a store cannot resurrect withdrawn refs. */
-export function nativeDefaultsApplied(replica: Replica, at: Scope, source: string): boolean {
+export function primitiveDefaultsApplied(replica: Replica, at: Scope, source: string): boolean {
   const cid = resolveScope(replica.store, headCid(replica), at)
-  return !!cid && (!!content(replica.store, cid).data.nativeDefaults?.sources.includes(source) || !!valueContent(replica.store, cid).data.nativeDefaults?.sources.includes(source))
+  return !!cid && (!!content(replica.store, cid).data.primitiveDefaults?.sources.includes(source) || !!valueContent(replica.store, cid).data.primitiveDefaults?.sources.includes(source))
 }
 
-export function markNativeDefaultsApplied(replica: Replica, at: Scope, source: string, now: number): Replica {
-  if (nativeDefaultsApplied(replica, at, source)) return replica
+export function markPrimitiveDefaultsApplied(replica: Replica, at: Scope, source: string, now: number): Replica {
+  if (primitiveDefaultsApplied(replica, at, source)) return replica
   const next = updateAtScope(replica.store, headCid(replica), at, node => ({ ...node, data: { ...node.data,
-    nativeDefaults: { sources: [...(node.data.nativeDefaults?.sources ?? []), source] }
+    primitiveDefaults: { sources: [...(node.data.primitiveDefaults?.sources ?? []), source] }
   } }), 'node')
   commitRoot(replica.store, next, now)
   return { ...replica }
@@ -225,17 +225,17 @@ export function markNativeDefaultsApplied(replica: Replica, at: Scope, source: s
 /** Move legacy document rows into Home without copying their identities or losing root bookkeeping. */
 export function ensureHomeContext(replica: Replica, now: number, offers?: HostOffers): Replica {
   if (replica.meta.scope.length) return replica
-  if (offers?.native) importNodes(replica.store, offers.native.nodes)
+  if (offers?.primitives) importNodes(replica.store, offers.primitives.nodes)
   const before = headCid(replica)
-  const seeded = nativeDefaultsApplied(replica, [], 'server')
+  const seeded = primitiveDefaultsApplied(replica, [], 'server')
   const next = homeContextCid(replica.store, before, now, seeded ? {} : offers)
   let r = replica
   if (next !== before) { commitRoot(replica.store, next, now); r = { ...replica } }
   // the host's peers publish their public keys in Home, where node exchange carries them to every device
   for (const [peerId, publicKey] of Object.entries(offers?.keys ?? {})) r = publishPeerKey(r, peerId, publicKey, now)
-  if (offers?.native && !seeded) {
-    importNodes(r.store, offers.native.nodes)
-    for (const [peer, refs] of Object.entries(offers.native.peers)) {
+  if (offers?.primitives && !seeded) {
+    importNodes(r.store, offers.primitives.nodes)
+    for (const [peer, refs] of Object.entries(offers.primitives.peers)) {
       const at = peer === 'fos' ? [] : homePath(r)
       if (!contextMemberRefs(r, at).has(peer)) r = addMemberAt(r, at, peer, peer, [], now)
       const groups = new Map<string, string[]>()
@@ -246,7 +246,7 @@ export function ensureHomeContext(replica: Replica, now: number, offers?: HostOf
         r = setHandlerOffersAt(r, at, peer, type, values, now)
       }
     }
-    r = markNativeDefaultsApplied(r, [], 'server', now)
+    r = markPrimitiveDefaultsApplied(r, [], 'server', now)
   }
   return r
 }
@@ -452,7 +452,7 @@ const rowBody = (store: FosStore, type: string, text: string) => content(store, 
 /**
  * Append (or place at `position`) a row of `type` under the node at `at`: a type id (`lib.<type>`: the row type of the
  * library nearest to `at`) or a type cid. A type with a graph form is constructed from it (its text field gets `text`);
- * a native type holds `text` as its title, plus what `options` give it. References need `refId`.
+ * a built-in type holds `text` as its title, plus what `options` give it. References need `refId`.
  */
 export function addRow(replica: Replica, at: Scope, type: string, text: string, now: number, options: AddRowOptions = {}): Replica {
   const store = replica.store

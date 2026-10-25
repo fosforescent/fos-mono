@@ -17,11 +17,11 @@ async function main() {
   host = c.addRequirement(host, ['form'], 'Choose topic', 2, { capability: 'choice', options: ['Graphs', 'Biology'] }, 'choice')
   // What visitors may use is a grant of the host's shelf, held by a handle row the form refers to. The host's
   // allocate handler (the server's, here the shared effect) issues it and later runs the visitors' consumption.
-  const allocate = { id: 'fos:allocate', label: 'allocate', type: (store, at) => c.libAt(store, at).capabilities.allocate }
-  host = c.publishNativeRef(host, [], 'fos', c.nativeRef(host.store, 'fos', allocate, { ...allocate, native: c.allocateNative }, []), 0)
+  const allocate = { id: 'fos:allocate', label: 'allocate', capability: (store, at) => c.libAt(store, at).capabilities.allocate }
+  host = c.publishPrimitive(host, [], 'fos', c.primitiveRef(host.store, 'fos', allocate, { ...allocate, run: c.allocatePrimitive }, []), 0)
   host = c.addBank(host, [], 'Shelf', 2, { type: 'inventory', unit: 'item' }, 'shelf')
   host = c.issueGrant(host, ['shelf'], { type: 'inventory', unit: 'item', amount: 2 }, 2, 'Stock', 'g0')
-  const allocateExecutors = (get, set) => step => c.primitiveExecutors(get(), step, 'fos').map(() => ({ native: c.allocateNative }))
+  const allocateExecutors = (get, set) => step => c.primitiveExecutors(get(), step, 'fos').map(() => ({ run: c.allocatePrimitive }))
   {
     let r = host
     const issued = await c.evaluateNode(['g0'], { get: () => r, save: next => { r = next }, now: () => 100, check: () => [], executors: allocateExecutors(() => r, next => { r = next }) })

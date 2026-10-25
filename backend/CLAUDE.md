@@ -9,7 +9,7 @@ The Node.js/Express API server: authentication, data management, graph operation
 - `subscription/` - Stripe payments and subscriptions
 - `email/` - email delivery (Postmark)
 - `mcp/` - the MCP client MCP peers use
-- `voice/voiceNotes.ts` - voice and media notes; `voice/organize.ts` - the organize native
+- `voice/voiceNotes.ts` - voice and media notes; `voice/organize.ts` - the organize primitive
 - `search/` - semantic search over rows and the market
 - `integrations/` - integration peers (OAuth providers, Stripe, the phone channel, MCP servers)
 - `channels/` - chat and SMS channels; `channels/textCommands.ts` - texted commands as an adapter of the event grammar
@@ -29,7 +29,7 @@ The Node.js/Express API server: authentication, data management, graph operation
 - Resource submissions preserve the supplier's time bounds as data for every resource type; nothing enforces them. Calendar effects must require an explicit finite event start and end; do not infer an endpoint from the amount or replace null with the current time.
 - Using an offered allocation authors the shared allocate invocation and runs it through the server's `allocate` handler; the input endpoint records no consumption itself.
 - Market fulfillment must provide an independent result through a declared output ref, created before instructions are pinned. A supply must not point back to the task that depends on it. Withdrawal of the result must invalidate fulfillment.
-- Native host services must be declared as typed graph refs. Runtime restoration must retain their pinned definitions and must not recreate deleted offers. Dispatch and lifecycle hooks must discover accepted native values through scope; grants and service-name lists must not substitute for declarations. Isolated account work must retain its enclosing server graph scope.
+- Primitive host services must be declared as typed graph refs. Runtime restoration must retain their pinned definitions and must not recreate deleted offers. Dispatch and lifecycle hooks must discover accepted primitive values through scope; grants and service-name lists must not substitute for declarations. Isolated account work must retain its enclosing server graph scope.
 - Search has no route: it runs only as the fos `search` effect. Rows are told apart only by their type.
 - Market proposals are taken only where the market member has `edit` or the requester is a member with `edit`.
 - Integration effects are registry handlers; there are no routes per handler.
@@ -78,5 +78,5 @@ There is no server-owned library and no system account: the standard library is 
 - [ ] Optimize database queries with caching
 - [ ] Implement API versioning strategy
 - [ ] Add batch processing optimization for large vector operations
-- [ ] Authority-minting handlers (fos points, calendar, confirmed payments) become natives whose bank is a row
+- [ ] Authority-minting handlers (fos points, calendar, confirmed payments) become primitives whose bank is a row
 - [ ] Replace resource handler dispatch by requirement resource name with rows

@@ -20,7 +20,7 @@ export type FosDataContent = {
   };
   /** A constructor row's parameter, optionally bound from the caller's environment. */
   parameter?: { name: string; from?: string[] };
-  /** Native interpretation of a parameter key; field names must not supply this meaning. */
+  /** Host interpretation of a parameter key; field names must not supply this meaning. */
   parameterDefinition?: { kind: 'primitive' | 'negative' };
   /** Presentation and invocation contract of an observer ref, supplied by its declaration. */
   triggerDefinition?: { label: string; icon: string; mode: 'instantiate' | 'resume'; hidden?: boolean; schedule?: { field: string; input: 'datetime-local' | 'text'; label: string } };
@@ -142,7 +142,7 @@ export type FosDataContent = {
   /** Only a local runtime meaning attached to this graph value can execute it. */
   primitive?: import('./sync/primitives').Primitive,
   /** Installation history only; availability is always determined by current ref rows. */
-  nativeDefaults?: { sources: string[] },
+  primitiveDefaults?: { sources: string[] },
   /** Output refs may remain mutable or unfilled when the instruction starts. */
   refRole?: 'input' | 'output',
   /** A compiler-local binder. References to it use this node's CID, never an editing alias. */
