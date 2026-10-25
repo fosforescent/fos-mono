@@ -125,7 +125,9 @@ function takeAway(r: Replica, at: Scope, row: LeftRow, now: number): Replica {
   if (!row.submission) return commit(r, updateAtScope(s, headCid(r), at, value => ({ ...value, children: value.children.filter(e => !sameEdge(e, row.edge)) })), now)
   const p = row.submission, proposed = content(s, p.contentCid)
   const rest = put(s, { ...proposed, children: proposed.children.filter(e => !sameEdge(e, row.edge)) })
-  const next = rest === p.baseCid ? null : put(s, proposalContent(s, p.peerId, p.name, rest, p.baseCid, now))
+  // nothing left to submit: the same rows as main, in whatever order the rebase left them
+  const unordered = (cid: string) => { const node = content(s, cid); return put(s, { ...node, children: [...node.children].sort((a, b) => a.join().localeCompare(b.join())) }) }
+  const next = unordered(rest) === unordered(p.baseCid) ? null : put(s, proposalContent(s, p.peerId, p.name, rest, p.baseCid, now))
   return commit(r, updateAtScope(s, headCid(r), at, node => withProposal(s, node, p.peerId, next, p.name), 'node'), now)
 }
 

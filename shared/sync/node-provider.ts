@@ -1,4 +1,4 @@
-import { isTextField } from './fields'
+import { isTextField, isFieldRow } from './fields'
 import { primitive } from './primitives'
 import { approvalsOf } from './approvals'
 import type { FosDataContent, FosNodeContent, FosNodesData, FosPathElem } from '../types'
@@ -54,7 +54,8 @@ export type NodeChild = { id: string; address: NodeAddress; template: string; he
  * truth: the enclosing row supplies its pattern; bound is the presence of TARGET. No values are bundled. */
 export function rightChild(r: Replica, edge: FosPathElem): NodeChild['right'] {
   const ref = content(r.store, identityCid(r.store, edge))
-  return isRowEdge(r.store, edge) && ref.data.alias && isRefNode(r.store, ref) && ref.data.name ? { ...(ref.data.name ? { name: ref.data.name.content } : {}), bound: !!refValueCid(r.store, ref) } : undefined
+  // a declaration (a named ref, or a row's field) travels as itself: a hole is installed as one, never loaded
+  return isRowEdge(r.store, edge) && ref.data.alias && isRefNode(r.store, ref) && (ref.data.name || isFieldRow(r.store, edge)) ? { ...(ref.data.name ? { name: ref.data.name.content } : {}), bound: !!refValueCid(r.store, ref) } : undefined
 }
 /** Immutable value graphs travel with their edge. Mutable descendants require their own authorized load. */
 export function isLiteralEdge(store: Replica['store'], edge: FosPathElem): boolean {
