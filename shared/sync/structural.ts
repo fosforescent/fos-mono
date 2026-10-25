@@ -27,12 +27,12 @@ export function tagNode(store: FosStore, name: string): string {
   return put(store, { data: {}, children: content(store, constructor).children.map(([left, right]): FosPathElem => right === primitive(store, 'string') ? [left, text] : [left, right]) })
 }
 /**
- * The capability a pattern is (or refines): the name of the tag it carries. The library's own types are tagged too
- * (Home, a query): those are row types, not capabilities.
+ * The capability a pattern is (or refines): the name of the tag it carries. The library's own types (its top-level
+ * entries: Home, a query) are tagged too: those are row types, not capabilities.
  */
 export function capabilityName(store: FosStore, cid: string): string | null {
   const type = typeIdOf(store, cid)
-  if (type && !type.startsWith('capabilities.')) return null
+  if (type && !type.includes('.')) return null
   for (const [left, right] of store.table.get(cid)?.children ?? []) {
     if (!isUnit(store.table.get(right))) continue
     const name = tagName(store, left)

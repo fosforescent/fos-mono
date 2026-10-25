@@ -112,7 +112,7 @@ export function setLibraryArg(r: Replica, at: Scope, name: string, value: string
  * What the nearest library instance at `at` was passed for its `requires` declarations: each declaration (its name
  * and node) with the primitive the device passed, when it passed one.
  */
-export function libraryArgs(r: Replica, at: Scope): Array<{ name: string; declaration: FosNodeContent; value: string }> {
+export function libraryArgs(r: Replica, at: Scope): Array<{ name: string; declaration: FosNodeContent; pattern: string; value: string }> {
   const instance = libraryBindingAt(r.store, at)
   if (!instance) return []
   const store = r.store
@@ -125,7 +125,7 @@ export function libraryArgs(r: Replica, at: Scope): Array<{ name: string; declar
     if (!declared) return []
     const passed = content(store, args).children.find(([left]) => left === declared.node)
     const value = passed && refValueCid(store, content(store, passed[1]))
-    return value ? [{ name: declared.name, declaration: content(store, edge[1]), value }] : []
+    return value ? [{ name: declared.name, declaration: content(store, edge[1]), pattern: edge[0], value }] : []
   })
 }
 
@@ -152,8 +152,8 @@ export function manualHandlers(r: Replica, at?: Scope): ManualHandler[] {
 
 /** The device's fallbacks: the primitives it passed the library for what the library requires, each filling the requirement it declares. */
 export function deviceHandlers(r: Replica, at?: Scope): ManualHandler[] {
-  return libraryArgs(r, at ?? homePath(r)).flatMap(({ name, declaration, value }) => {
-    const allocation = allocationShapeOf(r.store, put(r.store, declaration))
+  return libraryArgs(r, at ?? homePath(r)).flatMap(({ name, declaration, pattern, value }) => {
+    const allocation = allocationShapeOf(r.store, pattern)
     if (!allocation) return []
     return [{ id: name, label: refTitle(r.store, declaration) ?? name, capability: 'allocation' as const, resource: allocation.type, device: true, run: value }]
   })

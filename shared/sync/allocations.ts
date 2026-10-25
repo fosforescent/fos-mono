@@ -58,7 +58,7 @@ export function allocationShapeOf(store: FosStore, cid: string): AllocationShape
     const edge = field ? node.children.find(([left]) => left === field) : undefined
     return edge ? leafValue(store, edge[1]) : null
   }
-  const type = read('resourceType'), unit = read('unit')
+  const type = read('resourceType'), unit = read('unit') ?? ''
   if (typeof type !== 'string' || typeof unit !== 'string') return null
   const number = (name: string) => { const value = read(name); return typeof value === 'number' ? value : undefined }
   const text = (name: string) => { const value = read(name); return typeof value === 'string' ? value : undefined }

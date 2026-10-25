@@ -10,6 +10,7 @@ import type { FosNodeContent, FosNodesData, FosPathElem } from '../shared/types'
 import { hashContent, putNode, type FosStore } from '../shared/dag-implementation/store'
 import { primitive } from '../shared/sync/primitives'
 import { putBranches } from '../shared/sync/graph'
+import { constructNodeValue } from '../shared/sync/node-values'
 import { FOS_DATA_VERSION } from '../shared/version'
 
 const store: FosStore = { table: new Map(), rootNodeId: '', implementations: new Map() }
@@ -134,14 +135,96 @@ const capabilityRef = (capabilityName: string, c: Capability, pattern: string) =
     // a trigger starts evaluations: a new instance of its template, or (resume) the one waiting on it
     ...(c.trigger ? [[tagOf('trigger'), unit] as FosPathElem] : []), ...(c.trigger === 'resume' ? [[tagOf('resume'), unit] as FosPathElem] : [])] })
 }
+const patterns: Record<string, string> = {}
 const capabilityGroup = node(...Object.entries(capabilities).map(([capabilityName, c]): FosPathElem => {
-  const pattern = capability(capabilityName, c)
+  const pattern = patterns[capabilityName] = capability(capabilityName, c)
   return [pattern, capabilityRef(capabilityName, c, pattern)]
 }))
 
+// rows as the kernel builds them (fields.ts): a field ref per type row, its id the row's and the field's
+const fieldRefId = (id: string, field: string) => hashContent({ data: { alias: { id } }, children: [[field, field]] })
+const refNode = (data: FosNodeContent['data'], value: string | null, rows: FosPathElem[] = []) =>
+  put({ data, children: [...(value ? [[P('target'), value] as FosPathElem] : []), [P('alias'), unit], ...rows] })
+const fieldRef = (id: string, field: string, value: string | null) => refNode({ alias: { id: fieldRefId(id, field) } }, value)
+const titleRow = (id: string, words: string): FosPathElem => [title, fieldRef(id, title, fill('title', words))]
+const plainRow = (id: string, words: string): FosPathElem => [title, refNode({ alias: { id } }, fill('title', words))]
+const taskRow = (id: string, words: string): FosPathElem => [types.task!, put({ data: { alias: { id } }, children: [titleRow(id, words), [done, fieldRef(id, done, null)]] })]
+const noteRow = (id: string, heading: string, markdown: string, data: FosNodeContent['data'] = {}): FosPathElem =>
+  [types.note!, put({ data: { alias: { id }, ...data }, children: [titleRow(id, heading), [body, fieldRef(id, body, fill('body', markdown))]] })]
+/** A requirement: `pattern` asked for, its ref a hole titled `words` (or holding the rows typed inside it). */
+const ask = (id: string, pattern: string, words: string, inside: FosPathElem[] | null = null, name?: string): FosPathElem =>
+  [pattern, refNode({ alias: { id }, ...(name ? { name: { content: name } } : {}) }, inside ? node(...inside) : null, [titleRow(id, words)])]
+/** A string variable the template declares: a named ref holding its default. */
+const variable = (id: string, name: string, value: string): FosPathElem => [string, refNode({ alias: { id }, name: { content: name } }, text(value))]
+/** An evaluation's request: its execute row holding a record whose fields (holes) the run fills. */
+const request = (id: string, fields: Array<[string, string]>): FosPathElem => [patterns.execute!, put({ data: { presentation: {} }, children: [
+  [P('record'), refNode({ alias: { id: `${id}.request` }, name: { content: 'request' } }, put({ data: { presentation: {} }, children: fields.map(([field, type]): FosPathElem => [type, refNode({ alias: { id: `${id}.request.${field}` }, name: { content: field } }, null)]) }))]] })]
+/** A resource demand: the allocation capability with the resource it is for. */
+const resource = (type: string) => node(...content(patterns.allocation!).children, [resourceType, fill('resourceType', type)])
+/** A template: a row of the template type, titled, holding the rows an instance gets. */
+const template = (name: string, label: string, icon: string, rows: FosPathElem[]): FosPathElem =>
+  [types.template!, put({ data: { alias: { id: `library.${name}` }, name: { content: name }, presentation: { icon } }, children: [titleRow(`library.${name}`, label), ...rows] })]
+const ids = (name: string) => (index: number) => `library.${name}.${index}`
+
+const templates: FosPathElem[] = [
+  noteRow('library.readme', 'Standard library', 'Templates every Fos account can use, offline: write `` [ ] `Invoice` `` in any node to start one. Edit them here to propose a change.', { name: { content: 'readme' } }),
+  ((id = ids('invoice')) => template('invoice', 'Invoice', 'invoice', [plainRow(id(1), 'Billing contact: name <email>'), ask(id(2), patterns.confirmation!, 'Time entries reviewed'), ask(id(3), patterns.allocation!, 'Amount due'), taskRow(id(4), 'Send the invoice')]))(),
+  ((id = ids('poll')) => template('poll', 'Group decision', 'poll', [ask(id(1), patterns.choice!, 'Which option?')]))(),
+  ((id = ids('paidTask')) => template('paidTask', 'Paid task', 'paid', [ask(id(1), patterns.confirmation!, 'Work delivered'), ask(id(2), patterns.allocation!, 'Reward')]))(),
+  ((id = ids('contact')) => template('contact', 'Contact form', 'contact', [plainRow(id(1), 'Message: …'), ask(id(2), patterns.confirmation!, 'Message received')]))(),
+  ((id = ids('research')) => template('research', 'Research note', 'research', [plainRow(id(1), 'Question: …'), taskRow(id(2), 'Sources collected'), ask(id(3), patterns.confirmation!, 'Summary written')]))(),
+  // what a relay node holds: the messages it forwards and their acknowledgements
+  template('relay', 'Relay', 'relay', [[types.relayMessage!, unit], [types.relayAck!, unit]]),
+  ((id = ids('implementAndVerify')) => template('implementAndVerify', 'Implement and verify', 'rocket', [
+    noteRow(id(1), 'Specification', 'Describe the required outcome, constraints, and important decisions.'),
+    noteRow(id(2), 'Acceptance examples', 'Describe concrete inputs and expected outcomes. Replace these instructions before delegating.'),
+    ask(id(3), patterns.llm!, 'Propose a detailed implementation plan and verification steps. Identify missing decisions.', [
+      ask(id(4), patterns.confirmation!, 'Specification, acceptance examples and required input references are ready'),
+      [patterns.llm!, refNode({ alias: { id: id(5) } }, null)]]),
+  ]))(),
+  ((id = ids('generateSubtasks')) => template('generateSubtasks', 'Generate subtasks', 'window', [
+    ask(id(1), patterns.llm!, 'Generate fine-grained subtasks with acceptance criteria. Return one unchecked Markdown task per line, like [ ] Implement reservation validation — reject overlapping bookings. Do not claim the tasks are completed.', [
+      [patterns.llm!, refNode({ alias: { id: id(2) }, name: { content: 'model' } }, null)],
+      request(id(3), [['subtasks', boolean]])]),
+  ]))(),
+  ((id = ids('projectCodingRequest')) => template('projectCodingRequest', 'Request project coding agent', 'code', [
+    ask(id(1), patterns.tool!, 'Implement the branch from its notes and tasks; open a PR for review', [request(id(2), [['prompt', string], ['provider', string], ['worktree', boolean]])]),
+  ]))(),
+  ((id = ids('projectAgentWorkflow')) => template('projectAgentWorkflow', 'Project agent workflow', 'workflow', [
+    variable(id(1), 'main-branch', 'main'), variable(id(2), 'deployment-environment', 'production'),
+    variable(id(3), 'verification-agent', 'claude-desktop'), variable(id(4), 'coding-agent', 'codex'),
+    variable(id(5), 'repository', ''), variable(id(6), 'deployment-url', ''),
+    variable(id(7), 'coding-instructions', 'Implement the requested work using the updated project notes and tasks. Read fos_read and fos_outstanding before starting and after each item. Run relevant checks, commit changes, push HEAD to the requested branch on origin, and open or reuse a GitHub PR targeting {{main-branch}} in {{repository}}. Never merge it. Record the PR URL and test results in a Fos proposal.'),
+    variable(id(8), 'verification-instructions', 'Verify the deployed project at {{deployment-url}} using the Chrome connector. Check its notes and tasks against the deployed commit. Record steps, URLs, observations, and pass/fail/blocked for every check. Missing tools or access are blocked, never a pass. Do not change implementation.'),
+    [types.template!, put({ data: { alias: { id: id(9) } }, children: [titleRow(id(9), 'After Fos branch merge'),
+      ask(id(10), patterns.tool!, 'Verify the deployed project', [request(id(11), [])]),
+      [patterns['ref-change']!, constructNodeValue(store, { created: 0, enabled: true, peer: '{{desktop}}', watch: { branch: '{{main-branch}}', merges: true, path: '{{project}}' } }, id(12)).cid]] })],
+  ]))(),
+]
+// the fallbacks that work with no peer: the person who did it by hand records it
+const manual = node(
+  noteRow('library.manual.0', 'Manual handlers', 'Fallbacks that work with no peer: the person who did it by hand records it here. Edit the labels to propose better ones; add a row to offer a fallback for another kind of requirement.'),
+  ask('library.manual.payment', resource('account'), 'Paid outside Fos', null, 'payment'),
+  ask('library.manual.points', resource('points'), 'Settled the points by hand', null, 'points'),
+  ask('library.manual.time', resource('calendar'), 'Booked the time by hand', null, 'time'),
+  ask('library.manual.things', resource('inventory'), 'Set the items aside by hand', null, 'things'),
+  ask('library.manual.location', resource('location'), 'Enter the location', null, 'location'),
+  ask('library.manual.mail', patterns.mail!, 'Sent it myself', null, 'mail'),
+  ask('library.manual.repo', patterns.repo!, 'Opened the issue by hand', null, 'repo'),
+  ask('library.manual.llm', patterns.llm!, 'Answered it myself', null, 'llm'),
+  ask('library.manual.search', patterns.search!, 'Searched by hand', null, 'search'),
+  ask('library.manual.tool', patterns.tool!, 'Ran it by hand', null, 'tool'),
+  ask('library.manual.market', patterns.market!, 'Arranged it outside the market', null, 'market'),
+)
+// what the library needs passed in by the device that uses it
+const requires = node(ask('library.requires.deviceLocation', resource('location'), 'Use this device’s location', null, 'deviceLocation'))
+
 const library = node(
   ...Object.entries(types).map(([field, value]): FosPathElem => [unit, ref(field, value)]),
-  [unit, ref('capabilities', capabilityGroup)]
+  [unit, ref('capabilities', capabilityGroup)],
+  [unit, ref('manual', manual)],
+  [unit, ref('requires', requires)],
+  ...templates,
 )
 
 const nodes: FosNodesData = {}

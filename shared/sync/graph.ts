@@ -2529,7 +2529,10 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
       bound = putBranches(store, data.alias.id, edge(record.base), record.options.map(option => ({ ...option, edge: edge(option.edge) })), record.defaultName)
     }
     const valueCopy = { data, children }
-    const result = put(store, type ? refNodeContent(store, data, bound)
+    // an argument's own fields (its title) stay with it, re-identified for the copy
+    const own = type ? identity.children.filter(edge => isFieldRow(store, aliasIdOf(identity) ?? '', edge)).map(([field, ref]): FosPathElem =>
+      [field, put(store, refNodeContent(store, { alias: { id: fieldRefId(data.alias.id, field) } }, refValueCid(store, content(store, ref))))]) : []
+    const result = put(store, type ? refNodeContent(store, data, bound, own)
       : isRefNode(store, identity) && !isHandle(identity) && (value.data.scalar || value.data.presentation)
         ? refNodeContent(store, { alias: data.alias, ...(data.name ? { name: data.name } : {}) }, put(store, valueCopy))
         : valueCopy)
