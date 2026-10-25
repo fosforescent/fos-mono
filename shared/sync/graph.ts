@@ -1,6 +1,6 @@
 import { allocationOf, allocationShapeOf, withAllocation, type Allocation, type BankResource } from './allocations'
 import { primitive, primitiveName } from './primitives'
-import { fieldEdge, fieldValue, fieldViews, isFieldRow, isTextField, leafText, rowBody, titleField, typeRows, type FieldView, fieldRefId, withFieldValue, refTitle, textOf, textValue, withRefTitle, labelRow, withLabel, leafValue, fieldText } from './fields'
+import { fieldEdge, fieldValue, fieldViews, isFieldRow, isTextField, leafText, rowBody, titleField, typeRows, type FieldView, fieldRefId, withFieldValue, refTitle, textOf, textValue, withRefTitle, labelRow, withLabel, leafValue, fieldText, constructRow } from './fields'
 import { capabilityDeclarations } from './capability-catalog'
 import { resolveBinding } from './bindings'
 import { bindingProperties, type ScopedBinding } from './scope-bindings'
@@ -379,10 +379,29 @@ export function rowVocabulary(store: FosStore): Vocabulary | null {
 export function libraryNode(store: FosStore, name: string): string | null {
   return rowVocabulary(store)?.nodes.get(name) ?? null
 }
+/**
+ * What the libraries this store holds call their nodes: every library value (a node carrying the library's tag), the
+ * earlier versions and nearer libraries included. A label for rows made from them; read as the store grows.
+ */
+const libraryLabels = new WeakMap<FosStore, { scanned: number; names: Map<string, string> }>()
+function labelOf(store: FosStore, cid: string): string | null {
+  const known = libraryLabels.get(store) ?? { scanned: 0, names: new Map<string, string>() }
+  libraryLabels.set(store, known)
+  if (known.names.has(cid) || known.scanned === store.table.size) return known.names.get(cid) ?? null
+  const type = libraryNode(store, LIBRARY_TYPE), tag = type ? content(store, type).children[0]?.[0] : undefined
+  const unit = put(store, { data: {}, children: [] })
+  let index = 0
+  for (const [value, node] of store.table) {
+    if (index++ < known.scanned || !tag || !node.children.some(([left, right]) => left === tag && right === unit)) continue
+    for (const [name, field] of namesInLibrary(store, value).byName) if (field !== unit && !known.names.has(field)) known.names.set(field, name)
+  }
+  known.scanned = store.table.size
+  return known.names.get(cid) ?? null
+}
 /** The library's name for a type node (its entry, `task`, `capabilities.mail`, ...), or null: a label, never what decides a row's kind. */
 export function typeIdOf(store: FosStore, typeCid: string | null | undefined): string | null {
   if (!typeCid || !store.table.has(typeCid)) return null
-  return rowVocabulary(store)?.names.get(typeCid) ?? null
+  return rowVocabulary(store)?.names.get(typeCid) ?? labelOf(store, typeCid)
 }
 /** Whether rows of `type` complete: the type has the library's `done` field. */
 export function completes(store: FosStore, type: string): boolean {
@@ -1194,7 +1213,7 @@ export function homeContextCid(store: FosStore, rootCid: string, now: number, of
     return put(store, refNodeContent(store, identity.data, nextValue, bookkeepingOf(store, bindings)))
   }
   const movable = homeCid ? [] : root.children.filter(edge => ((isRowEdge(store, edge) && !isRowOfType(store, edge, TEMPLATE_TYPE)) || isChoiceEdge(store, edge)) && !isShippedLibrary(store, [], edge))
-  const homeValue = homeCid ? valueContent(store, homeCid) : { data: { alias: { id: HOME_ID }, updated: { time: 0 } }, children: [] }
+  const homeValue = homeCid ? valueContent(store, homeCid) : constructRow(store, rowTypeAt(store, HOME_TYPE, [], rootCid), HOME_ID, new Map(), 0)
   let home = homeCid ? makeLink(store, content(store, homeCid), 0) : makeLink(store, { ...homeValue, children: movable }, 0)
   // Integration handlers belong to Home; carry over old root bindings without losing overrides.
   const legacyIntegrations = memberHolder(store, bindings).children.filter(edge => isMemberEdge(store, edge) && memberPeerOf(store, edge).startsWith('integration:'))

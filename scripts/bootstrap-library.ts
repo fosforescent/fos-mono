@@ -218,9 +218,11 @@ const manual = node(
   ask('library.manual.market', patterns.market!, 'Arranged it outside the market', null, 'market'),
 )
 // what the library needs passed in by the device that uses it
-const requires = node(ask('library.requires.deviceLocation', resource('location'), 'Use this device’s location', null, 'deviceLocation'))
+const requires = node(ask('library.requires.deviceLocation', resource('location'), "Use this device's location", null, 'deviceLocation'))
 
+// the library is a value of its type: it carries the library tag
 const library = node(
+  [tagOf('library'), unit],
   ...Object.entries(types).map(([field, value]): FosPathElem => [unit, ref(field, value)]),
   [unit, ref('capabilities', capabilityGroup)],
   [unit, ref('manual', manual)],
