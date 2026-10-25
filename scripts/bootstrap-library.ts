@@ -168,6 +168,9 @@ const stateRow = (left: string, value: unknown): FosPathElem => {
 const request = (values: Record<string, unknown>): FosPathElem => stateRow(patterns.execute!, { request: values })
 /** A resource demand: the allocation capability with the resource it is for. */
 const resource = (type: string) => node(...content(patterns.allocation!).children, [resourceType, fill('resourceType', type)])
+/** A capability with its input `name` filled with `value`, as the kernel's `withInputs` refines it. */
+const withInput = (pattern: string, name: string, value: string) => node(...content(pattern).children.map(([left, right]): FosPathElem =>
+  content(right).data.name?.content === name ? [left, refNode({ alias: { id: hashContent({ data: { name: { content: `input:${name}` } }, children: [] }) }, name: { content: name } }, text(value))] : [left, right]))
 /** A template: a row of the template type, titled, holding the rows an instance gets. */
 const template = (name: string, label: string, icon: string, rows: FosPathElem[]): FosPathElem =>
   [types.template!, put({ data: { alias: { id: `library.${name}` }, name: { content: name }, presentation: { icon } }, children: [titleRow(`library.${name}`, label), ...rows] })]
@@ -195,7 +198,7 @@ const templates: FosPathElem[] = [
       request({ subtasks: true })]),
   ]))(),
   ((id = ids('projectCodingRequest')) => template('projectCodingRequest', 'Request project coding agent', 'code', [
-    ask(id(1), patterns.tool!, 'Implement the branch from its notes and tasks; open a PR for review', [request({ prompt: '{{coding-instructions}}', provider: '{{coding-agent}}', worktree: true })]),
+    ask(id(1), withInput(patterns.tool!, 'tool', 'fos.agent'), 'Implement the branch from its notes and tasks; open a PR for review', [request({ prompt: '{{coding-instructions}}', provider: '{{coding-agent}}', worktree: true })]),
   ]))(),
   ((id = ids('projectAgentWorkflow')) => template('projectAgentWorkflow', 'Project agent workflow', 'workflow', [
     variable(id(1), 'main-branch', 'main'), variable(id(2), 'deployment-environment', 'production'),
@@ -204,7 +207,7 @@ const templates: FosPathElem[] = [
     variable(id(7), 'coding-instructions', 'Implement the requested work using the updated project notes and tasks. Read fos_read and fos_outstanding before starting and after each item. Run relevant checks, commit changes, push HEAD to the requested branch on origin, and open or reuse a GitHub PR targeting {{main-branch}} in {{repository}}. Never merge it. Record the PR URL and test results in a Fos proposal.'),
     variable(id(8), 'verification-instructions', 'Verify the deployed project at {{deployment-url}} using the Chrome connector. Check its notes and tasks against the deployed commit. Record steps, URLs, observations, and pass/fail/blocked for every check. Missing tools or access are blocked, never a pass. Do not change implementation.'),
     [types.template!, put({ data: { alias: { id: id(9) } }, children: [titleRow(id(9), 'After Fos branch merge'),
-      ask(id(10), patterns.tool!, 'Verify the deployed project', [request({ branch: '{{main-branch}}', chrome: true, deployment: { environment: '{{deployment-environment}}' }, prompt: '{{verification-instructions}}', provider: '{{verification-agent}}', readOnly: true })]),
+      ask(id(10), withInput(patterns.tool!, 'tool', 'fos.agent'), 'Verify the deployed project', [request({ branch: '{{main-branch}}', chrome: true, deployment: { environment: '{{deployment-environment}}' }, prompt: '{{verification-instructions}}', provider: '{{verification-agent}}', readOnly: true })]),
       stateRow(patterns['ref-change']!, { created: 0, enabled: true, peer: '{{desktop}}', watch: { branch: '{{main-branch}}', merges: true, path: '{{project}}' } })] })],
   ]))(),
 ]

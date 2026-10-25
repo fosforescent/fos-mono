@@ -1,6 +1,6 @@
 {
   "version": "0.0.6",
-  "rootNodeId": "v0.0.6-8691b76e1fd2a88b4d8239f73b230409a3120d287fc336c33dde8842189b0c95",
+  "rootNodeId": "v0.0.6-824a6348954b58ead3e8cd3d4c4c001e40fd0600809c99f207fef6a96a9afd86",
   "nodes": {
     "v0.0.6-0054d0d648a2baa2e112326247a24b1d5ad9ab05fbf9333604106ebef96e9c4a": {
       "data": {},
@@ -670,6 +670,27 @@
         [
           "v0.0.6-98e96824d897dc3dc6b80e1c6900d9e5c7a153c8678623d48bbc97b3684cf501",
           "v0.0.6-cf78041562312bc4f24cb6b21995101b679428f0e8975e6c6a8e9c4b5a36eeb0"
+        ]
+      ]
+    },
+    "v0.0.6-0bf4aea1f0625463c21e4816a14447d049f84ec34465a5534967197aafb590f9": {
+      "data": {
+        "alias": {
+          "id": "library.projectAgentWorkflow.9"
+        }
+      },
+      "children": [
+        [
+          "v0.0.6-488f7b6edf16f702560133857081d60efdaffce1160560a8f2e6f859bf0b5792",
+          "v0.0.6-fb8b7c92a6ae872c702b8f06b0a2f10885f34240b1acb41754ff4321f3918d21"
+        ],
+        [
+          "v0.0.6-3fd11a08aeb6aa9fa5f1406c63f9924cd862f28fd600cc72e93584898f0da5ab",
+          "v0.0.6-ad4d3a1b5f08bbe2b7462a9d7344201f5df3ce1e5c455bda54ceaf674e96ae4d"
+        ],
+        [
+          "v0.0.6-f5f1c7495cff5de2963b62097a06f362247dc4eb840c23bdbf5a1901183a546c",
+          "v0.0.6-d62ed935fbac72887f409af478e94117eae0139edecde8586d6207ce5852fb3c"
         ]
       ]
     },
@@ -2014,6 +2035,15 @@
         ]
       ]
     },
+    "v0.0.6-2b0a2c0e7166454552a87cf339b9b0327da72443cedd38326803475f25843095": {
+      "data": {
+        "scalar": {
+          "type": "text",
+          "value": "fos.agent"
+        }
+      },
+      "children": []
+    },
     "v0.0.6-2b0b5d5307e49dc3cba56db25ea6aeb3bbb09d60f8236a40f28ebe94ef4b187e": {
       "data": {
         "alias": {
@@ -3069,6 +3099,19 @@
         ]
       ]
     },
+    "v0.0.6-3fd11a08aeb6aa9fa5f1406c63f9924cd862f28fd600cc72e93584898f0da5ab": {
+      "data": {},
+      "children": [
+        [
+          "v0.0.6-48f6d7882a7d14eac3e59b76f4d11d27b02477378bc7518571028b201a947d28",
+          "v0.0.6-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ],
+        [
+          "v0.0.6-21300f4f9745bb988f288474300a66439aa7c8e4c9bd0fe5be2e994dce911f05",
+          "v0.0.6-ce58c874e3482adde34711dff2c7757b936ecc6c327f552e98773c435eea5ddf"
+        ]
+      ]
+    },
     "v0.0.6-403f7e8b7827539bd14e68d8b10514d90d9b34856d0afa114540a7c0be721d34": {
       "data": {
         "scalar": {
@@ -3124,6 +3167,61 @@
         [
           "v0.0.6-a1709ab859cfa5943c7594bd46a21fb20fb1f21eb60d45269709c26506bba625",
           "v0.0.6-6ce469fcf325e7921d053050e683eeb579acb7c592df519b16094db46e6ede56"
+        ]
+      ]
+    },
+    "v0.0.6-415375c68f4690e0d13699545b7b70e9c1611b0371931dd20248df9f4e528dad": {
+      "data": {
+        "alias": {
+          "id": "library.projectAgentWorkflow"
+        },
+        "name": {
+          "content": "projectAgentWorkflow"
+        },
+        "presentation": {
+          "icon": "workflow"
+        }
+      },
+      "children": [
+        [
+          "v0.0.6-488f7b6edf16f702560133857081d60efdaffce1160560a8f2e6f859bf0b5792",
+          "v0.0.6-3776b6b24df05359578a45ef5ecc270a8b8eae3f7d36fc004188745706c02d08"
+        ],
+        [
+          "v0.0.6-21300f4f9745bb988f288474300a66439aa7c8e4c9bd0fe5be2e994dce911f05",
+          "v0.0.6-d307b35a714af54d1232c096b15a51b9f0d2696cb42f583b44857f4ea41ae84d"
+        ],
+        [
+          "v0.0.6-21300f4f9745bb988f288474300a66439aa7c8e4c9bd0fe5be2e994dce911f05",
+          "v0.0.6-c80ec274926f55e515af2a7f01412ac9d26ea0161a9b2be92e837c5cf660632e"
+        ],
+        [
+          "v0.0.6-21300f4f9745bb988f288474300a66439aa7c8e4c9bd0fe5be2e994dce911f05",
+          "v0.0.6-0c36494bd29df46b3788aa54f4dc2aa2837378ca655458ff6060c38afe4892b0"
+        ],
+        [
+          "v0.0.6-21300f4f9745bb988f288474300a66439aa7c8e4c9bd0fe5be2e994dce911f05",
+          "v0.0.6-2b0b5d5307e49dc3cba56db25ea6aeb3bbb09d60f8236a40f28ebe94ef4b187e"
+        ],
+        [
+          "v0.0.6-21300f4f9745bb988f288474300a66439aa7c8e4c9bd0fe5be2e994dce911f05",
+          "v0.0.6-e3eaf90d7c0d2831d27e70fcce85c1bc734dc9d70455f28391379646ccc8b378"
+        ],
+        [
+          "v0.0.6-21300f4f9745bb988f288474300a66439aa7c8e4c9bd0fe5be2e994dce911f05",
+          "v0.0.6-041330fb286e807c099a165d6e6eaee056077a55b57980f108a20b71c7e09230"
+        ],
+        [
+          "v0.0.6-21300f4f9745bb988f288474300a66439aa7c8e4c9bd0fe5be2e994dce911f05",
+          "v0.0.6-26251fed5a65365c27f73d1dd4a55840a090feffa515ccc719045699b77bbc66"
+        ],
+        [
+          "v0.0.6-21300f4f9745bb988f288474300a66439aa7c8e4c9bd0fe5be2e994dce911f05",
+          "v0.0.6-85ea92415f3dbb6f81fa59278e58c897dacefe8c15fc3e684e81becc0b9b06a6"
+        ],
+        [
+          "v0.0.6-1c361a9f1065d16ad5f0da998ca9818b7a86855c8554d68cbc4c504dd20bc107",
+          "v0.0.6-0bf4aea1f0625463c21e4816a14447d049f84ec34465a5534967197aafb590f9"
         ]
       ]
     },
@@ -6048,242 +6146,7 @@
         ]
       ]
     },
-    "v0.0.6-82825aea80c31eeb186f3c7375c7d69578d17cc33bd11d8fc169a9df8f9b8731": {
-      "data": {
-        "alias": {
-          "id": "library.projectAgentWorkflow.9"
-        }
-      },
-      "children": [
-        [
-          "v0.0.6-488f7b6edf16f702560133857081d60efdaffce1160560a8f2e6f859bf0b5792",
-          "v0.0.6-fb8b7c92a6ae872c702b8f06b0a2f10885f34240b1acb41754ff4321f3918d21"
-        ],
-        [
-          "v0.0.6-677b21400f3f8c6ec885ac1d88ecd7bbdc5b25bfa290d0b95178369544bf68b3",
-          "v0.0.6-ad4d3a1b5f08bbe2b7462a9d7344201f5df3ce1e5c455bda54ceaf674e96ae4d"
-        ],
-        [
-          "v0.0.6-f5f1c7495cff5de2963b62097a06f362247dc4eb840c23bdbf5a1901183a546c",
-          "v0.0.6-d62ed935fbac72887f409af478e94117eae0139edecde8586d6207ce5852fb3c"
-        ]
-      ]
-    },
-    "v0.0.6-82e9b7377f862039b2287eb933ffb1bd1c03b5e2b929ee11a489c4b3dc2ddbcd": {
-      "data": {},
-      "children": [
-        [
-          "v0.0.6-a1709ab859cfa5943c7594bd46a21fb20fb1f21eb60d45269709c26506bba625",
-          "v0.0.6-5b43b089bee79c20b15d5621fc1ec3f90d9b9d49b74c0f21df63b4effd7f6073"
-        ]
-      ]
-    },
-    "v0.0.6-831995d1f63856e951f373c5768a0c7f2788ba2f306df2f47061b50ccb2a489c": {
-      "data": {
-        "alias": {
-          "id": "library.manual.mail"
-        },
-        "name": {
-          "content": "mail"
-        }
-      },
-      "children": [
-        [
-          "v0.0.6-d6d4c9b654e38bad40b16635cb8583661b385ca990e6e7e5c9cc27b53eea00bf",
-          "v0.0.6-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ],
-        [
-          "v0.0.6-488f7b6edf16f702560133857081d60efdaffce1160560a8f2e6f859bf0b5792",
-          "v0.0.6-d5aeeabc9fa5f7dfab5aaa4aa7e45b835ca3ab23937f8671884f2a1ee595cb6a"
-        ]
-      ]
-    },
-    "v0.0.6-833b723e8754b3772014e69f1a1fa3ae0828c36f38480923df521e208c488c04": {
-      "data": {
-        "alias": {
-          "id": "v0.0.6-9e32c80f70621e09fc044aa375e81c05ef09e5ca097414688c47f4123daa4cfe"
-        },
-        "name": {
-          "content": "time"
-        }
-      },
-      "children": [
-        [
-          "v0.0.6-56c5272706b060b9c38241b928ce1a80d19d71e860d447b7344bb59630869999",
-          "v0.0.6-c4f483a0c71e65ffeaa7ff9a3144729b5b92db2f9da0d3bf8fd886b92d68ccca"
-        ],
-        [
-          "v0.0.6-d6d4c9b654e38bad40b16635cb8583661b385ca990e6e7e5c9cc27b53eea00bf",
-          "v0.0.6-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ]
-      ]
-    },
-    "v0.0.6-836148685e51af5720bb61318c9a97978ba23b05aee598903ba1ebf97a40d901": {
-      "data": {
-        "scalar": {
-          "type": "text",
-          "value": "Booked the time by hand"
-        }
-      },
-      "children": []
-    },
-    "v0.0.6-83ec688c737fadb225ff6342f9500489d4f37644038f370808d67efc5629e989": {
-      "data": {},
-      "children": [
-        [
-          "v0.0.6-98e96824d897dc3dc6b80e1c6900d9e5c7a153c8678623d48bbc97b3684cf501",
-          "v0.0.6-f3369409b5b5c5b97360434a4ab1a7d91e9fa4ebd42e38018ea1e3e780913a42"
-        ]
-      ]
-    },
-    "v0.0.6-841552edc3559303cca557cc1542761d96f0dc2547fe8f31ed6a806430e63465": {
-      "data": {},
-      "children": [
-        [
-          "v0.0.6-98e96824d897dc3dc6b80e1c6900d9e5c7a153c8678623d48bbc97b3684cf501",
-          "v0.0.6-0065a4fa77da07c85fabf487176ddd05fbefe77ec8ea21a866c54e05c9eb522b"
-        ]
-      ]
-    },
-    "v0.0.6-8420cbd736a125b29135ed8bfa7e8e5db15d8b1d3d858f44c29ee2f1d758c12f": {
-      "data": {
-        "scalar": {
-          "type": "text",
-          "value": "claude-desktop"
-        }
-      },
-      "children": []
-    },
-    "v0.0.6-84216efc5542b2e17a8035a57ad8c76d3735b3a646f0bf7405fc0a0ca305d227": {
-      "data": {
-        "scalar": {
-          "type": "text",
-          "value": "issuedAt"
-        }
-      },
-      "children": []
-    },
-    "v0.0.6-842ec177b27d2ad6329dfafe3c3dc42b6b260f93ff42ced409928fab2cd528a0": {
-      "data": {
-        "scalar": {
-          "type": "text",
-          "value": "titles from text"
-        }
-      },
-      "children": []
-    },
-    "v0.0.6-8431aa3a49be4fff77eb1301d3711e8a032b6177c32caff4470194e92160ddc4": {
-      "data": {},
-      "children": [
-        [
-          "v0.0.6-024e9b88f3473ee5341c153d847781d02704a9478a769c6a2665b0d04672bc22",
-          "v0.0.6-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ]
-      ]
-    },
-    "v0.0.6-844cf66fd705f14d75aa89ef2c8f6a103a3677fa38c35391c67c004188f4dcf2": {
-      "data": {
-        "alias": {
-          "id": "v0.0.6-d1aa5e67b5611313ad60ac820766c563fa6ee92e642695e069fc1eba5502b8b5"
-        },
-        "name": {
-          "content": "alias"
-        }
-      },
-      "children": [
-        [
-          "v0.0.6-d6d4c9b654e38bad40b16635cb8583661b385ca990e6e7e5c9cc27b53eea00bf",
-          "v0.0.6-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ]
-      ]
-    },
-    "v0.0.6-845c0663c1c6d52196c61c1f8b21f9fe2d63c175a380bc057df504091a1162a2": {
-      "data": {
-        "alias": {
-          "id": "v0.0.6-9adf80faaab341e8304268e9d29747ca92661c1cb36668ecaef7260fd257cfd8"
-        },
-        "name": {
-          "content": "number"
-        }
-      },
-      "children": [
-        [
-          "v0.0.6-56c5272706b060b9c38241b928ce1a80d19d71e860d447b7344bb59630869999",
-          "v0.0.6-c4f483a0c71e65ffeaa7ff9a3144729b5b92db2f9da0d3bf8fd886b92d68ccca"
-        ],
-        [
-          "v0.0.6-d6d4c9b654e38bad40b16635cb8583661b385ca990e6e7e5c9cc27b53eea00bf",
-          "v0.0.6-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ]
-      ]
-    },
-    "v0.0.6-846ed73324f6937a92f5968f1c7d6821ae723ad29e543e73940254377767396a": {
-      "data": {
-        "alias": {
-          "id": "v0.0.6-19d1e8c88561246abc2ff133282be33924b5cfd339001d559f7ddbe44bbb1217"
-        },
-        "name": {
-          "content": "displayName"
-        }
-      },
-      "children": [
-        [
-          "v0.0.6-56c5272706b060b9c38241b928ce1a80d19d71e860d447b7344bb59630869999",
-          "v0.0.6-70419b303ae521ce48d1a0ed92602c1695a47fe7f4e1bfb9acb4bc2cf9263eaa"
-        ],
-        [
-          "v0.0.6-d6d4c9b654e38bad40b16635cb8583661b385ca990e6e7e5c9cc27b53eea00bf",
-          "v0.0.6-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ]
-      ]
-    },
-    "v0.0.6-85036499acf36a62f3f56381435c7492caa3700346ac04cbb1ebaa6571b937d0": {
-      "data": {
-        "scalar": {
-          "type": "text",
-          "value": "search"
-        }
-      },
-      "children": []
-    },
-    "v0.0.6-85ea92415f3dbb6f81fa59278e58c897dacefe8c15fc3e684e81becc0b9b06a6": {
-      "data": {
-        "alias": {
-          "id": "library.projectAgentWorkflow.8"
-        },
-        "name": {
-          "content": "verification-instructions"
-        }
-      },
-      "children": [
-        [
-          "v0.0.6-56c5272706b060b9c38241b928ce1a80d19d71e860d447b7344bb59630869999",
-          "v0.0.6-ff94197a90dcdae8129857ac8a8793aa7ee33e3bbf626d28231e9a5476c04674"
-        ],
-        [
-          "v0.0.6-d6d4c9b654e38bad40b16635cb8583661b385ca990e6e7e5c9cc27b53eea00bf",
-          "v0.0.6-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ]
-      ]
-    },
-    "v0.0.6-866abe8ad647d7a3e79805485965bfa758da486d7f8e3ac229866138e4395b14": {
-      "data": {
-        "alias": {
-          "id": "v0.0.6-f5d590b8524d3e5d406ef7875274b1fdb9c8634e6052491c0c8e2128d88ab574"
-        }
-      },
-      "children": [
-        [
-          "v0.0.6-56c5272706b060b9c38241b928ce1a80d19d71e860d447b7344bb59630869999",
-          "v0.0.6-47892d962b859f89f22799de918f35b376108e19e001199d7b569c9d02771adc"
-        ],
-        [
-          "v0.0.6-d6d4c9b654e38bad40b16635cb8583661b385ca990e6e7e5c9cc27b53eea00bf",
-          "v0.0.6-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ]
-      ]
-    },
-    "v0.0.6-8691b76e1fd2a88b4d8239f73b230409a3120d287fc336c33dde8842189b0c95": {
+    "v0.0.6-824a6348954b58ead3e8cd3d4c4c001e40fd0600809c99f207fef6a96a9afd86": {
       "data": {},
       "children": [
         [
@@ -6552,11 +6415,225 @@
         ],
         [
           "v0.0.6-1c361a9f1065d16ad5f0da998ca9818b7a86855c8554d68cbc4c504dd20bc107",
-          "v0.0.6-a25ec6613d58f57b06b156c9606705dd55d348628c5d6c0470ed95b6b1615e65"
+          "v0.0.6-de9774386534896a6056bf11ccf0466fc2714ac5ff098b09a413a8e259d87ea6"
         ],
         [
           "v0.0.6-1c361a9f1065d16ad5f0da998ca9818b7a86855c8554d68cbc4c504dd20bc107",
-          "v0.0.6-ff54c77fb62c0b923c6b2d80cdf62c59b7c30e53c2acac39b78fe2e07e7497f4"
+          "v0.0.6-415375c68f4690e0d13699545b7b70e9c1611b0371931dd20248df9f4e528dad"
+        ]
+      ]
+    },
+    "v0.0.6-82e9b7377f862039b2287eb933ffb1bd1c03b5e2b929ee11a489c4b3dc2ddbcd": {
+      "data": {},
+      "children": [
+        [
+          "v0.0.6-a1709ab859cfa5943c7594bd46a21fb20fb1f21eb60d45269709c26506bba625",
+          "v0.0.6-5b43b089bee79c20b15d5621fc1ec3f90d9b9d49b74c0f21df63b4effd7f6073"
+        ]
+      ]
+    },
+    "v0.0.6-831995d1f63856e951f373c5768a0c7f2788ba2f306df2f47061b50ccb2a489c": {
+      "data": {
+        "alias": {
+          "id": "library.manual.mail"
+        },
+        "name": {
+          "content": "mail"
+        }
+      },
+      "children": [
+        [
+          "v0.0.6-d6d4c9b654e38bad40b16635cb8583661b385ca990e6e7e5c9cc27b53eea00bf",
+          "v0.0.6-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ],
+        [
+          "v0.0.6-488f7b6edf16f702560133857081d60efdaffce1160560a8f2e6f859bf0b5792",
+          "v0.0.6-d5aeeabc9fa5f7dfab5aaa4aa7e45b835ca3ab23937f8671884f2a1ee595cb6a"
+        ]
+      ]
+    },
+    "v0.0.6-833b723e8754b3772014e69f1a1fa3ae0828c36f38480923df521e208c488c04": {
+      "data": {
+        "alias": {
+          "id": "v0.0.6-9e32c80f70621e09fc044aa375e81c05ef09e5ca097414688c47f4123daa4cfe"
+        },
+        "name": {
+          "content": "time"
+        }
+      },
+      "children": [
+        [
+          "v0.0.6-56c5272706b060b9c38241b928ce1a80d19d71e860d447b7344bb59630869999",
+          "v0.0.6-c4f483a0c71e65ffeaa7ff9a3144729b5b92db2f9da0d3bf8fd886b92d68ccca"
+        ],
+        [
+          "v0.0.6-d6d4c9b654e38bad40b16635cb8583661b385ca990e6e7e5c9cc27b53eea00bf",
+          "v0.0.6-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ]
+      ]
+    },
+    "v0.0.6-836148685e51af5720bb61318c9a97978ba23b05aee598903ba1ebf97a40d901": {
+      "data": {
+        "scalar": {
+          "type": "text",
+          "value": "Booked the time by hand"
+        }
+      },
+      "children": []
+    },
+    "v0.0.6-83ec688c737fadb225ff6342f9500489d4f37644038f370808d67efc5629e989": {
+      "data": {},
+      "children": [
+        [
+          "v0.0.6-98e96824d897dc3dc6b80e1c6900d9e5c7a153c8678623d48bbc97b3684cf501",
+          "v0.0.6-f3369409b5b5c5b97360434a4ab1a7d91e9fa4ebd42e38018ea1e3e780913a42"
+        ]
+      ]
+    },
+    "v0.0.6-841552edc3559303cca557cc1542761d96f0dc2547fe8f31ed6a806430e63465": {
+      "data": {},
+      "children": [
+        [
+          "v0.0.6-98e96824d897dc3dc6b80e1c6900d9e5c7a153c8678623d48bbc97b3684cf501",
+          "v0.0.6-0065a4fa77da07c85fabf487176ddd05fbefe77ec8ea21a866c54e05c9eb522b"
+        ]
+      ]
+    },
+    "v0.0.6-8420cbd736a125b29135ed8bfa7e8e5db15d8b1d3d858f44c29ee2f1d758c12f": {
+      "data": {
+        "scalar": {
+          "type": "text",
+          "value": "claude-desktop"
+        }
+      },
+      "children": []
+    },
+    "v0.0.6-84216efc5542b2e17a8035a57ad8c76d3735b3a646f0bf7405fc0a0ca305d227": {
+      "data": {
+        "scalar": {
+          "type": "text",
+          "value": "issuedAt"
+        }
+      },
+      "children": []
+    },
+    "v0.0.6-842ec177b27d2ad6329dfafe3c3dc42b6b260f93ff42ced409928fab2cd528a0": {
+      "data": {
+        "scalar": {
+          "type": "text",
+          "value": "titles from text"
+        }
+      },
+      "children": []
+    },
+    "v0.0.6-8431aa3a49be4fff77eb1301d3711e8a032b6177c32caff4470194e92160ddc4": {
+      "data": {},
+      "children": [
+        [
+          "v0.0.6-024e9b88f3473ee5341c153d847781d02704a9478a769c6a2665b0d04672bc22",
+          "v0.0.6-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ]
+      ]
+    },
+    "v0.0.6-844cf66fd705f14d75aa89ef2c8f6a103a3677fa38c35391c67c004188f4dcf2": {
+      "data": {
+        "alias": {
+          "id": "v0.0.6-d1aa5e67b5611313ad60ac820766c563fa6ee92e642695e069fc1eba5502b8b5"
+        },
+        "name": {
+          "content": "alias"
+        }
+      },
+      "children": [
+        [
+          "v0.0.6-d6d4c9b654e38bad40b16635cb8583661b385ca990e6e7e5c9cc27b53eea00bf",
+          "v0.0.6-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ]
+      ]
+    },
+    "v0.0.6-845c0663c1c6d52196c61c1f8b21f9fe2d63c175a380bc057df504091a1162a2": {
+      "data": {
+        "alias": {
+          "id": "v0.0.6-9adf80faaab341e8304268e9d29747ca92661c1cb36668ecaef7260fd257cfd8"
+        },
+        "name": {
+          "content": "number"
+        }
+      },
+      "children": [
+        [
+          "v0.0.6-56c5272706b060b9c38241b928ce1a80d19d71e860d447b7344bb59630869999",
+          "v0.0.6-c4f483a0c71e65ffeaa7ff9a3144729b5b92db2f9da0d3bf8fd886b92d68ccca"
+        ],
+        [
+          "v0.0.6-d6d4c9b654e38bad40b16635cb8583661b385ca990e6e7e5c9cc27b53eea00bf",
+          "v0.0.6-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ]
+      ]
+    },
+    "v0.0.6-846ed73324f6937a92f5968f1c7d6821ae723ad29e543e73940254377767396a": {
+      "data": {
+        "alias": {
+          "id": "v0.0.6-19d1e8c88561246abc2ff133282be33924b5cfd339001d559f7ddbe44bbb1217"
+        },
+        "name": {
+          "content": "displayName"
+        }
+      },
+      "children": [
+        [
+          "v0.0.6-56c5272706b060b9c38241b928ce1a80d19d71e860d447b7344bb59630869999",
+          "v0.0.6-70419b303ae521ce48d1a0ed92602c1695a47fe7f4e1bfb9acb4bc2cf9263eaa"
+        ],
+        [
+          "v0.0.6-d6d4c9b654e38bad40b16635cb8583661b385ca990e6e7e5c9cc27b53eea00bf",
+          "v0.0.6-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ]
+      ]
+    },
+    "v0.0.6-85036499acf36a62f3f56381435c7492caa3700346ac04cbb1ebaa6571b937d0": {
+      "data": {
+        "scalar": {
+          "type": "text",
+          "value": "search"
+        }
+      },
+      "children": []
+    },
+    "v0.0.6-85ea92415f3dbb6f81fa59278e58c897dacefe8c15fc3e684e81becc0b9b06a6": {
+      "data": {
+        "alias": {
+          "id": "library.projectAgentWorkflow.8"
+        },
+        "name": {
+          "content": "verification-instructions"
+        }
+      },
+      "children": [
+        [
+          "v0.0.6-56c5272706b060b9c38241b928ce1a80d19d71e860d447b7344bb59630869999",
+          "v0.0.6-ff94197a90dcdae8129857ac8a8793aa7ee33e3bbf626d28231e9a5476c04674"
+        ],
+        [
+          "v0.0.6-d6d4c9b654e38bad40b16635cb8583661b385ca990e6e7e5c9cc27b53eea00bf",
+          "v0.0.6-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ]
+      ]
+    },
+    "v0.0.6-866abe8ad647d7a3e79805485965bfa758da486d7f8e3ac229866138e4395b14": {
+      "data": {
+        "alias": {
+          "id": "v0.0.6-f5d590b8524d3e5d406ef7875274b1fdb9c8634e6052491c0c8e2128d88ab574"
+        }
+      },
+      "children": [
+        [
+          "v0.0.6-56c5272706b060b9c38241b928ce1a80d19d71e860d447b7344bb59630869999",
+          "v0.0.6-47892d962b859f89f22799de918f35b376108e19e001199d7b569c9d02771adc"
+        ],
+        [
+          "v0.0.6-d6d4c9b654e38bad40b16635cb8583661b385ca990e6e7e5c9cc27b53eea00bf",
+          "v0.0.6-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
         ]
       ]
     },
@@ -7766,29 +7843,6 @@
         [
           "v0.0.6-d6d4c9b654e38bad40b16635cb8583661b385ca990e6e7e5c9cc27b53eea00bf",
           "v0.0.6-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
-        ]
-      ]
-    },
-    "v0.0.6-a25ec6613d58f57b06b156c9606705dd55d348628c5d6c0470ed95b6b1615e65": {
-      "data": {
-        "alias": {
-          "id": "library.projectCodingRequest"
-        },
-        "name": {
-          "content": "projectCodingRequest"
-        },
-        "presentation": {
-          "icon": "code"
-        }
-      },
-      "children": [
-        [
-          "v0.0.6-488f7b6edf16f702560133857081d60efdaffce1160560a8f2e6f859bf0b5792",
-          "v0.0.6-0ab3711ffc2a1c93d474d44c657e833cf94f749c9e9e5689c12885a2d52c1000"
-        ],
-        [
-          "v0.0.6-677b21400f3f8c6ec885ac1d88ecd7bbdc5b25bfa290d0b95178369544bf68b3",
-          "v0.0.6-cc88d2db4f9d45155ba29b7d8977728036929b9f8364b90eb6575f46e0772427"
         ]
       ]
     },
@@ -10144,6 +10198,26 @@
         ]
       ]
     },
+    "v0.0.6-ce58c874e3482adde34711dff2c7757b936ecc6c327f552e98773c435eea5ddf": {
+      "data": {
+        "alias": {
+          "id": "v0.0.6-58679ca5acfd891e4f05fc3e1893987d730e40d0c19993b8b2f01dc891d57b19"
+        },
+        "name": {
+          "content": "tool"
+        }
+      },
+      "children": [
+        [
+          "v0.0.6-56c5272706b060b9c38241b928ce1a80d19d71e860d447b7344bb59630869999",
+          "v0.0.6-2b0a2c0e7166454552a87cf339b9b0327da72443cedd38326803475f25843095"
+        ],
+        [
+          "v0.0.6-d6d4c9b654e38bad40b16635cb8583661b385ca990e6e7e5c9cc27b53eea00bf",
+          "v0.0.6-d282fa26799fca23855cc8c2a6a949016341362894ad6c125e1bb73deddd0ef5"
+        ]
+      ]
+    },
     "v0.0.6-cebf32730251fe68d9bfef13c3d532b81dd2b0ba5aff4fe075c70e5d95a0eb7f": {
       "data": {
         "scalar": {
@@ -11293,6 +11367,29 @@
         [
           "v0.0.6-488f7b6edf16f702560133857081d60efdaffce1160560a8f2e6f859bf0b5792",
           "v0.0.6-c5956efc86e2bc3670a993c5076713633615a3f265f2aeb4beb906bc925a9f1f"
+        ]
+      ]
+    },
+    "v0.0.6-de9774386534896a6056bf11ccf0466fc2714ac5ff098b09a413a8e259d87ea6": {
+      "data": {
+        "alias": {
+          "id": "library.projectCodingRequest"
+        },
+        "name": {
+          "content": "projectCodingRequest"
+        },
+        "presentation": {
+          "icon": "code"
+        }
+      },
+      "children": [
+        [
+          "v0.0.6-488f7b6edf16f702560133857081d60efdaffce1160560a8f2e6f859bf0b5792",
+          "v0.0.6-0ab3711ffc2a1c93d474d44c657e833cf94f749c9e9e5689c12885a2d52c1000"
+        ],
+        [
+          "v0.0.6-3fd11a08aeb6aa9fa5f1406c63f9924cd862f28fd600cc72e93584898f0da5ab",
+          "v0.0.6-cc88d2db4f9d45155ba29b7d8977728036929b9f8364b90eb6575f46e0772427"
         ]
       ]
     },
@@ -12698,61 +12795,6 @@
         ]
       ]
     },
-    "v0.0.6-ff54c77fb62c0b923c6b2d80cdf62c59b7c30e53c2acac39b78fe2e07e7497f4": {
-      "data": {
-        "alias": {
-          "id": "library.projectAgentWorkflow"
-        },
-        "name": {
-          "content": "projectAgentWorkflow"
-        },
-        "presentation": {
-          "icon": "workflow"
-        }
-      },
-      "children": [
-        [
-          "v0.0.6-488f7b6edf16f702560133857081d60efdaffce1160560a8f2e6f859bf0b5792",
-          "v0.0.6-3776b6b24df05359578a45ef5ecc270a8b8eae3f7d36fc004188745706c02d08"
-        ],
-        [
-          "v0.0.6-21300f4f9745bb988f288474300a66439aa7c8e4c9bd0fe5be2e994dce911f05",
-          "v0.0.6-d307b35a714af54d1232c096b15a51b9f0d2696cb42f583b44857f4ea41ae84d"
-        ],
-        [
-          "v0.0.6-21300f4f9745bb988f288474300a66439aa7c8e4c9bd0fe5be2e994dce911f05",
-          "v0.0.6-c80ec274926f55e515af2a7f01412ac9d26ea0161a9b2be92e837c5cf660632e"
-        ],
-        [
-          "v0.0.6-21300f4f9745bb988f288474300a66439aa7c8e4c9bd0fe5be2e994dce911f05",
-          "v0.0.6-0c36494bd29df46b3788aa54f4dc2aa2837378ca655458ff6060c38afe4892b0"
-        ],
-        [
-          "v0.0.6-21300f4f9745bb988f288474300a66439aa7c8e4c9bd0fe5be2e994dce911f05",
-          "v0.0.6-2b0b5d5307e49dc3cba56db25ea6aeb3bbb09d60f8236a40f28ebe94ef4b187e"
-        ],
-        [
-          "v0.0.6-21300f4f9745bb988f288474300a66439aa7c8e4c9bd0fe5be2e994dce911f05",
-          "v0.0.6-e3eaf90d7c0d2831d27e70fcce85c1bc734dc9d70455f28391379646ccc8b378"
-        ],
-        [
-          "v0.0.6-21300f4f9745bb988f288474300a66439aa7c8e4c9bd0fe5be2e994dce911f05",
-          "v0.0.6-041330fb286e807c099a165d6e6eaee056077a55b57980f108a20b71c7e09230"
-        ],
-        [
-          "v0.0.6-21300f4f9745bb988f288474300a66439aa7c8e4c9bd0fe5be2e994dce911f05",
-          "v0.0.6-26251fed5a65365c27f73d1dd4a55840a090feffa515ccc719045699b77bbc66"
-        ],
-        [
-          "v0.0.6-21300f4f9745bb988f288474300a66439aa7c8e4c9bd0fe5be2e994dce911f05",
-          "v0.0.6-85ea92415f3dbb6f81fa59278e58c897dacefe8c15fc3e684e81becc0b9b06a6"
-        ],
-        [
-          "v0.0.6-1c361a9f1065d16ad5f0da998ca9818b7a86855c8554d68cbc4c504dd20bc107",
-          "v0.0.6-82825aea80c31eeb186f3c7375c7d69578d17cc33bd11d8fc169a9df8f9b8731"
-        ]
-      ]
-    },
     "v0.0.6-ff5f245277d76624c44465947030689fc0c98f91b3d45012414404c9ac979581": {
       "data": {
         "scalar": {
@@ -12876,8 +12918,8 @@
     "relay": "v0.0.6-a72ee7e9bfb413023a8f10875f877ef857afb12fce7ee0d7d4a2fa71615a6512",
     "implementAndVerify": "v0.0.6-a4ed37e7397e68d1ca50a372c637f873a9bcf8711d0ff47ffcd70b11b033b9a7",
     "generateSubtasks": "v0.0.6-26aea9e66d9cac61f53cd07b8d875cd0f878fa86aa722a1b00c641bc74872411",
-    "projectCodingRequest": "v0.0.6-a25ec6613d58f57b06b156c9606705dd55d348628c5d6c0470ed95b6b1615e65",
-    "projectAgentWorkflow": "v0.0.6-ff54c77fb62c0b923c6b2d80cdf62c59b7c30e53c2acac39b78fe2e07e7497f4",
+    "projectCodingRequest": "v0.0.6-de9774386534896a6056bf11ccf0466fc2714ac5ff098b09a413a8e259d87ea6",
+    "projectAgentWorkflow": "v0.0.6-415375c68f4690e0d13699545b7b70e9c1611b0371931dd20248df9f4e528dad",
     "capabilities.approve": "v0.0.6-79001eaeaa326f62e94621826da88335b9145d154aa202e447e4c10d73bc9c80",
     "capabilities.edit": "v0.0.6-ef804994c66f368a07b40d0aeab69efaa8cc7edf733b5da43d85dae7c8d5a030",
     "capabilities.persist": "v0.0.6-ea312f67f94704416036076f1cce352dba0f9ce4954988825971d1fe95530f04",
