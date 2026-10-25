@@ -3,7 +3,7 @@ import { createStore, completes, rowTitle, rowVocabulary, withDone } from './gra
 import { primitive } from './primitives'
 import { sameCapabilityType } from './capabilities'
 import { refValueCompatible } from './scoped-refs'
-import { matchesGraph } from './structural'
+import { matchesGraph, tagName } from './structural'
 import { transferRefGraph } from './ref-transfer'
 import { parseRefExpression, textRefExpressions, resolveRefIdentity, nodeOccurrence } from './ref-paths'
 import { contextMemberRefs, discoverHandlers, marketplaceOffers } from './handlers'
@@ -421,10 +421,12 @@ export function addRow(replica: Replica, at: Scope, type: string, text: string, 
     children.push(edge)
     return { ...value, children }
   }
-  // The first row typed inside an open requirement starts the value it is bound to: a container the pattern reads.
-  // Until then the hole has no value, and editing it would make the ref its own content.
+  // The first row typed inside an open requirement starts the value it is bound to: a container the pattern reads,
+  // carrying the capability it is a value of. Until then the hole has no value, and editing it would make the ref its
+  // own content.
   if (parentEdge && isRequirementRow(store, parentEdge) && !refValueCid(store, content(store, identityCid(store, parentEdge)))) {
-    return editNode(replica, at, now, node => refNodeContent(store, { ...node.data, updated: { time: now } }, put(store, place({ data: {}, children: [] })), bookkeepingOf(store, node)))
+    const capability = content(store, parentEdge[0]).children.filter(([left, right]) => tagName(store, left) !== null && !content(store, right).children.length)
+    return editNode(replica, at, now, node => refNodeContent(store, { ...node.data, updated: { time: now } }, put(store, place({ data: {}, children: capability })), bookkeepingOf(store, node)))
   }
   return edit(replica, at, now, place)
 }

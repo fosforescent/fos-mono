@@ -17,7 +17,7 @@ import { primitiveValues } from '../../shared/sync/primitives'
 import { sameValue } from '../../shared/sync/merge'
 import { parseRowInput } from './rows'
 import { isHandlerStateLeft } from '../../shared/sync/capabilities'
-import { capabilityDeclarations, visibleBindings, bindingTree, bindingLayers, selectBinding, sameCapabilityType, compileInstructions, executionInputs, addRefCall, primitiveValue, refSubmissions, matchesInstructionRef, templateValuePattern, solveAt, usePatternAt, patternBindings, choosePatternBindingAt, findEdge, valueCidOf, type PatternBinding, constructAt, namesInLibrary, rowConstructor, openRefs, assignedValue, assignRefAt, capabilityName, rowTitle, readProposals, type OpenRef } from '../../shared/sync/index'
+import { capabilityDeclarations, visibleBindings, bindingTree, bindingLayers, selectBinding, sameCapabilityType, compileInstructions, executionInputs, addRefCall, primitiveValue, refSubmissions, matchesInstructionRef, templateValuePattern, solveAt, usePatternAt, patternBindings, choosePatternBindingAt, findEdge, valueCidOf, type PatternBinding, constructAt, namesInLibrary, rowConstructor, openRefs, assignedValue, assignRefAt, capabilityName, rowTitle, readProposals, type OpenRef, isLibraryType } from '../../shared/sync/index'
 import { createDeviceHandlers } from './device-handlers'
 import { compileConstructorCall } from '../../shared/sync/constructor-rows'
 import { capabilityOfTarget } from '../../shared/sync/graph'
@@ -2576,7 +2576,7 @@ export class App {
   insertHandler(cid: string, path = this.constructorContext()): void {
     const offer = this.handlerOffers(path).find(o => o.cid === cid && o.enabled && o.active)
     if (!offer) throw new Error('This handler is unavailable.')
-    if (offer.type !== primitive(this.state.replica.store, 'template')) {
+    if (!isLibraryType(this.state.replica.store, offer.type, TEMPLATE_TYPE)) {
       const r = this.state.replica, cid = resolveScope(r.store, headCid(r), path)
       if (cid && matchesGraph(r.store, offer.type, cid)) {
         this.edit(setRefValueAt(r, path, offer.cid, this.now()))

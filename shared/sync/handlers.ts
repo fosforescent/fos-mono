@@ -52,7 +52,8 @@ export function publishTemplate(r: Replica, at: Scope, templatePath: Scope, labe
   if (!cid || !templatePath.length) throw new Error('Select a template to publish.')
   const parent = resolveScope(r.store, headCid(r), templatePath.slice(0, -1))
   if (!parent || !valueContent(r.store, parent).children.some(e => identityCid(r.store, e) === cid && isRowOfType(r.store, e, TEMPLATE_TYPE))) throw new Error('Only template rows can be published.')
-  const type = primitive(r.store, 'template'), peerId = r.meta.peerId
+  // offered as what it is: a value of the template type (its row's left)
+  const type = valueContent(r.store, parent).children.find(e => identityCid(r.store, e) === cid)![0], peerId = r.meta.peerId
   const id = publishedTemplateId(peerId, templatePath.at(-1)!)
   const publishedValue = transferRefGraph(r, cid, templatePath, [...at, id], true)
   if (!contextMemberRefs(r, at).has(peerId)) r = addMemberAt(r, at, peerId, peerId, [], now)

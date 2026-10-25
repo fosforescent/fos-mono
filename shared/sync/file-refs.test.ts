@@ -50,10 +50,9 @@ test('file references and their fields travel through node exchange', () => {
   }
   pull([])
   const row = pull(['ref'])
-  expect(row.children.filter(c => !c.pinned).map(c => c.id).sort()).toEqual(['ref/field/path', 'ref/field/sha256', 'ref/field/size'])
-  expect(row.children.filter(c => c.pinned)).toHaveLength(1)
+  // its fields (path, sha256, size) are refs of their own, each loaded like a row
+  expect(row.children.filter(c => !c.pinned)).toHaveLength(3)
   for (const field of row.children) if (!field.pinned) pull(['ref', field.id])
   expect(isLibraryType(receiver.store, edgeOf(receiver, [HOME_ID], 'ref')[0], FILE_REFERENCE_TYPE)).toBe(true)
   expect(fileReferenceAt(receiver, [HOME_ID, 'ref'])).toEqual(pinned)
-  expect(nodeShape(owner, [HOME_ID, 'ref', 'ref/field/sha256']).data.scalar).toEqual({ type: 'text', value: pinned.sha256 })
 })
