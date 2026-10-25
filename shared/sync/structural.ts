@@ -126,7 +126,12 @@ export function match(store: FosStore, pattern: string, value: string, options: 
     return isChoiceEdge(store, edge) && isBranchChoice(store, content(store, edge[1]))
       ? readChoice(store, edge[1]).options.flatMap(option => option.edge ? alternatives(option.edge) : []) : [edge]
   }
-  const options_ = (cid: string) => readChoice(store, cid).options.flatMap(option => option.edge ? [option.edge[1]] : [])
+  // an option's value: a value branch's left (its right the incoming placeholder), else its row's right
+  const options_ = (cid: string) => { const choice = readChoice(store, cid); return choice.options.flatMap(option => {
+    if (!option.edge) return []
+    const right = store.table.get(option.edge[1])
+    return [right && isRefNode(store, right) && !refValueCid(store, right) && right.data.alias?.id === choice.id ? option.edge[0] : option.edge[1]]
+  }) }
   const go = (p: string, v: string, key: boolean, depth: number, state: Match): Match | null => {
     if (--remaining < 0 || depth > 128) return null
     const never = primitive(store, 'void')

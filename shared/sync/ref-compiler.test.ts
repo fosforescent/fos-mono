@@ -102,8 +102,8 @@ test('constructor calls compile references and explicit overrides while keeping 
   r = assignRefAt(r, ['call'], url.alias, put(r.store, { data: { ref: { id: '550e8400-e29b-41d4-a716-446655440000' } }, children: [] }), 4)
   const call = compileConstructorCall(r, ['call'])
   expect(call.canRun).toBe(true)
-  expect(textOf(r, call.args.find(arg => arg.name === 'url')!.cid)).toBe('https://example.com')
-  expect(textOf(r, call.args.find(arg => arg.name === 'method')!.cid)).toBe('POST')
+  expect(textOf(r.store, call.args.find(arg => arg.name === 'url')!.cid)).toBe('https://example.com')
+  expect(textOf(r.store, call.args.find(arg => arg.name === 'method')!.cid)).toBe('POST')
   expect(call.args.some(arg => arg.received && call.edits.has(arg.cid))).toBe(true)
   expect(JSON.stringify(reachableNodes(r.store, [call.cid]))).not.toContain('550e8400-e29b-41d4-a716-446655440000')
   const left = compileRow(r, ['call']).left

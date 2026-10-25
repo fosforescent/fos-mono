@@ -95,15 +95,15 @@ const types: Record<string, string> = {
  * tag, its inputs refs declared in it (`[string, ref to]`: the left types the hole). A requirement row asks for one (`[mail<to: bob>, ref → unit]`); a handler is a
  * value matching it. What a menu shows (its title, syntax, icon) is on the ref, never in the pattern.
  */
-type Capability = { label: string; syntax: string[]; inputs?: Array<[string, string?]>; time?: string[]; icon?: string; hidden?: true; trigger?: 'instantiate' | 'resume' }
+type Capability = { label: string; syntax: string[]; inputs?: Array<[string, string?]>; time?: string[]; outputs?: Array<[string, 'string' | 'boolean']>; icon?: string; hidden?: true; trigger?: 'instantiate' | 'resume' }
 const capabilities: Record<string, Capability> = {
   approve: { label: 'attested approvals', syntax: ['approve'] }, edit: { label: 'edit (propose and decide proposals)', syntax: ['edit'] },
   persist: { label: 'persist storage', syntax: ['persist'] }, task: { label: 'task', syntax: ['task'] }, notify: { label: 'notify', syntax: ['notify'] },
-  allocation: { label: 'allocation', syntax: ['allocation'] }, peer: { label: 'peer connection', syntax: ['peer'] }, sign: { label: 'sign a node', syntax: ['sign'] },
+  allocation: { label: 'allocation', syntax: ['allocation'] }, peer: { label: 'peer connection', syntax: ['peer'] }, sign: { label: 'sign a node', syntax: ['sign'], inputs: [['node'], ['key']], outputs: [['signature', 'string']] },
   solve: { label: 'solutions by unification', syntax: ['solve'] }, confirmation: { label: 'confirmation', syntax: ['confirm', 'confirmation'] },
   choice: { label: 'choice', syntax: ['choice'] }, allocate: { label: 'allocate', syntax: ['allocate'] }, ws: { label: 'websockets', syntax: ['ws'] },
   points: { label: 'fos points', syntax: ['points'] }, market: { label: 'market', syntax: ['market'] }, rank: { label: 'rank', syntax: ['rank'] },
-  llm: { label: 'language model', syntax: ['llm', 'ai', 'ask'] }, fetch: { label: 'network requests', syntax: ['fetch'], inputs: [['url'], ['method', 'GET']] },
+  llm: { label: 'language model', syntax: ['llm', 'ai', 'ask'] }, fetch: { label: 'network requests', syntax: ['fetch'], inputs: [['url'], ['method', 'GET']], outputs: [['response', 'string']] },
   url: { label: 'links to published nodes', syntax: ['url'] }, mail: { label: 'mail', syntax: ['mail'], inputs: [['to'], ['subject']] },
   provideNode: { label: 'provide nodes', syntax: ['provideNode'] }, verify: { label: 'verify users', syntax: ['verify'] },
   'receive-payment': { label: 'receive payment', syntax: ['receive-payment'] }, organize: { label: 'organize captures', syntax: ['organize'] },
@@ -112,7 +112,7 @@ const capabilities: Record<string, Capability> = {
   tool: { label: 'tools', syntax: ['tool', 'mcp'], inputs: [['tool']] }, approveMerge: { label: 'merge rules', syntax: ['approveMerge'] },
   search: { label: 'search', syntax: ['?', 'search'] }, autopush: { label: 'autopush', syntax: ['autopush'] }, relay: { label: 'relay', syntax: ['relay'] },
   execute: { label: 'run evaluations', syntax: ['execute'] }, repo: { label: 'repositories', syntax: ['repo'] },
-  'verify-signature': { label: 'verify a signature', syntax: ['verify-signature'] }, calendar: { label: 'calendar', syntax: ['calendar'] },
+  'verify-signature': { label: 'verify a signature', syntax: ['verify-signature'], inputs: [['node'], ['key'], ['signature']], outputs: [['valid', 'boolean']] }, calendar: { label: 'calendar', syntax: ['calendar'] },
   sync: { label: 'traverse and sync', syntax: ['sync'] }, http: { label: 'http', syntax: ['http'] }, 'send-payment': { label: 'send payment', syntax: ['send-payment'] },
   direct: { label: 'direct connect', syntax: ['direct'] }, read: { label: 'read', syntax: ['read'] },
 }
@@ -127,7 +127,9 @@ Object.assign(capabilities, {
 } satisfies Record<string, Capability>)
 const capability = (capabilityName: string, c: Capability) => tagged(capabilityName,
   ...(c.inputs ?? []).map(([input, value]): FosPathElem => [string, ref(input, value === undefined ? null : text(value))]),
-  ...(c.time ?? []).map((input): FosPathElem => [number, ref(input)]))
+  ...(c.time ?? []).map((input): FosPathElem => [number, ref(input)]),
+  // what the handler answers: a ref declared as an output, filled when it runs
+  ...(c.outputs ?? []).map(([output, type]): FosPathElem => [P(type), put({ ...content(ref(output)), data: { ...content(ref(output)).data, refRole: 'output' } })]))
 /** The ref a capability is assigned to: its pattern as its value, its title, syntax and icon as its own rows. */
 const capabilityRef = (capabilityName: string, c: Capability, pattern: string) => {
   const own = ref(capabilityName, pattern), id = content(own).data.alias!.id
