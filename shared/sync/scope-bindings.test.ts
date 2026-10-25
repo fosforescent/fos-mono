@@ -1,4 +1,4 @@
-import { textValue, textOf } from './index'
+import { textValue, textOf, putBranches } from './index'
 import { primitive } from './primitives'
 import {
   addMemberAt, addRefAt, addRequirement, addTask, demandPattern, supplyRequirement, supplyValue,
@@ -133,7 +133,8 @@ test('peer submissions explicitly offer alternatives to one capability node, eve
 test('explicit alternatives have the same graph meaning without any peer membership', () => {
   let r = createReplica(), capability = put(r.store, { data: {}, children: [] })
   const handlers = ['alice', 'bob'].map(id => put(r.store, refNodeContent(r.store, { alias: { id }, name: { content: 'Tools' } }, literal(r, id))))
-  const alternatives = put(r.store, { data: { refAlternatives: true }, children: handlers.map(handler => [capability, handler]) })
+  // a sum: the alternatives as a choice with none chosen yet
+  const alternatives = putBranches(r.store, 'Tools', null, handlers.map((handler, i) => ({ peerId: ['alice', 'bob'][i]!, edge: [capability, handler] as [string, string] })), '')
   r = addRefAt(r, [], 'Tools', capability, 1, alternatives, 'Tools')
   expect(discoverHandlers(r, []).filter(offer => offer.enabled)).toHaveLength(2)
   expect(resolveBinding(r.store, capability, resolveRefIdentity(r, [], 'Tools').locations[0]!).status).toBe('ambiguous')

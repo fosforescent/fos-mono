@@ -107,7 +107,8 @@ export function compileRefGraph(r: Replica, cid: string, at: Scope = [], options
       if (isBranchChoice(store, node)) {
         if (options.selected) {
           const selected = selectedBranchValue(store, current)
-          return selected ? walk(store, selected, path, role, depth + 1, type) : hole(id, type, path, 'unbound', role)
+          // alternatives nobody has chosen from are ambiguous; a choice of none is unbound
+          return selected ? walk(store, selected, path, role, depth + 1, type) : hole(id, type, path, readChoice(store, current).options.length > 1 ? 'ambiguous' : 'unbound', role)
         }
         const alternatives = readChoice(store, current).options.flatMap(option => {
           if (!option.edge) return []

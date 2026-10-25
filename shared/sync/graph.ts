@@ -789,7 +789,8 @@ export function branchSelection(store: FosStore, cid: string): string {
   const choice = readChoice(store, cid)
   if (policyReads.has(store)) return choice.options.find(o => o.peerId === 'main')?.peerId ?? choice.defaultName ?? choice.options[0]?.peerId ?? ''
   const name = branchSelections.get(store)?.get(choice.id)
-  return choice.options.find(o => o.peerId === name)?.peerId ?? choice.defaultName ?? choice.options.map(o => o.peerId).sort()[0] ?? ''
+  // a choice with no default (a sum nobody has chosen from) selects nothing until someone does
+  return choice.options.find(o => o.peerId === name)?.peerId ?? choice.defaultName ?? ''
 }
 export function branchEdge(store: FosStore, cid: string): FosPathElem | null {
   const choice = readChoice(store, cid)
@@ -798,7 +799,8 @@ export function branchEdge(store: FosStore, cid: string): FosPathElem | null {
 export function putBranches(store: FosStore, id: string, base: FosPathElem | null, options: ChoiceOption[], defaultName = 'main'): string {
   const cid = putChoice(store, id, base, options), node = content(store, cid)
   const { conflict: _conflict, ...data } = node.data
-  const selectedIndex = Math.max(0, readChoice(store, cid).options.findIndex(o => o.peerId === defaultName))
+  // an empty default: none of the alternatives is chosen yet
+  const selectedIndex = defaultName === '' ? -1 : Math.max(0, readChoice(store, cid).options.findIndex(o => o.peerId === defaultName))
   return put(store, { ...node, data: { ...data, option: { ...data.option!, selectedIndex } } })
 }
 export function updateBranch(store: FosStore, cid: string, edge: FosPathElem): string {

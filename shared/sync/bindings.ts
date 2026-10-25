@@ -115,7 +115,7 @@ export function resolveBinding(store: FosStore, type: string | null, target: str
         if (location.store !== store) importNodes(store, reachableNodes(location.store, [location.cid]))
         return follow(location.cid, wanted, { store: location.store, path: location.path.slice(0, -1) })
       }
-      if (isBranchChoice(store, node)) { const selected = selectedBranchValue(store, cid); return selected ? follow(selected, wanted, scope) : fail('missing', 'Choose a supplied value branch') }
+      if (isBranchChoice(store, node)) { const selected = selectedBranchValue(store, cid); return selected ? follow(selected, wanted, scope) : fail('ambiguous', 'Choose one of the alternatives') }
       if (node.children.some(e => isChoiceEdge(store, e))) return fail('conflict', 'Resolve conflicting values first')
       if (node.data.ref) {
         if (node.data.ref.peer || node.data.ref.owner) return fail('missing', 'The remote reference needs a handler in this scope')

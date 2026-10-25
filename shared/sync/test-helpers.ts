@@ -11,7 +11,7 @@ export const answering = (by: string, receipt?: string): PrimitiveFunction => as
 }
 /** A primitive that answers nothing (an effect with no graph result). */
 export const silent: PrimitiveFunction = async () => ({})
-import { libraryInstanceOf, libraryRowOf, SERVER_TRANSPORT_CAPABILITIES, type NodeView, type Scope } from './graph'
+import { libraryInstanceOf, libraryRowOf, SERVER_TRANSPORT_CAPABILITIES, type NodeView, type Scope, refValueCid } from './graph'
 import { headCid, view, type Replica } from './replica'
 import { accountContextAbove, exchangeNode, nodeTreeSync } from './node-sync'
 import type { NodeBranch, NodeRequest } from './node-provider'
@@ -31,7 +31,11 @@ export function declareTestCapability(r: Replica, name: string, at: Scope = [], 
   const type = put(store, { data, children: [[tagNode(store, name), put(store, { data: {}, children: [] })]] })
   const declaration = put(store, refNodeContent(store, { name: { content: name } }, type))
   const nextGroup = put(store, { ...namespace, children: [...namespace.children.filter(([, right]) => content(store, right).data.name?.content !== name), [type, declaration]] })
-  const nextLibrary = put(store, { ...library, children: library.children.map(([left, right]) => [left, right === group ? nextGroup : right]) })
+  // the group is the value of the library's capabilities ref
+  const nextLibrary = put(store, { ...library, children: library.children.map(([left, right]): [string, string] => {
+    const ref = content(store, right)
+    return [left, refValueCid(store, ref) === group ? put(store, { ...ref, children: ref.children.map(([key, target]): [string, string] => [key, target === group ? nextGroup : target]) }) : right]
+  }) })
   commitRoot(store, updateAtScope(store, headCid(r), at, node => {
     const instance = libraryInstanceOf(store, put(store, node))
     return { ...node, children: [...node.children.filter(([, right]) => right !== instance?.cid), libraryInstanceEdge(store, nextLibrary)] }
