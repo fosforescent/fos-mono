@@ -10,10 +10,10 @@ const cid = (r: Replica, path: string[]) => resolveScope(r.store, headCid(r), pa
 const leftOf = (r: Replica, at: string[], id: string) => findEdge(r.store, valueContent(r.store, cid(r, at)), `a:${id}`)![0]
 const leaf = (r: Replica, text: string) => textValue(r.store, text)
 
-/** A person row with a city row under it. */
+/** A person row with a city (a string) under it. */
 function person(r: Replica, at: string[], id: string, city: string): Replica {
   r = addTask(r, at, id, 1, id)
-  return addRow(r, [...at, id], PLAIN_TYPE, city, 2, { id: `${id}-city` })
+  return addRefAt(r, [...at, id], `${id}-city`, primitive(r.store, 'string'), 2, textValue(r.store, city), 'city')
 }
 
 test('using a pattern with a node submits its values to the pattern refs by position, as options in that scope', () => {
@@ -48,7 +48,7 @@ test('using a pattern with a node submits its values to the pattern refs by posi
 test('a value that does not fit the ref is not submitted', () => {
   let r = addTask(createReplica('device'), [], 'Trip', 1, 'trip')
   r = person(r, ['trip'], 'alice', 'Paris')
-  const number = put(r.store, { data: { form: { primitive: 'number' } }, children: [] })
+  const number = primitive(r.store, 'number')
   const hole = put(r.store, refNodeContent(r.store, { alias: { id: 'count' } }, null))
   const used = usePatternAt(r, ['trip'], 'alice', put(r.store, { data: {}, children: [[number, hole]] }), 'device', 3)
   expect(used).toMatchObject({ submitted: 0, skipped: 1 })
@@ -87,7 +87,7 @@ test('solve submits every solution in scope, ancestors included, to the placehol
   const paris = options.find(p => textOf(r.store, p.contentCid) === 'Paris')!
   r = applyProposalAt(r, ['trip', 'solve', 'city'], paris.cid, 'device', 6)
   const city = () => content(r.store, identityCid(r.store, findEdge(r.store, valueContent(r.store, cid(r, ['trip', 'solve'])), 'a:city')!))
-  expect(content(r.store, refValueCid(r.store, city())!).data.description?.content).toBe('Paris')
+  expect(textOf(r.store, refValueCid(r.store, city())!)).toBe('Paris')
   const rome = readProposals(r.store, city()).find(p => p.status === 'open' && textOf(r.store, p.contentCid) === 'Rome')!
   r = applyProposalAt(r, ['trip', 'solve', 'city'], rome.cid, 'device', 7)
   expect(readProposals(r.store, city()).filter(p => p.status === 'open')).toHaveLength(1)
