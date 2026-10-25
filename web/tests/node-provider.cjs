@@ -2,7 +2,7 @@ const assert = require('node:assert/strict')
 const { buildSync } = require('esbuild')
 const { mkdtempSync, rmSync } = require('node:fs')
 const path = require('node:path')
-const PLAIN_TYPE = 'plain'
+const PLAIN_TYPE = 'title'
 const dir = mkdtempSync(path.join(require('node:os').tmpdir(), 'fos-node-provider-'))
 
 async function main() {

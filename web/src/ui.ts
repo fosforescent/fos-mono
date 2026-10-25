@@ -3291,7 +3291,7 @@ function renderTemplatePicker(body: HTMLElement, state: AppState, app: App): voi
     common.append(iconButton(icon, label, () => app.changeTemplate(type, undefined, extras)))
   }
   body.append(common, combobox('Choose template', 'Find a template…', query => app.searchLocalNodes(query, TEMPLATE_TYPE).filter(found => JSON.stringify(found.path) !== JSON.stringify(state.templatePicker?.path)).flatMap(found => [
-    { label: found.row.title, group: 'Templates', run: () => app.changeTemplate('plain', found.row.id) },
+    { label: found.row.title, group: 'Templates', run: () => app.changeTemplate(PLAIN_TYPE, found.row.id) },
     // the same template as a pattern: this row's values are submitted to its refs instead of copying its rows in
     { label: found.row.title, group: 'Use as pattern', run: () => app.usePattern(found.row.id) }
   ]), () => [], 'Search templates…'))

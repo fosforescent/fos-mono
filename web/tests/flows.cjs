@@ -76,19 +76,20 @@ async function main() {
   ghost().focus(); ghost().value = "> Euler's identity"; key(ghost(), 'Enter'); await tick()
   const note = alice.currentView().tasks.find(t => t.type === c.NOTE_TYPE)
   assert.equal(note.title, "Euler's identity")
-  const bodyId = `${note.id}/field/body`
-  assert($(aliceRoot, `.tree .task[data-id="${bodyId}"]`), 'the note shows its body row beneath it')
-  // click the body row to edit it, type LaTeX, leave with Escape
-  alice.select([note.id, bodyId]); await tick()
-  const bodyEditor = $(aliceRoot, `.tree .task[data-id="${bodyId}"] textarea.edit`)
-  assert(bodyEditor, 'the body row edits in place')
-  bodyEditor.value = 'For every real $x$:\n\n$$e^{i\\pi} + 1 = 0$$'
+  // the note's body is its own field: the row renders it, and editing the row edits it
+  const noteRow = () => $(aliceRoot, `.tree .task[data-id="${note.id}"]`)
+  assert(noteRow().querySelector('.note-body'), 'the note shows its body')
+  alice.select([note.id]); await tick()
+  const bodyEditor = $(noteRow(), 'textarea.edit')
+  assert(bodyEditor, 'the note edits its body in place')
+  const body = "# Euler's identity\n\nFor every real $x$:\n\n$$e^{i\\pi} + 1 = 0$$"
+  bodyEditor.value = body
   key(bodyEditor, 'Escape'); await tick()
-  assert.equal(c.view(account(), [HOME, notesId, note.id]).tasks.find(t => t.id === bodyId).title, 'For every real $x$:\n\n$$e^{i\\pi} + 1 = 0$$')
+  assert.equal(c.view(account(), [HOME, notesId]).tasks.find(t => t.id === note.id).body, body)
   assert.equal(c.view(account(), [HOME, notesId]).tasks.find(t => t.id === note.id).title, "Euler's identity", 'the title stays one line')
   alice.select(null); await tick() // a selected row shows its editor; unselected, its rendering
-  for (let i = 0; i < 50 && !$(aliceRoot, `.tree .task[data-id="${bodyId}"] .note-body .katex`); i++) await new Promise(resolve => setTimeout(resolve, 20))
-  assert($(aliceRoot, `.tree .task[data-id="${bodyId}"] .note-body .katex-display`), 'the body row renders its LaTeX as math')
+  for (let i = 0; i < 50 && !$(noteRow(), '.note-body .katex'); i++) await new Promise(resolve => setTimeout(resolve, 20))
+  assert($(noteRow(), '.note-body .katex-display'), 'the body renders its LaTeX as math')
 
   // 2. let anyone run the node: the Fos server's constructor makes the audience's peer row, whose Execute switch is on
   alice.select(null); await tick() // constructors add inside the selected row, else into the node
@@ -108,7 +109,7 @@ async function main() {
   assert(link && link.includes('#share='), 'the audience row shows the link the server made')
   // what a visitor sees: the note's title and its body as Markdown, math included
   const projection = c.sharedProjection(account(), [HOME, notesId], value => JSON.stringify(value).length.toString())
-  assert.deepEqual(projection.rows.filter(r => r.type === c.NOTE_TYPE || r.type === c.MARKDOWN_TYPE).map(r => [r.type, r.title, r.body]), [[c.NOTE_TYPE, "Euler's identity", undefined], [c.MARKDOWN_TYPE, '', 'For every real $x$:\n\n$$e^{i\\pi} + 1 = 0$$']])
+  assert.deepEqual(projection.rows.filter(r => r.type === c.NOTE_TYPE || r.type === c.MARKDOWN_TYPE).map(r => [r.type, r.title, r.body]), [[c.NOTE_TYPE, "Euler's identity", undefined], [c.MARKDOWN_TYPE, '', "# Euler's identity\n\nFor every real $x$:\n\n$$e^{i\\pi} + 1 = 0$$"]])
   const page = document.createElement('div')
   await c.renderSitePage(page, projection, { trail: [], navigate: () => {}, markdown: async text => c.markdownToSafeHtml(text) })
   assert(page.querySelector('.fos-site-section .fos-site-markdown'), 'the body renders as Markdown inside the note’s section')

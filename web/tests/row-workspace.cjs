@@ -10,7 +10,7 @@ for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTM
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export {parsePastedRows} from './src/paste'; export {parseRowInput,rawRowText} from './src/rows'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid', 'katex', 'katex/*'] })
 const { libAt, put, content, rowTypeAt, addConstructedRow, parsePastedRows, rawRowText, App, mountUi, createMemoryStorage, parseRowInput, view, HOME_ID, resolveScope, headCid, requirementOutputs, argumentRefs, createReplica, ensureHomeContext, exchangeNode, SERVER_TRANSPORT_CAPABILITIES, addMemberAt } = require(path.join(dir, 'app.cjs'))
 const TASK_TYPE = 'task'
-const PLAIN_TYPE = 'plain'
+const PLAIN_TYPE = 'title'
 const COMMENT_TYPE = 'comment'
   // what a real account server advertises with the default handler registry (backend/sync/hostHandlers.ts)
   const SERVER_CAPABILITIES = [...SERVER_TRANSPORT_CAPABILITIES, 'search', 'market', 'llm']

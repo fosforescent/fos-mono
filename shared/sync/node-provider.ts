@@ -6,7 +6,7 @@ import { hashContent, isCid } from '../dag-implementation/cid'
 import { content, put, refNodeContent, refValueCid, isRefNode, libraryNode, libAt, commitRoot, updateAtScope, resolveScope, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, isShippedLibrary, reachableNodes, bookkeepingOf, rootTargetCid, withPeer,
   membershipOf, valueContent, readMembers, memberFor, memberPeerOf, peerNode, memberEntryPeerAt, isGrantEdge, grantChildId, memberEdgesOf, isMemberEdge, capabilityOf, isHandle, isPeerReference, isBookkeepingEdge, isRowEdge, identityCid, withMainBranchPolicy,
   readProposals, submissionAdditions, capabilityNames, type MemberRecord, type ProposalView, type Capability, type Scope } from './graph'
-import { advertisedRows, importNodes } from './graph'
+import { advertisedRows, findEdge, importNodes } from './graph'
 import { sameCapabilityType } from './capabilities'
 import { primitiveValue } from './primitives'
 import { refSubmissions } from './scoped-refs'
@@ -132,6 +132,10 @@ function sourceId(r: Replica, path: Scope): string {
   if (!path.length) return content(r.store, r.store.rootNodeId).data.alias!.id
   const cid = resolveScope(r.store, headCid(r), path)
   if (!cid) throw new NodeAccessError('Linked node unavailable.')
+  // a field's ref is named by its field, the same in every row: it is that row's field
+  const parent = resolveScope(r.store, headCid(r), path.slice(0, -1))
+  const edge = parent ? findEdge(r.store, valueContent(r.store, parent), `a:${path.at(-1)}`) : undefined
+  if (edge && isFieldRow(r.store, edge)) return `${sourceId(r, path.slice(0, -1))}/${path.at(-1)}`
   return content(r.store, cid).data.alias?.id ?? cid
 }
 const localLinkId = (peer: string, other: string, id: string) => hashContent({ data: { name: { content: JSON.stringify([peer, other, id]) } }, children: [] })

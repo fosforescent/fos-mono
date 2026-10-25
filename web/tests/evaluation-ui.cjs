@@ -9,7 +9,7 @@ for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTex
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export * from './src/analysis'; export {createMemoryStorage} from './src/storage'; export {createProjectStorage} from './src/project'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), external: ['mermaid','katex','katex/*'] })
 const { addRow, addRequirement, addConstructedRow, content, put, rowTypeAt, analysisRows, queryAnalysis, analysisTotals, App, mountUi, createMemoryStorage, createProjectStorage, loadReplica, evaluationRecord, SERVER_TRANSPORT_CAPABILITIES } = require(path.join(dir, 'test.cjs'))
 const TASK_TYPE = 'task'
-const PLAIN_TYPE = 'plain'
+const PLAIN_TYPE = 'title'
 const NOTE_TYPE = 'note'
 const TEMPLATE_TYPE = 'template'
 async function main() {

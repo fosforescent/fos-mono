@@ -10,7 +10,7 @@ for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTM
 window.HTMLDialogElement.prototype.showModal = function () { this.open = true }
 window.HTMLDialogElement.prototype.close = function () { this.open = false; this.dispatchEvent(new window.Event('close')) }
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid', 'katex', 'katex/*'] })
-const { App, mountUi, createMemoryStorage, addTask, headCid, resolveScope, content, put, putStripped, proposalContent, readProposal, withProposal, makeLink, commitRoot, updateAtScope, view, rowEdgeAt, LIBRARY_ID } = require(path.join(dir, 'app.cjs'))
+const { App, mountUi, createMemoryStorage, addTask, headCid, resolveScope, content, put, putStripped, proposalContent, readProposal, withProposal, makeLink, commitRoot, updateAtScope, view, rowEdgeAt, LIBRARY_ID, constructTextRow, rowTypeAt, withRowText, valueContent, isFieldRow } = require(path.join(dir, 'app.cjs'))
 async function main() {
   const a = new App({ baseUrl: 'http://localhost', autoLogin: null, storage: createMemoryStorage(), scopedDocument: true })
   a.scheduleSync = () => {}
@@ -18,8 +18,9 @@ async function main() {
   let r = addTask(a.state.replica, [], 'Project', 1, 'project')
   r = addTask(r, ['project'], 'Main child', 2, 'main-child')
   const s = r.store, cid = resolveScope(s, headCid(r), ['project']), base = putStripped(s, content(s, cid))
-  const leaf = put(s, { data: { alias: { id: 'other-child' }, description: { content: 'Peer child' } }, children: [] })
-  const branch = put(s, { data: { description: { content: 'Peer project' } }, children: [rowEdgeAt(s, 'plain', leaf, [])] })
+  const leaf = put(s, constructTextRow(s, rowTypeAt(s, 'title'), 'other-child', 'Peer child', 3))
+  const renamed = withRowText(s, valueContent(s, cid), 'Peer project', 3)
+  const branch = put(s, { ...renamed, children: [...renamed.children.filter(edge => isFieldRow(s, edge)), rowEdgeAt(s, 'title', leaf, [])] })
   const proposal = put(s, proposalContent(s, 'other-peer', 'Other proposal', branch, base, 3))
   commitRoot(s, updateAtScope(s, headCid(r), ['project'], node => withProposal(s, makeLink(s, node, 3), 'other-peer', proposal, 'Other proposal'), 'node'), 4)
   a.set({ replica: { ...r } }); a.goTo(['project'])

@@ -568,9 +568,14 @@ export function libraryBindingAt(store: FosStore, at: Scope = [], root: string =
   if (!isLibraryValue(scope.store, instance.library)) throw new Error('The library binding is unavailable.')
   const fields = namesInLibrary(scope.store, instance.library)
   if (fields.ambiguous.size) throw new Error(`Ambiguous library field ${[...fields.ambiguous][0]}.`)
-  if (scope.store !== store) importNodes(store, reachableNodes(scope.store, [instance.library, instance.cid]))
+  // the library and its instance are content: once a store has them, it has all of them
+  if (scope.store !== store) {
+    const key = `${instance.library}|${instance.cid}`, done = importedLibraries.get(store) ?? new Set<string>()
+    if (!done.has(key)) { importNodes(store, reachableNodes(scope.store, [instance.library, instance.cid])); done.add(key); importedLibraries.set(store, done) }
+  }
   return { ...instance, path: scope.path, source: scope.store }
 }
+const importedLibraries = new WeakMap<FosStore, Set<string>>()
 
 /** Code-facing fields of the library instance at this graph position. No implicit installation or synthesized fields. */
 export function libAt(store: FosStore, at: Scope = [], root: string = rootTargetCid(store)): { capabilities: Record<string, string>; field(name: string): string } {

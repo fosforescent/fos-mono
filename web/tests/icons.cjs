@@ -15,7 +15,7 @@ try {
   app.set({ session: { kind: 'user', username: 'alice', jwt: 't', baseUrl: 'http://localhost' }, connection: 'online' })
   // a server with every service, and every device trigger offered: the fullest menu
   app.recordServerOffers([...SERVER_TRANSPORT_CAPABILITIES, 'llm', 'search', 'market', 'cron'])
-  const cron = primitiveRef(app.state.replica.store, 'fos', { id: 'server:cron', type: store => libAt(store).capabilities.cron })
+  const cron = primitiveRef(app.state.replica.store, 'fos', { id: 'server:cron', capability: 'cron' })
   app.set({ replica: publishPrimitive(app.state.replica, [], 'fos', cron, Date.now()) })
   app.setPeerOffers(app.state.replica.meta.peerId, ['timer', 'task-completion', 'request'], true)
   document.querySelector('.children-toolbar .constructors-toggle').click()

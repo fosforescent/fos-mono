@@ -5,7 +5,7 @@ const { buildSync } = require('esbuild')
 const { mkdtempSync, rmSync } = require('node:fs')
 const path = require('node:path')
 const { JSDOM } = require('jsdom')
-const PLAIN_TYPE = 'plain'
+const PLAIN_TYPE = 'title'
 const REF_TYPE = 'ref'
 const dir = mkdtempSync(path.join(require('node:os').tmpdir(), 'fos-shared-node-'))
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })

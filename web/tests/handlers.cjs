@@ -49,18 +49,16 @@ try {
   assert(!palette('Fos server').includes('Ask fos') && !serverTriggers().includes('Cron trigger'))
   app.recordServerOffers([...SERVER_TRANSPORT_CAPABILITIES, 'llm', 'search', 'cron'])
   assert(!serverTriggers().includes('Cron trigger'), 'a name in a transport report is not an observer registration')
-  const cron = primitiveRef(app.state.replica.store, 'fos', { id: 'server:cron', label: 'Cron', type: store => libAt(store).capabilities.cron })
+  const cron = primitiveRef(app.state.replica.store, 'fos', { id: 'server:cron', label: 'Cron', capability: 'cron' })
   app.set({ replica: publishPrimitive(app.state.replica, [], 'fos', cron, 10) })
   assert(app.handlerOffers().some(o => o.peerId === 'fos' && o.capability === 'llm'), 'reported offers are recorded on the fos member')
   assert(!app.handlerOffers().some(o => o.peerId === 'fos' && o.capability === 'market'), 'unreported services stay absent')
   assert(palette('Fos server').includes('Ask fos') && serverTriggers().includes('Cron trigger'), 'the palette follows the advertised offers')
   app.recordServerOffers([...SERVER_TRANSPORT_CAPABILITIES, 'search'])
   assert(!app.handlerOffers().some(o => o.peerId === 'fos' && o.capability === 'llm'), 'a narrower report withdraws the offer')
-  const { put } = require(path.join(dir, 'test.cjs'))
-  const paint = primitiveRef(app.state.replica.store, app.state.replica.meta.peerId, { id: 'extension:paint', label: 'Paint', type: store => put(store, {
-    data: { capabilityDefinition: { name: 'extension:paint', label: 'Paint', syntax: ['Paint'] } },
-    children: [[put(store, { data: { description: { content: 'name' } }, children: [] }), put(store, { data: { scalar: { type: 'text', value: 'paint' } }, children: [] })]]
-  }) })
+  const { put, tagNode } = require(path.join(dir, 'test.cjs'))
+  // a capability no library assigns: its own tag names it
+  const paint = primitiveRef(app.state.replica.store, app.state.replica.meta.peerId, { id: 'extension:paint', label: 'Paint', capability: store => put(store, { data: {}, children: [[tagNode(store, 'extension:paint'), put(store, { data: {}, children: [] })]] }) })
   app.set({ replica: publishPrimitive(app.state.replica, [], app.state.replica.meta.peerId, paint, 10) })
   app.goTo(parent)
   const custom = app.handlerOffers().find(offer => offer.cid === paint)
