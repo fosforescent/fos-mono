@@ -14,6 +14,36 @@ Rules the user set: no half migrations (finish or stop and explain); no string p
 
 Natives must be able to read the tree, lazily, the same way the MCP server, CLI and API do: `NativeContext` gets a read handle (resolve a scope, read a node's rows, follow refs) under the evaluating principal's access checks, and natives pull what they need on demand. Compiled operands remain what a step hands over up front, not a wall. Writes still happen only through returned answers (transaction/rollback unchanged). Restore with this: organize's outline (`captureOutline` through the handle), paying whoever answered the task, mail body from the task's rows, search filtering against existing rows, MCP provider choice by scope membership.
 
+## Instructions for the next agent (priority order; the user's requirements, not suggestions)
+
+Rules: no half migrations — delete the old path in the same change. No string parsing in semantics. Tests sit at an interface; rip tests of inner mechanics. One failing test file at a time, filtered output, commit at every green boundary. Do not write to `current_tasks.md`.
+
+### A. Answers are typed values of the pattern, not description text
+
+Today natives answer with `valueOfPattern(self.pattern, { description: text })` and readers use `requirementAnswer` → `value.data.description`. The pattern never declares what the answer is, so the answer is untyped and reading it is convention.
+
+1. A requirement's pattern declares its result the way it declares inputs: a declared ref (positive argument row) on the pattern, e.g. `title` declares a text result, `search` declares a container of reference rows, `organize` declares a container of rows, `tool` declares a text result, `verify` declares a `user` field, `allocation` demands declare a grant (already typed). Add these declarations in `.fos/library.json` for each capability (then `node scripts/compile-library.cjs`, bump `FOS_DATA_VERSION`), with `withInputs`/`patternInputs`-style helpers for results (`patternResults`, `resultOf`).
+2. The native fills the declared result refs: `NativeResult.outputs` keyed by result name, `self` becoming the value whose declared refs are filled (`valueOfPattern` fills them; `patternIsValuePredicate` already checks the value against the pattern, so a wrong-typed answer is refused by the evaluator, not by the reader).
+3. Replace `requirementAnswer` with reading the declared result (`resultOf(store, pattern, value, 'title')`); delete `requirementAnswer`. Callers: `web/src/app.ts` (title, organize), `backend/voice/organize.ts`, `backend/integrations/mcpPeers.ts`, `backend/sync/hostHandlers.test.ts`, `mcpPeers.test.ts`, `organize.test.ts`.
+4. `description` on an answer is then presentation only (a label); nothing reads it for meaning.
+
+### B. Handler selection by pattern, never by name (`handles` is deleted)
+
+`handles: step => step.row?.requirement?.resource === 'points'` (points, payment, calendar in `backend/sync/hostHandlers.ts`), `requirement.tool === 'fos.pull'` / `AGENT_TOOL` (`web/src/device-handlers.ts`), `capability === 'tool'` (`backend/integrations/mcpPeers.ts`) are name dispatch.
+
+1. Each handler's `ref` is a `PrimitiveDefinition` whose `type` is the refined pattern it serves: points = `allocationPattern(store, at, { type: 'points', unit: 'ff' }, true)` negative; payment = negative allocation of `account`; calendar = negative allocation of `calendar`/`person`; pull = `tool` refined with its `tool` input filled with the text value `fos.pull` (`withInputs`); agent likewise with `AGENT_TOOL`; MCP tool = `tool` with the `tool` input declared (unfilled) so any named tool matches.
+2. Executor selection (`nativeExecutorsOf` / `primitiveExecutors` → `matchesInstructionRef`) matches the step's declaration pattern against the offer's type structurally (`matchesGraph`), already how capability patterns are compared. Several matching offers = a choice for the owner (existing rule).
+3. Delete `handles` from `HostHandler`, `PrimitiveDefinition`, `NativeImplementation`, `nativeExecutorsOf`, and every definition. Delete the `'points'`/`'account'`/`'calendar'` string checks.
+4. Tests at the interface: a points demand runs the points native and not the payment one; a `-tool fos.pull` runs pull; an unrefined `-tool weather` runs the MCP native; a demand nobody's pattern matches is blocked with "no handler".
+
+### C. Natives read the tree lazily
+
+Natives must be able to read the tree the same way the MCP server, CLI and API do: `NativeContext` gets a read handle (resolve a scope, read a node's rows, follow refs) under the evaluating principal's access checks, pulled on demand. Compiled operands remain what a step hands over up front, not a wall. Writes still happen only through returned answers (transaction/rollback unchanged). Then restore: organize's outline (`captureOutline` through the handle; the model sees the target's subtree again), paying whoever answered the task when no `@user` is named, mail body from the task's rows, search filtering against existing rows, MCP provider choice by scope membership (`mcpMembersAbove`).
+
+### D. Then finish the port
+
+Run the suites one file at a time (state in "State at handoff" below), regenerate the kernel-boundary allowlists, residue grep, re-author `.fos/library.json`, update `shared/sync/CLAUDE.md` and `web/CLAUDE.md`.
+
 ## Kernel fixes made while porting (keep)
 
 - `structural.ts` matchesGraph: a sum's alternatives are its option rows only; its tag/kind rows are not options (a choice hole was satisfied by any container).
