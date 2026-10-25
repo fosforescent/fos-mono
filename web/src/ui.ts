@@ -1,3 +1,5 @@
+import { TEXT_MASK } from '../../shared/sync/node-provider'
+import { textOf } from '../../shared/sync/fields'
 import { primitive } from '../../shared/sync/primitives'
 import { localGitControls, canVerifySpecifications, openSpecificationVerification } from './local-git'
 import { configureWorkflowDialog, requestProjectCoding, workflowStatus } from './project-workflow'
@@ -1404,7 +1406,7 @@ function renderConstructorPanel(head: HTMLElement, grid: HTMLElement, suggestion
 
   if (!preview && !isTriggers && group.id !== 'library') {
     const peer = group.peer?.id ?? NODE_PERMISSION_DEFAULT
-    for (const id of Object.keys(nodeShape(state.replica, state.view).data)) group.items.push({ id: `mask:fields:${id}`, label: id === 'description' ? 'Text' : id, icon: 'note', output: 'field', group: group.id, mask: { peer, key: 'fields', id } })
+    for (const id of [TEXT_MASK, ...Object.keys(nodeShape(state.replica, state.view).data)]) group.items.push({ id: `mask:fields:${id}`, label: id === TEXT_MASK ? 'Text' : id, icon: 'note', output: 'field', group: group.id, mask: { peer, key: 'fields', id } })
     for (const row of app.currentView()?.tasks ?? []) if (!row.construction) group.items.push({ id: `mask:children:${row.id}`, label: row.title || 'Untitled node', icon: 'device', output: 'child', group: group.id, mask: { peer, key: 'children', id: row.id } })
   }
   grid.setAttribute('aria-label', `${group.name} constructors`); grid.replaceChildren()
@@ -3418,10 +3420,10 @@ function renderWork(body: HTMLElement, state: AppState, app: App): void {
     label.textContent = 'Context used for this attempt'
     const text = document.createElement('pre'); text.className = 'work-context'; text.textContent = `System instructions:\n${attempt.system}\n\nTask context:\n${attempt.context}`
     saved.append(label, text); section.append(saved)
-    if (attempt.resultCid) section.append(div('muted', 'Accepted result'), div('work-context', content(state.replica.store, attempt.resultCid).data.description?.content ?? ''))
+    if (attempt.resultCid) section.append(div('muted', 'Accepted result'), div('work-context', textOf(state.replica.store, attempt.resultCid) ?? ''))
     else if (!attempt.proposals.length) section.append(div('muted', work.busy ? 'Awaiting a result…' : 'No result received. You can start a new attempt.'))
     for (const proposal of attempt.proposals) {
-      section.append(div('work-context', content(state.replica.store, proposal.contentCid).data.description?.content ?? ''))
+      section.append(div('work-context', textOf(state.replica.store, proposal.contentCid) ?? ''))
       if (proposal.status === 'rejected') { section.append(div('muted', 'Rejected — retained for reference.')); continue }
       const accept = button('primary', 'Accept result', () => app.reviewWork(attempt.resultPath, proposal.cid, true))
       const reject = button('secondary', 'Reject', () => app.reviewWork(attempt.resultPath, proposal.cid, false))

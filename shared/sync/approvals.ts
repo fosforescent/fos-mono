@@ -16,6 +16,7 @@
  *   this store's peer, or a member that may edit there) other than the proposer, whose submission is its approval.
  * Approvals belong to the submission, not its content: a new content is a new submission, and its approvals are gone.
  */
+import { textOf, textValue } from './fields'
 import type { FosStore } from '../dag-implementation/store'
 import type { FosPathElem } from '../types'
 import { hashContent } from '../dag-implementation/cid'
@@ -31,7 +32,7 @@ export type Attester = { key: string; sign(payload: string): string }
 const isApproval = (store: FosStore, left: string) => left === libraryNode(store, 'capabilities.approve')
 const isMergeRule = (store: FosStore, left: string) => left === libraryNode(store, 'capabilities.approveMerge')
 /** An approval's identity among the submission's rows: whose it is (approving again replaces it). */
-const approvalId = (approver: string) => hashContent({ data: { peerId: { content: approver }, description: { content: 'approval' } }, children: [] })
+const approvalId = (approver: string) => hashContent({ data: { peerId: { content: approver }, name: { content: 'approval' } }, children: [] })
 
 /** What an approval attests: who approved which content. */
 export function approvalPayload(approver: string, contentCid: string): string {
@@ -50,7 +51,7 @@ export function approvalsOf(store: FosStore, proposalCid: string): Approval[] {
     const approver = approverOf(store, node)
     if (!approver) return []
     const sig = content(store, node).children[0]
-    return [{ approver, ...(sig ? { signature: { key: sig[0], value: content(store, sig[1]).data.description?.content ?? '' } } : {}) }]
+    return [{ approver, ...(sig ? { signature: { key: sig[0], value: textOf(store, sig[1]) ?? '' } } : {}) }]
   })
 }
 
@@ -58,7 +59,7 @@ export function approvalsOf(store: FosStore, proposalCid: string): Approval[] {
 function withApproval(store: FosStore, proposalCid: string, approver: string, at: Scope, attester?: Attester): string {
   const proposal = readProposal(store, proposalCid)
   if (!proposal) throw new Error('That submission is gone.')
-  const signature: FosPathElem[] = attester ? [[attester.key, put(store, { data: { description: { content: attester.sign(approvalPayload(approver, proposal.contentCid)) } }, children: [] })]] : []
+  const signature: FosPathElem[] = attester ? [[attester.key, textValue(store, attester.sign(approvalPayload(approver, proposal.contentCid)))]] : []
   const node = put(store, { data: { alias: { id: approvalId(approver) }, peerId: { content: approver } }, children: signature })
   const left = libAt(store, at).capabilities.approve!, submission = content(store, proposalCid)
   const others = submission.children.filter(([key, n]) => !(isApproval(store, key) && approverOf(store, n) === approver))

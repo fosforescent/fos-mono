@@ -4,6 +4,7 @@
  * constructor's ref (run time), a value on the left's ref is its default (fixed with the constructor, compile time).
  * Parameters such as `negative` (sent) or none (received) say which way each ref goes; see parameters.ts.
  */
+import { textValue } from './fields'
 import type { FosPathElem } from '../types'
 import { commitRoot, content, findEdge, identityCid, isRefNode, put, refNodeContent, refValueCid, resolveScope, updateAtScope, valueContent, withRowTemplate, type Scope } from './graph'
 import { headCid, type Replica } from './replica'
@@ -88,14 +89,8 @@ export function constructAt(r: Replica, row: Scope, constructor: string, values:
     const text = values[ref.name]
     // Each call owns its argument refs, including defaulted inputs and initially empty outputs.
     // Primitive results must bind this call's output, never the shared constructor definition.
-    r = assignRefAt(r, row, ref.alias, text !== undefined ? put(r.store, { data: { description: { content: text } }, children: [] }) : ref.defaultValue, now)
+    r = assignRefAt(r, row, ref.alias, text !== undefined ? textValue(r.store, text) : ref.defaultValue, now)
   }
   return r
 }
 
-/** The text of a string value cid (its description or text scalar). */
-export function textOf(r: Replica, cid: string | null): string | null {
-  if (!cid) return null
-  const node = valueContent(r.store, cid)
-  return node.data.scalar?.type === 'text' ? String(node.data.scalar.value) : node.data.description?.content ?? null
-}

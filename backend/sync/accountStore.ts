@@ -7,7 +7,7 @@
  */
 import type { Request, Response } from 'express'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { createReplica, content, findPeerScope, headCid, normalizeReplicaRefs, rootTargetCid, scopeNames, type Replica } from '@fosforescent/shared/sync/index'
+import { createReplica, content, findPeerScope, headCid, rootTargetCid, scopeNames, type Replica } from '@fosforescent/shared/sync/index'
 import { prisma } from '../prismaClient'
 import { dbToStore, storeToDb } from '../util'
 import { onlinePeersOf, sendToUser } from '../promptNotifications'
@@ -202,11 +202,6 @@ export const prismaAccountStoreDeps: AccountStoreDeps = {
     const user = await prisma.userModel.findUnique({ where: { user_name: username }, include: { fosNode: true } })
     if (!user) return null
     const store = await dbToStore(prisma, user)
-    // Older data kept link nodes inline; rewrite them into ref nodes once and persist (deterministic, idempotent).
-    if (normalizeReplicaRefs(store)) {
-      console.log(`[sync] normalized legacy link nodes for ${username}`)
-      await storeToDb(prisma, user, store)
-    }
     return { user: { id: user.id, username: user.user_name }, store }
   },
   async saveStore(user, store) {

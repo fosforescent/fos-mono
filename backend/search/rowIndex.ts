@@ -10,6 +10,7 @@
  * The embedding function is injected so tests run without Vertex.
  */
 
+import { textOf } from '@fosforescent/shared/sync/fields'
 import { REF_TYPE } from '@fosforescent/shared/sync/index'
 import { createHash } from 'node:crypto'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
@@ -52,7 +53,7 @@ export function collectRows(store: FosStore, limit = 5000): IndexedRow[] {
   }
   withMainBranchPolicy(store, () => walk(rootTargetCid(store), [], false))
   for (const offer of marketplaceOffers(createReplica('market-index', store))) {
-    const text = `${offer.label} ${valueContent(store, offer.cid).data.description?.content ?? ''}`.trim().slice(0, 600)
+    const text = `${offer.label} ${textOf(store, offer.cid) ?? ''}`.trim().slice(0, 600)
     out.push({ aliasId: offer.id, type: 'capability', title: offer.label, path: offer.path, market: true, text })
   }
   return out

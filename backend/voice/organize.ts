@@ -17,7 +17,7 @@ import { withUserLock, type AccountStoreDeps } from '../sync/accountStore'
 import type { HostHandler } from '../sync/host-runtime'
 import { valueOfPattern } from '@fosforescent/shared/sync/structural'
 import { patternInputs, rowTypeAt, newId, organizedRowCount, content } from '@fosforescent/shared/sync/index'
-import { constructTextRow } from '@fosforescent/shared/sync/fields'
+import { constructTextRow, labelRow } from '@fosforescent/shared/sync/fields'
 import { budgetRefusal, recordSafely, type VoiceDeps, type VoiceUsage } from './voiceNotes'
 
 export type OrganizeInput = { text: string; title: string; outline: OutlineEntry[] }
@@ -53,7 +53,7 @@ export function organizeHandler(model: () => VoiceDeps, usage?: VoiceUsage): Hos
       const deps = model(), started = Date.now()
       deps.drain?.()
       let plan: OrganizePlan
-      try { plan = await organizeCapture(deps, { text, title: self.data.description?.content ?? '', outline: [] }) }
+      try { plan = await organizeCapture(deps, { text, title: self.title ?? '', outline: [] }) }
       finally {
         const cost = deps.drain?.() ?? { usd: 0, tokens: 0 }
         if (usage && payer) await recordSafely(usage, payer.id, { usd: cost.usd, tokens: cost.tokens, seconds: (Date.now() - started) / 1000, bytes: text.length, clusters: 0 })
@@ -64,7 +64,7 @@ export function organizeHandler(model: () => VoiceDeps, usage?: VoiceUsage): Hos
         return [type, ctx.put({ ...node, children: [...node.children, ...rowsAt(item.ref)] })]
       })
       const rows = rowsAt(null)
-      return { outputs: { self: valueOfPattern(ctx.store, self.pattern, { description: { content: plan.title || 'Organized' }, peerId: { content: 'fos' } }, rows) } }
+      return { outputs: { self: valueOfPattern(ctx.store, self.pattern, { peerId: { content: 'fos' } }, [labelRow(ctx.store, plan.title || 'Organized'), ...rows]) } }
     }
   }
 }

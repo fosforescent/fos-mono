@@ -5,10 +5,11 @@
  * execute view (`sharedProjection`), and their inputs are stored in typed refs on it. A published template is an
  * endpoint: each visitor who starts it gets a private execution, a node of which only that visitor is a member.
  */
+import { textValue } from './fields'
 import { createStore } from './graph'
 import { primitive } from './primitives'
 import { libraryNode, settingOf } from './graph'
-import { nodeLinkMaskAt } from './node-provider'
+import { nodeLinkMaskAt, TEXT_MASK } from './node-provider'
 import { handleAt } from './arguments'
 import { instructionPrimitives } from './primitives'
 import { argumentRefs, capabilityPeers } from './bindings'
@@ -257,7 +258,7 @@ export function proposeVisitorValues(r: Replica, path: Scope, peer: string, valu
     const targetCid = resolveScope(r.store, headCid(r), target)
     const ref = targetCid && content(r.store, targetCid)
     if (!(ref && isRefNode(r.store, ref) && !refValueCid(r.store, ref))) { rows.push({ path: relative, value }); continue }
-    r = proposeRefAt(r, target, put(r.store, { data: { description: { content: value } }, children: [] }), peer, now).replica
+    r = proposeRefAt(r, target, textValue(r.store, value), peer, now).replica
   }
   if (!rows.length) return r
   const store = r.store, root = headCid(r), cid = resolveScope(store, root, path)!
@@ -329,7 +330,7 @@ export function sharedProjection(r: Replica, path: Scope, revision: (value: unkn
   if (!node || !policy) throw new Error('Shared node unavailable.')
   const visitor = peer ?? audiencePeer(policy.audience)
   const visible = (at: Scope) => servedTo(r, path, at, visitor)
-  const textVisible = (at: Scope) => { const mask = nodeLinkMaskAt(r, at, visitor); return !mask?.fields || mask.fields.includes('description') }
+  const textVisible = (at: Scope) => { const mask = nodeLinkMaskAt(r, at, visitor); return !mask?.fields || mask.fields.includes(TEXT_MASK) }
   const current = path.length ? view(r, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1)) : null
   const rows: SharedRow[] = [], hashed: unknown[] = [], fields: SharedInput[] = []
   let budget = SHARED_TOTAL_BODY

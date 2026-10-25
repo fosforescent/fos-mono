@@ -1,6 +1,6 @@
 import { primitive } from './primitives'
 import { exchangeNodeContext } from './node-context'
-import { pinnedLiteralEdge } from './node-provider'
+import { pinnedLiteralEdge, TEXT_MASK, isTextChild } from './node-provider'
 import { primitiveValue } from './primitives'
 import { refSubmissions } from './scoped-refs'
 import { sameCapabilityType, capabilityName } from './capabilities'
@@ -36,7 +36,7 @@ function acceptFilledHostDeclarations(r: Replica, local: NodeShape, remote: Node
     const values = refSubmissions(r.store, ref), nextValues = refSubmissions(r.store, nextRef)
     if (values.length !== 1 || nextValues.length !== 1) return child
     const value = content(r.store, values[0]!), primitive = primitiveValue(r.store, nextValues[0]!)
-    const stub = value.data.behavior?.content === id && Object.keys(value.data).every(key => ['peerId', 'description', 'behavior'].includes(key)) &&
+    const stub = value.data.behavior?.content === id && Object.keys(value.data).every(key => ['peerId', 'behavior'].includes(key)) &&
       value.children.every(edge => content(r.store, pattern).children.some(row => equal(row, edge)))
     return stub && primitive?.implementation === id && primitive.host === value.data.peerId?.content ? { ...child, pinned: other.pinned } : child
   }) }
@@ -440,7 +440,7 @@ export function outgoingNodeShape(r: Replica, path: Scope, peer: string, shape: 
     if (i === path.length) children = mask?.children
   }
   return { data: Object.fromEntries(Object.entries(shape.data).filter(([key]) => !fields || fields.includes(key))) as FosDataContent,
-    children: shape.children.filter(c => !children || children.includes(c.id)) }
+    children: shape.children.filter(c => (!children || children.includes(c.id)) && (!fields || fields.includes(TEXT_MASK) || !isTextChild(r.store, c))) }
 }
 
 export function establishNodeSync(r: Replica, path: Scope, request: NodeRequest, remote: ProvidedNode, now: number): Replica {
@@ -694,7 +694,7 @@ export function nodeSyncPush(r: Replica, plan: NodeSyncPlan, remote: ProvidedNod
   acceptPinnedContent(replica, remote, remote.templates)
   const visible = (shape: NodeShape): NodeShape => ({
     data: Object.fromEntries(Object.entries(shape.data).filter(([key]) => !remote.mask?.fields || remote.mask.fields.includes(key))) as FosDataContent,
-    children: shape.children.filter(child => !remote.mask?.children || remote.mask.children.includes(child.id))
+    children: shape.children.filter(child => (!remote.mask?.children || remote.mask.children.includes(child.id)) && (!remote.mask?.fields || remote.mask.fields.includes(TEXT_MASK) || !isTextChild(replica.store, child)))
   })
   const outgoingBase = visible(outgoingNodeShape(replica, plan.path, remote.peerId, plan.baseline))
   const outgoing = visible(outgoingNodeShape(replica, plan.path, remote.peerId, acceptFilledHostDeclarations(replica, plan.local, remote)))

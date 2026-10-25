@@ -1,3 +1,4 @@
+import { textValue, textOf as fieldTextOf } from '../../shared/sync/fields'
 import { primitive } from '../../shared/sync/primitives'
 import { resourceHandlers } from '../../shared/sync/resource-bindings'
 import { invertPolarity } from '../../shared/sync/parameters'
@@ -16,7 +17,7 @@ import { primitiveValues } from '../../shared/sync/primitives'
 import { sameValue } from '../../shared/sync/merge'
 import { parseRowInput } from './rows'
 import { isHandlerStateLeft } from '../../shared/sync/capabilities'
-import { capabilityDeclarations, visibleBindings, bindingTree, bindingLayers, selectBinding, sameCapabilityType, compileInstructions, executionInputs, addRefCall, primitiveValue, refSubmissions, matchesInstructionRef, templateValuePattern, solveAt, usePatternAt, patternBindings, choosePatternBindingAt, findEdge, valueCidOf, type PatternBinding, constructAt, namesInLibrary, rowConstructor, openRefs, assignedValue, assignRefAt, textOf, capabilityName, readProposals, type OpenRef } from '../../shared/sync/index'
+import { capabilityDeclarations, visibleBindings, bindingTree, bindingLayers, selectBinding, sameCapabilityType, compileInstructions, executionInputs, addRefCall, primitiveValue, refSubmissions, matchesInstructionRef, templateValuePattern, solveAt, usePatternAt, patternBindings, choosePatternBindingAt, findEdge, valueCidOf, type PatternBinding, constructAt, namesInLibrary, rowConstructor, openRefs, assignedValue, assignRefAt, capabilityName, rowTitle, readProposals, type OpenRef } from '../../shared/sync/index'
 import { createDeviceHandlers } from './device-handlers'
 import { compileConstructorCall } from '../../shared/sync/constructor-rows'
 import { capabilityOfTarget } from '../../shared/sync/graph'
@@ -2184,7 +2185,7 @@ export class App {
   setPeerRow(path: Scope, handler: string | undefined): void { this.edit(this.peerRowReplica(this.state.replica, path, handler)) }
   /** The device root's Peer constructor row: choosing a handler on it makes a new peer row instead of changing it. */
   /** The id of this device's declared Peer constructor row on the device root: a content address. */
-  peerConstructorId(): string { return hashContent({ data: { peerId: { content: this.state.replica.meta.peerId }, description: { content: 'Peer constructor' } }, children: [] }) }
+  peerConstructorId(): string { return hashContent({ data: { peerId: { content: this.state.replica.meta.peerId }, name: { content: 'Peer constructor' } }, children: [] }) }
   newBranchAt(path: Scope): void {
     const row = view(this.state.replica, path.slice(0, -1))?.tasks.find(r => r.id === path.at(-1))
     if (!row) return
@@ -2512,7 +2513,7 @@ export class App {
     const manual = namesInLibrary(r.store, binding.library).byName.get(MANUAL_HANDLERS)
     return childRows(r.store, binding.library)
       .filter(row => row.type === TEMPLATE_TYPE && (!manual || valueCidOf(r.store, row.cid) !== valueCidOf(r.store, manual)) && isTemplateType(r.store, row.cid))
-      .map(row => ({ id: rowView(r.store, row.cid, row.edge).id, cid: row.cid, label: row.value.data.description?.content.trim() ?? '', icon: capabilityPresentation(r.store, row.cid).icon || 'template', description: capabilityPresentation(r.store, row.cid).description }))
+      .map(row => ({ id: rowView(r.store, row.cid, row.edge).id, cid: row.cid, label: rowTitle(r.store, row.cid, null).trim(), icon: capabilityPresentation(r.store, row.cid).icon || 'template', description: capabilityPresentation(r.store, row.cid).description }))
       .filter(row => row.label)
   }
   /**
@@ -2524,7 +2525,7 @@ export class App {
     if (!binding) return []
     return [...namesInLibrary(r.store, binding.library).byName].filter(([, node]) => !isTemplateType(r.store, node)).map(([name, node]) => {
       const value = valueContent(r.store, node)
-      return { name, node, label: value.data.capabilityDefinition?.label ?? value.data.description?.content ?? name, ...capabilityPresentation(r.store, node) }
+      return { name, node, label: value.data.capabilityDefinition?.label ?? name, ...capabilityPresentation(r.store, node) }
     })
   }
   /** A row made from the node the library names `name` where the row goes (the name resolves in that scope). */
@@ -3111,12 +3112,12 @@ export class App {
     this.edit(next); this.savePrefs()
   }
   setTextArgument(at: Scope, id: string, text: string): void {
-    this.setArgumentValue(at, id, put(this.state.replica.store, { data: { description: { content: text } }, children: [] }))
+    this.setArgumentValue(at, id, textValue(this.state.replica.store, text))
   }
   addTextArgument(at: Scope, name: string, text: string): void {
     if (!/^[A-Za-z_][\w.-]*$/.test(name)) { this.notify('error', 'Use letters, digits, underscores, dots or hyphens for the argument name.'); return }
     const store = this.state.replica.store
-    const value = text ? put(store, { data: { description: { content: text } }, children: [] }) : null
+    const value = text ? textValue(store, text) : null
     this.edit(addRefAt(this.state.replica, [...this.state.view, ...at], newId(), primitive(store, 'string'), this.now(), value, name))
     this.notify('info', `Text argument ${name} added. Use {{${name}}} in notes in this context.`)
   }
@@ -3181,7 +3182,7 @@ export class App {
       child: (() => { const target = refValueCid(r.store, content(r.store, a.cid)); return target && isRefNode(r.store, content(r.store, target)) ? content(r.store, target).data.name?.content ?? 'Value' : null })(),
       type: a.type === primitive(r.store, 'string') ? 'text' : capabilityOfTarget(r.store, a.type) ?? content(r.store, a.type).data.name?.content ?? 'Named type',
       status: resolveBinding(r.store, a.type, content(r.store, a.cid).data.refExpression ? a.cid : refValueCid(r.store, content(r.store, a.cid)), candidates, a.name, { isPeerActive: id => this.isOnline(id), scope: { replica: r, path } }).status,
-      candidates: candidates.filter(c => c.cid !== a.cid && matchesGraph(r.store, a.type, c.cid)).map(c => ({ cid: c.cid, label: c.name ?? content(r.store, c.cid).data.description?.content ?? 'Matching handler' }))
+      candidates: candidates.filter(c => c.cid !== a.cid && matchesGraph(r.store, a.type, c.cid)).map(c => ({ cid: c.cid, label: c.name ?? fieldTextOf(r.store, c.cid) ?? 'Matching handler' }))
     }))
   }
   selectArgumentBranch(at: Scope, id: string, name: string): void {
@@ -3200,7 +3201,7 @@ export class App {
   }
   valueLabel(cid: string): string {
     const node = valueContent(this.state.replica.store, cid)
-    return node.data.description?.content ?? node.data.name?.content ?? (node.data.scalar ? String(node.data.scalar.value) : cid.slice(-8))
+    return fieldTextOf(this.state.replica.store, cid) ?? node.data.name?.content ?? (node.data.scalar ? String(node.data.scalar.value) : cid.slice(-8))
   }
   choosePatternBinding(alias: string, proposal: string, path: Scope = this.state.view): void {
     this.edit(choosePatternBindingAt(this.state.replica, path.slice(0, -1), path.at(-1)!, alias, proposal, this.now()))
@@ -3331,13 +3332,13 @@ export class App {
     const node = resolveScope(r.store, headCid(r), path)
     return refs.map(ref => {
       const assignment = node && findEdge(r.store, valueContent(r.store, node), `a:${ref.alias}`)
-      const options = assignment ? readProposals(r.store, content(r.store, identityCid(r.store, assignment))).filter(p => p.status === 'open').map(p => ({ proposal: p.cid, text: textOf(r, p.contentCid) ?? '' })) : []
-      return { ...ref, text: textOf(r, assignedValue(r, path, ref.alias)), options }
+      const options = assignment ? readProposals(r.store, content(r.store, identityCid(r.store, assignment))).filter(p => p.status === 'open').map(p => ({ proposal: p.cid, text: fieldTextOf(r.store, p.contentCid) ?? '' })) : []
+      return { ...ref, text: (() => { const held = assignedValue(r, path, ref.alias); return held ? fieldTextOf(r.store, held) : null })(), options }
     })
   }
   assignRowInput(path: Scope, alias: string, text: string): void {
     const r = this.state.replica
-    this.edit(assignRefAt(r, path, alias, text ? put(r.store, { data: { description: { content: text } }, children: [] }) : null, this.now()))
+    this.edit(assignRefAt(r, path, alias, text ? textValue(r.store, text) : null, this.now()))
   }
   chooseRowInput(path: Scope, alias: string, proposal: string): void {
     this.acceptHere([...path, alias], proposal)

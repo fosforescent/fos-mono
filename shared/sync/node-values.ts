@@ -71,7 +71,7 @@ export function constructNodeValue(
         (prior && content(store, prior).data.alias?.id) ||
         (pathId === undefined ? undefined : pathId.length <= 240
           ? pathId
-          : `field:${hashContent({ data: { name: { content: id! }, description: { content: name } }, children: [] })}`)
+          : `field:${hashContent({ data: { name: { content: JSON.stringify([id, name]) } }, children: [] })}`)
       const next = constructNodeValue(store, value, fieldId, prior, depth + 1, active)
       const data: FosNodeContent['data'] = { ...(fieldId ? { alias: { id: fieldId } } : {}), name: { content: name } }
       // Match form constructors: the row's left edge supplies its type; the right ref owns its value.

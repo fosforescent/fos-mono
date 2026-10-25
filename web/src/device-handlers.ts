@@ -1,14 +1,14 @@
+import { textOf, textValue } from '../../shared/sync/fields'
 import { libAt, registerPrimitives, restorePrimitives, stepExecutors, primitiveDefaultsApplied, markPrimitiveDefaultsApplied, allocatePrimitive, content, isRefNode, instructionPrimitives, type PrimitiveDefinition, type Replica, type Scope, type EvaluationStep, type PrimitiveFunction } from '../../shared/sync/index'
 import { AGENT_TOOL } from '../../shared/sync/project-workflow'
 import { supplyValue } from '../../shared/sync/arguments'
 import { deviceTriggerDefinitions } from '../../shared/sync/trigger-primitives'
 
 
-/** The text a compiled operand holds: a description, or a text scalar. */
+/** The text a compiled operand holds. */
 function operandText(store: import('../../shared/dag-implementation/store').FosStore, cid: string | undefined): string | null {
   if (!cid || !store.table.has(cid)) return null
-  const data = content(store, cid).data
-  return data.description?.content ?? (data.scalar?.type === 'text' ? String(data.scalar.value) : null)
+  return textOf(store, cid)
 }
 
 export function createDeviceHandlers(effects: {
@@ -41,7 +41,7 @@ export function createDeviceHandlers(effects: {
     if (!url) throw new Error('Give the address to fetch.')
     const answer = await effects.fetch(url, method)
     if (answer.status >= 400) throw new Error(`${url} answered ${answer.status}.`)
-    return { outputs: { response: context.put({ data: { description: { content: answer.body } }, children: [] }) } }
+    return { outputs: { response: textValue(context.store, answer.body) } }
   }
   declarations.push({ id: 'device:fetch', label: 'Fetch', capability: (store, at) => libAt(store, at).capabilities.fetch!, run: fetchPrimitive })
   // solve (unification over the rows in scope) is not a run: it needs the scope, which a primitive does not see. It returns when the scope is an operand.

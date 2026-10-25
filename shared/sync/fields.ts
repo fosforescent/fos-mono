@@ -8,7 +8,7 @@
 import type { FosStore } from '../dag-implementation/store'
 import type { FosNodeContent, FosPathElem } from '../types'
 import { hashContent } from '../dag-implementation/cid'
-import { content, put, refNodeContent, refValueCid, isRefNode } from './graph'
+import { content, libraryNode, put, refNodeContent, refValueCid, isRefNode } from './graph'
 import { primitive, primitiveName } from './primitives'
 
 const leafPrimitives = new Set(['string', 'number', 'boolean'])
@@ -59,6 +59,45 @@ export function leafText(store: FosStore, cid: string): string | null {
     if (scalar?.type === 'text' && typeof scalar.value === 'string') return scalar.value
   }
   return null
+}
+
+/** A text value: a string leaf. */
+export function textValue(store: FosStore, text: string): string {
+  return put(store, { data: { scalar: { type: 'text', value: text } }, children: [] })
+}
+/** The text a value is (a string leaf) or holds in its leaf row, through refs; null when it holds none. */
+export function textOf(store: FosStore, cid: string): string | null {
+  const scalar = store.table.get(valueOf(store, cid))?.data.scalar
+  if (scalar?.type === 'text' && typeof scalar.value === 'string') return scalar.value
+  return leafText(store, cid)
+}
+/** A value's label row: its text as a string leaf under the title field (an answer's receipt, a grant's note). */
+export function labelRow(store: FosStore, text: string): FosPathElem {
+  return [libraryNode(store, 'title') ?? primitive(store, 'string'), textValue(store, text)]
+}
+/** The node with its label (its first text leaf row) set to `text`. */
+export function withLabel(store: FosStore, node: FosNodeContent, text: string): FosNodeContent {
+  const index = node.children.findIndex(([, right]) => store.table.get(right)?.data.scalar?.type === 'text')
+  const row = labelRow(store, text)
+  return { ...node, children: index < 0 ? [...node.children, row] : node.children.map((edge, i) => i === index ? row : edge) }
+}
+/** A ref's own title row: what an argument row (a requirement, an allocation) is called, whatever its ref holds. */
+function refTitleEdge(store: FosStore, ref: FosNodeContent): FosPathElem | null {
+  const title = libraryNode(store, 'title'), id = ref.data.alias?.id
+  return title && id ? ref.children.find(edge => edge[0] === title && isFieldRow(store, id, edge)) ?? null : null
+}
+/** The title a ref carries itself (an argument row's text), or null. */
+export function refTitle(store: FosStore, ref: FosNodeContent): string | null {
+  const edge = refTitleEdge(store, ref)
+  return edge ? leafText(store, edge[1]) : null
+}
+/** The ref with its own title row holding `text` (added when it has none). */
+export function withRefTitle(store: FosStore, ref: FosNodeContent, text: string): FosNodeContent {
+  const title = libraryNode(store, 'title'), id = ref.data.alias?.id
+  if (!title || !id) throw new Error('A titled ref needs an identity and a library title field.')
+  const row: FosPathElem = [title, put(store, refNodeContent(store, { alias: { id: fieldRefId(id, title) } }, fieldText(store, title, text)))]
+  const old = refTitleEdge(store, ref)
+  return { ...ref, children: old ? ref.children.map(edge => edge === old ? row : edge) : [...ref.children, row] }
 }
 
 /**

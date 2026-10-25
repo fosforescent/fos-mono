@@ -37,9 +37,9 @@ export const RELAY_ACK = 'relayAck'
 /** The library's Relay template: what a relay node accepts (messages, acknowledgements); a peer offers it as its relay. */
 export const RELAY_TEMPLATE = 'relay'
 /** What a new queue row under a member entry is called: a content address (code finds a queue by its type, `queueIn`). */
-export const RELAY_QUEUE_ID = hashContent({ data: { description: { content: 'Relay queue' } }, children: [] })
+export const RELAY_QUEUE_ID = hashContent({ data: { name: { content: 'Relay queue' } }, children: [] })
 /** What the acknowledgement of the message `messageId` is called: a content address of what it acknowledges. */
-export const relayAckId = (messageId: string): string => hashContent({ data: { ref: { id: messageId }, description: { content: 'Relay acknowledgement' } }, children: [] })
+export const relayAckId = (messageId: string): string => hashContent({ data: { ref: { id: messageId }, name: { content: 'Relay acknowledgement' } }, children: [] })
 
 /** The queue under the member entry node `entry`: its row of the library's queue type, if it has one. */
 function queueIn(store: FosStore, entry: string): string | null {

@@ -4,6 +4,7 @@
  * was started for (its execution origin) and the template's parameters. Each job is a row of it, whose state is its
  * handler result; what an agent requirement asks is that row's request.
  */
+import { textOf, textValue } from './fields'
 import { libraryTypeAt } from './graph'
 import { instantiateLibraryTemplate } from './replica'
 import { executionOrigin, executionRequest, handlerResult, writeExecutionOrigin, writeHandlerResult } from './evaluation'
@@ -59,14 +60,14 @@ export function projectWorkflow(r: Replica, project: Scope): ProjectWorkflow | n
   if (!path || !isWorkflowConfig(config)) return null
   const cid = resolveScope(r.store, headCid(r), path)!
   const fields = argumentRefs(r.store, cid)
-  const text = (name: string, fallback: string) => { const arg = fields.find(a => a.name === name); return arg ? valueContent(r.store, arg.cid).data.description?.content ?? fallback : fallback }
+  const text = (name: string, fallback: string) => { const arg = fields.find(a => a.name === name); return arg ? textOf(r.store, arg.cid) ?? fallback : fallback }
   return { ...config, repo: text('repository', config.repo), url: text('deployment-url', config.url), environment: text('deployment-environment', config.environment), main: text('main-branch', config.main), provider: text('coding-agent', config.provider) as ProjectWorkflow['provider'], verifier: text('verification-agent', config.verifier) as ProjectWorkflow['verifier'] }
 }
 export function workflowDefault(r: Replica, name: string): string {
   const cid = libraryTypeAt(r.store, WORKFLOW_TEMPLATE)
   if (!cid) return ''
   const arg = argumentRefs(r.store, cid).find(a => a.name === name)
-  return arg ? valueContent(r.store, arg.cid).data.description?.content ?? '' : ''
+  return arg ? textOf(r.store, arg.cid) ?? '' : ''
 }
 export function workflowTriggerPath(r: Replica, project: Scope): Scope | null {
   const path = workflowAt(r, project)
@@ -77,7 +78,7 @@ export function workflowText(r: Replica, project: Scope, name: string): string {
   const path = workflowAt(r, project), cid = path && resolveScope(r.store, headCid(r), path)
   const arg = cid && argumentRefs(r.store, cid).find(a => a.name === name)
   if (!arg) throw new Error(`The workflow template is missing ${name}.`)
-  const text = valueContent(r.store, arg.cid).data.description?.content ?? ''
+  const text = textOf(r.store, arg.cid) ?? ''
   const result = resolveText(r, path, text)
   if (result.bindings.some(b => b.status !== 'ready')) throw new Error(`Fill the bindings in ${name} before execution.`)
   return result.text
@@ -100,7 +101,7 @@ export function configureProjectWorkflow(r: Replica, config: ProjectWorkflow, no
     const cid = resolveScope(r.store, headCid(r), path)!, arg = argumentRefs(r.store, cid).find(a => a.name === name)
     if (!arg) throw new Error(`The workflow template is missing ${name}.`)
     const at = [...path, content(r.store, arg.cid).data.alias!.id]
-    r = setRefValueAt(r, at, put(r.store, { data: { description: { content: value } }, children: [] }), now)
+    r = setRefValueAt(r, at, textValue(r.store, value), now)
   }
   r = bindTemplateTriggers(r, path, { project: config.project, desktop: config.device, 'main-branch': config.main }, now)
   return writeExecutionOrigin(r, path, config, now)

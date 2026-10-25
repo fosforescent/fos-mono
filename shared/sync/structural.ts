@@ -4,14 +4,6 @@ import type { FosStore } from '../dag-implementation/store'
 import type { FosNodeContent, FosPathElem } from '../types'
 import { content, isBookkeepingEdge, isBranchChoice, isChoiceEdge, isHandle, isRefNode, put, readChoice, refValueCid } from './graph'
 
-/** A named ref constructor is itself a graph value, usable on either side of a row. */
-export function namedRefPattern(store: FosStore, title: string): string {
-  const empty = put(store, { data: {}, children: [] })
-  const titleKey = put(store, { data: { description: { content: 'title' } }, children: [] })
-  const titleValue = put(store, { data: { scalar: { type: 'text', value: title } }, children: [] })
-  return put(store, { data: {}, children: [[primitive(store, 'alias'), empty], [titleKey, titleValue]] })
-}
-
 const incidental = new Set(['alias', 'created', 'updated', 'position', 'presentation', 'parameter', 'capabilityDefinition', 'triggerDefinition'])
 function properties(pattern: unknown, value: unknown): boolean {
   if (pattern === null || typeof pattern !== 'object') return Object.is(pattern, value)

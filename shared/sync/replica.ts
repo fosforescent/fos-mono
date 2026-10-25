@@ -1,4 +1,4 @@
-import { constructPlainRow, constructRow, constructTextRow, fieldEdge, fieldText, fieldValue, fieldValues, isFieldRow, isTextField, rebuildRow, rowRecord, titleField, withFieldValue, withFieldValues, withRowText } from './fields'
+import { constructPlainRow, constructRow, constructTextRow, fieldEdge, fieldText, fieldValue, fieldValues, isFieldRow, isTextField, rebuildRow, rowRecord, titleField, withFieldValue, withFieldValues, withRowText, labelRow, refTitle, withLabel, withRefTitle } from './fields'
 import { createStore, completes, rowTitle, rowVocabulary, withDone } from './graph'
 import { primitive } from './primitives'
 import { sameCapabilityType } from './capabilities'
@@ -37,8 +37,6 @@ import {
   type TaskView,
   commitRoot,
   content,
-  convertRowContent,
-  convertRow,
   copyRowContent,
   exportReachableContext,
   findChild,
@@ -74,7 +72,6 @@ import {
   markProposalRejected,
   moveChild,
   newId,
-  normalizeRefs,
   put,
   putStripped,
   reachableNodes,
@@ -85,7 +82,9 @@ import {
   replaceEdge,
   resolveScope,
   rootTargetCid,
-  rowContent,
+  referenceRowContent,
+  asReferenceRow,
+  withKindData,
   rowEdge,
   rowEdgeAt,
   scopeNames,
@@ -140,15 +139,6 @@ export function createReplica(peerId: string = newId(), existing?: FosStore): Re
   return { store, meta: { peerId, scope: [], scopeNames: [], lastSyncAt: null, serverPeerId: null } }
 }
 
-/** Rewrite legacy inline link nodes into ref nodes (idempotent; no-op on current data). */
-export function normalizeReplicaRefs(store: FosStore): boolean {
-  const head = rootTargetCid(store)
-  const next = normalizeRefs(store, head)
-  if (next === head) return false
-  commitRoot(store, next, 0)
-  return true
-}
-
 export function serializeReplica(replica: Replica): SerializedReplica {
   return { meta: replica.meta, context: exportReachableContext(replica.store, []) }
 }
@@ -172,9 +162,6 @@ export function loadReplica(input: unknown): Replica {
     if (!ctx || typeof ctx !== 'object' || typeof ctx.rootNodeId !== 'string') throw new Error('no context')
     store = storeOf(ctx.nodes ?? {}, ctx.rootNodeId)
     rootTargetCid(store) // validates the root alias shape
-    normalizeReplicaRefs(store)
-    // rows a type does not accept (an older replica, or one written elsewhere) become type errors
-    commitRoot(store, rootTargetCid(store), 0)
   } catch (error) {
     if (error instanceof UnsupportedDataVersionError) console.warn(`${error.message} Starting with a fresh replica.`)
     else console.warn('stored replica unreadable, starting fresh', error)
@@ -332,8 +319,7 @@ function findChildEdge(replica: Replica, value: FosNodeContent, aliasId: string)
  * Existing bindings survive text edits; deterministic aliases make concurrent parses converge.
  * Double-brace legacy substitutions remain references to the surrounding context.
  */
-function withTextParameters(store: FosStore, node: FosNodeContent): FosNodeContent {
-  const text = node.data.description?.content ?? ''
+function withTextParameters(store: FosStore, node: FosNodeContent, text: string): FosNodeContent {
   const { refExpression: _previousExpression, ...data } = node.data
   node = { ...node, data }
   // A whole-row path is a ref value; braces interpolate paths into text instead.
@@ -362,13 +348,14 @@ export function addTask(replica: Replica, at: Scope, title: string, now: number,
 
 /**
  * The content of a new row `id` of `type` holding `text`: built from the type's fields (its title field holds `text`;
- * a plain row is its text). References, queries and banks still carry their data until they are rows.
+ * a plain row is its text). A reference stands for another row; a bank is a ref whose value holds its grants.
  */
 function newRowContent(store: FosStore, type: string, typeId: string, id: string, text: string, now: number, extras: Omit<RowExtras, 'store'>): FosNodeContent {
-  if (typeId === REF_TYPE || typeId === QUERY_TYPE || typeId === RESOURCE_TYPE) return rowContent(typeId, id, text, now, { ...extras, store })
+  if (typeId === REF_TYPE) return referenceRowContent(store, id, now, extras)
   const values = new Map<string, string>(), done = rowVocabulary(store)?.done
   if (done && extras.done && completes(store, type)) values.set(done, put(store, { data: {}, children: [] }))
-  return constructTextRow(store, type, id, text, now, values)
+  const row = withTextParameters(store, withKindData(constructTextRow(store, type, id, text, now, values), typeId, text, extras), text)
+  return typeId === RESOURCE_TYPE ? refNodeContent(store, { alias: { id }, updated: { time: now } }, put(store, row)) : row
 }
 
 export type AddRowOptions = Omit<RowExtras, 'store'> & { position?: MovePosition; id?: string }
@@ -455,23 +442,16 @@ export function setRowContentAt(replica: Replica, at: Scope, aliasId: string, ty
     const kept = keptRowType(replica.store, edge, type)
     const template = kept ?? resolveRowType(replica.store, type, at)
     const body = text.trim()
-    if (type !== REF_TYPE && type !== QUERY_TYPE && type !== RESOURCE_TYPE) {
+    if (type !== REF_TYPE) {
       const built = isTextField(replica.store, template) ? constructPlainRow(replica.store, template, aliasId, body, now) : null
       const values = new Map<string, string>(), title = titleField(replica.store, template), done = rowVocabulary(replica.store)?.done
       if (title && body) values.set(title, fieldText(replica.store, title, body))
       if (done && completes(replica.store, template)) values.set(done, extras.done ? put(replica.store, { data: {}, children: [] }) : primitive(replica.store, 'void'))
       const rebuilt = built ? { ...built, children: [...built.children, ...node.children.filter(e => isRowEdge(replica.store, e) && !isFieldRow(replica.store, aliasId, e))] } : rebuildRow(replica.store, template, aliasId, node, values, now)
-      const next = withChildValue(replica.store, edge, userBound(replica, at, rebuilt, extras), now)
+      const next = withChildValue(replica.store, edge, userBound(replica, at, withTextParameters(replica.store, withKindData(rebuilt, type, body, extras), body), extras), now)
       return replaceEdge(replica.store, value, `a:${aliasId}`, rowEdge(replica.store, identityCid(replica.store, next), template))
     }
-    const converted = convertRow(replica.store, node, type, now, extras)
-    const data: FosNodeContent['data'] = { ...converted.data, description: { content: body } }
-    if (type === RESOURCE_TYPE) {
-      data.name = { content: body }
-      if (extras.resource) data.resource = extras.resource
-    }
-    if (type === QUERY_TYPE && extras.query) data.query = { ...(node.data.query ?? {}), ...extras.query }
-    const next = withChildValue(replica.store, edge, userBound(replica, at, withTextParameters(replica.store, { ...converted, data }), extras), now)
+    const next = withChildValue(replica.store, edge, userBound(replica, at, asReferenceRow(node, now), extras), now)
     const changed = identityCid(replica.store, next)
     return replaceEdge(replica.store, value, `a:${aliasId}`, kept ? rowEdge(replica.store, changed, kept) : rowEdgeAt(replica.store, template, changed, at))
   })
@@ -506,9 +486,9 @@ export function setRowType(replica: Replica, at: Scope, aliasId: string, type: s
     const node = valueContent(replica.store, identityCid(replica.store, edge))
     const template = resolveRowType(replica.store, type, at)
     const title = titleField(replica.store, template), text = rowTitle(replica.store, identityCid(replica.store, edge), rowTypeOf(replica.store, edge))
-    const next = type === REF_TYPE || type === QUERY_TYPE || type === RESOURCE_TYPE ? convertRow(replica.store, node, type, now, extras)
-      : isTextField(replica.store, template) ? constructPlainRow(replica.store, template, aliasId, text, now)
-      : rebuildRow(replica.store, template, aliasId, node, title && text ? new Map([[title, fieldText(replica.store, title, text)]]) : new Map(), now)
+    const next = type === REF_TYPE ? asReferenceRow(node, now)
+      : withKindData(isTextField(replica.store, template) ? constructPlainRow(replica.store, template, aliasId, text, now)
+        : rebuildRow(replica.store, template, aliasId, node, title && text ? new Map([[title, fieldText(replica.store, title, text)]]) : new Map(), now), type, text, extras)
     const converted = withChildValue(replica.store, edge, next, now)
     return replaceEdge(replica.store, value, `a:${aliasId}`, rowEdgeAt(replica.store, template, identityCid(replica.store, converted), at))
   })
@@ -536,7 +516,7 @@ export function shareRefAt(replica: Replica, source: Scope, destination: Scope, 
     commitRoot(s, updateAtScope(s, root, parent, value => replaceEdge(s, value, `a:${id}`, rowEdge(s, declaration, type))), now)
     return { ...replica }
   }
-  const handle = put(s, rowContent(REF_TYPE, newId(), '', now, { refId: id, targetCid: declaration, store: s }))
+  const handle = put(s, referenceRowContent(s, newId(), now, { refId: id, targetCid: declaration }))
   const replacement = rowEdgeAt(s, REF_TYPE, handle, parent)
   let next = updateAtScope(s, root, parent, value => replaceEdge(s, value, `a:${id}`, replacement))
   next = updateAtScope(s, next, shared, value => ({ ...value, children: [...value.children, rowEdge(s, declaration, type)] }))
@@ -768,11 +748,11 @@ export function renameTask(replica: Replica, at: Scope, taskId: string, title: s
   const parent = resolveScope(replica.store, headCid(replica), at)
   const edge = parent && findChildEdge(replica, valueContent(replica.store, parent), taskId)
   // a requirement is titled by its own declaration, whatever value it is bound to
-  if (edge && isRequirementRow(replica.store, edge)) return editNode(replica, [...at, taskId], now, node => node.data.description?.content === trimmed ? node : { ...node, data: { ...node.data, description: { content: trimmed }, updated: { time: now } } })
+  if (edge && isRequirementRow(replica.store, edge)) return editNode(replica, [...at, taskId], now, node => refTitle(replica.store, node) === trimmed ? node : { ...withRefTitle(replica.store, node, trimmed), data: { ...node.data, updated: { time: now } } })
   return updateTask(replica, at, taskId, now, (task) => {
     if (edge && rowTitle(replica.store, identityCid(replica.store, edge), rowTypeOf(replica.store, edge)) === trimmed) return null
     // a row that holds text (a field, or its own) takes the new text there; one still on its description keeps it there
-    return withRowText(replica.store, taskId, task, trimmed, now) ?? (task.data.description?.content === trimmed ? null : { ...task, data: { ...task.data, description: { content: trimmed } } })
+    return withRowText(replica.store, taskId, task, trimmed, now) ?? withLabel(replica.store, task, trimmed)
   })
 }
 
@@ -830,7 +810,7 @@ export function linkLocalStore(replica: Replica, peerId: string, name: string, n
   let next = editNode(replica, [], now, (node) => withMember(replica.store, node, peerId, name, capabilityNames(replica.store)))
   if (!member) {
     const id = localStoreRowId(peerId), store = next.store
-    const held = put(store, { data: { alias: { id }, description: { content: name }, ref: { id, peer: peerId, version: 'unloaded', scope: [...shares] } }, children: [] })
+    const held = put(store, { data: { alias: { id }, ref: { id, peer: peerId, version: 'unloaded', scope: [...shares] } }, children: [labelRow(store, name)] })
     const entry = membershipPath(store, headCid(next), [], peerId)!
     next = edit(next, entry, now, (value) => findChildEdge(next, value, id) ? value : { ...value, children: [...value.children, rowEdgeAt(store, PLAIN_TYPE, held, entry)] })
   }

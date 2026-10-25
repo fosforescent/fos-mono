@@ -1,4 +1,5 @@
 /** Library definitions are editable values. Runtime consumers must use explicitly pinned instances. */
+import { refTitle } from './fields'
 import { primitive } from './primitives'
 import type { ResourceType } from './graph'
 import { homePath, proposeRefAt, view, type Replica } from './replica'
@@ -153,7 +154,7 @@ export function deviceHandlers(r: Replica, at?: Scope): ManualHandler[] {
   return libraryArgs(r, at ?? homePath(r)).flatMap(({ name, declaration, value }) => {
     const allocation = declaration.data.allocation
     if (!allocation) return []
-    return [{ id: name, label: declaration.data.description?.content ?? name, capability: 'allocation' as const, resource: allocation.type, device: true, run: value }]
+    return [{ id: name, label: refTitle(r.store, declaration) ?? name, capability: 'allocation' as const, resource: allocation.type, device: true, run: value }]
   })
 }
 

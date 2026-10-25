@@ -24,7 +24,6 @@ import {
   identityCid,
   isChoiceEdge,
   isHandle,
-  isLegacyInlineLink,
   isPrevEdge,
   isRefNode,
   makeLink,
@@ -119,7 +118,7 @@ function mergeNode(
   }
 
   // Mutable references merge by value; members/proposals/peers are unioned; history keeps both parents.
-  const asRef = (value: FosNodeContent): boolean => (isRefNode(store, value) && !isHandle(value)) || isLegacyInlineLink(store, value)
+  const asRef = (value: FosNodeContent): boolean => isRefNode(store, value) && !isHandle(value)
   if (asRef(ours) || asRef(theirs)) {
     const refOf = (cid: string | null, value: FosNodeContent): { cid: string; node: FosNodeContent } | null => {
       if (!cid) return null

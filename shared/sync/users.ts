@@ -72,7 +72,7 @@ function userInput(user: UserRecord): Record<string, string | number> {
 }
 
 /** A user object's identity: the content address of the username, so devices that keep the same person make the same row. */
-export const userObjectId = (user: Pick<UserRecord, 'username'>): string => hashContent({ data: { description: { content: user.username.toLowerCase() } }, children: [] })
+export const userObjectId = (user: Pick<UserRecord, 'username'>): string => hashContent({ data: { name: { content: user.username.toLowerCase() } }, children: [] })
 
 /**
  * The user object node: the same record makes the same node (and cid) everywhere. Like every form field's value it

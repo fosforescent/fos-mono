@@ -1,3 +1,4 @@
+import { labelRow } from '@fosforescent/shared/sync/fields'
 import { standardHostRef } from './host-runtime'
 /**
  * The fos server attests users. `@name` in a row is shorthand for a user object (shared/sync/users.ts, the standard
@@ -97,7 +98,7 @@ export function verifyHandler(deps: VerifyDeps, key: IdentityKey, peer = 'fos'):
       const user = await resolve(name)
       if (!user) throw new Error(`No Fos user is named @${name}.`)
       const field: [string, string] = [type, ctx.put(userObjectContent(ctx.store, type, user))]
-      return { outputs: { self: valueOfPattern(ctx.store, self.pattern, { description: { content: `@${user.username}` }, peerId: { content: peer } }, [field]) } }
+      return { outputs: { self: valueOfPattern(ctx.store, self.pattern, { peerId: { content: peer } }, [field, labelRow(ctx.store, `@${user.username}`)]) } }
     }
   }
 }

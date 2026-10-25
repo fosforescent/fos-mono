@@ -1,3 +1,4 @@
+import { labelRow, textOf as fieldTextOf } from '@fosforescent/shared/sync/fields'
 import { standardHostRef, type HostHandler, type HostUser } from './host-runtime'
 import { cronObserver } from '@fosforescent/shared/sync/trigger-primitives'
 /**
@@ -22,26 +23,22 @@ function selfOf(operands: Compiled) {
   if (!self) throw new Error('This handler fills a requirement row.')
   return self
 }
-const textOf = (store: FosStore, cid: string | undefined): string => {
-  if (!cid) return ''
-  const data = content(store, cid).data
-  return data.description?.content ?? (typeof data.scalar?.value === 'string' ? data.scalar.value : '')
-}
+const textOf = (store: FosStore, cid: string | undefined): string => cid ? fieldTextOf(store, cid) ?? '' : ''
 /** The named inputs of the requirement (`-mail to subject`, `-repo owner/name`): filled refs on its pattern. */
 const inputsOf = (ctx: PrimitiveContext, operands: Compiled) => patternInputs(ctx.store, selfOf(operands).pattern)
 /** The answer to the requirement: a value of its pattern, as `by`, with `rows` inside it (what the handler produced). */
 const answer = (ctx: PrimitiveContext, operands: Compiled, by: string, description: string, rows: [string, string][] = []) =>
-  ({ outputs: { self: valueOfPattern(ctx.store, selfOf(operands).pattern, { description: { content: description }, peerId: { content: by } }, rows) } })
+  ({ outputs: { self: valueOfPattern(ctx.store, selfOf(operands).pattern, { peerId: { content: by } }, [labelRow(ctx.store, description), ...rows]) } })
 /** A row the answer carries: a plain row of the library type `typeId`, with its own identity. */
-const row = (ctx: PrimitiveContext, typeId: string, data: Record<string, unknown>): [string, string] =>
-  [rowTypeAt(ctx.store, typeId, ctx.step), ctx.put({ data: { alias: { id: newId() }, ...data } as any, children: [] })]
+const row = (ctx: PrimitiveContext, typeId: string, title: string, data: Record<string, unknown>): [string, string] =>
+  [rowTypeAt(ctx.store, typeId, ctx.step), ctx.put({ data: { alias: { id: newId() }, ...data } as any, children: [labelRow(ctx.store, title)] })]
 /** The user the requirement names (`-ff 5 @bob`): its `user` field, an operand like any other. */
 const namedUser = (ctx: PrimitiveContext, operands: Compiled): UserRecord | null =>
   operands.inputs.user ? readUser(ctx.store, userType(ctx.store, ctx.step), content(ctx.store, operands.inputs.user)) : null
 /** A grant this host mints for authority it holds outside the graph (a ledger, a calendar): a value of the demand's own pattern. */
 const grantAnswer = (ctx: PrimitiveContext, operands: Compiled, allocation: Allocation, description: string) => {
   const at = ctx.step.slice(0, -1), store = ctx.store
-  return { outputs: { self: grantValue(store, allocationPattern(store, at, allocation, true), allocateCapability(store, at), allocation, { description: { content: description }, peerId: { content: 'fos' } }) } }
+  return { outputs: { self: grantValue(store, allocationPattern(store, at, allocation, true), allocateCapability(store, at), allocation, { peerId: { content: 'fos' } }, [], description) } }
 }
 
 // ---------------------------------------------------------------------------
@@ -60,7 +57,7 @@ export function githubRepoHandler(deps: GitHubIssueDeps): HostHandler {
       if (!await deps.connected(user.id)) throw new Error('GitHub disconnected before the effect.')
       const repo = inputsOf(ctx, operands).repo
       if (!repo) throw new Error('Specify the GitHub repository first.')
-      const issue = await deps.createIssue(user.id, { repo, title: selfOf(operands).data.description?.content || 'from fos', body: 'From a fos task.' })
+      const issue = await deps.createIssue(user.id, { repo, title: selfOf(operands).title || 'from fos', body: 'From a fos task.' })
       return answer(ctx, operands, 'integration:github', `${repo}#${issue.number} ${issue.url}`)
     }
   }
@@ -82,7 +79,7 @@ export function calendarHandler(deps: CalendarDeps): HostHandler {
       const self = selfOf(operands), demand = content(ctx.store, self.pattern).data.allocation
       const { start, end } = demand ?? {}
       if (!demand || start == null || end == null || !Number.isFinite(start) || !Number.isFinite(end) || end <= start) throw new Error('Choose a concrete start and end before creating a calendar event.')
-      const title = self.data.description?.content || 'fos'
+      const title = self.title || 'fos'
       const event = await deps.createEvent(user.id, { summary: title, description: title, start, end })
       const allocation: Allocation = { resource: '', type: demand.type as ResourceType, amount: demand.amount ?? (end - start) / 3_600_000, unit: demand.unit || 'h', start, end, by: 'integration:google' }
       return grantAnswer(ctx, operands, allocation, event.url ? `on Google Calendar ${event.url}` : 'on Google Calendar')
@@ -97,7 +94,7 @@ export function llmHandler(deps: LlmDeps): HostHandler {
   return {
     peerId: 'fos', ref: standardHostRef('fos', 'llm'),
     run: () => async (operands, ctx) => {
-      const prompt = selfOf(operands).data.description?.content?.trim() ?? ''
+      const prompt = selfOf(operands).title?.trim() ?? ''
       if (!prompt) throw new Error('Write the question on the row.')
       if (prompt.length > 20_000) throw new Error('The question exceeds 20,000 characters.')
       const text = (await deps.complete(WORK_SYSTEM, prompt)).trim()
@@ -140,10 +137,10 @@ export function searchHandler(deps: SearchDeps): HostHandler {
   return {
     peerId: 'fos', ref: standardHostRef('fos', 'search'),
     run: user => async (operands, ctx) => {
-      const text = (selfOf(operands).data.description?.content ?? '').trim().slice(0, 1000)
+      const text = (selfOf(operands).title ?? '').trim().slice(0, 1000)
       if (!text) throw new Error('Say what to search for: "-? text".')
       const hits = (await deps.search(user, text, false)).filter(hit => hit.aliasId !== ctx.step.at(-1))
-      const rows = hits.map(hit => row(ctx, REF_TYPE, { description: { content: hit.title }, ref: { id: hit.aliasId, ...(hit.owner ? { owner: hit.owner } : {}) } }))
+      const rows = hits.map(hit => row(ctx, REF_TYPE, hit.title, { ref: { id: hit.aliasId, ...(hit.owner ? { owner: hit.owner } : {}) } }))
       return answer(ctx, operands, 'fos', `${hits.length} hits for ${text}`, rows)
     }
   }
@@ -167,7 +164,7 @@ export function pointsHandler(deps: PointsDeps, identity: VerifyHandler): HostHa
       const self = selfOf(operands), demand = content(ctx.store, self.pattern).data.allocation, amount = demand?.amount ?? 0
       if (!(amount > 0)) throw new Error('Name an amount of fos points to pay.')
       const recipient = payee(ctx, operands, user, 'fos points', identity)
-      await deps.transfer(user, recipient.username, amount, `${self.data.description?.content || 'fos points'} (${ctx.step.slice(0, -1).join('/')})`, `points:${user.username}:${ctx.step.join('/')}`)
+      await deps.transfer(user, recipient.username, amount, `${self.title || 'fos points'} (${ctx.step.slice(0, -1).join('/')})`, `points:${user.username}:${ctx.step.join('/')}`)
       return grantAnswer(ctx, operands, { resource: '', type: 'points', amount, unit: 'ff', by: 'fos' }, `${amount} fos points to ${recipient.name ?? recipient.username}`)
     }
   }
@@ -188,7 +185,7 @@ export function paymentHandler(deps: PaymentDeps, identity: VerifyHandler): Host
       const self = selfOf(operands), demand = content(ctx.store, self.pattern).data.allocation, amount = demand?.amount ?? 0, unit = demand?.unit || 'usd'
       if (!(amount > 0)) throw new Error('Name an amount to pay.')
       const recipient = payee(ctx, operands, user, 'payments', identity)
-      const opened = await deps.request({ from: user, toUsername: recipient.username, amount, unit: unit.toLowerCase(), memo: `${self.data.description?.content || 'payment'} (${ctx.step.slice(0, -1).join('/')})`, key: `payment:${user.username}:${ctx.step.join('/')}`, path: ctx.step })
+      const opened = await deps.request({ from: user, toUsername: recipient.username, amount, unit: unit.toLowerCase(), memo: `${self.title || 'payment'} (${ctx.step.slice(0, -1).join('/')})`, key: `payment:${user.username}:${ctx.step.join('/')}`, path: ctx.step })
       if (opened.status === 'paid') return grantAnswer(ctx, operands, { resource: '', type: 'account', amount, unit, by: 'fos' }, `${amount} ${unit} to @${recipient.username}`)
       return { pending: true }
     }
@@ -206,7 +203,7 @@ export function mailHandler(deps: MailDeps): HostHandler {
     peerId: 'fos', ref: standardHostRef('fos', 'mail'),
     run: user => async (operands, ctx) => {
       const inputs = inputsOf(ctx, operands)
-      const request = mailRequest({ to: inputs.to ?? null, subject: inputs.subject ?? null }, selfOf(operands).data.description?.content ?? '')
+      const request = mailRequest({ to: inputs.to ?? null, subject: inputs.subject ?? null }, selfOf(operands).title ?? '')
       if (!request) throw new Error('Name the recipient: "-mail someone@example.com Subject".')
       await deps.send(request.to, request.subject, request.text, user.username)
       return answer(ctx, operands, 'fos', `sent to ${request.to}: ${request.subject}`)

@@ -1,3 +1,4 @@
+import { labelRow, textOf } from '@fosforescent/shared/sync/fields'
 import { settingOf } from '@fosforescent/shared/sync/index'
 import { standardHostRef } from '../sync/host-runtime'
 import { sameCapabilityType, handlerRef, instructionPrimitives, setRefValueAt, acceptSubmission } from '@fosforescent/shared/sync/index'
@@ -72,12 +73,12 @@ async function serverFor(deps: McpPeerDeps, userId: number, tool: string): Promi
 function toolPrimitive(deps: McpPeerDeps, userId: number): PrimitiveFunction {
   return async (operands, ctx) => {
     const self = operands.outputs.self
-    const tool = self ? patternInputs(ctx.store, self.pattern).tool : content(ctx.store, operands.left).data.description?.content
+    const tool = self ? patternInputs(ctx.store, self.pattern).tool : textOf(ctx.store, operands.left)
     if (!tool) throw new Error('Name the tool: "-tool name input".')
     const server = await serverFor(deps, userId, tool)
-    const text = await deps.callTool(server, tool, self?.data.description?.content ?? tool)
+    const text = await deps.callTool(server, tool, self?.title ?? tool)
     if (!self) return { outputs: {} as Record<string, string> }
-    return { outputs: { self: valueOfPattern(ctx.store, self.pattern, { description: { content: text.slice(0, 20_000) || '(empty result)' }, peerId: { content: `${MCP_PEER_PREFIX}${server.id}` } }) } }
+    return { outputs: { self: valueOfPattern(ctx.store, self.pattern, { peerId: { content: `${MCP_PEER_PREFIX}${server.id}` } }, [labelRow(ctx.store, text.slice(0, 20_000) || '(empty result)')]) } }
   }
 }
 
@@ -109,7 +110,7 @@ async function runRequirement(deps: McpPeerDeps, replica: Replica, user: Account
       check: () => []
     })
     const answer = view(replica, at)?.tasks.find(t => t.id === req.id)
-    return record.status === 'committed' ? { replica, text: answer?.requirement?.satisfied ? valueContent(replica.store, resolveScope(replica.store, headCid(replica), scope)!).data.description?.content ?? '' : '' } : { error: record.error ?? 'Tool evaluation needs recovery.' }
+    return record.status === 'committed' ? { replica, text: answer?.requirement?.satisfied ? textOf(replica.store, resolveScope(replica.store, headCid(replica), scope)!) ?? '' : '' } : { error: record.error ?? 'Tool evaluation needs recovery.' }
   } catch (error) { return { error: error instanceof Error ? error.message : String(error) } }
 }
 

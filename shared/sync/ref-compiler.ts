@@ -202,7 +202,7 @@ export function compileRow(r: Replica, path: Scope, options: CompileRefOptions =
 
 /** Persist the residual and its reachable immutable graph together, not just an orphan CID. */
 export function saveRefCompilation(r: Replica, path: Scope, id: string, compiled: CompiledRef, now: number): Replica {
-  const type = put(r.store, { data: { description: { content: 'Compiled ref' } }, children: [] })
+  const type = put(r.store, { data: { name: { content: 'Compiled ref' } }, children: [] })
   const envelope = put(r.store, { data: { refCompilation: { cid: compiled.cid } }, children: [[primitive(r.store, 'target'), compiled.cid]] })
   return addRefAt(r, path, id, type, now, envelope)
 }

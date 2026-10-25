@@ -1,3 +1,4 @@
+import { isTextField } from './fields'
 import { primitive } from './primitives'
 import { approvalsOf } from './approvals'
 import type { FosDataContent, FosNodeContent, FosNodesData, FosPathElem } from '../types'
@@ -14,6 +15,12 @@ import { constructNodeValue, readGraphValue } from './node-values'
 
 /** Each endpoint owns its mask. Omitting an allowlist allows all; [] allows none. */
 export type NodeMask = { fields?: string[]; children?: string[] }
+/** The mask field that shows a node's text: its text rows (a title field's ref, a plain row's text, a value's label). */
+export const TEXT_MASK = 'title'
+/** Whether a child carries a node's text: a text field's ref, or a text leaf. */
+export function isTextChild(store: Replica['store'], child: { template: string; pinned?: string }): boolean {
+  return (!!child.pinned && store.table.get(child.pinned)?.data.scalar?.type === 'text') || (store.table.has(child.template) && isTextField(store, child.template))
+}
 export type NodeBranch = { scope: Scope; name: string }
 export type NodeAddress = { peerId: string; scope: Scope; branches?: NodeBranch[] }
 export type NodeRequest = {
@@ -126,7 +133,7 @@ function sourceId(r: Replica, path: Scope): string {
   if (!cid) throw new NodeAccessError('Linked node unavailable.')
   return content(r.store, cid).data.alias?.id ?? cid
 }
-const localLinkId = (peer: string, other: string, id: string) => hashContent({ data: { description: { content: JSON.stringify([peer, other, id]) } }, children: [] })
+const localLinkId = (peer: string, other: string, id: string) => hashContent({ data: { name: { content: JSON.stringify([peer, other, id]) } }, children: [] })
 
 function linkAt(r: Replica, path: Scope, peer: string, remoteId: string) {
   // One endpoint per peer at a node. A caller cannot evade a mask by choosing a new link id.
@@ -345,6 +352,7 @@ export function provideNode(r: Replica, input: NodeRequest, authority: NodeAutho
     const pinned = new Set<string>(), wanted = new Set<string>(), grantNodes: string[] = []
     for (const { id, edge, member, grant, literal } of heldByRequester ? [] : exchangedChildren(r, cid, path)) {
       if ((mask.children && !mask.children.includes(id)) || (member && !memberEntryVisible(memberPeerOf(r.store, edge), authority))) continue
+      if (fields && !fields.has(TEXT_MASK) && isTextChild(r.store, { template: edge[0], pinned: edge[1] })) continue
       // a grant is pinned by its node's cid; its content goes with the answer (it is small and immutable)
       if (grant || literal) { grantNodes.push(...edge); children.push({ id, address: { peerId: r.meta.peerId, scope: [...path, id] }, template: edge[0], pinned: edge[1] }); continue }
       const childCid = identityCid(r.store, edge), child = content(r.store, childCid)
@@ -387,7 +395,7 @@ export function acceptProvidedNode(r: Replica, at: Scope, request: NodeRequest, 
   if (memberEntryPeerAt(r.store, headCid(r), at) !== null) throw new NodeAccessError('A member entry syncs with its node.')
   const before = content(r.store, cid), local = nodeLinkMaskAt(r, at, node.peerId), ownMask = readMask(r, at, node.peerId, node.linkId)
   const data = Object.fromEntries(Object.entries(node.data).filter(([key]) => !forbiddenFields.has(key) && (!local.fields || local.fields.includes(key)))) as FosDataContent
-  const listed = node.children.filter(child => !local.children || local.children.includes(child.id))
+  const listed = node.children.filter(child => (!local.children || local.children.includes(child.id)) && (!local.fields || local.fields.includes(TEXT_MASK) || !isTextChild(r.store, child)))
   // A typed declaration carries its immutable schema, never the field's value or history.
   if (node.templates) {
     const schemas: FosNodesData = {}, pending = listed.flatMap(child => child.pinned ? [child.template, child.pinned] : child.right ? [child.template] : [])
@@ -423,7 +431,7 @@ export function acceptProvidedNode(r: Replica, at: Scope, request: NodeRequest, 
 
 export type NodeProvider = { id: string; capabilities: Capability[]; request(input: NodeRequest): Promise<ProvidedNode> }
 export function nodeRequestLinkId(localPeer: string, address: NodeAddress): string {
-  return hashContent({ data: { description: { content: JSON.stringify([localPeer, address.peerId, address.scope]) } }, children: [] })
+  return hashContent({ data: { name: { content: JSON.stringify([localPeer, address.peerId, address.scope]) } }, children: [] })
 }
 /** Only providers attached to this node are candidates. Offline peers fail over; no global search. */
 export async function pullNode(request: NodeRequest, peers: NodeProvider[]): Promise<ProvidedNode> {

@@ -41,10 +41,6 @@ export type FosDataContent = {
     defaultResolutionStrategy: "choice" | "selected" | "race";
 
   }
-  description?: {
-    content: string;
-  }
-
   peers?: {
     [key: string]: {
       connectionInfo: {
@@ -69,14 +65,6 @@ export type FosDataContent = {
   alias?: {
     id: string;
     previous?: string; // CID of previous node this alias pointed to
-  }
-  /**
-   * A link node: a node other peers attach to. It keeps PREV edges to its
-   * previous states, MEMBER edges with capabilities, and PROPOSAL edges
-   * (branches) that members can approve. See docs/sync.md.
-   */
-  link?: {
-    createdAt: number
   }
   /** On a proposal node (a peer's branch at a link node). */
   /** On an issued grant: what tells two grants of equal amount apart. Authority is a value, so each issue is a new one. */
@@ -122,7 +110,7 @@ export type FosDataContent = {
   missingTemplate?: {
     cid: string
   },
-  /** A query row: its description is the search text; results appear as reference rows under it. */
+  /** A query row: its title is the search text; results appear as reference rows under it. */
   query?: {
     market?: boolean
     executedAt?: number

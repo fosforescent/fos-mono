@@ -63,7 +63,7 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
   handler.problems.forEach(problem => blockers.add(problem))
   if (view(r, requestPath.slice(0, -1))?.tasks.find(row => row.id === requestPath.at(-1))?.requirement?.capability !== 'llm') throw new Error('Select a language-model requirement.')
   // a row's type is its edge's left node: its name labels the row in the prompt; rows that read as text are context
-  const typeLabel = (edge: [string, string]) => valueContent(store, rowTypeOf(store, edge)!).data.description?.content ?? 'Row'
+  const typeLabel = (edge: [string, string]) => typeIdOf(store, rowTypeOf(store, edge)) ?? 'Row'
   const isText = (edge: [string, string]) => {
     const type = rowTypeOf(store, edge)!
     return !typeIdOf(store, type) || type === libraryNode(store, PLAIN_TYPE) || type === libraryNode(store, REF_TYPE) || titleField(store, type) !== null
@@ -79,13 +79,13 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
     const identity = content(store, cid), value = valueContent(store, cid)
     // a note reads as one block: its title line and its body (whose row is then not listed again)
     // a requirement reads as its own declaration (its value, once bound, is its result)
-    const rendered = resolveText(r, at, rowText(store, cid, null) || identity.data.description?.content || '(untitled)')
+    const rendered = resolveText(r, at, rowText(store, cid, null) || rowTitle(store, cid, null) || '(untitled)')
     for (const binding of rendered.bindings) { binding.problems.forEach(p => blockers.add(p)); binding.sources.forEach(cid => sources.add(cid)) }
     lines.push(`${'  '.repeat(depth)}${label}: ${rendered.text}`)
     const ref = identity.data.ref
     if (ref) {
       const found = !ref.owner && !ref.peer ? resolveRef(r, ref.id, at.slice(0, -1)) : null
-      if (!found) blockers.add(`Input unavailable: ${value.data.description?.content || ref.id}`)
+      if (!found) blockers.add(`Input unavailable: ${rowTitle(store, cid, null) || ref.id}`)
       else {
         const target = resolveScope(store, headCid(r), [...found.path, found.row.id])!
         if (target === request.cid) { active.delete(cid); return }

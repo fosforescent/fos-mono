@@ -1,3 +1,4 @@
+import { textOf, textValue } from './fields'
 import { sameCapabilityType } from './capabilities'
 /** A repository constructor is a named typed ref, not a separate row kind. */
 import { contextMembers } from './handlers'
@@ -18,7 +19,7 @@ export function repositoryAt(r: Replica, at: Scope): string | null {
   const cid = resolveScope(r.store, headCid(r), at)
   if (!cid) return null
   // the node's repo bindings: arguments of the repo capability; a GitHub repository's value is its owner/name
-  const names = [...new Set(repoValues(r, cid, at).map(value => content(r.store, value).data.description?.content ?? '').filter(name => /^[\w.-]+\/[\w.-]+$/.test(name)))]
+  const names = [...new Set(repoValues(r, cid, at).map(value => textOf(r.store, value) ?? '').filter(name => /^[\w.-]+\/[\w.-]+$/.test(name)))]
   return names.length === 1 ? names[0]! : null
 }
 /** The values of the node's repo arguments (rows of the repo capability). */
@@ -62,7 +63,7 @@ export function bindRepository(r: Replica, at: Scope, repo: string, now: number)
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error('Repository must be owner/name')
   const existing = repositoryAt(r, at)
   if (existing && existing !== repo) throw new Error('This node already has a repository; edit its repo argument to change it')
-  r = addRefAt(r, at, newId(), libAt(r.store, at).capabilities.repo!, now, put(r.store, { data: { description: { content: repo } }, children: [] }), 'repo')
+  r = addRefAt(r, at, newId(), libAt(r.store, at).capabilities.repo!, now, textValue(r.store, repo), 'repo')
   const peer = repositoryPeerId(repo)
   if (contextMembers(r, at).some(m => m.peerId === peer)) return r
   r = addMemberAt(r, at, peer, `GitHub: ${repo}`, ['repo'], now)

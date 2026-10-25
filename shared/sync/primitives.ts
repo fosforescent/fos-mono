@@ -5,6 +5,7 @@
  * each is published as a handler ref under the host's member entry in a scope, through the same declaration every
  * handler goes through, and its local meaning is attached to the primitive its value names.
  */
+import { labelRow } from './fields'
 import { matchesGraph, tag } from './structural'
 import { putNode, type FosStore } from '../dag-implementation/store'
 import { content, enclosingScopes, handlerOfferId, libAt, put, refNodeContent, isRefNode, type Scope } from './graph'
@@ -76,9 +77,9 @@ export function handlerRef(store: FosStore, host: string, definition: Pick<Primi
   const type = definitionCapability(definition, store, at), label = definition.label ?? definition.id
   const named = primitive(store, definition.id)
   const { alias: _alias, capabilityDefinition: _capability, ...properties } = content(store, type).data
-  if (_capability) { delete properties.name; delete properties.description }
+  if (_capability) delete properties.name
   // a handler is a value of its capability: it carries the capability's tag, and the primitive that gives it meaning here
-  const value = put(store, { data: { ...properties, peerId: { content: host }, description: properties.description ?? { content: label } }, children: [...content(store, type).children, tag(store, type), [primitive(store, 'implementation'), named]] })
+  const value = put(store, { data: { ...properties, peerId: { content: host } }, children: [...content(store, type).children, tag(store, type), [primitive(store, 'implementation'), named], labelRow(store, label)] })
   return put(store, refNodeContent(store, { alias: { id: handlerOfferId(host, type, name) }, name: { content: label } }, value, []))
 }
 /** The handler ref a host publishes for a definition, with what it means here (`implementation`, the definition by default). */
