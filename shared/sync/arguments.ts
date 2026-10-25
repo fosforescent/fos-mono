@@ -265,9 +265,19 @@ export function ownerGrants(r: Replica, ownerPath: Scope, evaluationId?: string)
 }
 
 /** The grant the argument row at `path` holds, while an owner enclosing it still holds that grant; null once consumed. */
-export function handleAt(r: Replica, path: Scope, evaluationId?: string): Grant | null {
+export function handleAt(r: Replica, path: Scope, evaluationId?: string, seen = new Set<string>()): Grant | null {
   const store = r.store, cid = resolveScope(store, headCid(r), path)
-  if (!cid || !isRefNode(store, content(store, cid))) return null
+  if (!cid || seen.has(cid)) return null
+  seen.add(cid)
+  const node = content(store, cid)
+  const reference = node.data.refExpression
+    ? resolveRefExpression(r, path.slice(0, -1), node.data.refExpression)
+    : node.data.ref?.id ? resolveRefIdentity(r, path.slice(0, -1), node.data.ref.id) : null
+  if (reference) {
+    const target = reference.status === 'ready' ? reference.locations[0] : null
+    return target?.store === store ? handleAt(r, target.path, evaluationId, seen) : null
+  }
+  if (!isRefNode(store, node)) return null
   const value = evaluationId ? transactionValue(r, path, evaluationId) : refValueCid(store, content(store, cid))
   const grant = value ? grantOf(store, value, allocateCapability(store, path.slice(0, -1))) : null
   if (!value || !grant || !(grant.allocation.amount > 0)) return null

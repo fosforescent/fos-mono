@@ -31,9 +31,11 @@ const nodeAt = (r: Replica, path: Scope) => {
   return { cid, value: valueContent(r.store, cid) }
 }
 const slots = (r: Replica, cid: string, type: string) => refArguments(r.store, valueContent(r.store, cid), type)
-/** A model attempt record (`beginTaskWork`): handler binding plus return slot. Runtime bookkeeping, not work to evaluate. */
+/** A saved model attempt has a context snapshot, handler binding and return slot. */
 export function isAttempt(r: Replica, cid: string): boolean {
-  return valueContent(r.store, cid).children.some(([left]) => typeIdOf(r.store, left) === 'capabilities.llm') && slots(r, cid, r.store.primitive.documentField.getId()).length > 0
+  return valueContent(r.store, cid).children.some(([left]) => typeIdOf(r.store, left) === 'capabilities.llm')
+    && slots(r, cid, r.store.primitive.descriptionField.getId()).some(slot => !!slot.targetCid)
+    && slots(r, cid, r.store.primitive.documentField.getId()).length > 0
 }
 
 /** Shared resolution, with the primitive Fos advertisement adapted to a native value. */

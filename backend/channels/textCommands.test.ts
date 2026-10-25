@@ -33,7 +33,7 @@ test('texted commands are translated into grammar events for the account owner',
   expect(s.replies.at(-1)).toMatch(/no open task/)
 })
 
-test('other texts are organized for Home by the host organizer (a pending fos submission there); when it cannot, the text lands in Home as a row', async () => {
+test('other texts are organized for Home by the host organizer; when it cannot, the text lands in Home as a row', async () => {
   let r = ensureHomeContext(createReplica('user:alice'), 1)
   r = addTask(r, [HOME_ID], 'Groceries', 2, 'groceries')
   const replies: string[] = []
@@ -47,13 +47,13 @@ test('other texts are organized for Home by the host organizer (a pending fos su
       asked.push([username, text, label])
       if (text === 'fail please') throw new Error('model down')
       if (text === 'over budget') return null
-      return { rows: 3, under: ['Groceries'], captureId: 'c', title: 'Errands' }
+      return { rows: 3, title: 'Errands' }
     },
   })
   const msg = (text: string): InboundMessage => ({ source: 'sms', id: 'm', from: '+1', replyTo: '+1', text, timestamp: 't' })
   await inbound(msg('need eggs, and hinges from the hardware store'))
   expect(asked[0]).toEqual(['alice', 'need eggs, and hinges from the hardware store', 'Text message (sms)'])
-  expect(replies.at(-1)).toBe('fos: organized for Home, waiting for you to accept it there: 3 rows (under “Groceries”), and the message kept as a note')
+  expect(replies.at(-1)).toBe('fos: organized for Home under “Text message (sms)”: 3 rows (Errands)')
   const rows = (at: string[]) => view(r, at)!.tasks.filter(t => !t.scalar).map(t => t.title)
   // when organizing fails or is refused the text still lands in Home, as before
   await inbound(msg('fail please'))

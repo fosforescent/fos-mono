@@ -16,8 +16,8 @@ import { deleteTask, headCid, homePath, organizePrompt, parseOrganizePlan, ORGAN
 import { withUserLock, type AccountStoreDeps } from '../sync/accountStore'
 import type { HostHandler } from '../sync/host-runtime'
 import { valueOfPattern } from '@fosforescent/shared/sync/structural'
-import { patternInputs, rowTypeAt, newId } from '@fosforescent/shared/sync/index'
-import { TASK_TYPE } from '@fosforescent/shared/sync/library-types'
+import { patternInputs, rowTypeAt, newId, organizedRowCount, content } from '@fosforescent/shared/sync/index'
+import { constructForm } from '@fosforescent/shared/sync/forms'
 import { budgetRefusal, recordSafely, type VoiceDeps, type VoiceUsage } from './voiceNotes'
 
 export type OrganizeInput = { text: string; title: string; outline: OutlineEntry[] }
@@ -33,14 +33,12 @@ export async function organizeCapture(deps: Pick<VoiceDeps, 'complete'>, input: 
   }
 }
 
-const utcStamp = (now: number) => new Date(now).toISOString().replace('T', ' ').slice(0, 16) + ' UTC'
 
 /**
  * The `organize` handler. `model` makes one provider instance per capture (its `drain` meters that capture alone);
  * `usage` is the voice budget.
  */
 export function organizeHandler(model: () => VoiceDeps, usage?: VoiceUsage): HostHandler {
-  const payer = async (username: string) => usage?.userNamed ? await usage.userNamed(username) : null
   return {
     peerId: 'fos', ref: standardHostRef('fos', 'organize'),
     // the capture is the request's input; the plan's rows are the answer. Natives see no tree, so the outline is the request's own text.
@@ -60,7 +58,14 @@ export function organizeHandler(model: () => VoiceDeps, usage?: VoiceUsage): Hos
         const cost = deps.drain?.() ?? { usd: 0, tokens: 0 }
         if (usage && payer) await recordSafely(usage, payer.id, { usd: cost.usd, tokens: cost.tokens, seconds: (Date.now() - started) / 1000, bytes: text.length, clusters: 0 })
       }
-      const rows = plan.items.map((item): [string, string] => [rowTypeAt(ctx.store, item.type, ctx.step), ctx.put({ data: { alias: { id: newId() }, description: { content: item.text }, ...(item.type === TASK_TYPE ? { todo: { completed: false, time: ctx.now } } : {}) }, children: [] })])
+      const rowsAt = (parent: string | null): Array<[string, string]> => plan.items.filter(item => item.parent === parent).map(item => {
+        const type = rowTypeAt(ctx.store, item.type, ctx.step), id = newId()
+        const node = content(ctx.store, type).data.form
+          ? constructForm(ctx.store, type, id, { text: item.text }, ctx.now)
+          : { data: { alias: { id }, description: { content: item.text } }, children: [] }
+        return [type, ctx.put({ ...node, children: [...node.children, ...rowsAt(item.ref)] })]
+      })
+      const rows = rowsAt(null)
       return { outputs: { self: valueOfPattern(ctx.store, self.pattern, { description: { content: plan.title || 'Organized' }, peerId: { content: 'fos' } }, rows) } }
     }
   }
@@ -95,7 +100,7 @@ export function createAccountOrganizer(deps: AccountStoreDeps, runNode: RunNode)
     return edit(username, r => {
       // the answer is the request's value: the plan's rows, inside the filled request, which stays in Home holding them
       const title = failure ? null : requirementAnswer(r, placed.path)
-      if (title !== null) return { replica: r, value: { rows: view(r, placed.path)?.tasks.length ?? 0, title } as OrganizedResult }
+      if (title !== null) return { replica: r, value: { rows: organizedRowCount(r, placed.path), title } as OrganizedResult }
       if (failure) console.error('organizing failed:', failure instanceof Error ? failure.message : failure)
       const exists = !!resolveScope(r.store, headCid(r), placed.path)
       return { replica: exists ? deleteTask(r, placed.path.slice(0, -1), placed.path.at(-1)!, deps.now?.() ?? Date.now()) : r, value: null }

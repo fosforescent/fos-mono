@@ -91,7 +91,7 @@ test('a verify requirement is filled through the evaluation: the attested object
   const again = await h.send([], { kind: 'read', path: unknown.path })
   const refused = await h.send([], { kind: 'complete', path: unknown.path, expected: again.body.valueRevision })
   expect(String(refused.body.error)).toMatch(/No Fos user is named @nobody/)
-  expect(evaluationRecord(h.get(), unknown.path)).toBeNull()
+  expect(evaluationRecord(h.get(), unknown.path)?.status).toBe('rolled-back')
 })
 
 test('the server\'s key is graph data: published on its member entry and carried to devices by node exchange, where they check attestations', async () => {

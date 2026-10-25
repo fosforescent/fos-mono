@@ -7,7 +7,7 @@ import { importNodes, reachableNodes, content, findAliasEdge, identityCid, isBra
 import { addRefAt, headCid, type Replica } from './replica'
 import { argumentRefs } from './bindings'
 import { isTagRow, matchesGraph } from './structural'
-import { isNegative, primitiveOf } from './parameters'
+import { isOutputPattern } from './parameters'
 import { resolveRefExpression, resolveRefIdentity, type RefAccess, type RefLocation } from './ref-paths'
 import { bindingAssignments, type ScopedBinding } from './scope-bindings'
 
@@ -45,11 +45,11 @@ function containsRef(store: FosStore, cid: string): boolean {
     if (seen.has(current)) continue
     seen.add(current)
     const known = memo.get(current)
-    if (known === true) { for (const c of seen) memo.set(c, true); return true }
+    if (known === true) { memo.set(cid, true); return true }
     if (known === false) continue
     const node = store.table.get(current)
     if (!node) continue
-    if (node.data.ref || node.data.refExpression) { for (const c of seen) memo.set(c, true); return true }
+    if (node.data.ref || node.data.refExpression) { memo.set(cid, true); return true }
     for (const edge of node.children) pending.push(...edge)
   }
   for (const c of seen) memo.set(c, false)
@@ -154,7 +154,8 @@ export function compileRefGraph(r: Replica, cid: string, at: Scope = [], options
         const childPath = isRowEdge(store, edge) ? [...path, child?.data.alias?.id ?? edge[1]] : path
         // A constructor is kept by identity (a form's field types stay the types its definition names) unless it contains refs of its own to compile.
         const instruction = containsRef(store, edge[0]) ? walk(store, edge[0], childPath, role, depth + 1) : edge[0]
-        const childRole = primitiveOf(store, edge[0]) !== null && !isNegative(store, edge[0]) ? 'output' : role
+        if (instruction === edge[0]) locations.push({ source: edge[0], path: childPath, cid: instruction })
+        const childRole = isOutputPattern(store, edge[0]) ? 'output' : role
         children.push([instruction, walk(store, edge[1], childPath, childRole, depth + 1, isRowEdge(store, edge) ? edge[0] : type)])
       }
       const { alias: _alias, updated: _updated, ref: _ref, refExpression: _expression, refRole: _role, ...data } = node.data
@@ -186,7 +187,7 @@ export function compileInstructions(r: Replica, path: Scope, options: CompileRef
   const type = edge?.[0]
   const bindings = argumentRefs(r.store, cid).map(arg => ({ store: r.store, cid: arg.cid, path: [...path, content(r.store, arg.cid).data.alias!.id] }))
   const empty = put(r.store, { data: {}, children: [] })
-  const compiled = compileRefGraph(r, type ?? empty, path, { ...options, bindings, selected: true })
+  const compiled = compileRefGraph(r, type ?? empty, path, { openOutputs: true, ...options, bindings, selected: true })
   const blocking = compiled.holes.filter(hole => hole.role !== 'output' || hole.reason !== 'unbound')
   return { ...compiled, blocking, canRun: blocking.length === 0 }
 }

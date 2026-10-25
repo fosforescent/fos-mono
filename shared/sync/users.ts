@@ -307,6 +307,6 @@ export function requestVerification(r: Replica, username: string, now: number): 
 /** The attested user object a filled verify requirement at `path` holds (its `user` field), or null. */
 export function verifiedAt(r: Replica, path: Scope): UserRecord | null {
   const cid = resolveScope(r.store, headCid(r), path)
-  const user = cid ? userOf(r.store, content(r.store, cid)) ?? userOf(r.store, valueContent(r.store, cid)) : null
+  const user = cid ? userOf(r.store, valueContent(r.store, cid)) ?? userOf(r.store, content(r.store, cid)) : null
   return user?.verification ? user : null
 }

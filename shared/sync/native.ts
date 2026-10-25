@@ -6,13 +6,13 @@
  */
 import type { FosStore } from '../dag-implementation/store'
 import type { FosDataContent, FosNodeContent } from '../types'
-import { content, findEdge, resolveScope, rowTypeOf, valueContent, type Scope } from './graph'
+import { content, resolveScope, type Scope } from './graph'
 import { headCid, type Replica } from './replica'
 import type { BindingEnvironment } from './bindings'
 import { bindingProperties, type BindingLocation } from './scope-bindings'
 import { resolveRefExpression, resolveRefIdentity } from './ref-paths'
 import { isOutputPattern } from './parameters'
-import { assertCompiledGraph, compileRefGraph } from './ref-compiler'
+import { assertCompiledGraph, compileInstructions, compileRefGraph } from './ref-compiler'
 
 /** An output the step declares: the pattern its value must satisfy and what the declaration itself says (an amount, a title). */
 export type CompiledOutput = { pattern: string; data: FosDataContent }
@@ -55,12 +55,17 @@ export function compileOperands(r: Replica, path: Scope, environment: BindingEnv
     const node = content(store, binding.cid), name = binding.name ?? binding.id
     // A reference row stands for another declaration: what the native answers for it is written there.
     let source: BindingLocation = binding
-    if (node.data.refExpression) {
-      const found = resolveRefExpression(r, path, node.data.refExpression, environment)
-      if (found.status !== 'ready' || !found.locations[0]) throw new Error(`The operand ${name} refers to a row that is unavailable in this scope.`)
-      source = found.locations[0]
-    } else if (node.data.ref?.id && !node.data.ref.peer && !node.data.ref.owner) {
-      const found = resolveRefIdentity(r, path, node.data.ref.id, environment)
+    const visited = new Map<FosStore, Set<string>>()
+    for (let depth = 0; ; depth++) {
+      const seen = visited.get(source.store) ?? new Set<string>()
+      if (depth >= 128 || seen.has(source.cid)) throw new Error(`The operand ${name} contains a reference cycle.`)
+      seen.add(source.cid); visited.set(source.store, seen)
+      const value = content(source.store, source.cid), at = source.path.slice(0, -1)
+      const found = value.data.refExpression
+        ? resolveRefExpression({ store: source.store }, at, value.data.refExpression, environment)
+        : value.data.ref?.id && !value.data.ref.peer && !value.data.ref.owner
+          ? resolveRefIdentity({ store: source.store }, at, value.data.ref.id, environment) : null
+      if (!found) break
       if (found.status !== 'ready' || !found.locations[0]) throw new Error(`The operand ${name} refers to a declaration that is unavailable in this scope.`)
       source = found.locations[0]
     }
@@ -75,11 +80,11 @@ export function compileOperands(r: Replica, path: Scope, environment: BindingEnv
     inputs[name] = compiled.cid
   }
   assertCompiledGraph(store, Object.values(inputs))
-  return { compiled: { inputs, outputs, left: rowLeft(r, path) }, sources }
+  return { compiled: { inputs, outputs, left: rowLeft(r, path, environment) }, sources }
 }
 
-function rowLeft(r: Replica, path: Scope): string {
-  const parent = path.length ? resolveScope(r.store, headCid(r), path.slice(0, -1)) : null
-  const edge = parent ? findEdge(r.store, valueContent(r.store, parent), `a:${path.at(-1)}`) : undefined
-  return edge ? rowTypeOf(r.store, edge) ?? edge[0] : ''
+function rowLeft(r: Replica, path: Scope, environment: BindingEnvironment): string {
+  const compiled = compileInstructions(r, path, environment)
+  if (!compiled.canRun) throw new Error('The instruction has unresolved operands.')
+  return compiled.cid
 }

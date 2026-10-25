@@ -112,7 +112,9 @@ test('the organize handler answers the request with the plan\'s rows inside it; 
   expect(request.requirement).toMatchObject({ capability: 'organize', satisfied: true })
   expect(argumentSupplier(r, asked.path)).toBe('fos')
   expect(requirementAnswer(r, asked.path)).toBe('Kickoff')
-  expect(rows(r, asked.path)).toEqual(['cap at $5k', 'Hiring', 'one designer', 'must stay inside'])
+  expect(rows(r, asked.path)).toEqual(['kickoff transcript', 'cap at $5k', 'Hiring', 'must stay inside'])
+  const hiring = view(r, asked.path)!.tasks.find(t => t.title === 'Hiring')!
+  expect(rows(r, [...asked.path, hiring.id])).toEqual(['one designer'])
   expect(meter.records).toEqual([0.01])
 })
 
@@ -150,7 +152,7 @@ test('texted messages go through the same handler: the filled request waits in H
   expect(rows(after, [HOME_ID, 'groceries'])).toEqual(['milk'])
   const request = view(after, [HOME_ID])!.tasks.find(t => t.requirement?.capability === 'organize')!
   expect(request).toMatchObject({ title: 'Text message (sms)', requirement: { satisfied: true } })
-  expect(rows(after, [HOME_ID, request.id])).toEqual(['eggs', 'Hardware store', 'hinges'])
+  expect(rows(after, [HOME_ID, request.id])).toEqual(['need eggs, and hinges from the hardware store', 'eggs', 'Hardware store'])
   expect(replies.at(-1)).toBe('fos: organized for Home under “Text message (sms)”: 3 rows (Errands)')
   // the model failing: that request goes again and the text lands in Home as a plain row
   await inbound({ source: 'sms', id: 'm2', from: '+1', replyTo: '+1', text: 'fail please', timestamp: 't' })

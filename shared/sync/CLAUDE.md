@@ -92,7 +92,7 @@ Record intended behavior and restrictions here. Keep implementation details in c
 - Resource demands are refinements of the `allocation` capability; the payment, points and calendar handlers still select rows by the demand's resource (`handles`). They are to be offered under refined patterns (a negative allocation of an account) so the graph selects them, and to become natives whose bank is a row.
 - Grant signing and verification (`sign`, `verify-signature`) were removed with the old allocation module; they return as natives of that shape, a signing step inside the allocate invocation.
 - Several smaller allocations adding up to a requirement, and consuming within one evaluation what an earlier step of it issued, are not implemented: a parameter binds one value; combine grants with an explicit invocation first.
-- Legacy effects (`legacy` in native-refs.ts, host-runtime.ts) are to be ported to natives one at a time, each shrinking the boundary test's allowlist.
+- Host and device effects use the native boundary and return outputs committed by evaluation. Do not restore the removed legacy effect adapter. Typed result declarations, refined handler offers and scoped lazy reads are the next migration described in `docs/handoff-native-boundary.md`.
 ## Validation
 
 Changes must compile under the shared, web, and backend TypeScript configurations. Keep extensionless imports and avoid enums and parameter properties.

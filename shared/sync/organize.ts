@@ -1,32 +1,10 @@
 /**
- * Organizing a capture (a voice transcript, a long pasted or typed text, a texted message) into one node's subtree.
- *
- * The host's model sees the capture and a bounded outline of the target's existing subtree (titles and ids) and
- * answers with a plan: rows to add, each under an existing row of the outline, under another new row of the plan,
- * or directly under the target. Nothing in a plan can address a node outside the target: a parent that is not in
- * the outline (or no longer under the target when the plan is applied) falls back to the target itself. Plans only
- * add rows; the raw capture is always kept as a note beside them, so nothing said is lost when the model drops it.
- *
- * Every row a plan adds names its row type: a type of the standard library (`ORGANIZE_TYPES`, e.g. `lib.note`),
- * resolved at the target like any row type (`libraryTypeAt`, nearest library); the row's edge is `[that type, row]`.
- * The raw capture is a row of the note type.
- *
- * Organizing is an effect of the host: a client (or the texting channel) places an `organize` requirement in the
- * target holding the capture (`requestOrganize`) and evaluates it; the account server's `organize` handler
- * (backend/voice/organize.ts) builds the outline from the account's own store, asks its model and submits the plan
- * as ONE submission by the `fos` peer on the target (`proposeOrganizePlan`: `applyOrganizePlan`'s ordinary graph
- * edits, `addTypedRow`, in a draft of the target's value, recorded as a proposal), and records the supply. Main is
- * unchanged until the owner accepts it: on a device, as one local edit that references the added rows without loading
- * them (node-sync.ts `acceptSubmissionRows`; the server fills them from the submission when the device syncs, then
- * closes it), or wherever the submission's content is held, `applyProposalAt`. Rejecting leaves main as it was.
- * `organizePlanChanges` expresses the same edits as `submit` changes (`add_row`) of the event grammar (events.ts).
+ * Organize requests carry the original capture as a declared input. Evaluation fills
+ * the request with the model's nested rows in one transaction; the filled request
+ * retains the capture. Outline helpers remain available for scoped tree readers.
  */
-import { FosStore } from '../dag-implementation/store'
-import { commitRoot, content, importNodes, libraryTypeAt, makeLink, nestScope, newId, proposalContent, put, reachableNodes, readProposals, resolveScope, rootTargetCid, rowsOfType, submissionAdditions, updateAtScope, valueContent, withProposal, type Scope, type SubmissionAddition, type TaskView } from './graph'
-import { formText } from './forms'
-import { addRow, addTypedRow, createReplica, headCid, view, type Replica } from './replica'
-import type { Change } from './events'
-
+import { libraryTypeAt, newId, resolveScope, rootTargetCid, viewNode, type Scope, type TaskView } from './graph'
+import { headCid, view, type Replica } from './replica'
 import { NOTE_TYPE, PLAIN_TYPE } from './published-types'
 import { addRequirement } from './arguments'
 /** The library row types a plan may name, with what the model is told each is for. */
@@ -54,9 +32,6 @@ export type OrganizeItem = {
   type: string
 }
 export type OrganizePlan = { title: string; items: OrganizeItem[] }
-/** One row of an applied plan: where it went (relative to the target), the id it got and its row type. */
-export type PlacedRow = { id: string; parent: Scope; text: string; type: string }
-
 export const ORGANIZE_LIMITS = {
   /** Outline rows sent to the model (shallow rows first), and how deep it looks. */
   outlineEntries: 150,
@@ -178,21 +153,6 @@ export function parseOrganizePlan(raw: unknown, known: Iterable<string>): Organi
   return { title, items }
 }
 
-/**
- * Where each item of a plan goes, relative to the target. `pathOf` locates an outline id under the target now (null
- * when it moved out or was removed: the item then goes to the target).
- */
-export function placePlan(plan: OrganizePlan, pathOf: (id: string) => Scope | null, makeId: () => string = newId): PlacedRow[] {
-  const placed = new Map<string, Scope>(), rows: PlacedRow[] = []
-  for (const item of plan.items) {
-    const parent = item.parent === null ? [] : placed.get(item.parent) ?? pathOf(item.parent) ?? []
-    const id = makeId()
-    rows.push({ id, parent, text: item.text, type: item.type })
-    placed.set(item.ref, [...parent, id])
-  }
-  return rows
-}
-
 /** The raw capture as a note: a heading with what it was, the stamp, then the text exactly as captured. */
 export function captureNoteText(label: string, stamp: string, text: string, title = ''): string {
   return `## ${label}${title ? `: ${title}` : ''}\n\n_${stamp}_\n\n${text.trim()}`
@@ -206,6 +166,15 @@ export const ORGANIZE_PEER = 'fos'
 
 /** What organizing a capture came to: how many rows the answer holds and the plan's title. */
 export type OrganizedResult = { rows: number; title: string }
+
+/** Count generated rows, excluding the captured input and each row's scalar fields. */
+export function organizedRowCount(replica: Replica, path: Scope): number {
+  const pattern = view(replica, path.slice(0, -1))?.tasks.find(row => row.id === path.at(-1))?.typeCid
+  const inputs = new Set(pattern ? viewNode(replica.store, pattern).tasks.map(row => row.id) : [])
+  const count = (at: Scope): number => (view(replica, at)?.tasks ?? []).filter(row => !row.scalar)
+    .reduce((total, row) => inputs.has(row.id) ? total : total + 1 + count([...at, row.id]), 0)
+  return count(path)
+}
 
 /**
  * Ask the host to organize a capture into the node at `at`: an `organize` requirement placed in that node (its text

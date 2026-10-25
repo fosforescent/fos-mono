@@ -174,19 +174,25 @@ export function sharedInputs(r: Replica, path: Scope): SharedInput[] {
 /** Only declared, unfilled inputs of an execution are writable by its visitor. */
 export function executionInputs(r: Replica, root: Scope): SharedInput[] {
   const result: SharedInput[] = []
+  const current = root.length ? view(r, root.slice(0, -1))?.tasks.find(row => row.id === root.at(-1)) ?? null : null
   // A grant an invocation row below the root already consumes is taken, whether or not that row has run yet.
   const taken = new Set<string>()
+  const nativeRows = new Set<string>()
   const collect = (path: Scope, depth: number) => {
     if (depth > 8) return
     for (const row of view(r, path)?.tasks ?? []) {
-      if (instructionPrimitives(r, { path: [...path, row.id], row }).length) for (const input of view(r, [...path, row.id])?.tasks ?? []) if (input.refId) {
-        taken.add(input.id)
-        const grant = handleAt(r, [...path, row.id, input.id])
-        if (grant) taken.add(grant.cid)
+      if (instructionPrimitives(r, { path: [...path, row.id], row }).length) {
+        nativeRows.add(JSON.stringify([...path, row.id]))
+        for (const input of view(r, [...path, row.id])?.tasks ?? []) if (input.refId) {
+          taken.add(input.id)
+          const grant = handleAt(r, [...path, row.id, input.id])
+          if (grant) taken.add(grant.cid)
+        }
       }
       if (row.refId === undefined && row.type !== TEMPLATE_TYPE) collect([...path, row.id], depth + 1)
     }
   }
+  if (instructionPrimitives(r, { path: root, row: current }).length) nativeRows.add(JSON.stringify(root))
   collect(root, 0)
   const offered = (rowPath: Scope, id: string) => {
     if (taken.has(id)) return null
@@ -196,9 +202,13 @@ export function executionInputs(r: Replica, root: Scope): SharedInput[] {
   const walk = (path: Scope, depth: number) => {
     if (depth > 8 || result.length >= 32) return
     const cid = resolveScope(r.store, headCid(r), path)
+    const rows = view(r, path)?.tasks ?? []
+    const native = nativeRows.has(JSON.stringify(path))
     for (const arg of cid ? argumentRefs(r.store, cid) : []) {
       const ref = content(r.store, arg.cid), id = ref.data.alias?.id
-      if (!id || settingOf(r.store, ref) || ref.data.refExpression) continue
+      if (!id || settingOf(r.store, ref) || ref.data.ref || ref.data.refExpression || native && ref.data.refRole === 'output') continue
+      // Requirement refs have their own input controls below; do not also expose them as generic reference slots.
+      if (rows.some(row => row.id === id && row.requirement)) continue
       const relative = [...path.slice(root.length), id]
       if (!refValueCid(r.store, ref)) result.push({ key: JSON.stringify(relative), path: relative, name: arg.name ?? id,
         kind: arg.type === r.store.primitive.documentField.getId() ? 'text' : 'ref', type: arg.type, role: ref.data.refRole ?? 'input' })
@@ -209,8 +219,10 @@ export function executionInputs(r: Replica, root: Scope): SharedInput[] {
         else walk([...path, id], depth + 1)
       }
     }
-    for (const row of view(r, path)?.tasks ?? []) {
+    for (const row of rows) {
       if (result.length >= 32) break
+      const child = resolveScope(r.store, headCid(r), [...path, row.id])
+      if (native && child && content(r.store, child).data.refRole === 'output') continue
       const req = row.requirement, relative = [...path.slice(root.length), row.id]
       const held = row.allocation || row.refId !== undefined ? offered([...path, row.id], row.id) : null
       if (held) result.push({ key: JSON.stringify(relative), path: relative, name: row.title, kind: 'allocation', direction: 'consume', type: held.allocation.type, unit: held.allocation.unit, amount: held.allocation.amount, start: held.allocation.start, end: held.allocation.end })
@@ -218,7 +230,6 @@ export function executionInputs(r: Replica, root: Scope): SharedInput[] {
       if (row.refId === undefined && row.type !== TEMPLATE_TYPE) walk([...path, row.id], depth + 1)
     }
   }
-  const current = root.length ? view(r, root.slice(0, -1))?.tasks.find(row => row.id === root.at(-1)) : null
   const req = current?.requirement
   if (req && !req.satisfied && ['allocation', 'confirmation', 'choice'].includes(req.capability ?? '')) result.push({ key: '[]', path: [], name: current!.title, kind: req.capability as 'allocation' | 'confirmation' | 'choice', ...(req.capability === 'choice' ? { options: req.options } : {}), ...(req.capability === 'allocation' ? { type: req.resource ?? 'inventory', unit: req.unit ?? 'unit', amount: req.amount, start: req.start, end: req.end } : {}) })
   const rootHeld = current ? handleAt(r, root) : null
