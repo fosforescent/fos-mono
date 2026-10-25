@@ -1,10 +1,9 @@
 /** Patterns are graphs. Required rows are products; choices are sums. */
-import { primitive } from './primitives'
+import { primitive, primitiveName } from './primitives'
 import type { FosStore } from '../dag-implementation/store'
 import type { FosNodeContent, FosPathElem } from '../types'
 import { content, isBookkeepingEdge, isBranchChoice, isChoiceEdge, isHandle, isRefNode, put, readChoice, refValueCid } from './graph'
 import { plainEdge } from './patterns'
-import { primitiveOf } from './parameters'
 
 /** A named ref constructor is itself a graph value, usable on either side of a row. */
 export function namedRefPattern(store: FosStore, title: string): string {
@@ -76,89 +75,109 @@ export function valueOfPattern(store: FosStore, pattern: string, data: FosNodeCo
   return put(store, { data, children: [...own, ...kind, ...rows] })
 }
 
-export function matchesGraph(store: FosStore, pattern: string, value: string, options: { allowHoles?: boolean; side?: 'left' | 'right' } = {}): boolean {
-  const active = new Set<string>(), memo = new Map<string, boolean>()
+/** What a match bound: each named hole (a compiled placeholder) to the value it met. */
+export type Bindings = ReadonlyMap<string, string>
+/** A match: what its named holes bound, and what its anonymous holes (unit) met, in order. */
+export type Match = { bindings: Bindings; fillers: string[] }
+type MatchOptions = { side?: 'left' | 'right'; allowHoles?: boolean; bindings?: Bindings }
+
+/** The leaf values the value primitives accept. */
+const leaves: Record<string, (scalar: NonNullable<FosNodeContent['data']['scalar']> | undefined) => boolean> = {
+  string: scalar => typeof scalar?.value === 'string',
+  number: scalar => typeof scalar?.value === 'number',
+  boolean: scalar => typeof scalar?.value === 'boolean'
+}
+
+/**
+ * Match `value` against `pattern`. Every row of the pattern needs its own witness row in the value (extra rows are fine):
+ * the lefts match as fields (recursively, so a parameterized field matches its constructor) and the rights as values.
+ * The empty node (unit) is a hole: it matches anything and yields what it met. A compiled placeholder is a named hole,
+ * bound once. Void matches nothing. A ref is read as its current value (fields on the left are compared as they are).
+ * A choice is a sum: a pattern choice matches when one of its options does, a value choice when every option does.
+ * A primitive checks the leaf value; a filled leaf must be the same. Null when the value does not match.
+ */
+export function match(store: FosStore, pattern: string, value: string, options: MatchOptions = {}): Match | null {
   let remaining = 20000
-  const rows = (node: FosNodeContent, classified = false) => node.children.filter(edge => !isBookkeepingEdge(store, edge) &&
-    edge[0] !== primitive(store, 'target') && edge[0] !== primitive(store, 'instruction') &&
-    !(classified && isClassifyingRow(store, edge, node)))
+  const active = new Set<string>()
+  const bookkeeping = (edge: FosPathElem) => isBookkeepingEdge(store, edge) || edge[0] === primitive(store, 'target') || edge[0] === primitive(store, 'instruction')
+  const rows = (node: FosNodeContent) => node.children.filter(edge => !bookkeeping(edge))
   const alternatives = (edge: FosPathElem): FosPathElem[] => {
     edge = plainEdge(store, edge)
     return isChoiceEdge(store, edge) && isBranchChoice(store, content(store, edge[1]))
       ? readChoice(store, edge[1]).options.flatMap(option => option.edge ? alternatives(option.edge) : []) : [edge]
   }
-  const edgeMatches = (expected: FosPathElem, actual: FosPathElem, depth: number): boolean => {
-    const choices = alternatives(expected), candidates = alternatives(actual)
-    return !!candidates.length && candidates.every(candidate => choices.some(option =>
-      match(option[0], candidate[0], true, depth + 1) && match(option[1], candidate[1], false, depth + 1)))
-  }
-  const branchValue = (edge: FosPathElem, node: FosNodeContent): string => {
-    const right = content(store, edge[1])
-    return isRefNode(store, right) && !refValueCid(store, right) && right.data.alias?.id === node.data.alias?.id ? edge[0] : edge[1]
-  }
-  const match = (expected: string, actual: string, key: boolean, depth: number): boolean => {
-    if (--remaining < 0 || depth > 128) return false
-    const p = store.table.get(expected), v = store.table.get(actual)
-    if (!p || !v || isHandle(v)) return false
-    const cacheKey = `${expected}/${actual}/${key}`
-    if (memo.has(cacheKey)) return memo.get(cacheKey)!
-    if (active.has(cacheKey)) return false
-    active.add(cacheKey)
-    const evaluate = (): boolean => {
-      // Dereference before distributing sums: each actual alternative may use
-      // a different branch of the expected pattern.
-      if (!key) {
-        const target = refValueCid(store, v)
-        if (target) return match(expected, target, false, depth + 1)
-        const patternTarget = refValueCid(store, p)
-        if (patternTarget) return match(patternTarget, actual, false, depth + 1)
-        // Partial assignments can retain UUID holes on the right. This is
-        // compatibility, not proof of a complete executable input.
-        if (options.allowHoles && v.data.alias && isRefNode(store, v) && rows(v).every(edge => edge[0] === primitive(store, 'alias'))) return true
-      }
-      if (isBranchChoice(store, v)) {
-        const options = readChoice(store, actual).options
-        return !!options.length && options.every(option => !!option.edge && match(expected, branchValue(option.edge, v), key, depth + 1))
-      }
-      if (isBranchChoice(store, p)) return readChoice(store, expected).options.some(option => !!option.edge && match(branchValue(option.edge, p), actual, key, depth + 1))
-      if (v.data.refAlternatives) return v.children.length > 0 && v.children.every(([, value]) => match(expected, value, key, depth + 1))
-      // the alternatives of a sum are its option rows; its kind rows (its tag) are not options
-      if (p.data.refAlternatives) return rows(p, !key).filter(edge => !isKindRow(store, edge)).some(([, value]) => match(value, actual, key, depth + 1))
-      if (key && p.data.form?.primitive && p.data.form.primitive !== v.data.form?.primitive) return false
-      if (!key) {
-        // A capability is identified by its node: a value of it carries the tag [capability, unit]. A bare capability
-        // pattern (one without tags of its own) therefore requires that tag; a refinement carries the tag as a row.
-        const bare = p.data.capabilityDefinition && !tagsOf(store, p).length && !p.children.some(edge => store.table.get(edge[0])?.data.parameterDefinition)
-        if (bare && expected !== actual && !tagsOf(store, v).includes(expected)) return false
-        if (isRefNode(store, p) && rows(p).every(edge => edge[0] === primitive(store, 'alias'))) return true
-        if (p.data.parameter) return true
-        // A template is graph content to instantiate; it imposes no leaf predicate.
-        if (expected === primitive(store, 'template')) return true
-        // A node with a `primitive` parameter row holds that native value; its other parameters (negative, …) say
-        // which way it goes, not what it is.
-        const leafPattern = primitiveOf(store, expected)
-        if (leafPattern) return match(leafPattern, actual, false, depth + 1)
-        // Native scalar constructors check the leaf value, never a declared type.
-        const scalar = p.data.form?.primitive
-        const text = expected === primitive(store, 'string')
-        if (scalar || text) {
-          const leaf = v.data.scalar ? v.data.scalar.value : v.data.description?.content
-          return scalar === 'null' ? leaf === null : typeof leaf === (scalar === 'number' || scalar === 'time' ? 'number' : scalar === 'boolean' ? 'boolean' : 'string')
-        }
-      }
-      const required = Object.fromEntries(Object.entries(p.data).filter(([name]) => !incidental.has(name) && name !== 'form' && !((p.data.capabilityDefinition || p.data.form) && ['name', 'description'].includes(name))))
-      if (!properties(required, v.data)) return false
-      // On the value side the pattern's classifying rows (its name, its polarity) are not structure the value needs.
-      const wanted = rows(p, !key), available = rows(v), used = new Set<number>()
-      // Each required row needs a witness in one product. Alternatives never
-      // contribute separate pieces to a synthetic combined value.
-      const assign = (index: number): boolean => index === wanted.length || available.some((row, i) => {
-        if (used.has(i) || !edgeMatches(wanted[index]!, row, depth)) return false
-        used.add(i); const ok = assign(index + 1); used.delete(i); return ok
-      })
-      return assign(0)
+  const options_ = (cid: string) => readChoice(store, cid).options.flatMap(option => option.edge ? [option.edge[1]] : [])
+  const go = (p: string, v: string, key: boolean, depth: number, state: Match): Match | null => {
+    if (--remaining < 0 || depth > 128) return null
+    if (p === v) return state
+    const P = store.table.get(p), V = store.table.get(v)
+    if (!P || !V || isHandle(V)) return null
+    if (p === primitive(store, 'void')) return null
+    if (!Object.keys(P.data).length && !P.children.length) return { bindings: state.bindings, fillers: [...state.fillers, v] }
+    if (P.data.refHole) {
+      const bound = state.bindings.get(p)
+      if (bound) return bound === v || (go(bound, v, key, depth + 1, state) && go(v, bound, key, depth + 1, state)) ? state : null
+      return { bindings: new Map(state.bindings).set(p, v), fillers: state.fillers }
     }
-    try { const result = evaluate(); memo.set(cacheKey, result); return result } finally { active.delete(cacheKey) }
+    if (V.data.refHole) return null
+    const visit = `${p}/${v}/${key}`
+    if (active.has(visit)) return null
+    active.add(visit)
+    try {
+      if (!key && isRefNode(store, V)) {
+        const target = refValueCid(store, V)
+        if (target) return go(p, target, key, depth + 1, state)
+        if (options.allowHoles) return state
+      }
+      if (!key && isRefNode(store, P)) {
+        const target = refValueCid(store, P)
+        if (target) return go(target, v, key, depth + 1, state)
+      }
+      if (isBranchChoice(store, V)) {
+        const all = options_(v)
+        let current: Match | null = all.length ? state : null
+        for (const option of all) if (current) current = go(p, option, key, depth + 1, current)
+        return current
+      }
+      if (isBranchChoice(store, P)) {
+        for (const option of options_(p)) { const found = go(option, v, key, depth + 1, state); if (found) return found }
+        return null
+      }
+      const leaf = primitiveName(store, p)
+      if (leaf && leaves[leaf]) return leaves[leaf](V.data.scalar) ? state : null
+      if (P.data.scalar && !(V.data.scalar && V.data.scalar.type === P.data.scalar.type && Object.is(V.data.scalar.value, P.data.scalar.value))) return null
+      const required = Object.fromEntries(Object.entries(P.data).filter(([name]) => name !== 'scalar' && !incidental.has(name) && name !== 'form' && !((P.data.capabilityDefinition || P.data.form) && ['name', 'description'].includes(name))))
+      if (!properties(required, V.data)) return null
+      const wanted = rows(P), available = rows(V), used = new Set<number>()
+      const assign = (index: number, current: Match): Match | null => {
+        if (index === wanted.length) return current
+        for (const option of alternatives(wanted[index]!)) {
+          for (let i = 0; i < available.length; i++) {
+            if (used.has(i)) continue
+            for (const candidate of alternatives(available[i]!)) {
+              const left = go(option[0], candidate[0], true, depth + 1, current)
+              const right = left && go(option[1], candidate[1], false, depth + 1, left)
+              if (!right) continue
+              used.add(i)
+              const done = assign(index + 1, right)
+              used.delete(i)
+              if (done) return done
+            }
+          }
+        }
+        return null
+      }
+      return assign(0, state)
+    } finally { active.delete(visit) }
   }
-  return match(pattern, value, options.side === 'left', 0)
+  return go(pattern, value, options.side === 'left', 0, { bindings: options.bindings ?? new Map(), fillers: [] })
+}
+
+export function matchesGraph(store: FosStore, pattern: string, value: string, options: MatchOptions = {}): boolean {
+  return match(store, pattern, value, options) !== null
+}
+
+/** A query: the nodes among `candidates` (every node in the store by default) that `pattern` matches. */
+export function query(store: FosStore, pattern: string, candidates: Iterable<string> = store.table.keys()): string[] {
+  return [...candidates].filter(cid => cid !== pattern && match(store, pattern, cid) !== null)
 }
