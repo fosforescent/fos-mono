@@ -21,7 +21,7 @@ import { standardHostRef } from './host-runtime'
  * object (read from the account's profile when it has one) and `ed25519-self` verifications are signed by it.
  */
 import { createPrivateKey, createPublicKey, hkdfSync, randomBytes, sign, verify, type KeyObject } from 'node:crypto'
-import { USER_SERVER_ATTESTATION, userFieldEdge, content, identityCid, plainEdge, supplyRequirement, bindUserAt, userAttestationPayload, verifyUser, headCid, resolveScope, valueContent, type UserRecord } from '@fosforescent/shared/sync/index'
+import { USER_SERVER_ATTESTATION, userFieldEdge, content, identityCid, supplyRequirement, bindUserAt, userAttestationPayload, verifyUser, headCid, resolveScope, valueContent, type UserRecord } from '@fosforescent/shared/sync/index'
 import type { HostHandler } from './host-runtime'
 import { readUser, userObjectContent, userType } from '@fosforescent/shared/sync/users'
 import { valueOfPattern } from '@fosforescent/shared/sync/structural'

@@ -9,7 +9,6 @@ import { FOS_DATA_VERSION } from '../version'
 import * as COMPILED_LIBRARY from './library.generated.json'
 import { compileLibrary, type LibrarySource } from '../library-compiler'
 import { fieldNode } from '../library-names'
-import { plainEdge } from './patterns'
 import { bookkeepingOf, isBookkeepingEdge, namesInLibrary, refNodeContent, valueCidOf } from './graph'
 import { hashContent } from '../dag-implementation/cid'
 
@@ -80,7 +79,7 @@ export function upgradeLibrary(r: Replica, at: Scope, definition: Scope, now: nu
   if (!def || !instance) throw new Error('There is no library here to upgrade.')
   const next = valueCidOf(r.store, def)
   if (next === instance.library) return r
-  commitRoot(r.store, updateAtScope(r.store, headCid(r), at, value => ({ ...value, children: value.children.map(edge => plainEdge(r.store, edge)[1] === instance.cid ? [next, instance.cid] : edge) })), now)
+  commitRoot(r.store, updateAtScope(r.store, headCid(r), at, value => ({ ...value, children: value.children.map(edge => edge[1] === instance.cid ? [next, instance.cid] : edge) })), now)
   return { ...r }
 }
 
@@ -103,7 +102,7 @@ export function setLibraryArg(r: Replica, at: Scope, name: string, value: string
   const arg = put(store, refNodeContent(store, { alias: { id: hashContent({ data: { name: { content: name } }, children: [] }) }, name: { content: name } }, value))
   const nextArgs = put(store, { ...args, children: [...args.children.filter(edge => edge !== existing), [left, arg]] })
   const nextRef = put(store, refNodeContent(store, ref.data, nextArgs, bookkeepingOf(store, ref)))
-  commitRoot(store, updateAtScope(store, headCid(r), at, value => ({ ...value, children: value.children.map(edge => plainEdge(store, edge)[1] === instance.cid ? [instance.library, nextRef] : edge) })), now)
+  commitRoot(store, updateAtScope(store, headCid(r), at, value => ({ ...value, children: value.children.map(edge => edge[1] === instance.cid ? [instance.library, nextRef] : edge) })), now)
   return { ...r }
 }
 

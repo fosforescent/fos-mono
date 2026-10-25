@@ -454,8 +454,6 @@ dialog.import-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 .task .note-body, .task .requirement-body { overflow-wrap: anywhere; word-break: break-word; }
 .task .row-body, .task .row-main { min-width: 0; }
 /* type errors (shared/sync/patterns.ts): the row whose type rejects a child, and that child */
-.task.type-error, .task.type-rejected { box-shadow: inset 3px 0 0 var(--danger); background: var(--danger-soft); }
-.task.type-rejected > * { text-decoration: underline wavy var(--danger); text-decoration-skip-ink: none; }
 .empty { color: var(--muted); padding: 16px 4px; }
 .tree .task { padding-left: calc(12px + var(--depth, 0) * 22px); position: relative; }
 .tree .task[data-id]:not([style*="--depth: 0"])::before { content: ""; position: absolute; left: calc(12px + (var(--depth, 0) - 1) * 22px + 16px); top: 0; bottom: 0; width: 1px; background: var(--line-soft); }

@@ -208,17 +208,10 @@ that version. A changed row type is a new version: new rows are made from it,
 rows made before keep the version they pin. Every row on the wire names its
 template; a peer missing one shows the row as a reference error and asks for it.
 
-**Placement constraints.** A placement policy must hold its predicates as graph
-edges and match the child's pinned instruction. Use structural matching by
-default and exact CID equality when the policy explicitly requests it. A
-wildcard makes the other rules exclusions; without one, declared rules form an
-allow list. No policy means no placement restriction, but a malformed policy
-must fail rather than silently become unrestricted.
-
 Constructor identity is its CID. Library field names are bindings for reaching
 that node; renaming a binding must not change a pinned row's meaning. A
 constructor may carry an ordinary name row containing a string, which a graph
-predicate can constrain. Neither placement nor native classification may
+predicate can constrain. Primitive classification must not
 recover meaning from a reverse index of library names, unrelated scopes, or
 library history. These constraints must hold after upgrades, reload, and exchange.
 

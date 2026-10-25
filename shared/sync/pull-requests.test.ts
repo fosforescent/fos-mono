@@ -4,7 +4,6 @@
  */
 import { userView } from './test-helpers'
 import { SERVER_TRANSPORT_CAPABILITIES, readProposals, content, resolveScope, valueContent, identityCid, type Scope } from './graph'
-import { plainEdge } from './patterns'
 import { addMemberAt, addTask, createReplica, headCid, renameTask, view, type Replica } from './replica'
 import { createBranch, setBranchMergeRequest } from './branches'
 import { selectBranch } from './graph'
@@ -55,7 +54,7 @@ test("a peer's branch reaches the owner as its own submission, and main stays as
   const proposals = [...proposalsAt(world.server, PROJECT), ...proposalsAt(world.server, [...PROJECT, 'f'])]
   expect(proposals.map(p => [p.peerId, p.name])).toEqual([['bob', 'try']])
   const proposed = valueContent(world.server.store, proposals[0]!.contentCid)
-  const row = valueContent(world.server.store, identityCid(world.server.store, plainEdge(world.server.store, proposed.children[0]!)))
+  const row = valueContent(world.server.store, identityCid(world.server.store, proposed.children[0]!))
   expect(row.data.description?.content).toBe('first, better')
 
   // bob's own selection is back where it was; on main, a plain sync proposes nothing of the branch

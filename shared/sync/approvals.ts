@@ -21,7 +21,6 @@ import type { FosPathElem } from '../types'
 import { hashContent } from '../dag-implementation/cid'
 import { libAt, typeIdOf, commitRoot, content, memberEdgesOf, memberPeerOf, put, readMembers, readProposal, readProposals, refNodeContent, refValueCid, resolveScope, updateAtScope, valueContent, withProposal, MARKET_PEER, SERVER_MEMBER, type ProposalRecord, type Scope } from './graph'
 import { applyProposalAt, headCid, type Replica } from './replica'
-import { plainEdge } from './patterns'
 import { isUserType, readUser, type SignatureCheck } from './users'
 import { rowWithLeft } from './row-values'
 
@@ -90,7 +89,7 @@ function publishedKeyNodes(r: Replica): Map<string, string> {
   for (const member of memberEdgesOf(r.store, headCid(r))) {
     const peerId = memberPeerOf(r.store, member)
     for (const edge of content(r.store, member[1]).children) {
-      const plain = plainEdge(r.store, edge)
+      const plain = edge
       if (!isUserType(r.store, plain[0])) continue
       const user = readUser(r.store, plain[0], valueContent(r.store, plain[1]))
       if (user && user.username === peerId && user.publicKey) keys.set(plain[1], user.publicKey)
@@ -123,7 +122,7 @@ export function mergeRule(r: Replica, at: Scope): string | null {
 export function setMergeRule(r: Replica, at: Scope, approvers: string[], now: number): Replica {
   const store = r.store, left = libAt(store, at).capabilities.approveMerge!, pattern = approvalPattern(store, approvers, at)
   const row: FosPathElem = [left, put(store, refNodeContent(store, { alias: { id: left } }, pattern))]
-  commitRoot(store, updateAtScope(store, headCid(r), at, value => ({ ...value, children: [...value.children.filter(edge => plainEdge(store, edge)[0] !== left), row] })), now)
+  commitRoot(store, updateAtScope(store, headCid(r), at, value => ({ ...value, children: [...value.children.filter(edge => edge[0] !== left), row] })), now)
   return { ...r }
 }
 
@@ -177,7 +176,7 @@ export function acceptSubmission(r: Replica, at: Scope, proposalCid: string, app
 export function attesterKey(r: Replica, peerId: string): string | null {
   for (const [node] of publishedKeyNodes(r)) {
     const entry = memberEdgesOf(r.store, headCid(r)).find(m => memberPeerOf(r.store, m) === peerId)
-    if (entry && content(r.store, entry[1]).children.some(edge => plainEdge(r.store, edge)[1] === node)) return node
+    if (entry && content(r.store, entry[1]).children.some(edge => edge[1] === node)) return node
   }
   return null
 }

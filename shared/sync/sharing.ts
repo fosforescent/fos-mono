@@ -19,7 +19,6 @@ import { addMemberAt, createReplica, deleteTask, homePath, addRow, proposeRefAt,
 import { FosStore } from '../dag-implementation/store'
 import { isCid } from '../dag-implementation/cid'
 import type { FosPathElem } from '../types'
-import { plainEdge } from './patterns'
 import { MARKDOWN_TYPE, NUMBER_TYPE, TEXT_TYPE, VISITOR_SUBMISSION } from './published-types'
 export * from './published-types'
 import { PLAIN_TYPE, REF_TYPE, TEMPLATE_TYPE } from './library-types'
@@ -366,7 +365,7 @@ export function sharedProjection(r: Replica, path: Scope, revision: (value: unkn
         if (!field.open) rows.push({ id: field.id, depth: depth + 1, type: typeof field.value === 'number' ? NUMBER_TYPE : TEXT_TYPE, title: label, ...(shown ? { body: String(field.value ?? '').slice(0, 8000) } : {}) })
         else if (shown) fields.push({ key: JSON.stringify(relative), path: relative, name: label || 'Value', kind: 'text' })
       }
-      const definition = edge && store.table.has(plainEdge(store, edge)[0]) ? content(store, plainEdge(store, edge)[0]) : null
+      const definition = edge && store.table.has(edge[0]) ? content(store, edge[0]) : null
       // Reference targets, arguments, membership, previous versions and private inputs are never exported.
       if (row.refId === undefined) walk([...at, row.id], depth + 1)
     }

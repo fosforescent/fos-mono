@@ -19,7 +19,6 @@ export const RESOURCE_TYPE = 'resource'
 /** A template row: the type of the tasks made from it. */
 export const TEMPLATE_TYPE = 'template'
 /** What a type accepts as children (sync/patterns.ts). */
-export const PATTERN_TYPE = 'pattern'
 export const HOME_TYPE = 'home'
 export const DEVICE_ROOT_TYPE = 'deviceRoot'
 /** A library ref's row type: a ref whose value is a library (a library defines it, so a library is told by what it holds). */

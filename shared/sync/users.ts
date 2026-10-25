@@ -24,7 +24,6 @@ import type { FosStore } from '../dag-implementation/store'
 import type { FosNodeContent, FosPathElem } from '../types'
 import { content, identityCid, isLibraryType, isRowEdge, newId, libraryTypeAt, memberEdgesOf, memberPeerOf, membershipPath, put, refNodeContent, resolveScope, valueCidOf, valueContent, type Scope } from './graph'
 import { constructRow, fieldValues, rowRecord } from './fields'
-import { plainEdge } from './patterns'
 import { addRow, bindUserAt, deleteTask, headCid, homePath, view, writeGraphNode, type Replica } from './replica'
 import { PLAIN_TYPE } from './library-types'
 import { addRequirement } from './arguments'
@@ -87,7 +86,7 @@ export function userObjectContent(store: FosStore, typeCid: string, user: UserRe
 /** The edge of `node` that is its `user` field: the field named `user` whose type is a user type (any version). */
 export function userFieldEdge(store: FosStore, node: FosNodeContent): FosPathElem | undefined {
   return node.children.find(edge => {
-    const e = plainEdge(store, edge)
+    const e = edge
     return isUserType(store, e[0]) && valueContent(store, identityCid(store, e)).data.name?.content === USER_FIELD
   })
 }
@@ -96,7 +95,7 @@ export function userFieldEdge(store: FosStore, node: FosNodeContent): FosPathEle
 export function userOf(store: FosStore, node: FosNodeContent): UserRecord | null {
   const edge = userFieldEdge(store, node)
   if (!edge) return null
-  const e = plainEdge(store, edge)
+  const e = edge
   return readUser(store, e[0], valueContent(store, identityCid(store, e)))
 }
 
@@ -105,9 +104,9 @@ export function withUserField(store: FosStore, node: FosNodeContent, user: UserR
   const existing = userFieldEdge(store, node)
   if (!user) return existing ? { ...node, children: node.children.filter(e => e !== existing) } : node
   const value = put(store, userObjectContent(store, typeCid, user))
-  if (existing && plainEdge(store, existing)[0] === typeCid && valueCidOf(store, identityCid(store, plainEdge(store, existing))) === value) return node
+  if (existing && existing[0] === typeCid && valueCidOf(store, identityCid(store, existing)) === value) return node
   // a replaced field keeps its identity; a new one is the row's user field
-  const id = (existing && content(store, identityCid(store, plainEdge(store, existing))).data.alias?.id) || `${node.data.alias?.id ?? 'row'}/field/${USER_FIELD}`
+  const id = (existing && content(store, identityCid(store, existing)).data.alias?.id) || `${node.data.alias?.id ?? 'row'}/field/${USER_FIELD}`
   const ref = put(store, refNodeContent(store, { alias: { id }, name: { content: USER_FIELD } }, value))
   const edge: FosPathElem = [typeCid, ref]
   return { ...node, children: existing ? node.children.map(e => e === existing ? edge : e) : [...node.children, edge] }
@@ -147,7 +146,7 @@ export function verifyUser(user: UserRecord, trust: UserTrust): { ok: true; by: 
 /** The People row in Home (the row of the People type), if there is one. */
 export function usersPath(r: Replica): Scope | null {
   const home = homePath(r), cid = resolveScope(r.store, headCid(r), home)
-  const row = cid ? valueContent(r.store, cid).children.map(edge => plainEdge(r.store, edge)).find(edge => isLibraryType(r.store, edge[0], PEOPLE_TYPE)) : undefined
+  const row = cid ? valueContent(r.store, cid).children.map(edge => edge).find(edge => isLibraryType(r.store, edge[0], PEOPLE_TYPE)) : undefined
   const id = row ? content(r.store, identityCid(r.store, row)).data.alias?.id : undefined
   return id ? [...home, id] : null
 }
@@ -164,7 +163,7 @@ function cachedUserRow(r: Replica, username: string): { id: string; user: UserRe
   if (!cid) return null
   const wanted = username.toLowerCase()
   for (const edge of valueContent(r.store, cid).children) {
-    const e = plainEdge(r.store, edge)
+    const e = edge
     if (!isUserType(r.store, e[0])) continue
     const node = valueContent(r.store, identityCid(r.store, e)), user = readUser(r.store, e[0], node)
     const id = content(r.store, identityCid(r.store, e)).data.alias?.id
@@ -220,7 +219,7 @@ export const peerKeyId = (peerId: string): string => userObjectId({ username: pe
 function keyRowAt(r: Replica, entry: Scope, peerId: string): string | null {
   const cid = resolveScope(r.store, headCid(r), entry)
   for (const edge of cid ? content(r.store, cid).children : []) {
-    const plain = plainEdge(r.store, edge)
+    const plain = edge
     if (!isRowEdge(r.store, plain) || !isUserType(r.store, plain[0])) continue
     const user = readUser(r.store, plain[0], valueContent(r.store, identityCid(r.store, plain)))
     if (user?.username === peerId) return content(r.store, identityCid(r.store, plain)).data.alias?.id ?? null
@@ -252,7 +251,7 @@ export function publishedKeys(r: Replica): Record<string, string> {
     const peerId = memberPeerOf(r.store, member)
     // a key row is a row of the user type (the edge's left node) whose user is the entry's own peer; nothing else is read
     for (const edge of content(r.store, member[1]).children) {
-      const plain = plainEdge(r.store, edge)
+      const plain = edge
       if (!isUserType(r.store, plain[0])) continue
       const peer = readUser(r.store, plain[0], valueContent(r.store, identityCid(r.store, plain)))
       if (peer?.username === peerId && peer.publicKey) out[peerId] = peer.publicKey

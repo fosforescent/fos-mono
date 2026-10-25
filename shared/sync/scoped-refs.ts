@@ -59,8 +59,7 @@ export const matchesRefPattern = matchesGraph
 export const refValueCompatible = (store: FosStore, pattern: string, value: string): boolean => matchesGraph(store, pattern, value, { allowHoles: true })
 /**
  * Whether a declaration's pattern constrains the value its ref holds: a capability (refined or not), a primitive
- * type, or a pattern of its own. A library row type with a name (a bank, a task) constrains the row's placement
- * (sync/patterns.ts), never the value: a row's instruction is not its result's value predicate.
+ * type, or a pattern of its own. A library row type (a bank, a task) is not checked against what its ref holds.
  */
 export function patternIsValuePredicate(store: FosStore, pattern: string): boolean {
   const node = store.table.get(pattern)

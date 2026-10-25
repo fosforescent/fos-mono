@@ -97,11 +97,6 @@ export type FosDataContent = {
   behavior?: {
     content: string
   },
-  /** Placement policy: its rows contain graph predicates on child instructions. `any` makes other rules exclusions. */
-  pattern?: {
-    any?: boolean
-    exact?: boolean
-  },
   /** Standard-library adapter metadata. Custom patterns need no registered name. */
   capabilityDefinition?: {
     name: string
@@ -123,10 +118,6 @@ export type FosDataContent = {
   refCompilation?: { cid: string },
   /** A signature over this value's unsigned node by the key named; made and checked through the sign and verify-signature capabilities. */
   signature?: { key: string; value: string },
-  /** A type error node ([TYPE_ERROR, error]): the alias ids of the row's children its type does not accept. */
-  typeError?: {
-    rejected: string[]
-  },
   /** On a reference-error template: the template a row is pinned to that this peer has not received yet. */
   missingTemplate?: {
     cid: string

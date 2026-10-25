@@ -15,17 +15,13 @@ import {
 import { headCid, type Replica } from './replica'
 import { isValueSubmission } from './graph'
 import { refValueCompatible } from './scoped-refs'
-import { PATTERN_TYPE } from './library-types'
 
 /** Submissions to a right ref are value submissions; a label per source keeps one option per source. */
 
-/**
- * The rows a pattern position counts: everything but bookkeeping, the ref constructor's own pointers and placement
- * rules (a template's `lib.pattern` rows say what it accepts as children; they are not positions).
- */
+/** The rows a pattern position counts: everything but bookkeeping and the ref constructor's own pointers. */
 export function patternRows(store: FosStore, node: FosNodeContent): FosPathElem[] {
   const own = [primitive(store, 'target'), primitive(store, 'instruction'), primitive(store, 'alias')]
-  return node.children.filter(edge => !isBookkeepingEdge(store, edge) && !own.includes(edge[0]) && typeIdOf(store, edge[0]) !== PATTERN_TYPE)
+  return node.children.filter(edge => !isBookkeepingEdge(store, edge) && !own.includes(edge[0]))
 }
 
 /** A ref with no value yet: a hole the pattern leaves open. */

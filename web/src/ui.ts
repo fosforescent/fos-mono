@@ -2340,10 +2340,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   const path: Scope = [...at, task.id]
   const selected = !!state.selected && state.selected.length === path.length && state.selected.every((p, i) => path[i] === p)
   const li = document.createElement('li')
-  li.className = 'task type-' + typeClass(task) + (task.checkable ? ' checkable' : '') + (task.refId !== undefined ? ' ref' : '') + (task.requirement ? ' requirement' : '') + (task.done ? ' done' : '') + (task.isLink ? ' linked' : '') + (selected ? ' selected' : '') + (task.typeError?.length ? ' type-error' : '') + (task.rejected ? ' type-rejected' : '')
-  // a type error: the row holds rows its type does not accept (they are marked too); everything else reads as before
-  if (task.typeError?.length) li.title = `${task.title || task.typeName || 'Row'} does not accept ${task.typeError.length === 1 ? 'one of its rows' : `${task.typeError.length} of its rows`} (marked in red)`
-  else if (task.rejected) li.title = 'This row cannot be here: its parent’s type does not accept it. Move or remove it to fix the parent.'
+  li.className = 'task type-' + typeClass(task) + (task.checkable ? ' checkable' : '') + (task.refId !== undefined ? ' ref' : '') + (task.requirement ? ' requirement' : '') + (task.done ? ' done' : '') + (task.isLink ? ' linked' : '') + (selected ? ' selected' : '')
   li.style.setProperty('--depth', String(depth))
   if (task.construction) li.classList.add('has-constructor')
   li.draggable = true

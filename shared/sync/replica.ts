@@ -103,7 +103,6 @@ import {
   withoutMember,
   withoutPeer, ensureLibraryRow, isShippedLibrary, rootStoredTarget, importNodes, type HostOffers } from './graph'
 import { mergeNodes, resolveChoiceIn } from './merge'
-import { assertNoNewTypeErrors, rootTypeError, typeErrorOf } from './patterns'
 
 export type ReplicaMeta = {
   nodeSync?: Record<string, import('./node-sync').NodeSyncState>
@@ -284,23 +283,7 @@ export function hasSynced(replica: Replica): boolean {
 export function view(replica: Replica, at: Scope, constructors = false): NodeView | null {
   const cid = resolveScope(replica.store, headCid(replica), at)
   if (!cid) return null
-  const node = viewNode(replica.store, cid, constructors)
-  // a node in type error: which of its rows its type does not accept (the error is on its edge, or on the root)
-  const rejected = typeErrorAt(replica, at)
-  if (rejected?.length) {
-    node.typeError = rejected
-    for (const row of node.tasks) if (rejected.includes(row.id)) row.rejected = true
-  }
-  return node
-}
-
-/** The rows the node at `at` holds that its type does not accept, or null when it is not a type error. */
-export function typeErrorAt(replica: Replica, at: Scope): string[] | null {
-  const store = replica.store
-  if (!at.length) return rootTypeError(store, rootStoredTarget(store))
-  const parent = resolveScope(store, headCid(replica), at.slice(0, -1))
-  const edge = parent ? findEdge(store, valueContent(store, parent), `a:${at.at(-1)}`) : undefined
-  return edge ? typeErrorOf(store, edge) : null
+  return viewNode(replica.store, cid, constructors)
 }
 
 /** Names along the attached scope plus a path below it, for labels. */
@@ -326,14 +309,9 @@ export function editNode(replica: Replica, at: Scope, now: number, fn: (node: Fo
   return commitEdit(replica, updateAtScope(replica.store, headCid(replica), at, fn, 'node'), now)
 }
 
-/**
- * Commit a local edit. One that would put a row where its parent's type does not accept it is refused (received
- * changes become type errors instead, sync/patterns.ts); the store stays as it was.
- */
+/** Commit a local edit. */
 function commitEdit(replica: Replica, next: string, now: number): Replica {
-  const store = replica.store, rootBefore = store.rootNodeId, before = rootStoredTarget(store)
-  commitRoot(store, next, now)
-  try { assertNoNewTypeErrors(store, before, rootStoredTarget(store)) } catch (error) { store.rootNodeId = rootBefore; throw error }
+  commitRoot(replica.store, next, now)
   return { ...replica }
 }
 
@@ -606,8 +584,7 @@ export function instantiateTemplate(replica: Replica, at: Scope, taskId: string,
   return instantiateTemplateValue(replica, at, taskId, templateCid, now)
 }
 
-/** The product a template constructs. Editor placement rules stay on the
- * definition; the resulting pattern contains the same rows as an instance. */
+/** The product a template constructs: a pattern with the same rows as an instance. */
 export function templateValuePattern(store: FosStore, templateCid: string): string {
   let field = 0
   const copied = content(store, copyRowContent(store, templateCid, 0, () => `pattern:${templateCid}:${field++}`, { instantiate: true }))

@@ -3,7 +3,6 @@ import { primitive, primitiveName } from './primitives'
 import type { FosStore } from '../dag-implementation/store'
 import type { FosNodeContent, FosPathElem } from '../types'
 import { content, isBookkeepingEdge, isBranchChoice, isChoiceEdge, isHandle, isRefNode, put, readChoice, refValueCid } from './graph'
-import { plainEdge } from './patterns'
 
 /** A named ref constructor is itself a graph value, usable on either side of a row. */
 export function namedRefPattern(store: FosStore, title: string): string {
@@ -124,7 +123,7 @@ export function match(store: FosStore, pattern: string, value: string, options: 
   const bookkeeping = (edge: FosPathElem) => isBookkeepingEdge(store, edge) || edge[0] === primitive(store, 'target') || edge[0] === primitive(store, 'instruction')
   const rows = (node: FosNodeContent) => node.children.filter(edge => !bookkeeping(edge))
   const alternatives = (edge: FosPathElem): FosPathElem[] => {
-    edge = plainEdge(store, edge)
+    edge = edge
     return isChoiceEdge(store, edge) && isBranchChoice(store, content(store, edge[1]))
       ? readChoice(store, edge[1]).options.flatMap(option => option.edge ? alternatives(option.edge) : []) : [edge]
   }
