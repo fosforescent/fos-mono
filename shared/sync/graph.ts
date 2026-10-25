@@ -1,4 +1,5 @@
 import { primitive, primitiveName } from './primitives'
+import { fieldEdge, fieldValue, isFieldRow, isTextField, leafText, titleField, typeRows } from './fields'
 import { capabilityDeclarations } from './capability-catalog'
 import { resolveBinding } from './bindings'
 import { bindingProperties, type ScopedBinding } from './scope-bindings'
@@ -357,15 +358,49 @@ function isPrimitive(store: FosStore, cid: string): boolean {
   return primitiveName(store, cid) !== null
 }
 
-/** A constructor's own name row. Names assigned by enclosing libraries must not change its meaning. */
+/**
+ * What the library bound at the store's root calls its nodes, and its `done` field: how rows are labelled and which
+ * ones complete. A type is its structure; the name is the library's entry for it, never part of the node.
+ */
+type Vocabulary = { library: string; names: Map<string, string>; done: string | null }
+const vocabularies = new WeakMap<FosStore, Vocabulary>()
+export function rowVocabulary(store: FosStore): Vocabulary | null {
+  let binding: ReturnType<typeof libraryBindingAt> = null
+  try { binding = store.table.has(store.rootNodeId) ? libraryBindingAt(store, []) : null } catch { binding = null }
+  if (!binding) return null
+  const cached = vocabularies.get(store)
+  if (cached?.library === binding.library) return cached
+  const byName = namesInLibrary(store, binding.library).byName, names = new Map<string, string>()
+  for (const [name, cid] of byName) if (!names.has(cid)) names.set(cid, name)
+  const vocabulary = { library: binding.library, names, done: byName.get('done') ?? null }
+  vocabularies.set(store, vocabulary)
+  return vocabulary
+}
+/** The library's name for a type node (its entry, `task`, `capabilities.mail`, ...), or null. */
 export function typeIdOf(store: FosStore, typeCid: string | null | undefined): string | null {
   if (!typeCid || !store.table.has(typeCid)) return null
-  const rows = content(store, typeCid).children.filter(([left]) => left === primitive(store, 'name'))
-  if (rows.length > 1) throw new Error('Ambiguous constructor name.')
-  if (!rows.length) return null
-  const name = content(store, rows[0]![1]).data.scalar
-  if (name?.type !== 'text' || typeof name.value !== 'string') throw new Error('A constructor name must be a string.')
-  return name.value
+  return rowVocabulary(store)?.names.get(typeCid) ?? null
+}
+/** Whether rows of `type` complete: the type has the library's `done` field. */
+export function completes(store: FosStore, type: string): boolean {
+  const done = rowVocabulary(store)?.done
+  return !!done && typeRows(store, type).some(([field]) => field === done)
+}
+/** A row's title: its own text (a plain row), else what its title field holds; legacy rows fall back to their description. */
+export function rowTitle(store: FosStore, nodeCid: string, type: string | null): string {
+  const value = valueContent(store, nodeCid), id = aliasIdOf(content(store, nodeCid)) ?? aliasIdOf(value) ?? nodeCid
+  if (type && isTextField(store, type)) return leafText(store, nodeCid) ?? ''
+  const field = type ? titleField(store, type) : value.children.find(edge => isFieldRow(store, id, edge) && isTextField(store, edge[0]))?.[0]
+  const held = field ? fieldValue(store, id, value, field) : null
+  return (held ? leafText(store, held) : null) ?? (field ? null : leafText(store, nodeCid)) ?? formTitle(store, value)
+}
+/** Whether a row is done: its `done` field holds unit. */
+export function rowDone(store: FosStore, nodeCid: string): boolean {
+  const done = rowVocabulary(store)?.done
+  if (!done) return false
+  const value = valueContent(store, nodeCid), id = aliasIdOf(content(store, nodeCid)) ?? aliasIdOf(value) ?? nodeCid
+  const held = fieldValue(store, id, value, done)
+  return !!held && !Object.keys(content(store, held).data).length && !content(store, held).children.length
 }
 
 /** A structural predicate on a constructor's name row; it carries its own graph meaning. */
@@ -396,6 +431,8 @@ export function rowTypeOf(store: FosStore, edge: FosPathElem): string | null {
   }
   const [type, target] = edge
   if (!store.table.has(type) || !store.table.has(target)) return null
+  // a row has an identity of its own; an edge without one (a field's text, a tag) is part of the node's value
+  if (!content(store, target).data.alias && !isRefNode(store, content(store, target)) && !isPeerReference(content(store, target))) return null
   if (isPrimitive(store, type)) {
     // Built-in data constructors can be the left side too. Pointer/history/policy
     // edges describe the ref itself rather than applying a constructor to a right node.
@@ -448,7 +485,7 @@ export function isTemplateType(store: FosStore, typeCid: string): boolean {
 /** A task: made from the Task type or from a template row. It has a done state, blockers and a checkbox. */
 export function isTaskRow(store: FosStore, edge: FosPathElem): boolean {
   const type = rowTypeOf(store, edge)
-  return !!type && (typeIdOf(store, type) === TASK_TYPE || isTemplateType(store, type))
+  return !!type && (completes(store, type) || isTemplateType(store, type))
 }
 
 /** Resolve a new row's type from the library bound at its parent `at`; missing fields must fail. */
@@ -1479,17 +1516,18 @@ export function rowView(store: FosStore, nodeCid: string, edge?: FosPathElem): T
   const definition = typeCid ? valueContent(store, typeCid) : undefined
   // a requirement row is titled by its own declaration, whatever value is bound to it
   const asks = !!typeCid && isNegative(store, typeCid) && isRefNode(store, identity) && !!identity.data.description
+  const rowId = aliasIdOf(identity) ?? aliasIdOf(value) ?? nodeCid
   const view: TaskView = {
-    id: aliasIdOf(identity) ?? aliasIdOf(value) ?? nodeCid,
-    title: asks ? identity.data.description!.content : formTitle(store, value, definition),
+    id: rowId,
+    title: asks ? identity.data.description!.content : rowTitle(store, nodeCid, typeCid),
     type,
     ...(typeCid ? { typeCid } : {}),
-    ...(definition?.data.description?.content ? { typeName: definition.data.description.content } : {}),
+    ...(type ? { typeName: type } : {}),
     checkable: task,
-    done: task && !!value.data.todo?.completed,
+    done: task && rowDone(store, nodeCid),
     createdAt: created,
     updatedAt: value.data.updated?.time ?? created,
-    childCount: value.children.filter((e) => isRowEdge(store, e) && !(isKindRow(store, e) && !content(store, identityCid(store, e)).data.alias)).length,
+    childCount: value.children.filter((e) => isRowEdge(store, e) && !isFieldRow(store, rowId, e) && !(isKindRow(store, e) && !content(store, identityCid(store, e)).data.alias)).length,
     childChoices: value.children.filter((e) => isChoiceEdge(store, e)).length,
     subtreeTasks: sub.tasks,
     subtreeDone: sub.done,
@@ -1779,9 +1817,10 @@ export function viewNode(store: FosStore, cid: string, constructors = false): No
   const identity = content(store, cid)      // ref node for link rows (bookkeeping lives here)
   const value = valueContent(store, cid)    // the content: text, rows
   const link = isLink(store, identity)
+  const ownId = aliasIdOf(identity) ?? aliasIdOf(value) ?? cid
   const view: NodeView = {
-    name: formTitle(store, value) || null,
-    done: value.data.todo ? !!value.data.todo.completed : null,
+    name: rowTitle(store, cid, null) || null,
+    done: rowVocabulary(store)?.done && fieldEdge(store, ownId, value, rowVocabulary(store)!.done!) ? rowDone(store, cid) : null,
     tasks: [], choices: [], peers: [],
     isLink: link,
     members: link || isPeerReference(identity) ? readMembers(store, identity) : [],
@@ -1797,6 +1836,8 @@ export function viewNode(store: FosStore, cid: string, constructors = false): No
     }
   }
   for (const edge of value.children) {
+    // the node's own fields are part of it, not rows inside it
+    if (isFieldRow(store, ownId, edge)) continue
     // a library instance is the library's binding, a container, not one of the node's rows (Settings lists it)
     if (isRowEdge(store, edge) && !constructors && isLibraryInstance(store, content(store, identityCid(store, edge)))) continue
     // the rows a value carries as a value of its pattern (a capability's slots and inputs) are not the node's rows

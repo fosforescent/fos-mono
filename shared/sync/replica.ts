@@ -1,4 +1,5 @@
-import { createStore } from './graph'
+import { constructPlainRow, constructRow, fieldEdge, fieldText, fieldValue, fieldValues, isFieldRow, isTextField, rebuildRow, rowRecord, titleField, withFieldValue, withFieldValues, withRowText } from './fields'
+import { createStore, completes, rowTitle, rowVocabulary } from './graph'
 import { primitive } from './primitives'
 import { sameCapabilityType } from './capabilities'
 import { refValueCompatible } from './scoped-refs'
@@ -381,25 +382,27 @@ function withTextParameters(store: FosStore, node: FosNodeContent): FosNodeConte
 export function addTask(replica: Replica, at: Scope, title: string, now: number, id: string = newId()): Replica {
   const trimmed = title.trim()
   if (!trimmed) return replica
-  // the first row inside an open requirement starts its value (addRow knows how)
-  const parent = at.length ? resolveScope(replica.store, headCid(replica), at.slice(0, -1)) : null
-  const parentEdge = parent ? findEdge(replica.store, valueContent(replica.store, parent), `a:${at.at(-1)}`) : undefined
-  if (parentEdge && isRequirementRow(replica.store, parentEdge)) return addRow(replica, at, TASK_TYPE, trimmed, now, { id })
-  const added = edit(replica, at, now, (value) => {
-    const cid = put(replica.store, withTextParameters(replica.store, taskContent(id, trimmed, false, now, now)))
-    return { ...value, children: [...value.children, rowEdgeAt(replica.store, TASK_TYPE, cid, at)] }
-  })
-  return added
+  return addRow(replica, at, TASK_TYPE, trimmed, now, { id })
+}
+
+/**
+ * The content of a new row `id` of `type` holding `text`: built from the type's fields (its title field holds `text`;
+ * a plain row is its text). References, queries and banks still carry their data until they are rows.
+ */
+function newRowContent(store: FosStore, type: string, typeId: string, id: string, text: string, now: number, extras: Omit<RowExtras, 'store'>): FosNodeContent {
+  if (typeId === REF_TYPE || typeId === QUERY_TYPE || typeId === RESOURCE_TYPE) return rowContent(typeId, id, text, now, { ...extras, store })
+  if (isTextField(store, type)) return constructPlainRow(store, type, id, text, now)
+  const values = new Map<string, string>(), title = titleField(store, type), done = rowVocabulary(store)?.done
+  if (title && text) values.set(title, fieldText(store, title, text))
+  if (done && extras.done && completes(store, type)) values.set(done, put(store, { data: {}, children: [] }))
+  return constructRow(store, type, id, values, now)
 }
 
 export type AddRowOptions = Omit<RowExtras, 'store'> & { position?: MovePosition; id?: string }
 
-/** Instantiate any graph-defined constructor, including definitions unknown to this client. */
-export function addConstructedRow(replica: Replica, at: Scope, template: string, input: FormInput, now: number, id = newId()): Replica {
-  return edit(replica, at, now, value => {
-    const node = withTextParameters(replica.store, constructForm(replica.store, template, id, input, now))
-    return { ...value, children: [...value.children, [template, put(replica.store, node)]] }
-  })
+/** A row of `type` whose fields hold `input` (by field name), including types unknown to this client. */
+export function addConstructedRow(replica: Replica, at: Scope, type: string, input: Readonly<Record<string, string | number>>, now: number, id = newId()): Replica {
+  return edit(replica, at, now, value => ({ ...value, children: [...value.children, [type, put(replica.store, constructRow(replica.store, type, id, fieldValues(replica.store, type, input), now))]] }))
 }
 
 /** Local graph authoring for the CLI: edit a node or add a row with an explicit instruction. */
@@ -417,37 +420,17 @@ export function writeGraphNode(replica: Replica, at: Scope, node: FosNodeContent
   return edit(replica, at, now, previous => ({ ...node, data: { ...node.data, ...(previous.data.alias ? { alias: previous.data.alias } : {}) } }))
 }
 
-/** Upgrade legacy row payloads only at the write boundary. Existing children remain ordinary rows. */
-function constructRowValue(replica: Replica, template: string, id: string, text: string, extras: Omit<RowExtras, 'store'>, now: number, previous?: FosNodeContent): FosNodeContent {
-  const legacy = previous?.data.comment
-  const node = constructForm(replica.store, template, id, { text, author: extras.author ?? (legacy ? { id: legacy.authorID, name: legacy.authorName } : { id: replica.meta.peerId, name: replica.meta.peerId }) }, now)
-  if (previous) {
-    const { description: _description, comment: _comment, todo: _todo, presentation: _presentation, scalar: _scalar, ...data } = previous.data
-    node.data = { ...data, ...node.data, created: { time: legacy?.time ?? previous.data.created?.time ?? now } }
-    node.children.push(...previous.children, ...legacyCommentMetadata(replica.store, previous, id, now))
-  }
-  return withTextParameters(replica.store, node)
-}
-
 /**
  * Append a row of the row type `type` (a type's cid, e.g. from `libraryTypeAt`) holding `text` under the node at
  * `at`: the edge is `[type, row]`, so the type alone says what the row is. A type with a form is constructed from it
  * (its text field gets `text`); a type without one holds `text` as the row's description.
  */
 export function addTypedRow(replica: Replica, at: Scope, type: string, text: string, now: number, id: string = newId()): Replica {
-  const body = text.replace(/\s+$/, '').replace(/^\s*\n/, '')
-  if (!body.trim()) return replica
-  const definition = content(replica.store, type)
-  return edit(replica, at, now, (value) => {
-    const node = definition.data.form ? constructRowValue(replica, type, id, body, {}, now) : withTextParameters(replica.store, rowContent(PLAIN_TYPE, id, body.trim(), now, { store: replica.store }))
-    return { ...value, children: [...value.children, [type, put(replica.store, node)]] }
-  })
+  return text.trim() ? addRow(replica, at, type, text, now, { id }) : replica
 }
 
 /** Rows of these types may start blank (Enter / "Add comment" create one to type into; flow entries describe themselves). */
 const BLANK_TYPES = [PLAIN_TYPE, COMMENT_TYPE, REF_TYPE]
-/** Text a type presents as text (Markdown) keeps its leading whitespace; titles are trimmed. */
-const rowBody = (store: FosStore, type: string, text: string) => content(store, type).data.form?.text ? text.replace(/\s+$/, '') : text.trim()
 
 /**
  * Append (or place at `position`) a row of `type` under the node at `at`: a type id (`lib.<type>`: the row type of the
@@ -460,31 +443,24 @@ export function addRow(replica: Replica, at: Scope, type: string, text: string, 
   if (typeId === REF_TYPE && !options.refId) return replica
   const parent = at.length ? resolveScope(store, headCid(replica), at.slice(0, -1)) : null
   const parentEdge = parent ? findEdge(store, valueContent(store, parent), `a:${at.at(-1)}`) : null
-  const parentType = parentEdge ? rowTypeOf(store, parentEdge) : null
-  const repeated = typeId === PLAIN_TYPE && parentType && content(store, parentType).data.form?.repeat ? formFields(store, parentType)[0]?.type : null
   // Explicit graph definitions may have inputs without a title at all.
   if (!text.trim() && !store.table.has(type) && !BLANK_TYPES.includes(typeId)) return replica
-  const template = repeated ?? resolveRowType(store, type, at)
-  const body = rowBody(store, template, text)
+  const template = resolveRowType(store, type, at)
+  const body = text.trim()
   const id = options.id ?? newId()
   const place = (value: FosNodeContent) => {
     const { position: _p, id: _i, ...extras } = options
-    const constructed = content(store, template).data.form
-    const numeric = constructed?.primitive === 'number' || constructed?.primitive === 'time'
-    const node = repeated ? constructForm(store, template, id, numeric ? Number(body) : body, now) : constructed ? constructRowValue(replica, template, id, body, extras, now) : withTextParameters(store, rowContent(typeId, id, body, now, { ...extras, store }))
-    if (repeated) { node.data.name = { content: id }; node.data.position = { value: value.children.length } }
-    const bound = userBound(replica, at, node, extras)
-    const cid = repeated ? put(store, refNodeContent(store, { alias: { id }, name: { content: id } }, put(store, bound))) : put(store, bound)
-    const edge = repeated ? rowEdge(store, cid, template) : rowEdgeAt(store, template, cid, at)
+    const node = newRowContent(store, template, typeIdOf(store, template) ?? typeId, id, body, now, extras)
+    const edge = rowEdgeAt(store, template, put(store, userBound(replica, at, node, extras)), at)
     const children = [...value.children]
     const pos = options.position
     if (pos && 'relativeTo' in pos) {
       const sibling = findEdge(store, value, `a:${pos.relativeTo}`)
       const index = sibling ? children.indexOf(sibling) : -1
-      if (index >= 0) { children.splice(pos.position === 'above' ? index : index + 1, 0, edge); return positionFormRows(store, { ...value, children }, now) }
+      if (index >= 0) { children.splice(pos.position === 'above' ? index : index + 1, 0, edge); return { ...value, children } }
     }
     children.push(edge)
-    return positionFormRows(store, { ...value, children }, now)
+    return { ...value, children }
   }
   // The first row typed inside an open requirement starts the value it is bound to: a container the pattern reads.
   // Until then the hole has no value, and editing it would make the ref its own content.
@@ -505,17 +481,18 @@ export function setRowContentAt(replica: Replica, at: Scope, aliasId: string, ty
     const node = valueContent(replica.store, identityCid(replica.store, edge))
     const kept = keptRowType(replica.store, edge, type)
     const template = kept ?? resolveRowType(replica.store, type, at)
-    const body = node.data.scalar?.type === 'text' || node.data.presentation?.headline ? text : rowBody(replica.store, template, text)
-    if (content(replica.store, template).data.form) {
-      const constructed = projectsTitle(node)
-        ? withTextParameters(replica.store, setFormTitle(replica.store, node, body, now))
-        : constructRowValue(replica, template, aliasId, body, extras, now, node)
-      const next = withChildValue(replica.store, edge, userBound(replica, at, constructed, extras), now)
+    const body = text.trim()
+    if (type !== REF_TYPE && type !== QUERY_TYPE && type !== RESOURCE_TYPE) {
+      const built = isTextField(replica.store, template) ? constructPlainRow(replica.store, template, aliasId, body, now) : null
+      const values = new Map<string, string>(), title = titleField(replica.store, template), done = rowVocabulary(replica.store)?.done
+      if (title && body) values.set(title, fieldText(replica.store, title, body))
+      if (done && completes(replica.store, template)) values.set(done, extras.done ? put(replica.store, { data: {}, children: [] }) : primitive(replica.store, 'void'))
+      const rebuilt = built ? { ...built, children: [...built.children, ...node.children.filter(e => isRowEdge(replica.store, e) && !isFieldRow(replica.store, aliasId, e))] } : rebuildRow(replica.store, template, aliasId, node, values, now)
+      const next = withChildValue(replica.store, edge, userBound(replica, at, rebuilt, extras), now)
       return replaceEdge(replica.store, value, `a:${aliasId}`, rowEdge(replica.store, identityCid(replica.store, next), template))
     }
     const converted = convertRow(replica.store, node, type, now, extras)
     const data: FosNodeContent['data'] = { ...converted.data, description: { content: body } }
-    if (type === TASK_TYPE) data.todo = { completed: !!extras.done, time: node.data.todo?.time ?? now }
     if (type === RESOURCE_TYPE) {
       data.name = { content: body }
       if (extras.resource) data.resource = extras.resource
@@ -555,7 +532,10 @@ export function setRowType(replica: Replica, at: Scope, aliasId: string, type: s
     if (kept && kept === rowTypeOf(replica.store, edge)) return value
     const node = valueContent(replica.store, identityCid(replica.store, edge))
     const template = resolveRowType(replica.store, type, at)
-    const next = content(replica.store, template).data.form ? constructRowValue(replica, template, aliasId, formText(replica.store, node), {}, now, node) : convertRow(replica.store, node, type, now, extras)
+    const title = titleField(replica.store, template), text = rowTitle(replica.store, identityCid(replica.store, edge), rowTypeOf(replica.store, edge))
+    const next = type === REF_TYPE || type === QUERY_TYPE || type === RESOURCE_TYPE ? convertRow(replica.store, node, type, now, extras)
+      : isTextField(replica.store, template) ? constructPlainRow(replica.store, template, aliasId, text, now)
+      : rebuildRow(replica.store, template, aliasId, node, title && text ? new Map([[title, fieldText(replica.store, title, text)]]) : new Map(), now)
     const converted = withChildValue(replica.store, edge, next, now)
     return replaceEdge(replica.store, value, `a:${aliasId}`, rowEdgeAt(replica.store, template, identityCid(replica.store, converted), at))
   })
@@ -687,7 +667,7 @@ export type Attachment = { name: string; type: string; data: string; size: numbe
 export function addAttachment(replica: Replica, at: Scope, file: Attachment, now: number, id: string = newId()): Replica {
   const template = libraryTypeAt(replica.store, ATTACHMENT_TYPE, at, headCid(replica))
   if (!template) throw new Error('No standard library above this row has an attachment type.')
-  return addConstructedRow(replica, at, template, { name: file.name, type: file.type, data: file.data, size: file.size }, now, id)
+  return addConstructedRow(replica, at, template, { filename: file.name, mediaType: file.type, data: file.data, size: file.size }, now, id)
 }
 /** The file the row at `path` keeps, when it is an attachment row (by its type, any version of it). */
 export function attachmentAt(replica: Replica, path: Scope): Attachment | null {
@@ -695,9 +675,8 @@ export function attachmentAt(replica: Replica, path: Scope): Attachment | null {
   const parent = resolveScope(replica.store, headCid(replica), path.slice(0, -1))
   const edge = parent ? findEdge(replica.store, valueContent(replica.store, parent), `a:${path.at(-1)}`) : null
   if (!edge || !isLibraryType(replica.store, edge[0], ATTACHMENT_TYPE)) return null
-  const node = valueContent(replica.store, identityCid(replica.store, edge))
-  const field = (name: string) => formValueAt(replica.store, node, [name])?.data.scalar?.value
-  const name = field('name'), type = field('type'), data = field('data'), size = field('size')
+  const record = rowRecord(replica.store, edge[0], path.at(-1)!, valueContent(replica.store, identityCid(replica.store, edge)))
+  const { filename: name, mediaType: type, data, size } = record
   return typeof name === 'string' && typeof type === 'string' && typeof data === 'string' && typeof size === 'number' ? { name, type, data, size } : null
 }
 
@@ -726,8 +705,7 @@ function fileReferenceRow(replica: Replica, at: Scope, rowId: string): { edge: F
   const edge = parent ? findEdge(replica.store, valueContent(replica.store, parent), `a:${rowId}`) : null
   if (!edge || !isLibraryType(replica.store, edge[0], FILE_REFERENCE_TYPE)) return null
   const node = valueContent(replica.store, identityCid(replica.store, edge))
-  const field = (name: string) => formValueAt(replica.store, node, [name])?.data.scalar?.value
-  const path = field('path'), sha256 = field('sha256'), size = field('size')
+  const { path, sha256, size } = rowRecord(replica.store, edge[0], rowId, node)
   return typeof path === 'string' && typeof sha256 === 'string' && typeof size === 'number' ? { edge, node, file: { path, sha256, size } } : null
 }
 /** The file the row at `path` references, when it is a file-reference row whose fields are here. */
@@ -737,13 +715,9 @@ export function fileReferenceAt(replica: Replica, path: Scope): FileReference | 
 /** Re-pin a file reference to the checksum (and size) its file has now: its fields are rewritten in place. */
 export function setFileReferenceAt(replica: Replica, at: Scope, rowId: string, file: FileReference, now: number): Replica {
   if (!validFileReference(file)) throw new Error('A file reference needs a relative path and a SHA-256 checksum.')
-  if (!fileReferenceRow(replica, at, rowId)) throw new Error('This row is not a file reference.')
-  const values: Record<string, string | number> = { path: file.path, sha256: file.sha256, size: file.size }
-  return updateTask(replica, at, rowId, now, row => ({ ...row, children: row.children.map(edge => {
-    const value = valueContent(replica.store, identityCid(replica.store, edge)), name = value.data.name?.content
-    if (!name || !(name in values) || !value.data.scalar || value.data.scalar.value === values[name]) return edge
-    return withChildValue(replica.store, edge, { ...value, data: { ...value.data, scalar: { type: value.data.scalar.type, value: values[name]! }, updated: { time: now } } }, now)
-  }) }))
+  const found = fileReferenceRow(replica, at, rowId)
+  if (!found) throw new Error('This row is not a file reference.')
+  return updateTask(replica, at, rowId, now, row => withFieldValues(replica.store, found.edge[0], rowId, row, { path: file.path, sha256: file.sha256, size: file.size }, now))
 }
 
 /** Copy the row `aliasId` (with its subtree, fresh ids) from `fromPath` to `toPath` at `position`. */
@@ -805,10 +779,13 @@ export function setTaskDone(replica: Replica, at: Scope, taskId: string, done: b
     const taskCid = parent ? findChild(replica.store, parent, taskId) : null
     if (taskCid && taskBlockers(replica.store, taskCid).length) return replica
   }
+  const field = rowVocabulary(replica.store)?.done
   return updateTask(replica, at, taskId, now, (task) => {
-    if (!task.data.todo) return null // only tasks have a completion
-    if (!!task.data.todo?.completed === done) return null
-    return { ...task, data: { ...task.data, todo: { completed: done, time: task.data.todo?.time ?? now } } }
+    // only rows with a done field complete
+    if (!field || !fieldEdge(replica.store, taskId, task, field)) return null
+    const held = fieldValue(replica.store, taskId, task, field)!, unit = put(replica.store, { data: {}, children: [] })
+    if ((held === unit) === done) return null
+    return withFieldValue(replica.store, taskId, task, field, done ? unit : primitive(replica.store, 'void'), now)
   })
 }
 
@@ -817,14 +794,12 @@ export function renameTask(replica: Replica, at: Scope, taskId: string, title: s
   if (!trimmed) return replica
   const parent = resolveScope(replica.store, headCid(replica), at)
   const edge = parent && findChildEdge(replica, valueContent(replica.store, parent), taskId)
-    // a note's body and a pre-constructor comment (migrated on edit) are rewritten through their type
-    if (edge && (valueContent(replica.store, identityCid(replica.store, edge)).data.comment || isRowOfType(replica.store, edge, NOTE_TYPE))) return setRowContentAt(replica, at, taskId, isRowOfType(replica.store, edge, NOTE_TYPE) ? NOTE_TYPE : COMMENT_TYPE, title, {}, now)
   // a requirement is titled by its own declaration, whatever value it is bound to
   if (edge && isRequirementRow(replica.store, edge)) return editNode(replica, [...at, taskId], now, node => node.data.description?.content === trimmed ? node : { ...node, data: { ...node.data, description: { content: trimmed }, updated: { time: now } } })
   return updateTask(replica, at, taskId, now, (task) => {
-      if (projectsTitle(task)) return withTextParameters(replica.store, setFormTitle(replica.store, task, task.data.presentation?.headline ? title : trimmed, now))
-    if (task.data.description?.content === trimmed) return null
-    return withTextParameters(replica.store, { ...task, data: { ...task.data, description: { content: trimmed } } })
+    if (edge && rowTitle(replica.store, identityCid(replica.store, edge), rowTypeOf(replica.store, edge)) === trimmed) return null
+    // a row that holds text (a field, or its own) takes the new text there; one still on its description keeps it there
+    return withRowText(replica.store, taskId, task, trimmed, now) ?? (task.data.description?.content === trimmed ? null : { ...task, data: { ...task.data, description: { content: trimmed } } })
   })
 }
 

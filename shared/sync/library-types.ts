@@ -5,7 +5,7 @@
  */
 export const TASK_TYPE = 'task'
 /** The plain row: a row that is its text. Rows of a type this peer does not know render like it. */
-export const PLAIN_TYPE = 'plain'
+export const PLAIN_TYPE = 'title'
 /** A note: one title line, a Markdown body row (`MARKDOWN_TYPE`, its `body` field) and open child rows. */
 /** Rows that are feature specifications (notes a verifier checks after a merge). */
 export const SPECIFICATION_TYPE = 'specification'

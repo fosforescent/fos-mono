@@ -44,9 +44,10 @@ const icon = putBranches(store, 'icon', null, ['emojiValue', 'fontAwesomeId'].ma
 const username = textField('username'), displayName = textField('displayName'), publicKey = textField('publicKey')
 const path = textField('path'), sha256 = textField('sha256'), peer = textField('peer'), method = textField('method')
 const by = textField('by'), issuedAt = node([stringAliasOf('issuedAt'), number]), attestation = textField('attestation')
-const filename = textField('filename'), data = textField('data'), markdown = textField('markdown')
+const filename = textField('filename'), data = textField('data'), markdown = textField('markdown'), mediaType = textField('mediaType')
+const size = node([stringAliasOf('size'), number])
 
-/** A type with no fields of its own: told apart by a tag, since the empty node is the wildcard. */
+/** A type the kernel tells apart (Home, Device root, Library, Document root, …): a tag, since the empty node is the wildcard; folder-like types are just `{}`. */
 const tagged = (tagName: string, ...rows: FosPathElem[]) => node([tagOf(tagName), unit], ...rows)
 const Home = tagged('home')
 const types: Record<string, string> = {
@@ -62,18 +63,18 @@ const types: Record<string, string> = {
   query: tagged('query', [title, never]),
   resource: tagged('bank', [title, never]),
   template: tagged('template', [title, never]),
-  allocation: tagged('allocation'),
-  money: tagged('money'),
-  people: tagged('people'),
+  allocation: node(),
+  money: node(),
+  people: node(),
   person: node([username, never], [displayName, unit]),
   user: node([username, never], [displayName, unit], [publicKey, unit]),
   attestation: node([by, never], [method, unit], [issuedAt, unit], [attestation, unit]),
-  attachment: node([filename, never], [data, never]),
-  fileReference: node([path, never], [sha256, unit]),
+  attachment: node([filename, never], [mediaType, never], [data, never], [size, never]),
+  fileReference: node([path, never], [sha256, never], [size, never]),
   relayQueue: tagged('relayQueue', [peer, never]),
   relayMessage: tagged('relayMessage', [peer, never]),
   relayAck: tagged('relayAck', [title, never]),
-  listText: tagged('listText'),
+  listText: node(),
   // fields and value types, reachable by name
   title, body, label, syntax, done, icon, stringAlias, tag, username, displayName, path, markdown,
   text: string, number, time: number, boolean, peer
