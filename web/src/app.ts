@@ -1278,8 +1278,11 @@ export class App {
     const push = !pullOnly && (transport === 'account' ? this.state.policy.to.includes('autopush') : transport === 'virtual' ? this.virtualCapabilities.includes('edit') : true)
     // Member entries are children of their node: an entry syncs with a node that syncs (it is policy, small), and this
     // device's own entries sync with everything in them (what peers left for it, its relay queues). Other rows stay
-    // lazy until they are on screen.
+    // lazy until they are on screen: the node in view and its ancestors, the rows it lists, and each such row's own
+    // parts (its fields, its declarations), which it is shown with.
     const onScreen = (path: Scope) => path.length === localRoot.length || (path.length <= this.state.view.length && path.every((id, i) => id === this.state.view[i]))
+    const listed = (path: Scope) => path.length === this.state.view.length + 1 && this.state.view.every((id, i) => id === path[i])
+    const parts = new Set<string>()
     // a path into one of this device's own memberships, at any node
     const own = (path: Scope) => path.some((_, i) => memberEntryPeerAt(this.state.replica.store, headCid(this.state.replica), path.slice(0, i + 1)) === initial.meta.peerId)
     const eager = (path: Scope) => own(path) || (memberEntryPeerAt(this.state.replica.store, headCid(this.state.replica), path) !== null && onScreen(path.slice(0, -1)))
@@ -1308,7 +1311,7 @@ export class App {
         continue
       }
       const plan = planNodeSync(r, path, { peer, scope, remoteRoot, localRoot, branches, push })
-      const visible = onScreen(path) || eager(path) || state.has(JSON.stringify(path))
+      const visible = onScreen(path) || listed(path) || eager(path) || state.has(JSON.stringify(path)) || parts.has(JSON.stringify(path))
       if (!visible && !(push && plan.dirty)) continue
       const remote = await send(plan.first)
       if (!valid()) return
@@ -1332,7 +1335,9 @@ export class App {
         const next = [...path, child.id]
         const held = isHandlerStateLeft(this.state.replica.store, child.template) && (visible || plan.dirty)
         if (held) state.add(JSON.stringify(next))
-        if (child.peer !== undefined ? visible || child.peer === initial.meta.peerId : eager(next) || held) queue.push(next)
+        const part = visible && !!child.right
+        if (part) parts.add(JSON.stringify(next))
+        if (child.peer !== undefined ? visible || child.peer === initial.meta.peerId : eager(next) || held || part || listed(next)) queue.push(next)
       }
     }
     // an owner's device attached at Home takes its server's own entry above it (its offers, its published key)
@@ -3806,6 +3811,8 @@ export class App {
       replica = acceptProvidedNode(replica, relative, request, node, this.now())
       this.proposalPreviews.set(id, { replica, path, request, store, generation })
       this.refresh()
+      // a row is shown with its own parts (its fields, its declarations): they load with it
+      for (const child of node.children) if (child.right?.bound && !child.pinned) await this.loadProposalPreview(path, id, [...relative, child.id])
     } catch (error) { this.notify('error', error instanceof Error ? error.message : String(error)) }
   }
 
@@ -3978,6 +3985,8 @@ export class App {
       if (this.config.localStores && localStores(next).some(s => s.peerId === holder) && !path.some(id => next.meta.heldNodes?.[id]))
         next = { ...next, meta: { ...next.meta, heldNodes: { ...next.meta.heldNodes, [path.at(-1)!]: { peer: holder, scope: address } } } }
       this.set({ replica: next }, !background)
+      // a row is shown with its own parts (its fields, its declarations): they load with it
+      await Promise.all(node.children.filter(child => child.right?.bound && !child.pinned).map(child => this.loadPeerNode([...path, child.id], background)))
     } catch (error) { this.notify('error', error instanceof Error ? error.message : String(error)) }
   }
   goTo(path: Scope): void {

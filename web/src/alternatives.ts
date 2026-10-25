@@ -1,5 +1,5 @@
 import type { App } from './app'
-import { view, viewNode, readProposal, headCid, HOME_ID, type Scope, type TaskView } from '../../shared/sync/index'
+import { view, viewNode, readProposal, headCid, HOME_ID, content, identityCid, isPeerReference, isRowEdge, valueCidOf, type Scope, type TaskView } from '../../shared/sync/index'
 const selected = new WeakMap<App, { path: string; id: string }>()
 import { combobox, type ComboOption } from './combobox'
 import { iconSvg } from './icons'
@@ -9,7 +9,9 @@ export function proposalPreview(app: App) {
   const choice = selected.get(app)
   if (!choice || choice.path !== JSON.stringify(app.state.view) || !app.readsRequests()) return null
   const proposal = app.currentView()?.proposals.find(p => p.id === choice.id)
-  const record = proposal && readProposal(app.state.replica.store, proposal.id)
+  // a submission held here with all its rows is read here; one still holding references is read from the peer once
+  // that has loaded, and from here until then
+  const record = proposal && (localProposal(app, proposal.id) ?? (!app.proposalPreviewData(proposal.id) ? readProposal(app.state.replica.store, proposal.id) : null))
   if (!record) {
     const remote = proposal && app.proposalPreviewData(proposal.id)
     if (remote) return { proposal: proposal!, ...remote }
@@ -17,10 +19,22 @@ export function proposalPreview(app: App) {
   }
   return { proposal: proposal!, node: viewNode(app.state.replica.store, record.contentCid), cid: record.contentCid, store: app.state.replica.store, remote: false }
 }
+/** A submission held here with its rows: one whose rows are still references to their peer is previewed from the peer. */
+function localProposal(app: App, id: string) {
+  const store = app.state.replica.store, record = readProposal(store, id)
+  // its rows and their own parts (a row's fields) are here, not references to the peer still to load
+  const here = (cid: string, depth: number): boolean => content(store, cid).children.every(edge => {
+    if (!isRowEdge(store, edge)) return true
+    const row = identityCid(store, edge)
+    return !isPeerReference(content(store, row)) && (depth > 0 || here(valueCidOf(store, row), depth + 1))
+  })
+  const loaded = record && here(record.contentCid, 0)
+  return loaded ? record : null
+}
 export function showProposal(app: App, path: Scope, id: string): void {
   document.activeElement?.dispatchEvent(new window.Event('commit-edit'))
   selected.set(app, { path: JSON.stringify(path), id }); app.goTo(path)
-  if (!readProposal(app.state.replica.store, id)) void app.loadProposalPreview(path, id)
+  if (!localProposal(app, id)) void app.loadProposalPreview(path, id)
 }
 export function clearProposal(app: App): void { selected.delete(app) }
 /** Local and incoming branches share one picker; incoming values remain read-only. */
