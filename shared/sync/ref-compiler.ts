@@ -83,11 +83,6 @@ export function compileRefGraph(r: Replica, cid: string, at: Scope = [], options
     visiting.add(current)
     try {
       const previousHoleCount = holes.length
-      // a sum of options on a refined capability (a choice pattern) is a pattern, not a ref with alternative handlers
-      if (node.data.refAlternatives && options.selected && capabilityName(store, cid) === null) {
-        const values = [...new Set(node.children.map(([, value]) => value))]
-        return values.length === 1 ? walk(store, values[0]!, path, role, depth + 1, type) : hole(id, type, path, values.length ? 'ambiguous' : 'unbound', role)
-      }
       if (role === 'output' && options.openOutputs) return hole(id, type, path, 'unbound', role)
       if (node.data.refHole) {
         holes.push({ cid: current, id: current, ...(type ? { type } : {}), path, reason: 'unbound', role: node.data.refHole.role })

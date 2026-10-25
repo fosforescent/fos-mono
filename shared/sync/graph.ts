@@ -1552,12 +1552,9 @@ export type RequirementView = {
   tool?: string; repo?: string; peer?: string; place?: string
 }
 
-/** The options a choice pattern declares, in order: its alternative rows other than its classifying and capability rows. */
-export function patternOptions(store: FosStore, pattern: string): string[] {
-  const node = content(store, pattern)
-  if (!node.data.refAlternatives) return []
-  return node.children.filter(([, option]) => !isRefNode(store, content(store, option)) && textOf(store, option) !== null && tagName(store, option) === null)
-    .map(([, option]) => textOf(store, option) ?? '')
+/** What a requirement's ref may be filled with: its open submissions, in order (a choice's options), each with its text. */
+export function requirementOptions(store: FosStore, ref: FosNodeContent): Array<{ proposal: string; label: string }> {
+  return readProposals(store, ref).filter(proposal => proposal.status === 'open').map(proposal => ({ proposal: proposal.cid, label: textOf(store, proposal.contentCid) ?? '' }))
 }
 /** The named inputs a pattern carries: its rows whose right is a named ref, with the text each holds. */
 export function patternInputs(store: FosStore, pattern: string): Record<string, string> {
@@ -1609,7 +1606,7 @@ export function requirementViewOf(store: FosStore, edge: FosPathElem, cid: strin
   const view: RequirementView = { capability: capabilityName(store, pattern), satisfied: argumentSatisfied(store, cid, pattern), summary: '', linear: tagsOf(store, node).length > 0, inputs,
     ...(allocation ? { resource: allocation.type, ...(allocation.amount !== undefined ? { amount: allocation.amount } : {}), ...(allocation.unit ? { unit: allocation.unit } : {}),
       ...(allocation.start !== undefined ? { start: allocation.start } : {}), ...(allocation.end !== undefined ? { end: allocation.end } : {}) } : {}),
-    ...(node.data.refAlternatives ? { options: patternOptions(store, pattern) } : {}),
+    ...(() => { const options = requirementOptions(store, content(store, cid)).map(option => option.label); return options.length ? { options } : {} })(),
     ...(inputs.tool !== undefined ? { tool: inputs.tool } : {}), ...(inputs.repo !== undefined ? { repo: inputs.repo } : {}),
     ...(inputs.peer !== undefined ? { peer: inputs.peer } : {}), ...(inputs.place !== undefined ? { place: inputs.place } : {}) }
   view.summary = requirementSummary(view, user)
@@ -2049,8 +2046,9 @@ export function capabilityOfTarget(store: FosStore, target: string): Capability 
 export function advertisedRows(store: FosStore, cid: string): FosPathElem[] {
   return content(store, cid).children.filter(edge => isRowEdge(store, edge) && isRefNode(store, content(store, edge[1])) && !!content(store, edge[1]).data.alias)
 }
+/** What a member offers for `pattern`: the handler ref it accepts submissions for, alternatives to the scope's own. */
 export function advertisement(store: FosStore, pattern: string, ref: string): string {
-  return put(store, { data: { refAlternatives: true }, children: [[pattern, ref]] })
+  return put(store, { data: {}, children: [[pattern, ref]] })
 }
 
 /** The capability a [CAPABILITY, x] edge grants (the `to` direction), or null for any other edge. */

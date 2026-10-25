@@ -18,7 +18,7 @@ import type { FosStore } from '../dag-implementation/store'
 import type { FosDataContent, FosNodeContent, FosPathElem } from '../types'
 import {
   allocationContract, argumentSatisfied, bookkeepingOf, isRequirementRow, commitRoot, content, enclosingScopes, findEdge, grantEntries, identityCid, isRefNode, isRowEdge,
-  isRowOfType, libAt, newId, ownerContract, patternOptions, put, refNodeContent, refValueCid, resolveScope, rowEdgeAt, updateAtScope, valueContent, withInputs, type ResourceType, type Scope
+  isRowOfType, libAt, newId, ownerContract, requirementOptions, put, refNodeContent, refValueCid, resolveScope, rowEdgeAt, updateAtScope, valueContent, withInputs, type ResourceType, type Scope
 } from './graph'
 import { addRow, edit, editNode, headCid, proposeRefAt, type Replica } from './replica'
 import { acceptSubmission } from './approvals'
@@ -33,7 +33,7 @@ export type Allocation = NonNullable<FosDataContent['allocation']>
 export type Amount = Pick<Allocation, 'type' | 'amount' | 'unit'> & Partial<Pick<Allocation, 'start' | 'end'>>
 /**
  * What a requirement demands, as authored: the capability whose handlers fill it and the refinement of its value (an
- * amount of a resource, the options of a choice), plus named inputs its handler reads (a recipient, a repository).
+ * amount of a resource), the options it may be filled with (submissions to its ref), plus named inputs its handler reads.
  */
 export type Demand = {
   capability: string
@@ -77,10 +77,6 @@ export function demandPattern(store: FosStore, at: Scope, demand: Demand): strin
       ...(demand.start !== undefined ? { start: demand.start } : {}), ...(demand.end !== undefined ? { end: demand.end } : {}) } as Allocation
     rows.push(contractPin(store, allocateCapability(store, at)))
   }
-  if (demand.options) {
-    data.refAlternatives = true
-    for (const label of demand.options) rows.push([empty(store), textValue(store, label)])
-  }
   const done = demand.done && rowVocabulary(store)?.done
   // a filled done field: void as a pattern is something supplied
   if (done) rows.push([empty(store), put(store, { data: {}, children: [[done, primitive(store, 'void')]] })])
@@ -110,7 +106,10 @@ export function argumentRow(store: FosStore, pattern: string, id: string, now: n
 export function addRequirement(r: Replica, at: Scope, text: string, now: number, demand: Demand, id = newId()): Replica {
   const store = r.store, pattern = demand.inputs ? withInputs(store, demandPattern(store, at, demand), demand.inputs) : demandPattern(store, at, demand)
   const row = argumentRow(store, pattern, id, now, null, {}, text)
-  return edit(r, at, now, value => ({ ...value, children: [...value.children, row] }))
+  r = edit(r, at, now, value => ({ ...value, children: [...value.children, row] }))
+  // a choice's options are submissions to its ref: the sum of what it may hold; choosing one accepts it
+  for (const [index, label] of (demand.options ?? []).entries()) r = proposeRefAt(r, [...at, id], valueOfPattern(store, pattern, {}, [labelRow(store, label)], contractsOf(store, pattern)), r.meta.peerId, now, `option ${index + 1}`).replica
+  return r
 }
 
 /**
@@ -187,9 +186,9 @@ export function supplyRequirement(r: Replica, at: Scope, id: string, supply: { b
     if (found.status !== 'ready') throw new Error('The supplied reference is not visible from the requirement.')
     value = put(store, { data: { ref: { id: supply.ref }, peerId: { content: supply.by } }, children: [] })
   } else if (supply.choice !== undefined) {
-    const label = patternOptions(store, pattern)[supply.choice]
-    if (label === undefined) throw new Error('Choose one of the declared options.')
-    value = valueOfPattern(store, pattern, {}, [labelRow(store, label)], contractsOf(store, pattern))
+    const option = requirementOptions(store, content(store, resolveScope(store, headCid(r), path)!))[supply.choice]
+    if (!option) throw new Error('Choose one of the declared options.')
+    return acceptSubmission(r, path, option.proposal, r.meta.peerId, now).replica
   } else value = supplyValue(store, pattern, supply.by, supply.receipt)
   // what was written inside the open requirement (a handler's result, hit rows, an answer the supply refers to) stays in its value
   const cid = resolveScope(store, headCid(r), path), current = cid ? refValueCid(store, content(store, cid)) : null

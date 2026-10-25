@@ -106,11 +106,6 @@ export function resolveBinding(store: FosStore, type: string | null, target: str
     active.add(cid)
     try {
       const node = content(store, cid)
-      if (node.data.refAlternatives) {
-        const alternatives = [...new Set(node.children.map(([, value]) => value))]
-        if (alternatives.length !== 1) return fail(alternatives.length ? 'ambiguous' : 'missing', 'Choose a handler for this capability')
-        return follow(alternatives[0]!, wanted, scope, true)
-      }
       if (node.data.refExpression) {
         if (!scope) return fail('missing', 'Ref expression needs its lexical scope')
         const found = resolveRefExpression({ store: scope.store }, scope.path, node.data.refExpression, environment)

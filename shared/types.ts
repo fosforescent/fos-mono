@@ -92,7 +92,6 @@ export type FosDataContent = {
   refRole?: 'input' | 'output',
   /** A compiler-local binder. References to it use this node's CID, never an editing alias. */
   refHole?: { slot: number; role: 'input' | 'output' },
-  refAlternatives?: true,
   refCompilation?: { cid: string },
   /** A signature over this value's unsigned node by the key named; made and checked through the sign and verify-signature capabilities. */
   signature?: { key: string; value: string },

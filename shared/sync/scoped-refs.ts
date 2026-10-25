@@ -20,10 +20,7 @@ export function refSubmissionSet(store: FosStore, cid: string): { values: string
     visiting.add(current)
     try {
       const node = content(store, current)
-      if (node.data.refAlternatives) {
-        alternatives = true
-        for (const [, value] of node.children) walk(value)
-      } else if (isBranchChoice(store, node)) {
+      if (isBranchChoice(store, node)) {
         alternatives = true
         for (const option of readChoice(store, current).options) if (option.edge) {
           const right = content(store, option.edge[1])

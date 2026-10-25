@@ -94,9 +94,10 @@ export function bindingProperties(location: BindingLocation & { policy?: Readonl
     const node = content(store, cid)
     if (node.data.ref?.peer || node.data.ref?.owner) break
     const shadowed = new Set(result.bindings.map(binding => binding.id))
+    // an advertised handler (a grant's offer) is an alternative to the scope's own declarations
     for (const { edge, alternative } of node.children.flatMap(edge => isGrantEdge(store, edge)
-      ? advertisedRows(store, edge[1]).map(row => ({ edge: row, alternative: !!content(store, edge[1]).data.refAlternatives }))
-      : [{ edge, alternative: !!node.data.refAlternatives }])) {
+      ? advertisedRows(store, edge[1]).map(row => ({ edge: row, alternative: true }))
+      : [{ edge, alternative: false }])) {
       if (!store.table.has(edge[1]) || !(isRowEdge(store, edge) || isMemberEdge(store, edge) || isGrantEdge(store, edge))) continue
       const childCid = identityCid(store, edge), child = content(store, childCid)
       const name = child.data.name?.content ?? store.table.get(refValueCid(store, child) ?? childCid)?.data.name?.content ??
@@ -140,7 +141,7 @@ export function bindingLayers(r: Context, at: Scope, access: BindingAccess = {})
         if (!id) continue
         const name = node.data.name?.content ?? content(member.store, refValueCid(member.store, node) ?? cid).data.name?.content
         layer.bindings.push({ ...declaration({ store: member.store, cid, path: [...member.scope, id] }, pattern, access, member.peer, true, name, policy),
-          ...(content(member.store, edge[1]).data.refAlternatives ? { capability: pattern } : {}) })
+          capability: pattern })
       }
     }
   }
