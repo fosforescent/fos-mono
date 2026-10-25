@@ -148,13 +148,22 @@ function installMemberEntry(r: Replica, path: Scope, shape: NodeShape, now: numb
 
 /** Three-way merge only fields/edges changed by the writer. Missing masked fields
  * are never interpreted as deletions. Conflicts leave both replicas untouched. */
+const timeOf = (value: unknown): number => (value as { time?: number } | undefined)?.time ?? 0
 export function mergeNodeShape(base: NodeShape, next: NodeShape, current: NodeShape): NodeShape {
   const data = { ...current.data } as Record<string, unknown>
   for (const key of new Set([...Object.keys(base.data), ...Object.keys(next.data)])) {
     const before = (base.data as Record<string, unknown>)[key], after = (next.data as Record<string, unknown>)[key], present = data[key]
     if (equal(before, after)) continue
+    // when a node last changed is the later of both changes, never a conflict
+    if (key === 'updated') { data[key] = { time: Math.max(timeOf(present), timeOf(after)) }; continue }
     if (!equal(present, before) && !equal(present, after)) throw new NodeAccessError(`Concurrent change to node field "${key}". Local changes were kept.`)
     if (after === undefined) delete data[key]; else data[key] = after
+  }
+  // a node of literal rows only (a field's value) is one value, not rows with their own identity: changed on both sides is a conflict
+  const literals = (shape: NodeShape) => shape.children.filter(child => child.pinned).map(child => child.id).sort()
+  const value = [base, next, current].every(shape => shape.children.every(child => child.pinned))
+  if (value && !equal(literals(base), literals(next)) && !equal(literals(base), literals(current)) && !equal(literals(next), literals(current))) {
+    throw new NodeAccessError(`Concurrent change to child "${literals(next).find(id => !literals(base).includes(id)) ?? literals(base)[0]}". Local changes were kept.`)
   }
   const children = new Map(current.children.map(child => [child.id, child]))
   const old = new Map(base.children.map(child => [child.id, child])), desired = new Map(next.children.map(child => [child.id, child]))

@@ -1506,10 +1506,14 @@ export function rowView(store: FosStore, nodeCid: string, edge?: FosPathElem): T
   if (typeCid && !held && !isTextField(store, typeCid)) {
     // the title, the body and done are shown by the row itself
     const body = rowBody(store, nodeCid, typeCid), texts = typeRows(store, typeCid).map(([field]) => field).filter(field => isTextField(store, field))
-    const shown = new Set([titleField(store, typeCid), rowVocabulary(store)?.done, bodyField(store, typeCid)])
+    const author = libraryNode(store, 'author')
+    const shown = new Set([titleField(store, typeCid), rowVocabulary(store)?.done, bodyField(store, typeCid), author])
     const fields = fieldViews(store, typeCid, value).filter(field => !shown.has(field.field))
     if (fields.length) view.fields = fields
     if (body !== null) view.body = body
+    // who wrote it (a comment): its author field
+    const name = author ? fieldViews(store, typeCid, value).find(field => field.field === author)?.value : null
+    if (typeof name === 'string' && name) view.author = { id: `user:${name}`, name, time: created }
   }
   if (value.data.scalar) view.scalar = value.data.scalar.type
   if (held) { view.refPeer = identity.data.ref!.peer; view.title = textOf(store, nodeCid) ?? 'Peer-held node' }

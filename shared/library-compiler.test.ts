@@ -24,7 +24,8 @@ test('a data-only definition edit changes constructed fields and UI projections'
     if (memo.has(cid)) return memo.get(cid)!
     const old = source.nodes[cid]!
     let node: FosNodeContent = { data: old.data, children: old.children.map(([i, t]) => [rewrite(i), rewrite(t)]) }
-    if (old.data.parameter?.name === 'body') node = { ...node, data: { ...node.data, description: { content: 'Message content' } } }
+    // the body field's name: a string in its alias row
+    if (old.data.scalar?.type === 'text' && old.data.scalar.value === 'body') node = { ...node, data: { ...node.data, scalar: { type: 'text', value: 'message' } } }
     const next = hashContent(node); nodes[next] = node; memo.set(cid, next); return next
   }
   const rootNodeId = rewrite(source.rootNodeId)
@@ -33,12 +34,12 @@ test('a data-only definition edit changes constructed fields and UI projections'
   let r = ensureDeviceLibrary(createReplica('new', createStore()), { version: compiled.version, root: compiled.rootNodeId, nodes: compiled.nodes }, 1)
   const definition = compiled.refs['comment']!
   expect(rowTypeAt(r.store, COMMENT_TYPE)).toBe(definition)
-  r = addConstructedRow(r, [], definition, { text: 'From data', texts: ['One'] }, 1, 'message')
+  r = addConstructedRow(r, [], definition, { message: 'From data', author: 'Ada' }, 1, 'message')
   const row = view(r, [])!.tasks.find(row => row.id === 'message')!
   expect(row.type).toBe(COMMENT_TYPE)
-  expect(row.form?.fields.map(field => field.label)).toEqual(['Message content', 'Person', 'Texts'])
-  expect(row.form?.fields[0]).toMatchObject({ primitive: 'text', value: 'From data' })
-  expect(row.form?.fields[2]?.fields[0]).toMatchObject({ primitive: 'text', value: 'One' })
+  // the renamed field is the one the input names; the row shows it
+  expect(row.title).toBe('From data')
+  expect(row.author).toMatchObject({ name: 'Ada' })
 })
 
 test('invalid or missing graph content fails compilation', () => {

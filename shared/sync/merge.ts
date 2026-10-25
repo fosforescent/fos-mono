@@ -37,6 +37,7 @@ import {
   withIdentity,
   type ChoiceOption
 } from './graph'
+import { isFieldRow } from './fields'
 
 
 export type MergeLabels = { ours: string; theirs: string }
@@ -68,7 +69,8 @@ function mergeNode(
   theirsCid: string,
   labels: MergeLabels,
   newChoiceCids: string[],
-  isTop: boolean
+  isTop: boolean,
+  field = false
 ): NodeOutcome {
   if (oursCid === theirsCid) return { kind: 'node', cid: oursCid }
   if (baseCid === oursCid) return { kind: 'node', cid: theirsCid }
@@ -132,7 +134,12 @@ function mergeNode(
     const valueOf = (r: { node: FosNodeContent } | null): string | null => (r ? refValueCid(store, r.node) : null)
     const oursValue = valueOf(o) ?? put(store, stripLink(store, ours))
     const theirsValue = valueOf(t) ?? put(store, stripLink(store, theirs))
-    const typed = !!(o.node.data.name || t.node.data.name || b && !valueOf(b))
+    // a field holds one value: values changed differently on both sides make its row conflict (a choice of whole rows)
+    if (field) {
+      const ov = valueOf(o), tv = valueOf(t), bv = valueOf(b)
+      if (ov !== tv && ov !== bv && tv !== bv) return { kind: 'conflict' }
+    }
+    const typed = field || !!(o.node.data.name || t.node.data.name || b && !valueOf(b))
     let mergedValue: string | null
     if (typed) {
       const ov = valueOf(o), tv = valueOf(t), bv = valueOf(b)
@@ -145,10 +152,12 @@ function mergeNode(
       }
     } else {
       const merged = mergeNode(store, valueOf(b), oursValue, theirsValue, labels, newChoiceCids, true)
+      // a row's own fields conflicting makes the row conflict; the top node keeps ours
+      if (merged.kind === 'conflict' && !isTop) return merged
       mergedValue = merged.kind === 'node' ? merged.cid : oursValue
     }
     const book = (r: { node: FosNodeContent } | null): FosNodeContent => ({ data: {}, children: r ? bookkeepingOf(store, r.node).filter((e) => !isPrevEdge(store, e)) : [] })
-    const bookkeeping = mergeChildren(store, book(b), book(o), book(t), labels, newChoiceCids)
+    const bookkeeping = mergeChildren(store, book(b), book(o), book(t), labels, newChoiceCids) ?? book(o).children
     // History: a merge that changed the value is a new version with both parents; a merge of
     // bookkeeping only (members, peers, proposals) is not a version, so the existing PREV edges
     // are kept as they are (unioned, like any other bookkeeping).
@@ -156,7 +165,7 @@ function mergeNode(
     const prevEdge = (cid: string): FosPathElem => [primitive(store, 'previous'), cid]
     const existingPrev = (r: { node: FosNodeContent } | null): FosPathElem[] => (r ? r.node.children.filter((e) => isPrevEdge(store, e)) : [])
     const prev: FosPathElem[] = valueChanged
-      ? (o.cid === t.cid ? [prevEdge(o.cid)] : [prevEdge(o.cid), prevEdge(t.cid)])
+      ? (o.cid === t.cid ? [prevEdge(o.cid)] : [o.cid, t.cid].sort().map(prevEdge))
       : [...existingPrev(o), ...existingPrev(t).filter((e) => !existingPrev(o).some((x) => x[1] === e[1]))]
     const data = mergeData(b?.node.data ?? {}, o.node.data, t.node.data, true) ?? o.node.data
     return { kind: 'node', cid: put(store, refNodeContent(store, data, mergedValue, [...bookkeeping, ...prev])) }
@@ -166,6 +175,7 @@ function mergeNode(
   if (!data) return { kind: 'conflict' }
 
   const children = mergeChildren(store, base, ours, theirs, labels, newChoiceCids)
+  if (!children) return { kind: 'conflict' }
   return { kind: 'node', cid: put(store, { data, children }) }
 }
 
@@ -227,7 +237,7 @@ function mergeChildren(
   theirs: FosNodeContent,
   labels: MergeLabels,
   newChoiceCids: string[]
-): FosPathElem[] {
+): FosPathElem[] | null {
   const index = (value: FosNodeContent) => {
     const map = new Map<string, FosPathElem>()
     for (const edge of value.children) map.set(edgeKey(store, edge), edge)
@@ -259,12 +269,14 @@ function mergeChildren(
     if (o && t && sameShape(store, o, t) && (!isChoiceEdge(store, o) || isBranchChoice(store, content(store, o[1])))) {
       // A base that is a choice (or has another shape) is no use as a merge base.
       const baseIdentity = b && sameShape(store, b, o) && (!isChoiceEdge(store, b) || isBranchChoice(store, content(store, b[1]))) ? identityCid(store, b) : null
-      const merged = mergeNode(store, baseIdentity, identityCid(store, o), identityCid(store, t), labels, newChoiceCids, false)
+      const merged = mergeNode(store, baseIdentity, identityCid(store, o), identityCid(store, t), labels, newChoiceCids, false, isFieldRow(store, o))
       if (merged.kind === 'node') {
         out.push(withIdentity(store, o, merged.cid))
         continue
       }
     }
+    // one of the node's own fields changed differently on both sides: the node itself conflicts
+    if ((o && isFieldRow(store, o)) || (t && isFieldRow(store, t))) return null
 
     const id = key.startsWith('a:') ? key.slice(2) : key
     const options: ChoiceOption[] = [

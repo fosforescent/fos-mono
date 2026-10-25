@@ -1,5 +1,5 @@
-import { constructPlainRow, constructRow, constructTextRow, fieldEdge, fieldText, fieldValue, fieldValues, isFieldRow, isTextField, rebuildRow, rowRecord, titleField, withFieldValue, withFieldValues, withRowText, labelRow, refTitle, withLabel, withRefTitle, isLeafType, textValue, leafOfType } from './fields'
-import { createStore, completes, rowTitle, rowVocabulary, withDone } from './graph'
+import { constructPlainRow, typeRows, withoutRefTitle, constructRow, constructTextRow, fieldEdge, fieldText, fieldValue, fieldValues, isFieldRow, isTextField, rebuildRow, rowRecord, titleField, withFieldValue, withFieldValues, withRowText, labelRow, refTitle, withLabel, withRefTitle, isLeafType, textValue, leafOfType } from './fields'
+import { createStore, completes, libraryNode, rowTitle, rowVocabulary, withDone } from './graph'
 import { primitive } from './primitives'
 import { sameCapabilityType } from './capabilities'
 import { refValueCompatible } from './scoped-refs'
@@ -49,6 +49,7 @@ import {
   advertisement, advertisedRows,
   refBindingBaseCid,
   isRefNode,
+  isHandle,
   proposalContent,
   withProposal,
   readProposals,
@@ -356,6 +357,9 @@ function newRowContent(store: FosStore, type: string, typeId: string, id: string
   const values = new Map<string, string>(), done = rowVocabulary(store)?.done
   // done is always held: unit once done, void until then
   if (done && completes(store, type)) values.set(done, extras.done ? put(store, { data: {}, children: [] }) : primitive(store, 'void'))
+  // who wrote it, where its type records that (a comment's author field)
+  const author = libraryNode(store, 'author')
+  if (author && extras.author?.name && typeRows(store, type).some(([field]) => field === author)) values.set(author, fieldText(store, author, extras.author.name))
   const row = withTextParameters(store, withKindData(store, constructTextRow(store, type, id, text, now, values), typeId, text, extras), text)
   return typeId === RESOURCE_TYPE ? refNodeContent(store, { alias: { id }, updated: { time: now } }, put(store, row)) : row
 }
@@ -451,13 +455,20 @@ export function setRowContentAt(replica: Replica, at: Scope, aliasId: string, ty
     const template = kept ?? resolveRowType(replica.store, type, at)
     const body = text.trim()
     if (type !== REF_TYPE) {
-      const built = isTextField(replica.store, template) ? constructPlainRow(replica.store, template, aliasId, body, now) : null
       const values = new Map<string, string>(), title = titleField(replica.store, template), done = rowVocabulary(replica.store)?.done
       if (title && body) values.set(title, fieldText(replica.store, title, body))
       if (done && completes(replica.store, template)) values.set(done, extras.done ? put(replica.store, { data: {}, children: [] }) : primitive(replica.store, 'void'))
-      const rebuilt = built ? { ...built, children: [...built.children, ...node.children.filter(e => isRowEdge(replica.store, e) && !isFieldRow(replica.store, e))] } : rebuildRow(replica.store, template, aliasId, node, values, now)
-      const next = withChildValue(replica.store, edge, userBound(replica, at, withTextParameters(replica.store, withKindData(replica.store, rebuilt, type, body, extras), body), extras), now)
-      return replaceEdge(replica.store, value, `a:${aliasId}`, rowEdge(replica.store, identityCid(replica.store, next), template))
+      // a plain row is a ref whose value is its text, holding the row's child rows
+      const plain = isTextField(replica.store, template), text = plain ? content(replica.store, fieldText(replica.store, template, body)) : null
+      const rebuilt = text ? { ...text, children: [...text.children, ...node.children.filter(e => isRowEdge(replica.store, e) && !isFieldRow(replica.store, e))] } : rebuildRow(replica.store, template, aliasId, node, values, now)
+      const nextValue = userBound(replica, at, withTextParameters(replica.store, withKindData(replica.store, rebuilt, type, body, extras), body), extras)
+      const identity0 = content(replica.store, identityCid(replica.store, edge))
+      const next = plain && !(isRefNode(replica.store, identity0) && !isHandle(identity0))
+        ? withIdentity(replica.store, edge, put(replica.store, refNodeContent(replica.store, { alias: { id: aliasId }, created: { time: node.data.created?.time ?? now }, updated: { time: now } }, put(replica.store, nextValue))))
+        : withChildValue(replica.store, edge, nextValue, now)
+      // an argument row's title was its ref's own; now the row's title field holds it
+      const identity = put(replica.store, withoutRefTitle(replica.store, content(replica.store, identityCid(replica.store, next))))
+      return replaceEdge(replica.store, value, `a:${aliasId}`, rowEdge(replica.store, identity, template))
     }
     const next = withChildValue(replica.store, edge, userBound(replica, at, asReferenceRow(node, now), extras), now)
     const changed = identityCid(replica.store, next)

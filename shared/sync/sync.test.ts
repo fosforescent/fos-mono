@@ -1,4 +1,4 @@
-import { textOf } from './index'
+import { textOf, constructTextRow, fieldText, rowTitle } from './index'
 import { createStore } from './graph'
 import { primitive } from './primitives'
 import { memberEdgesOf, memberPeerOf, peerNode } from './graph'
@@ -25,10 +25,8 @@ import {
   isChoiceEdge,
   parsePolicy,
   isHandle,
-  isLegacyInlineLink,
   isRefNode,
   linkHistory,
-  normalizeRefs,
   rowEdge,
   ensureLibraryRow,
   put,
@@ -37,7 +35,9 @@ import {
   resolveScope,
   rootTargetCid,
   stripLink,
-  taskContent,
+  refNodeContent,
+  resolveRowType,
+  rowVocabulary,
   rowEdgeAt,
   valueContent,
   viewNode
@@ -81,10 +81,16 @@ const LABELS = { ours: 'A', theirs: 'B' }
 
 /** Build content nodes in one store for the merge tests. */
 function fixtures(store: FosStore) {
-  const task = (id: string, title: string, done = false, time = 1000, updated = time) =>
-    rowEdgeAt(store, TASK_TYPE, put(store, taskContent(id, title, done, time, updated)), [])
+  const task = (id: string, title: string, done = false, time = 1000, updated = time) => {
+    const type = resolveRowType(store, TASK_TYPE), field = rowVocabulary(store)!.done
+    const value = constructTextRow(store, type, id, title, time, new Map([[field, done ? put(store, { data: {}, children: [] }) : primitive(store, 'void')]]))
+    return rowEdge(store, put(store, { ...value, data: { ...value.data, updated: { time: updated } } }), type)
+  }
   const node = (...edges: FosPathElem[]) => put(store, { data: {}, children: edges })
-  const part = (id: string, name: string, ...edges: FosPathElem[]) => rowEdgeAt(store, PLAIN_TYPE, put(store, { data: { alias: { id }, description: { content: name } }, children: edges }), [])
+  const part = (id: string, name: string, ...edges: FosPathElem[]) => {
+    const type = resolveRowType(store, PLAIN_TYPE), text = content(store, fieldText(store, type, name))
+    return rowEdge(store, put(store, refNodeContent(store, { alias: { id } }, put(store, { ...text, children: [...text.children, ...edges] }))), type)
+  }
   return { task, node, part }
 }
 
@@ -324,7 +330,7 @@ describe('replica + account end to end', () => {
     phone = renameTask(phone, [], 't', 'draft v2 (phone)', 5)
     laptop = renameTask(laptop, [], 't', 'draft v2 (laptop)', 6)
     phone = world.sync(phone)
-    expect(() => world.sync(laptop)).toThrow(/Concurrent change to node field "description"/)
+    expect(() => world.sync(laptop)).toThrow(/Concurrent change to child/)
     expect(titles(laptop)).toEqual(['draft v2 (laptop)'])
     expect(world.serverTasks()).toEqual(['draft v2 (phone)'])
   })
@@ -590,10 +596,10 @@ describe('row types', () => {
     const v = userView(r)!
     expect(v.tasks.map((t) => [t.id, t.type, t.checkable])).toEqual([['p', PLAIN_TYPE, false], ['t', TASK_TYPE, true], ['n', NOTE_TYPE, false], ['c', COMMENT_TYPE, false]])
     expect(v.tasks.find((t) => t.id === 'n')!.title).toBe('Title')
-    expect(view(r, ['n'])!.tasks.find((t) => t.id === 'n/field/body')!.title).toBe('# Title\n\nbody with {{who}}')
+    expect(v.tasks.find((t) => t.id === 'n')!.body).toBe('# Title\n\nbody with {{who}}')
     expect(v.tasks.find((t) => t.id === 'c')!.author).toMatchObject({ name: 'Ada' })
-    expect(view(r, ['c'])!.tasks.map((t) => t.type)).toEqual([TEXT_TYPE, 'person', 'listText', COMMENT_TYPE])
-    expect(view(r, ['c'])!.tasks.slice(0, 3).map(t => t.id)).toEqual(['c/field/body', 'c/field/person', 'c/field/texts'])
+    // a row's fields are not its child rows
+    expect(view(r, ['c'])!.tasks.map((t) => [t.id, t.type])).toEqual([['c2', COMMENT_TYPE]])
     // a plain row cannot be completed; converting it to a task makes it checkable
     expect(userView(setTaskDone(r, [], 'p', true, 7))!.tasks[0]).toMatchObject({ id: 'p', done: false, checkable: false })
     r = setRowType(r, [], 'p', TASK_TYPE, 8)
@@ -696,8 +702,7 @@ describe('mutable references: root, link rows and reference rows are one node sh
     expect(isRefNode(store, proj)).toBe(true)
     expect(isHandle(proj)).toBe(false)
     expect(proj.data.alias?.id).toBe('proj')
-    expect(proj.data.description).toBeUndefined()
-    expect(textOf(store, projCid)).toBe('project')
+    expect(rowTitle(store, projCid, null)).toBe('project')
     expect(view(r, ['proj'])!.tasks.map((t) => t.title)).toEqual(['design'])
     expect(userView(r)!.tasks[0]).toMatchObject({ id: 'proj', type: TASK_TYPE, title: 'project', isLink: true })
     // editing inside the link advances the ref: new ref node, PREV → the old one, same value shape
@@ -724,46 +729,6 @@ describe('mutable references: root, link rows and reference rows are one node sh
     r = renameTask(r, [], 'des', 'design v2', 7)
     expect(resolveRef(r, 'des')?.row.title).toBe('design v2')
     expect(view(r, ['today'])!.tasks[0]!.type).toBe(REF_TYPE) // the handle's own value is never followed as content
-  })
-
-  it('legacy inline link nodes are rewritten into ref nodes on load, keeping members, peers and history', () => {
-    let r = createReplica('d')
-    r = addTask(r, [], 'shared', 1, 'sh')
-    r = addTask(r, ['sh'], 'one', 2, 'o1')
-    const store = r.store
-    // hand-build the old shape: the content node itself carries data.link and the bookkeeping edges
-    const shCid = resolveScope(store, headCid(r), ['sh'])!
-    const inline = content(store, shCid)
-    const olderVersion = put(store, { ...inline, data: { ...inline.data, link: { createdAt: 0 }, description: { content: 'shared (old)' } } })
-    const legacy = put(store, {
-      data: { ...inline.data, link: { createdAt: 0 } },
-      children: [...inline.children,
-        [peerNode(store, 'guest'), put(store, { data: { alias: { id: 'guest-entry' } }, children: [[primitive(store, 'grants'), primitive(store, 'propose')]] })],
-        [primitive(store, 'member'), put(store, { data: { peerId: { content: 'guest' } }, children: [] })],
-        [primitive(store, 'previous'), olderVersion]]
-    })
-    const rootValue = content(store, headCid(r))
-    const edge = rootValue.children.find((e) => edgeKey(store, e) === 'a:sh')!
-    const legacyRoot = put(store, { ...rootValue, children: rootValue.children.map((e) => (e === edge ? [e[0], legacy] as FosPathElem : e)) })
-    commitRoot(store, legacyRoot, 3)
-    expect(isLegacyInlineLink(store, content(store, resolveScope(store, headCid(r), ['sh'])!))).toBe(true)
-    // reading still works before normalization
-    expect(view(r, ['sh'])!).toMatchObject({ isLink: true, name: 'shared' })
-    expect(view(r, ['sh'])!.members.map((m) => m.peerId)).toEqual(['guest'])
-    // a serialized replica is normalized when loaded
-    const loaded = loadReplica(JSON.parse(JSON.stringify(serializeReplica(r))))
-    const shNow = resolveScope(loaded.store, headCid(loaded), ['sh'])!
-    const node = content(loaded.store, shNow)
-    expect(isRefNode(loaded.store, node)).toBe(true)
-    expect(node.data.link).toBeUndefined()
-    expect(stripLink(loaded.store, node).data.description?.content).toBe('shared')
-    expect(view(loaded, ['sh'])!).toMatchObject({ isLink: true, name: 'shared', versions: 1, peers: ['guest'] })
-    expect(view(loaded, ['sh'])!.members.map((m) => m.peerId)).toEqual(['guest'])
-    expect(view(loaded, ['sh'])!.tasks.map((t) => t.title)).toEqual(['one'])
-    // and it keeps working as a link: edits advance it
-    const edited = addTask(loaded, ['sh'], 'two', 4, 'o2')
-    expect(view(edited, ['sh'])!.versions).toBe(2)
-    expect(normalizeRefs(edited.store, headCid(edited))).toBe(headCid(edited)) // idempotent
   })
 })
 

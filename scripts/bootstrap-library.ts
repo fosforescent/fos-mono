@@ -41,7 +41,7 @@ const textField = (field: string) => node([stringAliasOf(field), string])
 /** A text field's value. */
 const fill = (field: string, value: string) => node([stringAliasOf(field), text(value)])
 
-const title = textField('title'), body = textField('body'), label = textField('label'), syntax = textField('syntax')
+const title = textField('title'), body = textField('body'), author = textField('author'), label = textField('label'), syntax = textField('syntax')
 const done = tagOf('done')
 // a sum: either an emoji or a Font Awesome id, as the choice node submissions to one ref make
 const icon = putBranches(store, 'icon', null, ['emojiValue', 'fontAwesomeId'].map(option => ({ peerId: option, edge: [stringAliasOf(option), string] })), 'emojiValue')
@@ -66,7 +66,7 @@ const types: Record<string, string> = {
   deviceRoot: tagged('deviceRoot', [Home, unit]),
   task: node([title, never], [done, unit]),
   note: node([title, never], [body, never]),
-  comment: node([body, never]),
+  comment: node([body, never], [author, never]),
   specification: tagged('specification', [title, never], [body, never]),
   ref: tagged('ref'),
   query: tagged('query', [title, never]),
@@ -85,7 +85,7 @@ const types: Record<string, string> = {
   relayAck: tagged('relayAck', [title, never]),
   listText: node(),
   // fields and value types, reachable by name
-  title, body, label, syntax, done, icon, stringAlias, tag, username, displayName, path, markdown,
+  title, body, author, label, syntax, done, icon, stringAlias, tag, username, displayName, path, markdown,
   amount, unit: unitField, resourceType, start, end, by, at, bank, place, lat, lng, nonce,
   text: string, number, time: number, boolean, peer
 }

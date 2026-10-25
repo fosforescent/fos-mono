@@ -135,6 +135,12 @@ export function withRefTitle(store: FosStore, ref: FosNodeContent, text: string)
   return { ...ref, children: old ? ref.children.map(edge => edge === old ? row : edge) : [...ref.children, row] }
 }
 
+/** The ref without its own title row (a row whose title is now its title field's). */
+export function withoutRefTitle(store: FosStore, ref: FosNodeContent): FosNodeContent {
+  const old = refTitleEdge(store, ref)
+  return old ? { ...ref, children: ref.children.filter(edge => edge !== old) } : ref
+}
+
 /**
  * The content of a new row `id` of `type`: a field ref per type row, holding what `values` supplies for that field,
  * nothing for a field left open (a hole), or the type's own value where the type fills it. Child rows come after.
