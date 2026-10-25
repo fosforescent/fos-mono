@@ -17,7 +17,7 @@ import { withUserLock, type AccountStoreDeps } from '../sync/accountStore'
 import type { HostHandler } from '../sync/host-runtime'
 import { valueOfPattern } from '@fosforescent/shared/sync/structural'
 import { patternInputs, rowTypeAt, newId, organizedRowCount, content } from '@fosforescent/shared/sync/index'
-import { constructForm } from '@fosforescent/shared/sync/forms'
+import { constructTextRow } from '@fosforescent/shared/sync/fields'
 import { budgetRefusal, recordSafely, type VoiceDeps, type VoiceUsage } from './voiceNotes'
 
 export type OrganizeInput = { text: string; title: string; outline: OutlineEntry[] }
@@ -60,9 +60,7 @@ export function organizeHandler(model: () => VoiceDeps, usage?: VoiceUsage): Hos
       }
       const rowsAt = (parent: string | null): Array<[string, string]> => plan.items.filter(item => item.parent === parent).map(item => {
         const type = rowTypeAt(ctx.store, item.type, ctx.step), id = newId()
-        const node = content(ctx.store, type).data.form
-          ? constructForm(ctx.store, type, id, { text: item.text }, ctx.now)
-          : { data: { alias: { id }, description: { content: item.text } }, children: [] }
+        const node = constructTextRow(ctx.store, type, id, item.text, ctx.now)
         return [type, ctx.put({ ...node, children: [...node.children, ...rowsAt(item.ref)] })]
       })
       const rows = rowsAt(null)

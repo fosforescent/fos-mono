@@ -5,7 +5,8 @@ import { settingOf } from './graph'
 import { isHandlerStateLeft } from './capabilities'
 import { discoverHandlers } from './handlers'
 import { contextBindings, resolveBinding, resolveText, type BindingEnvironment } from './bindings'
-import { constructForm, formText, formTitle } from './forms'
+import { constructRow, fieldValues, isFieldRow, rowText, titleField } from './fields'
+import { rowTitle } from './graph'
 import {
   requirementViewOf, libAt, commitRoot, content, identityCid, newId, put,
   readProposals, refArguments, refNodeContent, refValueCid, resolveScope,
@@ -65,7 +66,7 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
   const typeLabel = (edge: [string, string]) => valueContent(store, rowTypeOf(store, edge)!).data.description?.content ?? 'Row'
   const isText = (edge: [string, string]) => {
     const type = rowTypeOf(store, edge)!, id = typeIdOf(store, type)
-    return !id || id === PLAIN_TYPE || id === REF_TYPE || !!valueContent(store, type).data.form
+    return !id || id === PLAIN_TYPE || id === REF_TYPE || titleField(store, type) !== null
   }
   const emit =(cid: string, label: string, depth: number, external = false, ancestorNotes = false, at: Scope = requestPath) => {
     if (depth > 30) { blockers.add('An input is nested too deeply.'); return }
@@ -78,8 +79,7 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
     const identity = content(store, cid), value = valueContent(store, cid)
     // a note reads as one block: its title line and its body (whose row is then not listed again)
     // a requirement reads as its own declaration (its value, once bound, is its result)
-    const rendered = resolveText(r, at, formText(store, value) || identity.data.description?.content || '(untitled)')
-    const headline = value.data.presentation?.headline?.[0]
+    const rendered = resolveText(r, at, rowText(store, cid, null) || identity.data.description?.content || '(untitled)')
     for (const binding of rendered.bindings) { binding.problems.forEach(p => blockers.add(p)); binding.sources.forEach(cid => sources.add(cid)) }
     lines.push(`${'  '.repeat(depth)}${label}: ${rendered.text}`)
     const ref = identity.data.ref
@@ -106,7 +106,7 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
       const child = identityCid(store, edge)
       // Runtime values (`fos:evaluation`, triggers, …) are not task context; they change while the task is worked on.
       if (settingOf(store, content(store, child)) || isHandlerStateLeft(store, edge[0])) continue
-      if (headline && content(store, child).data.name?.content === headline) continue
+      if (isFieldRow(store, identity.data.alias?.id ?? cid, edge)) continue
       // Other work requests are context only once accepted, when explicitly referenced.
       if (!content(store, child).data.ref && requirementViewOf(store, edge, child)?.capability === 'llm' && child !== request.cid && !external) continue
       // the rows a value carries as a value of its pattern have no identity and are no context
@@ -118,7 +118,7 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
   for (let i = 0; i < requestPath.length - 1; i++) {
     const ancestor = nodeAt(r, requestPath.slice(0, i))
     sources.add(ancestor.cid)
-    lines.push(`Ancestor: ${formTitle(store, ancestor.value) || 'Project'}`)
+    lines.push(`Ancestor: ${rowTitle(store, ancestor.cid, null) || 'Project'}`)
     for (const edge of ancestor.value.children) {
       if (!isRowEdge(store, edge)) continue
       const child = identityCid(store, edge)
@@ -147,9 +147,9 @@ export function workAttempts(r: Replica, requestPath: Scope) {
     if (!snapshot) return []
     const saved = valueContent(r.store, snapshot)
     const systemEdge = saved.children.find((edge) => isRowOfType(r.store, edge, NOTE_TYPE))
-    const system = systemEdge ? formText(r.store, valueContent(r.store, identityCid(r.store, systemEdge))) : ''
+    const system = systemEdge ? rowText(r.store, identityCid(r.store, systemEdge), null) : ''
     return [{ path, resultPath: [...path, result.id], resultCid: result.targetCid,
-      context: formText(r.store, saved), system, proposals: readProposals(r.store, content(r.store, result.cid)) }]
+      context: rowText(r.store, put(r.store, saved), null), system, proposals: readProposals(r.store, content(r.store, result.cid)) }]
   })
 }
 
@@ -179,7 +179,7 @@ export function beginTaskWork(r: Replica, requestPath: Scope, preview: WorkConte
 
 export function proposeTaskResult(r: Replica, resultPath: Scope, text: string, now: number): Replica {
   if (!text.trim()) throw new Error('The model returned an empty result. Try again.')
-  const result = put(r.store, constructForm(r.store, rowTypeAt(r.store, NOTE_TYPE, resultPath), newId(), { text }, now))
+  const note = rowTypeAt(r.store, NOTE_TYPE, resultPath), result = put(r.store, constructRow(r.store, note, newId(), fieldValues(r.store, note, { body: text }), now))
   return proposeRefAt(r, resultPath, result, 'fos', now).replica
 }
 
@@ -193,7 +193,7 @@ export function decideTaskResult(r: Replica, requestPath: Scope, resultPath: Sco
   if (current.blockers.length) throw new Error(current.blockers.join('\n'))
   if (attempt.context !== current.prompt) throw new Error('The task context changed. Run a new attempt before accepting.')
   const generating = asksForSubtasks(r, requestPath)
-  const subtasks = generating ? formText(r.store, valueContent(r.store, proposal.contentCid)).split('\n').flatMap(line => {
+  const subtasks = generating ? rowText(r.store, proposal.contentCid, null).split('\n').flatMap(line => {
     const match = line.match(/^\s*(?:[-*]\s+)?\[ \]\s+(.+)$/)
     return match ? [match[1]!.trim()] : []
   }) : []

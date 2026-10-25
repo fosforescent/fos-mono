@@ -151,14 +151,6 @@ export const storeToDb = async (
     }
   })
 
-  const shouldLinkNodeToUser = (node: FosNodeContent) => {
-    const scope = node.data.comment?.scope
-    if (scope === "global") {
-      return false
-    }
-    return true
-  }
-
   const nodesToCreate: { cid: string, data: JsonObject }[] = []
   const linksToEnsure: string[] = []
 
@@ -175,9 +167,7 @@ export const storeToDb = async (
       })
     }
 
-    if (shouldLinkNodeToUser(node)) {
-      linksToEnsure.push(id)
-    }
+    linksToEnsure.push(id)
   })
 
   if (nodesToCreate.length > 0) {

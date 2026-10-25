@@ -215,7 +215,7 @@ export function argumentSupplier(r: Replica, path: Scope): string | null {
   const target = found.status === 'ready' ? found.locations[0] : undefined
   if (!target) return null
   const held = valueContent(target.store, target.cid)
-  return held.data.peerId?.content ?? held.data.allocation?.by ?? held.data.comment?.authorID ?? null
+  return held.data.peerId?.content ?? held.data.allocation?.by ?? null
 }
 
 // ---------------------------------------------------------------------------

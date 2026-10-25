@@ -1,4 +1,4 @@
-import { constructPlainRow, constructRow, fieldEdge, fieldText, fieldValue, fieldValues, isFieldRow, isTextField, rebuildRow, rowRecord, titleField, withFieldValue, withFieldValues, withRowText } from './fields'
+import { constructPlainRow, constructRow, constructTextRow, fieldEdge, fieldText, fieldValue, fieldValues, isFieldRow, isTextField, rebuildRow, rowRecord, titleField, withFieldValue, withFieldValues, withRowText } from './fields'
 import { createStore, completes, rowTitle, rowVocabulary } from './graph'
 import { primitive } from './primitives'
 import { sameCapabilityType } from './capabilities'
@@ -20,9 +20,7 @@ import { nodeBranches, materializedNodePaths, nodeShape, sameNodeShape, nodeSync
 import { storeOf, type FosStore } from '../dag-implementation/store'
 import { UnsupportedDataVersionError, hashContent } from '../dag-implementation/cid'
 import type { FosContextData, FosNodeContent, FosPathElem } from '../types'
-import { constructForm, formFields, formText, formTitle, formValueAt, positionFormRows, setFormTitle, type FormInput } from './forms'
 import { COMMENT_TYPE, NOTE_TYPE, PLAIN_TYPE, QUERY_TYPE, REF_TYPE, RESOURCE_TYPE, TASK_TYPE, TEMPLATE_TYPE } from './library-types'
-import { legacyCommentMetadata } from './legacy-comment'
 import { knownUser, publishPeerKey, userType, withUserField, type UserRecord } from './users'
 import { membershipPath, withMembershipRow, homeIdOf, isValueSubmission, settingOf, isRequirementRow } from './graph'
 import { isNegative } from './parameters'
@@ -358,7 +356,7 @@ function findChildEdge(replica: Replica, value: FosNodeContent, aliasId: string)
  * Double-brace legacy substitutions remain references to the surrounding context.
  */
 function withTextParameters(store: FosStore, node: FosNodeContent): FosNodeContent {
-  const text = node.data.presentation?.headline ? formText(store, node) : node.data.description?.content ?? ''
+  const text = node.data.description?.content ?? ''
   const { refExpression: _previousExpression, ...data } = node.data
   node = { ...node, data }
   // A whole-row path is a ref value; braces interpolate paths into text instead.
@@ -391,11 +389,9 @@ export function addTask(replica: Replica, at: Scope, title: string, now: number,
  */
 function newRowContent(store: FosStore, type: string, typeId: string, id: string, text: string, now: number, extras: Omit<RowExtras, 'store'>): FosNodeContent {
   if (typeId === REF_TYPE || typeId === QUERY_TYPE || typeId === RESOURCE_TYPE) return rowContent(typeId, id, text, now, { ...extras, store })
-  if (isTextField(store, type)) return constructPlainRow(store, type, id, text, now)
-  const values = new Map<string, string>(), title = titleField(store, type), done = rowVocabulary(store)?.done
-  if (title && text) values.set(title, fieldText(store, title, text))
+  const values = new Map<string, string>(), done = rowVocabulary(store)?.done
   if (done && extras.done && completes(store, type)) values.set(done, put(store, { data: {}, children: [] }))
-  return constructRow(store, type, id, values, now)
+  return constructTextRow(store, type, id, text, now, values)
 }
 
 export type AddRowOptions = Omit<RowExtras, 'store'> & { position?: MovePosition; id?: string }
@@ -557,7 +553,7 @@ export function shareRefAt(replica: Replica, source: Scope, destination: Scope, 
   if (!type) throw new Error('Only a typed declaration can be shared.')
   transferRefGraph(replica, type, source, [...shared, id], false)
   const linked = makeLink(s, content(s, cid), now)
-  const declaration = put(s, { ...linked, data: { ...linked.data, name: linked.data.name ?? { content: formTitle(s, valueContent(s, cid)) || id } } })
+  const declaration = put(s, { ...linked, data: { ...linked.data, name: linked.data.name ?? { content: rowTitle(s, cid, type) || id } } })
   if (shared.length === parent.length) {
     if (declaration === cid) return replica
     commitRoot(s, updateAtScope(s, root, parent, value => replaceEdge(s, value, `a:${id}`, rowEdge(s, declaration, type))), now)
@@ -715,9 +711,16 @@ export function fileReferenceAt(replica: Replica, path: Scope): FileReference | 
 /** Re-pin a file reference to the checksum (and size) its file has now: its fields are rewritten in place. */
 export function setFileReferenceAt(replica: Replica, at: Scope, rowId: string, file: FileReference, now: number): Replica {
   if (!validFileReference(file)) throw new Error('A file reference needs a relative path and a SHA-256 checksum.')
-  const found = fileReferenceRow(replica, at, rowId)
-  if (!found) throw new Error('This row is not a file reference.')
-  return updateTask(replica, at, rowId, now, row => withFieldValues(replica.store, found.edge[0], rowId, row, { path: file.path, sha256: file.sha256, size: file.size }, now))
+  if (!fileReferenceRow(replica, at, rowId)) throw new Error('This row is not a file reference.')
+  return setRowFieldsAt(replica, at, rowId, { path: file.path, sha256: file.sha256, size: file.size }, now)
+}
+/** Row `rowId`'s named fields holding `input` (by field name; fields left out keep what they hold). */
+export function setRowFieldsAt(replica: Replica, at: Scope, rowId: string, input: Readonly<Record<string, string | number>>, now: number): Replica {
+  const parent = resolveScope(replica.store, headCid(replica), at)
+  const edge = parent ? findEdge(replica.store, valueContent(replica.store, parent), `a:${rowId}`) : undefined
+  const type = edge && rowTypeOf(replica.store, edge)
+  if (!type) throw new Error('This row has no fields.')
+  return updateTask(replica, at, rowId, now, row => withFieldValues(replica.store, type, rowId, row, input, now))
 }
 
 /** Copy the row `aliasId` (with its subtree, fresh ids) from `fromPath` to `toPath` at `position`. */
@@ -1006,9 +1009,6 @@ export function applyProposalAt(replica: Replica, at: Scope, proposalCid: string
     return removeProposalByCid(store, relinked, proposalCid)
   })
 }
-
-/** Whether a row's title is a projection of its form (a title or headline field, or a scalar leaf), not its description. */
-const projectsTitle = (node: FosNodeContent): boolean => !!(node.data.presentation?.title || node.data.presentation?.headline || node.data.scalar)
 
 /**
  * The row ref `value` (at `at`) holding `target` as its value: checked against the row's pattern, the previous value

@@ -170,7 +170,7 @@ export function match(store: FosStore, pattern: string, value: string, options: 
       const leaf = primitiveName(store, p)
       if (leaf && leaves[leaf]) return leaves[leaf](V.data.scalar) ? state : null
       if (P.data.scalar && !(V.data.scalar && V.data.scalar.type === P.data.scalar.type && Object.is(V.data.scalar.value, P.data.scalar.value))) return null
-      const required = Object.fromEntries(Object.entries(P.data).filter(([name]) => name !== 'scalar' && !incidental.has(name) && name !== 'form' && !((P.data.capabilityDefinition || P.data.form) && ['name', 'description'].includes(name))))
+      const required = Object.fromEntries(Object.entries(P.data).filter(([name]) => name !== 'scalar' && !incidental.has(name) && !(P.data.capabilityDefinition && ['name', 'description'].includes(name))))
       if (!properties(required, V.data)) return null
       const wanted = rows(P), available = rows(V), used = new Set<number>()
       const assign = (index: number, current: Match): Match | null => {

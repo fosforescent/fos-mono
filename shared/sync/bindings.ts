@@ -1,7 +1,7 @@
 /** Shared, read-only resolution for data arguments and callable values. */
 import { primitive } from './primitives'
 import { discoverHandlers, type HandlerEnvironment } from './handlers'
-import { formText } from './forms'
+import { rowText } from './fields'
 import type { FosStore } from '../dag-implementation/store'
 import {
   isBranchChoice, selectedBranchValue, libraryTypeAt, type Capability, childRows, isRequirementRow, argumentSatisfied, content, isChoiceEdge, isRefNode, refValueCid,
@@ -182,7 +182,7 @@ export function resolveText(r: Replica, at: Scope, text: string, defaults: Bindi
       } else result = { status: found.status === 'denied' ? 'missing' : found.status === 'ready' ? 'missing' : found.status, sources: [], problems: [`Unresolved ref property: ${name}`] }
     } else result = resolveBinding(r.store, type, null, candidates, name, { ...environment, scope: { replica: r, path: at } })
     bindings.push(result)
-    rendered += text.slice(previous, expression.start) + (result.status === 'ready' ? formText(r.store, valueContent(r.store, result.cid!)) : text.slice(expression.start, expression.end))
+    rendered += text.slice(previous, expression.start) + (result.status === 'ready' ? rowText(r.store, result.cid!, null) : text.slice(expression.start, expression.end))
     previous = expression.end
   }
   return { text: rendered + text.slice(previous), bindings }

@@ -79,6 +79,14 @@ export function constructPlainRow(store: FosStore, title: string, id: string, te
   return refNodeContent(store, { alias: { id }, created: { time: now }, updated: { time: now } }, fieldText(store, title, text))
 }
 
+/** A row of `type` holding `text`: a plain row of a text field, else a row whose title field holds it (left open when empty). */
+export function constructTextRow(store: FosStore, type: string, id: string, text: string, now: number, values = new Map<string, string>()): FosNodeContent {
+  if (isTextField(store, type)) return constructPlainRow(store, type, id, text, now)
+  const title = titleField(store, type)
+  if (title && text) values.set(title, fieldText(store, title, text))
+  return constructRow(store, type, id, values, now)
+}
+
 /** Whether `edge` in row `id`'s value is one of that row's own fields (not a child row with the same left). */
 export function isFieldRow(store: FosStore, id: string, edge: FosPathElem): boolean {
   return store.table.get(edge[1])?.data.alias?.id === fieldRefId(id, edge[0])
@@ -169,4 +177,50 @@ export function rebuildRow(store: FosStore, type: string, id: string, previous: 
   const built = constructRow(store, type, id, values, now, children)
   const rows = built.children.map((edge): FosPathElem => values.has(edge[0]) ? edge : own.find(([field]) => field === edge[0]) ?? edge)
   return { data: { ...previous.data, alias: { id }, updated: { time: now } }, children: rows }
+}
+
+/** The text fields of a type, in order. */
+function textFields(store: FosStore, type: string): string[] {
+  return typeRows(store, type).map(([field]) => field).filter(field => isTextField(store, field))
+}
+/**
+ * A row's whole text: a plain row's own text; else its last text field holding text (a note's body), its title when
+ * that is the only one. Empty when it holds none.
+ */
+export function rowText(store: FosStore, nodeCid: string, type: string | null): string {
+  if (type && isTextField(store, type)) return leafText(store, nodeCid) ?? ''
+  const value = content(store, valueOf(store, nodeCid)), id = content(store, nodeCid).data.alias?.id ?? value.data.alias?.id ?? nodeCid
+  const fields = type ? textFields(store, type) : value.children.filter(edge => isFieldRow(store, id, edge) && isTextField(store, edge[0])).map(([field]) => field)
+  for (const field of [...fields].reverse()) {
+    const held = fieldValue(store, id, value, field), text = held ? leafText(store, held) : null
+    if (text) return text
+  }
+  return type ? '' : leafText(store, nodeCid) ?? ''
+}
+/** The body of a row: its last text field when the type has a title field before it (a note's body), else null. */
+export function rowBody(store: FosStore, nodeCid: string, type: string): string | null {
+  const fields = textFields(store, type)
+  if (fields.length < 2) return null
+  const value = content(store, valueOf(store, nodeCid)), id = content(store, nodeCid).data.alias?.id ?? value.data.alias?.id ?? nodeCid
+  const held = fieldValue(store, id, value, fields.at(-1)!)
+  return held ? leafText(store, held) ?? '' : ''
+}
+/** The value a single-value row holds in its first text field (a message's addressee, an acknowledged message id). */
+export function rowLeaf(store: FosStore, edge: FosPathElem): string | number | null {
+  const field = textFields(store, edge[0])[0]
+  if (!field) return null
+  const value = content(store, valueOf(store, edge[1])), id = content(store, edge[1]).data.alias?.id ?? value.data.alias?.id ?? edge[1]
+  const held = fieldValue(store, id, value, field)
+  return held ? leafValue(store, held) : null
+}
+/** The fields of row `id` (of `type`) as a view shows them: name, value, and whether it is still open. */
+export type FieldView = { id: string; field: string; key: string | null; value: string | number | null; open: boolean }
+export function fieldViews(store: FosStore, type: string, id: string, value: FosNodeContent): FieldView[] {
+  const never = primitive(store, 'void')
+  return typeRows(store, type).flatMap(([field]): FieldView[] => {
+    const edge = fieldEdge(store, id, value, field)
+    if (!edge) return []
+    const held = valueOf(store, edge[1])
+    return [{ id: fieldRefId(id, field), field, key: fieldKey(store, field), value: held === never ? null : leafValue(store, held), open: held === never }]
+  })
 }

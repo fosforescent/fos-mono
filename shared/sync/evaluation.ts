@@ -12,7 +12,7 @@ import { settingOf } from './graph'
 import { constructNodeValue, isNodeValueType, readGraphValue } from './node-values'
 import { isAttempt } from './work'
 import { argumentRefs, contextBindings, resolveBinding, resolveText, type BindingEnvironment } from './bindings'
-import { formText } from './forms'
+import { rowText } from './fields'
 import { TEMPLATE_TYPE } from './library-types'
 import { compileInstructions } from './ref-compiler'
 import { instructionPrimitives } from './primitives'
@@ -235,7 +235,7 @@ function problems(r: Replica, step: EvaluationStep, driver: EvaluationDriver): s
   for (const arg of argumentRefs(r.store, cid).filter(a => !settingOf(r.store, content(r.store, a.cid)) && content(r.store, a.cid).data.refRole !== 'output' && !isOutputPattern(r.store, a.type))) {
     issues.push(...resolveBinding(r.store, arg.type, arg.cid, candidates, undefined, { ...driver, scope: { replica: r, path: step.path } }).problems)
   }
-  issues.push(...resolveText(r, step.path, formText(r.store, valueContent(r.store, cid)), [], driver).bindings.flatMap(b => b.problems))
+  issues.push(...resolveText(r, step.path, rowText(r.store, cid, null), [], driver).bindings.flatMap(b => b.problems))
   const req = step.row?.requirement
   if (req && !req.satisfied && !executors.length) {
     // a requirement with steps of its own (a task inside it) is fulfilled by running them; one with neither is unmet
@@ -268,7 +268,7 @@ const instruction = (r: Replica, path: Scope) => {
     // submissions on a declaration are not its instruction either.
     return { cid: refBindingBaseCid(r.store, content(r.store, arg.cid)), type: arg.type, name: arg.name, status: value.status, value: value.cid }
   })
-  const text = resolveText(r, path, formText(r.store, valueContent(r.store, cid)))
+  const text = resolveText(r, path, rowText(r.store, cid, null))
   return JSON.stringify({ data, instruction: compileInstructions(r, path, { openOutputs: true }).cid, arguments: resolved,
     text: text.text, bindings: text.bindings.map(binding => ({ status: binding.status, cid: binding.cid })) })
 }

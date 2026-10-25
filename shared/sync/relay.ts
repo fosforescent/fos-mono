@@ -27,7 +27,7 @@ import {
   libAt, put, proposalContent, readProposals, refNodeContent, resolveScope, updateAtScope, valueContent, withMainBranchPolicy, withProposal,
   isLibraryRef, handlerOfferId, memberEdgesOf, isRowEdge, enclosingScopes, nearestInScope, type ProposalRecord, type Scope, type TaskView,
 } from './graph'
-import { constructForm } from './forms'
+import { constructRow, fieldValues, rowLeaf } from './fields'
 import { addMemberAt, headCid, setHandlerOffersAt, view, type Replica } from './replica'
 import { contextMemberRefs, discoverHandlers } from './handlers'
 
@@ -74,10 +74,10 @@ export function rowsLeftAt(store: FosStore, cid: string): LeftRow[] {
   return out
 }
 
-/** The value a scalar row holds (a message's addressee, an acknowledged message id); null while it is a held stub. */
+/** The value a single-value row holds (a message's addressee, an acknowledged message id); null while it is a held stub. */
 function scalarOf(store: FosStore, edge: FosPathElem): string | null {
-  const value = valueContent(store, identityCid(store, edge)).data.scalar?.value
-  return typeof value === 'string' && value ? value : null
+  const value = rowLeaf(store, edge)
+  return typeof value === 'string' ? value : null
 }
 
 /** Has the relay received all of the row (no node in it is still held by a peer)? A message is delivered whole. */
@@ -135,7 +135,7 @@ function ensureQueue(r: Replica, entry: Scope, peerId: string, now: number): Rep
   if (cid && queueIn(r.store, cid)) return r
   const type = libraryTypeAt(r.store, RELAY_QUEUE, entry)
   if (!type) throw new Error('No library above this node has a relay queue type.')
-  const queue = put(r.store, constructForm(r.store, type, RELAY_QUEUE_ID, peerId, now))
+  const queue = put(r.store, constructRow(r.store, type, RELAY_QUEUE_ID, fieldValues(r.store, type, { peer: peerId }), now))
   return commit(r, updateAtScope(r.store, headCid(r), entry, value => ({ ...value, children: [...value.children, [type, queue]] })), now)
 }
 
@@ -253,7 +253,7 @@ export function offerRelay(r: Replica, at: Scope, now: number): Replica {
 export function addRelayMessage(r: Replica, at: Scope, to: string, now: number, id: string): Replica {
   const type = libraryTypeAt(r.store, RELAY_MESSAGE, at)
   if (!type) throw new Error('No library above this node has a relay message type.')
-  const node = put(r.store, constructForm(r.store, type, id, to, now))
+  const node = put(r.store, constructRow(r.store, type, id, fieldValues(r.store, type, { peer: to }), now))
   return commit(r, updateAtScope(r.store, headCid(r), at, value => ({ ...value, children: [...value.children, [type, node]] })), now)
 }
 
@@ -261,7 +261,7 @@ export function addRelayMessage(r: Replica, at: Scope, to: string, now: number, 
 export function addRelayAck(r: Replica, at: Scope, messageId: string, now: number, id = relayAckId(messageId)): Replica {
   const type = libraryTypeAt(r.store, RELAY_ACK, at)
   if (!type) throw new Error('No library above this node has a relay acknowledgement type.')
-  const node = put(r.store, constructForm(r.store, type, id, messageId, now))
+  const node = put(r.store, constructRow(r.store, type, id, fieldValues(r.store, type, { title: messageId }), now))
   return commit(r, updateAtScope(r.store, headCid(r), at, value => ({ ...value, children: [...value.children, [type, node]] })), now)
 }
 

@@ -20,7 +20,7 @@ import { FosStore } from '../dag-implementation/store'
 import { isCid } from '../dag-implementation/cid'
 import type { FosPathElem } from '../types'
 import { plainEdge } from './patterns'
-import { FIELD_TYPES, MARKDOWN_TYPE, PEER_TYPE, VISITOR_SUBMISSION } from './published-types'
+import { MARKDOWN_TYPE, NUMBER_TYPE, TEXT_TYPE, VISITOR_SUBMISSION } from './published-types'
 export * from './published-types'
 import { PLAIN_TYPE, REF_TYPE, TEMPLATE_TYPE } from './library-types'
 import { isRowEdge, membershipPath, newId, SERVER_MEMBER, aliasIdOf, identityCid, typeIdOf, libAt, nestScope, commitRoot, content, hasCapability, importNodes, makeLink, memberFor, proposalContent, put, reachableNodes, readMembers, readProposals, resolveScope, isRefNode, refValueCid, rootTargetCid, updateAtScope, valueContent, withProposal, type Capability, type Scope } from './graph'
@@ -343,10 +343,9 @@ export function sharedProjection(r: Replica, path: Scope, revision: (value: unkn
     budget -= body.length
     return { title: '', type, body, ...(body.length < title.length ? { truncated: true as const } : {}) }
   }
-  const markdown = (row: { text?: { mediaType?: string } } | null | undefined) => row?.text?.mediaType === 'text/markdown'
-  const store = r.store, edgeAt = (at: Scope) => at.length ? childRowEdge(store, resolveScope(store, headCid(r), at.slice(0, -1)), at.at(-1)!) : null
-  const page = present(current?.title ?? node.name ?? 'Shared node', libraryType(current), textVisible(path), markdown(current))
-  const walk = (at: Scope, depth: number, presented: string[] | undefined) => {
+  const store = r.store
+  const page = present(current?.body ?? current?.title ?? node.name ?? 'Shared node', libraryType(current), textVisible(path), current?.body !== undefined)
+  const walk = (at: Scope, depth: number) => {
     if (depth > 8 || hashed.length >= 200) return
     const parent = resolveScope(store, headCid(r), at)
     for (const row of view(r, at)?.tasks ?? []) {
@@ -357,27 +356,22 @@ export function sharedProjection(r: Replica, path: Scope, revision: (value: unkn
       const shown = textVisible(childPath), edge = childRowEdge(store, parent, row.id), type = libraryType(row)
       // The execute projection offers declared inputs separately. Their private
       // bindings and runtime state are graph rows, but are not published page content.
-      if (edge && content(store, identityCid(store, edge)).data.name && !(type && (FIELD_TYPES.includes(type) || type === MARKDOWN_TYPE))) continue
-      hashed.push({ id: row.id, title: shown ? row.title.slice(0, 8000) : '', type: row.type, depth })
-      if (type && FIELD_TYPES.includes(type)) {
-        // a field of its row's product: the one the row presents (a note's body) is already shown by the row; an
-        // empty one is asked of the visitor, who submits a candidate value
-        const label = edge ? valueContent(store, identityCid(store, edge)).data.name?.content ?? '' : ''
-        if (presented?.length === 1 && presented[0] === label) continue
-        const relative = childPath.slice(path.length)
-        rows.push({ id: row.id, depth, type, title: label, ...(shown ? { body: row.title.slice(0, 8000) } : {}) })
-        if (shown && !row.title.trim() && type !== PEER_TYPE) fields.push({ key: JSON.stringify(relative), path: relative, name: label || 'Value', kind: 'text' })
-        continue
+      if (edge && content(store, identityCid(store, edge)).data.name) continue
+      hashed.push({ id: row.id, title: shown ? row.title.slice(0, 8000) : '', type: row.type, depth, fields: row.fields, body: row.body })
+      rows.push({ id: row.id, depth, ...present(row.title, type, shown, false) })
+      if (row.body) rows.push({ id: `${row.id}:body`, depth: depth + 1, ...present(row.body, MARKDOWN_TYPE, shown, true) })
+      for (const field of row.fields ?? []) {
+        // a field of the row: a filled one is shown; an open one is asked of the visitor, who submits a candidate value
+        const relative = [...childPath.slice(path.length), field.id], label = field.key ?? ''
+        if (!field.open) rows.push({ id: field.id, depth: depth + 1, type: typeof field.value === 'number' ? NUMBER_TYPE : TEXT_TYPE, title: label, ...(shown ? { body: String(field.value ?? '').slice(0, 8000) } : {}) })
+        else if (shown) fields.push({ key: JSON.stringify(relative), path: relative, name: label || 'Value', kind: 'text' })
       }
-      if (type === MARKDOWN_TYPE && !row.title.trim()) continue
-      rows.push({ id: row.id, depth, ...present(row.title, type, shown, markdown(row)) })
       const definition = edge && store.table.has(plainEdge(store, edge)[0]) ? content(store, plainEdge(store, edge)[0]) : null
       // Reference targets, arguments, membership, previous versions and private inputs are never exported.
-      if (row.refId === undefined) walk([...at, row.id], depth + 1, definition?.data.form?.title)
+      if (row.refId === undefined) walk([...at, row.id], depth + 1)
     }
   }
-  const own = edgeAt(path)
-  walk(path, 0, own && store.table.has(plainEdge(store, own)[0]) ? content(store, plainEdge(store, own)[0]).data.form?.title : undefined)
+  walk(path, 0)
   // what a visitor submits (a member who may run the node but not edit it) is the owner's to review, not an option other visitors vote on
   const identity = content(r.store, resolveScope(r.store, headCid(r), path)!)
   // visitors are explicit members (a visit adds them); a peer the audience covers implicitly is no visitor

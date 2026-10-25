@@ -112,6 +112,7 @@ import {
   setQueryOptionsAt,
   addFileReference,
   setFileReferenceAt,
+  setRowFieldsAt,
   fileReferenceAt,
   type FileReference,
   setRowType,
@@ -405,7 +406,7 @@ export class App {
   titleFromText(path: Scope): void {
     const row = () => view(this.state.replica, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1))
     const session = this.state.session, key = JSON.stringify(path)
-    if (!row()?.headline || !session || session.kind !== 'user' || this.virtualIdentity || !this.isOnline('fos') || !this.capabilityAvailable('title', path) || this.titling.has(key)) return
+    if (row()?.body === undefined || !session || session.kind !== 'user' || this.virtualIdentity || !this.isOnline('fos') || !this.capabilityAvailable('title', path) || this.titling.has(key)) return
     this.titling.add(key)
     void (async () => {
       const store = this.state.replica.store, before = row()!.title
@@ -1654,7 +1655,7 @@ export class App {
   dropBlankRow(parent: Scope, id: string, store: Replica['store']): void {
     if (store !== this.state.replica.store) return
     const row = view(this.state.replica, parent)?.tasks.find((t) => t.id === id)
-    if (row?.type === PLAIN_TYPE && !row.form && !row.scalar && !this.rowInputs([...parent, id]) && !row.title.trim() && !row.childCount && !row.childChoices) this.edit(deleteTask(this.state.replica, parent, id, this.now()))
+    if (row?.type === PLAIN_TYPE && !row.fields && !row.scalar && !this.rowInputs([...parent, id]) && !row.title.trim() && !row.childCount && !row.childChoices) this.edit(deleteTask(this.state.replica, parent, id, this.now()))
   }
   rewriteRowAt(at: Scope, id: string, parsed: import('./rows').ParsedInput, draft?: { store: Replica['store']; head: string; parent: Scope }): void {
     if (this.isHome([...this.state.view, ...at, id])) return
@@ -3672,6 +3673,8 @@ export class App {
     return id
   }
   /** Re-pin a reference to the checksum its file has now. */
+  /** Fill row `rowId`'s named fields (at the absolute path `at`). */
+  setRowFields(at: Scope, rowId: string, input: Record<string, string | number>): void { this.edit(setRowFieldsAt(this.state.replica, at, rowId, input, this.now())) }
   setFileReference(at: Scope, rowId: string, file: FileReference): void { this.edit(setFileReferenceAt(this.state.replica, at, rowId, file, this.now())) }
   fileReference(path: Scope): FileReference | null { return fileReferenceAt(this.state.replica, path) }
   attachment(at: Scope) { return attachmentAt(this.state.replica, at) }

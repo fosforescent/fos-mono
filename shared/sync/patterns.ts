@@ -103,12 +103,7 @@ export function acceptsChild(store: FosStore, typeCid: string, child: FosPathEle
   // ordinary rows, governed by the function's input patterns during binding.
   if (isRefNode(store, definition)) return true
   // An unconstrained ref pattern imposes no product-field restrictions on call inputs or outputs.
-  if (definition.data.capabilityDefinition && !definition.data.form && !patternsOf(store, typeCid).length) return true
-  if (definition.data.form) {
-    if (!isRowEdge(store, child)) return true
-    if (definition.children.some(([pattern]) => pattern === child[0] || matchesGraph(store, pattern, child[0], { side: 'left' }))) return true
-    if (!definition.data.form.open) return false
-  }
+  if (definition.data.capabilityDefinition && !patternsOf(store, typeCid).length) return true
   const type = childType(store, child)
   if (!type) return true // not a row: bookkeeping, arguments, choices
   const patterns = patternsOf(store, typeCid)

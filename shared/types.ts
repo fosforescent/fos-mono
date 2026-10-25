@@ -1,23 +1,6 @@
 
 
-/** Client text capabilities selected by graph definitions, independent of domain types. */
-export type TextPresentation = { mediaType: 'text/plain' | 'text/markdown'; interpolate?: boolean }
-
 export type FosDataContent = {
-  /** Graph constructor declarations. Products are rows; repetition expands a row template. */
-  form?: {
-    primitive?: 'text' | 'number' | 'peer' | 'time' | 'boolean' | 'null';
-    repeat?: boolean;
-    open?: boolean;
-    title?: string[];
-    /**
-     * The row's own text is a one-line title (its description); what follows the first line is the field at this path
-     * (a note's markdown body), an ordinary row of the node.
-     */
-    headline?: string[];
-    text?: TextPresentation;
-    attribution?: { id: string[]; name: string[] };
-  };
   /** A constructor row's parameter, optionally bound from the caller's environment. */
   parameter?: { name: string; from?: string[] };
   /** Host interpretation of a parameter key; field names must not supply this meaning. */
@@ -25,8 +8,7 @@ export type FosDataContent = {
   /** Presentation and invocation contract of an observer ref, supplied by its declaration. */
   triggerDefinition?: { label: string; icon: string; mode: 'instantiate' | 'resume'; hidden?: boolean; schedule?: { field: string; input: 'datetime-local' | 'text'; label: string } };
   scalar?: { type: 'text' | 'number' | 'peer' | 'time' | 'boolean' | 'null'; value: string | number | boolean | null };
-  /** Presentation is a projection of fields, not a second copy of their values. */
-  presentation?: { title?: string[]; headline?: string[]; attribution?: { id: string[]; name: string[] }; sequence?: boolean; icon?: string };
+  presentation?: { sequence?: boolean; icon?: string };
   created?: { time: number };
   position?: { value: number };
   error?: {
@@ -63,16 +45,6 @@ export type FosDataContent = {
     content: string;
   }
 
-  comment?: {
-    content: string;
-    authorID: string;
-    authorName: string;
-    time: number;
-    votes: {
-      [key: string]: string;
-    }
-    scope?: "global" | "private";
-  }
   peers?: {
     [key: string]: {
       connectionInfo: {

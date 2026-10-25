@@ -228,7 +228,6 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
   const record = app.evaluationStatus(root)
   const locked = app.evaluating || !!record && record.status !== 'idle' && record.status !== 'rolled-back' && record.status !== 'awaiting-review'
   const current = app.currentRow()
-  const documentRow = current?.headline ? viewAt(state.replica, root)?.tasks.find(row => row.scalar && row.text?.mediaType === 'text/markdown') : undefined
   if (!!current?.checkable) {
     const actions = div('execution-task-actions', '')
     const complete = button('primary', 'Complete', () => void app.finishExecution()); complete.disabled = locked
@@ -242,13 +241,9 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
     time.append(notes, toggle)
     for (const entry of entries) time.append(div('time-entry', `${new Date(entry.start).toLocaleString()} ? ${entry.end === undefined ? 'Running' : Math.round((entry.end - entry.start) / 1000) + ' seconds'}${entry.notes ? ' ? ' + entry.notes : ''}`))
     regions.node.append(time)
-  } else if (current?.text?.mediaType === 'text/markdown') {
-    const parentState = { ...state, view: root.slice(0, -1) }
-    const output = renderNoteBody(current, [], parentState, app); output.title = ''; output.classList.add('execution-document')
-    regions.node.replaceChildren(output)
-  } else if (current?.headline && documentRow) {
-    // a note: its Markdown body row is the document
-    const output = renderNoteBody(documentRow, [], { ...state, view: root }, app); output.title = ''; output.classList.add('execution-document')
+  } else if (current?.body !== undefined) {
+    // a note: its body is the document
+    const output = renderNoteBody(current, [], { ...state, view: root.slice(0, -1) }, app); output.title = ''; output.classList.add('execution-document')
     regions.node.replaceChildren(h4(current.title), output)
   }
   const toolbar = div('execution-toolbar', '')
@@ -292,14 +287,14 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
     li.append(span('constructor-label', field.name), input, save); rows.push(li)
     if (field.role !== 'output') work = true
   }
-  const walk = (path: Scope, depth: number, fields: string[] = []) => {
+  const walk = (path: Scope, depth: number) => {
     if (depth > 32 || rows.length > 1000) return
     for (const row of viewAt(state.replica, path)?.tasks ?? []) {
-      if (row.construction || fields.includes(row.id)) continue
+      if (row.construction) continue
       const held = handleAt(state.replica, [...path, row.id])
       if (row.requirement || row.allocation || held) work = true
       const li = document.createElement('li'); li.className = 'task'; li.style.setProperty('--depth', String(depth))
-      const body = row.text?.mediaType === 'text/markdown'
+      const body = row.body !== undefined
         ? renderNoteBody(row, [], { ...state, view: path }, app)
         : span('title', resolveText(state.replica, [...path, row.id], row.title).text)
       body.title = ''
@@ -327,10 +322,10 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
       }
       for (const control of li.querySelectorAll<HTMLButtonElement | HTMLSelectElement>('button,select')) control.disabled = locked
       rows.push(li)
-      if (row.refId === undefined && row.type !== TEMPLATE_TYPE) walk([...path, row.id], depth + 1, inlineFields(row))
+      if (row.refId === undefined && row.type !== TEMPLATE_TYPE) walk([...path, row.id], depth + 1)
     }
   }
-  walk(root, 0, [...(current ? inlineFields(current) : []), ...(documentRow ? [documentRow.id] : [])])
+  walk(root, 0)
   const status = document.createElement('li'); status.className = 'task has-constructor'; status.append(span('title', record?.status === 'committed' ? 'Complete' : record?.status === 'idle' ? '' : record?.status ?? ''))
   if (record?.error) status.append(span('error', record.error))
   // Tasks carry their own Complete above; other work gets one here, and plain content gets none.
@@ -1736,7 +1731,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     const save = () => {
       if (entry.input.readOnly || entry.input.value === entry.baseline) return
       const text = entry.input.value, current = app.currentRow(); entry.baseline = text
-      if (!current || current.text || current.scalar || current.refId !== undefined) app.editCurrentText(text, entry.draft)
+      if (!current || current.body !== undefined || current.scalar || current.refId !== undefined) app.editCurrentText(text, entry.draft)
       else app.rewriteCurrentRow(app.parseRowInput(text), entry.draft)
       entry.draft = { ...entry.draft, head: headCid(app.state.replica) }
     }
@@ -2068,7 +2063,7 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
   // never in a separate title editor, and absent text does not invent a title input.
   const detailElement = el.parentElement?.parentElement?.querySelector<HTMLElement>('[data-region="node"]')
   const detail = detailElement && details.get(detailElement), current = app.currentRow()
-  if (detail && current && current.type !== HOME_TYPE && !current.form && (current.title || current.scalar) && !proposalPreview(app)) rows.unshift(detail.titleRow)
+  if (detail && current && current.type !== HOME_TYPE && (current.title || current.scalar) && !proposalPreview(app)) rows.unshift(detail.titleRow)
   const preview = proposalPreview(app)
   // Home shows what relays delivered to this device
   const inbox = !preview && state.view.length === 1 && app.isHome(state.view) && !state.atRoot ? renderRelayInbox(app) : null
@@ -2329,8 +2324,7 @@ function renderRows(node: NodeView, at: Scope, depth: number, state: AppState, a
       const child = viewAt(state.replica, [...state.view, ...at, task.id])
       if (child) {
         child.choices.forEach((choice) => rows.push(renderNestedChoice(choice, [...at, task.id], depth + 1, state, app)))
-        const fields = !editingBelow ? new Set(inlineFields(task)) : new Set<string>()
-        rows.push(...renderRows({ ...child, tasks: child.tasks.filter(row => !fields.has(row.id)) }, [...at, task.id], depth + 1, state, app))
+        rows.push(...renderRows(child, [...at, task.id], depth + 1, state, app))
       }
     }
   }
@@ -2442,7 +2436,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   // rows without children show no bullet; notes keep a middot so a note block reads as an item in the outline
   const toggle = hasChildren && !canExpandHere
     ? button('icon toggle zoom', '›', () => app.zoomTo([...at, task.id]))
-    : button('icon toggle', hasChildren ? (state.collapsed.includes(task.id) ? '▸' : '▾') : task.text?.mediaType === 'text/markdown' ? '·' : '', () => { if (hasChildren) app.toggleCollapsed(task.id) })
+    : button('icon toggle', hasChildren ? (state.collapsed.includes(task.id) ? '▸' : '▾') : task.body !== undefined ? '·' : '', () => { if (hasChildren) app.toggleCollapsed(task.id) })
   if (hasChildren && !canExpandHere) toggle.title = `Open (${task.childCount} inside)`
   toggle.disabled = !hasChildren
   toggle.tabIndex = -1
@@ -2468,12 +2462,12 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   else if (task.type === HOME_TYPE) { body = span('title home-node', ''); body.innerHTML = iconSvg('⌂')!; body.setAttribute('aria-label', 'Home'); body.title = 'Home' }
   else if (task.construction && !(task.construction.handler && selected)) { body = constructorBody(task, state, app, [...state.view, ...at, task.id]) }
   else if ((inputs = app.rowInputs([...state.view, ...at, task.id])) && !task.requirement) { body = constructedRowBody(task, inputs, [...state.view, ...at, task.id], app, 'right') }
-  else if (task.form && !task.text && !task.headline) { body = renderForm(task, at, state, app) }
+  else if (task.fields && task.body === undefined && !selected) { body = renderFields(task, at, state, app) }
   else if (selected && task.refId === undefined && (!hasControls(task) || editingSpecial === task.id)) {
     body = renderEditor(task, at, state, app)
   } else if (task.refId !== undefined) {
     body = renderRefBody(task, app, [...at, task.id])
-  } else if (task.text?.mediaType === 'text/markdown') {
+  } else if (task.body !== undefined) {
     body = renderNoteBody(task, at, state, app)
   } else if (hasControls(task)) {
     body = renderSpecialBody(task, at, state, app)
@@ -2596,62 +2590,43 @@ function caretOnEdge(input: HTMLInputElement | HTMLTextAreaElement, edge: 'first
 
 /** The selected row's text, editable in place. Keys: ↑/↓ rows, Enter new row below, Ctrl+Enter done (notes: new row),
  *  Ctrl+Shift+Enter row inside, Tab/⇧Tab indent, Alt+↑/↓ move, Alt+→ zoom in, Alt+← zoom out, Backspace on blank deletes, Esc leaves. */
-function renderForm(task: TaskView, at: Scope, state: AppState, app: App): HTMLElement {
+/** A row's own fields (besides its title, body and done), each filled in place; an open one is still needed. */
+function renderFields(task: TaskView, at: Scope, state: AppState, app: App): HTMLElement {
   const root = div('node-form', '')
-  const render = (field: import('../../shared/sync/forms').FormElement): HTMLElement => {
-    const path = [...at, task.id, ...field.path]
-    if (!field.available) return span('muted', `${field.label}: load this field to edit`)
-    if (field.primitive) {
-      const label = document.createElement('label'); label.className = 'node-form-field'
-      label.append(span('muted', field.label))
-      const input = document.createElement(field.primitive === 'text' ? 'textarea' : 'input')
-      if (input instanceof HTMLInputElement) {
-        input.type = field.primitive === 'number' || field.primitive === 'time' ? 'number' : field.primitive === 'boolean' ? 'checkbox' : 'text'
-        if (field.primitive === 'boolean') input.checked = field.value === true
-        if (field.primitive === 'null') input.readOnly = true
-      }
-      else input.rows = Math.min(8, Math.max(1, String(field.value ?? '').split('\n').length))
-      input.value = field.primitive === 'null' ? 'null' : String(field.value ?? ''); input.setAttribute('aria-label', field.label)
-      input.dataset.fieldPath = JSON.stringify(field.path)
-      const draft = { store: state.replica.store, head: headCid(state.replica), parent: [...state.view, ...path.slice(0, -1)] }
-      let baseline = input.value
-      const save = () => {
-        if (input.value === baseline) return
-        if (input instanceof HTMLInputElement && input.type === 'number' && (!input.value.trim() || !Number.isFinite(Number(input.value)))) { input.setCustomValidity('Enter a number.'); input.reportValidity(); return }
-        const text = input.value
-        app.rewriteRowAt(path.slice(0, -1), path.at(-1)!, { type: PLAIN_TYPE, text, done: false }, draft)
-        baseline = text
-      }
-      input.addEventListener('input', () => input.setCustomValidity(''))
-      if (input instanceof HTMLInputElement && input.type === 'checkbox') input.addEventListener('change', () => { input.value = String(input.checked); save() })
-      input.addEventListener('commit-edit', save)
-      input.addEventListener('blur', () => { if (!renderDepth) save() })
-      input.addEventListener('click', event => event.stopPropagation())
-      input.addEventListener('keydown', event => { event.stopPropagation(); if ((event as KeyboardEvent).key === 'Escape') { input.value = baseline; input.blur() } })
-      label.append(input); return label
+  for (const field of task.fields!) {
+    const label = document.createElement('label'); label.className = 'node-form-field'
+    const name = field.key ?? 'Value'
+    label.append(span('muted', name))
+    const input = document.createElement('input')
+    input.type = typeof field.value === 'number' ? 'number' : 'text'
+    input.value = field.value === null ? '' : String(field.value); input.setAttribute('aria-label', name)
+    if (field.open) input.placeholder = 'Needed'
+    let baseline = input.value
+    const save = () => {
+      if (input.value === baseline || field.key === null) return
+      if (input.type === 'number' && (!input.value.trim() || !Number.isFinite(Number(input.value)))) { input.setCustomValidity('Enter a number.'); input.reportValidity(); return }
+      baseline = input.value
+      app.setRowFields([...state.view, ...at], task.id, { [field.key]: input.type === 'number' ? Number(input.value) : input.value })
     }
-    const group = document.createElement('fieldset'); group.className = 'node-form-group'
-    if (field.label) { const legend = document.createElement('legend'); legend.textContent = field.label; group.append(legend) }
-    for (const child of field.fields) {
-      const control = render(child)
-      if (field.repeat) control.append(button('secondary small', 'Remove', () => app.deleteTaskAt([...at, task.id, ...child.path.slice(0, -1)], child.path.at(-1)!)))
-      group.append(control)
-    }
-    if (field.repeat) group.append(button('secondary small', 'Add item', () => app.addRowAt(path, PLAIN_TYPE, ' ')))
-    return group
+    input.addEventListener('input', () => input.setCustomValidity(''))
+    input.addEventListener('commit-edit', save)
+    input.addEventListener('blur', () => { if (!renderDepth) save() })
+    input.addEventListener('click', event => event.stopPropagation())
+    input.addEventListener('keydown', event => { event.stopPropagation(); if ((event as KeyboardEvent).key === 'Escape') { input.value = baseline; input.blur() } })
+    label.append(input); root.append(label)
   }
-  root.append(render(task.form!))
   return root
 }
 
 function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTMLElement {
-  const multiline = task.text?.mediaType === 'text/markdown'
+  // a note's row edits its body; its title is the title row's
+  const multiline = task.body !== undefined
   const input = document.createElement('textarea')
-  input.rows = multiline ? Math.min(16, Math.max(2, task.title.split('\n').length + 1)) : 1
+  input.rows = multiline ? Math.min(16, Math.max(2, task.body!.split('\n').length + 1)) : 1
   input.className = 'edit'
   // the editor shows the row in its raw marker form ("-$ 50 lunch", "[x] done", "> note"), exactly as it was typed
   const draft = { store: state.replica.store, head: headCid(state.replica), parent: [...state.view, ...at] }
-  const raw = task.text || task.refId !== undefined ? task.title : rawRowText(task)
+  const raw = multiline ? task.body! : task.refId !== undefined ? task.title : rawRowText(task)
   input.value = raw
   input.placeholder = multiline ? 'Markdown…' : task.type === COMMENT_TYPE ? '// Comment…' : 'Row text…'
   let committed = false
@@ -2660,7 +2635,8 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
     committed = true
     if (editingSpecial === task.id) editingSpecial = null
     if (input.value === raw) { if (!task.scalar && !input.value.trim()) app.dropBlankRow(draft.parent, task.id, draft.store); return }
-    if (task.text || task.scalar || task.refId !== undefined) { app.rewriteRowAt(at, task.id, { type: task.type, text: input.value, done: task.done }, draft); return }
+    if (multiline) { app.setRowFields([...state.view, ...at], task.id, { body: input.value }); return }
+    if (task.scalar || task.refId !== undefined) { app.rewriteRowAt(at, task.id, { type: task.type, text: input.value, done: task.done }, draft); return }
     // the text is re-parsed whole: the marker decides the kind, the rest its text and data; the row keeps its id and children
     const parsed = app.parseRowInput(input.value)
     if (parsed.type === PLAIN_TYPE && !parsed.text) { if (!task.title.trim() && !task.childCount && !task.childChoices) app.dropBlankRow(draft.parent, task.id, draft.store); else app.rewriteRowAt(at, task.id, { ...parsed, text: ' ' }, draft); return }
@@ -2715,7 +2691,7 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
 
 /** What the title row's editor shows: a row's marker text, or the text alone for rows whose text is all there is to edit. */
 function titleText(row: TaskView): string {
-  return row.text || row.scalar || row.refId !== undefined ? row.title : rawRowText(row)
+  return row.body !== undefined || row.scalar || row.refId !== undefined ? row.title : rawRowText(row)
 }
 
 function firstLine(text: string): string {
@@ -2773,10 +2749,6 @@ function renderRefBody(task: TaskView, app: App, path: Scope): HTMLElement {
   return body
 }
 
-/** The ids of a row's form fields edited inline in its row; a headline row's fields are rows of their own. */
-function inlineFields(task: TaskView): string[] {
-  return task.headline ? [] : task.form?.fields.map(field => field.path[0]!) ?? []
-}
 
 /**
  * A note block: markdown with its `{name}` references resolved from the bindings in scope (the same resolution as
@@ -2785,8 +2757,8 @@ function inlineFields(task: TaskView): string[] {
 function renderNoteBody(task: TaskView, at: Scope, state: AppState, _app: App): HTMLElement {
   const body = div('title note-body', '')
   body.title = 'Click or press Enter to edit (Ctrl+Enter saves)'
-  const text = task.title.trim() ? task.title : ''
-  const expanded = text && task.text?.interpolate ? resolveText(state.replica, [...state.view, ...at, task.id], text).text : text
+  const text = (task.body ?? task.title).trim() ? task.body ?? task.title : ''
+  const expanded = text && resolveText(state.replica, [...state.view, ...at, task.id], text).text
   if (!expanded) { body.append(span('muted', '(empty note)')); return body }
   const cached = noteHtml.get(expanded)
   if (cached) {

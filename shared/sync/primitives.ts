@@ -76,7 +76,7 @@ export function handlerRef(store: FosStore, host: string, definition: Pick<Primi
   const type = definitionCapability(definition, store, at), label = definition.label ?? definition.id
   const named = primitive(store, definition.id)
   const { alias: _alias, capabilityDefinition: _capability, ...properties } = content(store, type).data
-  if (_capability || properties.form) { delete properties.name; delete properties.description }
+  if (_capability) { delete properties.name; delete properties.description }
   // a handler is a value of its capability: it carries the capability's tag, and the primitive that gives it meaning here
   const value = put(store, { data: { ...properties, peerId: { content: host }, description: properties.description ?? { content: label } }, children: [...content(store, type).children, tag(store, type), [primitive(store, 'implementation'), named]] })
   return put(store, refNodeContent(store, { alias: { id: handlerOfferId(host, type, name) }, name: { content: label } }, value, []))

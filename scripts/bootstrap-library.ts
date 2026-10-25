@@ -41,7 +41,8 @@ const title = textField('title'), body = textField('body'), label = textField('l
 const done = tagOf('done')
 // a sum: either an emoji or a Font Awesome id, as the choice node submissions to one ref make
 const icon = putBranches(store, 'icon', null, ['emojiValue', 'fontAwesomeId'].map(option => ({ peerId: option, edge: [stringAliasOf(option), string] })), 'emojiValue')
-const username = textField('username'), displayName = textField('displayName'), publicKey = textField('publicKey')
+const username = textField('username'), displayName = textField('displayName'), publicKey = textField('publicKey'), account = textField('account')
+const verifiedBy = textField('verifiedBy'), verifyMethod = textField('verifyMethod')
 const path = textField('path'), sha256 = textField('sha256'), peer = textField('peer'), method = textField('method')
 const by = textField('by'), issuedAt = node([stringAliasOf('issuedAt'), number]), attestation = textField('attestation')
 const filename = textField('filename'), data = textField('data'), markdown = textField('markdown'), mediaType = textField('mediaType')
@@ -67,7 +68,7 @@ const types: Record<string, string> = {
   money: node(),
   people: node(),
   person: node([username, never], [displayName, unit]),
-  user: node([username, never], [displayName, unit], [publicKey, unit]),
+  user: node([account, unit], [username, never], [displayName, unit], [publicKey, unit], [verifiedBy, unit], [verifyMethod, unit], [issuedAt, unit], [attestation, unit]),
   attestation: node([by, never], [method, unit], [issuedAt, unit], [attestation, unit]),
   attachment: node([filename, never], [mediaType, never], [data, never], [size, never]),
   fileReference: node([path, never], [sha256, never], [size, never]),

@@ -1,5 +1,5 @@
 import { primitive, primitiveName } from './primitives'
-import { fieldEdge, fieldValue, isFieldRow, isTextField, leafText, titleField, typeRows } from './fields'
+import { fieldEdge, fieldValue, fieldViews, isFieldRow, isTextField, leafText, rowBody, titleField, typeRows, type FieldView } from './fields'
 import { capabilityDeclarations } from './capability-catalog'
 import { resolveBinding } from './bindings'
 import { bindingProperties, type ScopedBinding } from './scope-bindings'
@@ -54,7 +54,6 @@ import { libraryNames, type LibraryNames } from '../library-names'
 import { DEVICE_ROOT_TYPE, DOCUMENT_ROOT_TYPE, HOME_TYPE, LIBRARY_TYPE, PATTERN_TYPE, PLAIN_TYPE, QUERY_TYPE, REF_TYPE, RESOURCE_TYPE, TASK_TYPE, TEMPLATE_TYPE } from './library-types'
 import { isNegative } from './parameters'
 import { isClassifyingRow, isKindRow, isTagRow, tag, tagsOf, valueOfPattern } from './structural'
-import { formAttribution, formElements, formTitle, positionFormRows, type FormElement } from './forms'
 import { userOf, userPeerId, type UserRecord } from './users'
 import { putNode, type FosStore } from '../dag-implementation/store'
 import { canonicalTypeErrors, isTypeErrorEdge, plainEdge, typeErrorOf, unwrapRootTarget } from './patterns'
@@ -392,7 +391,7 @@ export function rowTitle(store: FosStore, nodeCid: string, type: string | null):
   if (type && isTextField(store, type)) return leafText(store, nodeCid) ?? ''
   const field = type ? titleField(store, type) : value.children.find(edge => isFieldRow(store, id, edge) && isTextField(store, edge[0]))?.[0]
   const held = field ? fieldValue(store, id, value, field) : null
-  return (held ? leafText(store, held) : null) ?? (field ? null : leafText(store, nodeCid)) ?? formTitle(store, value)
+  return (held ? leafText(store, held) : null) ?? (field ? null : leafText(store, nodeCid)) ?? value.data.description?.content ?? ''
 }
 /** Whether a row is done: its `done` field holds unit. */
 export function rowDone(store: FosStore, nodeCid: string): boolean {
@@ -684,7 +683,6 @@ export function keptRowType(store: FosStore, edge: FosPathElem, type: string): s
   const id = typeIdOf(store, own)
   if (id === type) return own
   if (type === TASK_TYPE && isTemplateType(store, own)) return own
-  if (type === PLAIN_TYPE && valueContent(store, own).data.form) return own
   return null
 }
 
@@ -881,7 +879,7 @@ export function withInstancePatterns(store: FosStore, cid: string, at: Scope, ro
  * so its pattern rows go (one that becomes a template gets them where its edge is made, `rowEdgeAt`).
  */
 export function convertRow(store: FosStore, value: FosNodeContent, typeId: string, now: number, extra: Omit<RowExtras, 'store'> = {}): FosNodeContent {
-  const title = formTitle(store, value)
+  const title = value.data.description?.content ?? ''
   const { presentation: _presentation, scalar: _scalar, ...data } = value.data
   const converted = convertRowContent({ ...value, data: { ...data, description: { content: title } } }, typeId, now, extra)
   return typeId === TEMPLATE_TYPE ? converted : { ...converted, children: converted.children.filter((edge) => !isRowOfType(store, edge, PATTERN_TYPE)) }
@@ -889,7 +887,7 @@ export function convertRow(store: FosStore, value: FosNodeContent, typeId: strin
 
 /** Same node as a row of the library type `typeId`: the data of its old type dropped, the new type's added. */
 export function convertRowContent(value: FosNodeContent, typeId: string, now: number, extra: Omit<RowExtras, 'store'> = {}): FosNodeContent {
-  const { todo: _todo, comment: _comment, ref: _ref, query: _q, resource: _rs, allocation: _al, ...rest } = value.data
+  const { todo: _todo, ref: _ref, query: _q, resource: _rs, allocation: _al, ...rest } = value.data
   const data: FosNodeContent['data'] = { ...rest, updated: { time: now } }
   if (typeId === TASK_TYPE) data.todo = { completed: !!value.data.todo?.completed, time: value.data.todo?.time ?? now }
   if (typeId === REF_TYPE) data.ref = value.data.ref ?? { id: '' }
@@ -1359,10 +1357,10 @@ export function exportReachableContext(store: FosStore, extraRoots: Array<string
 export type TaskView = {
   /** Leaf editor chosen by the graph constructor. */
   scalar?: NonNullable<FosDataContent['scalar']>['type'];
-  form?: FormElement;
-  /** A headline row (a note): its text is one title line; the field at this path is its body, shown as a row of its own. */
-  headline?: string[];
-  text?: import('../types').TextPresentation;
+  /** The row's own fields (besides its title), as its type declares them. */
+  fields?: FieldView[];
+  /** A row with a body after its title (a note): the body's text, shown as Markdown. */
+  body?: string;
   /** The row holds children its type does not accept (a type error, sync/patterns.ts): their alias ids. */
   typeError?: string[]
   /** This row is one of those its parent's type does not accept. */
@@ -1533,11 +1531,14 @@ export function rowView(store: FosStore, nodeCid: string, edge?: FosPathElem): T
     subtreeDone: sub.done,
     isLink: isLink(store, identity)
   }
-  if (definition?.data.form && !definition.data.form.primitive && !held) view.form = formElements(store, typeCid!, value)
-  const text = definition?.data.form?.text
-  if (text) view.text = text
-  const headline = definition?.data.form?.headline ?? value.data.presentation?.headline
-  if (headline && !held) view.headline = headline
+  if (typeCid && !held && !isTextField(store, typeCid)) {
+    // the title, the body and done are shown by the row itself
+    const body = rowBody(store, nodeCid, typeCid), texts = typeRows(store, typeCid).map(([field]) => field).filter(field => isTextField(store, field))
+    const shown = new Set([titleField(store, typeCid), rowVocabulary(store)?.done, ...(body !== null ? [texts.at(-1)] : [])])
+    const fields = fieldViews(store, typeCid, rowId, value).filter(field => !shown.has(field.field))
+    if (fields.length) view.fields = fields
+    if (body !== null) view.body = body
+  }
   if (value.data.scalar) view.scalar = value.data.scalar.type
   if (held) { view.refPeer = identity.data.ref!.peer; view.title = identity.data.description?.content ?? 'Peer-held node' }
   const activeEdge = isBranchChoice(store, identity) ? branchEdge(store, nodeCid) : null
@@ -1548,10 +1549,6 @@ export function rowView(store: FosStore, nodeCid: string, edge?: FosPathElem): T
   // a node's execute row: the evaluator's journal of it
   if (edge && isExecuteLeft(store, plainEdge(store, edge)[0])) { view.construction = { evaluation: true }; view.title = 'Evaluation' }
   if (held || type === REF_TYPE) { view.refId = identity.data.ref?.id ?? ''; if (identity.data.ref?.owner) view.refOwner = identity.data.ref.owner }
-  const attribution = formAttribution(store, value, definition)
-  if (attribution) view.author = attribution
-  // Read-only compatibility for pre-constructor comments; edits migrate them.
-  else if (value.data.comment) view.author = { id: value.data.comment.authorID, name: value.data.comment.authorName, time: value.data.comment.time }
   const template = edge ? userTemplateOf(store, edge) : null
   if (template) view.template = { id: template.id, name: template.name }
   const missing = edge ? missingTemplateOf(store, edge) : null
@@ -1912,7 +1909,7 @@ export function scopeNames(store: FosStore, nodeCid: string | null, scope: Scope
   for (const step of scope) {
     if (!current) { names.push(step); continue }
     const next = findChild(store, current, step)
-    names.push(next ? formTitle(store, valueContent(store, next)) || step : step)
+    names.push(next ? rowTitle(store, next, null) || step : step)
     current = next
   }
   return names
@@ -2567,7 +2564,7 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
     for (const edge of childEdges(stripLink(store, identity), definitions.has(cid), cid === nodeCid)) {
       const child = identityCid(store, edge)
       const left = content(store, edge[0])
-      if (isRefNode(store, content(store, child)) && (!rowTypeIdOf(store, edge) || left.data.capabilityDefinition || left.data.form?.primitive)) argumentsToCopy.add(child)
+      if (isRefNode(store, content(store, child)) && (!rowTypeIdOf(store, edge) || left.data.capabilityDefinition)) argumentsToCopy.add(child)
       // Nested templates remain definitions when their containing workflow is instantiated.
       if (rowTypeIdOf(store, edge) === TEMPLATE_TYPE) definitions.add(child)
       collect(child)
@@ -2653,13 +2650,13 @@ export function moveChild(store: FosStore, rootCid: string, fromPath: Scope, ali
       const kids = [...targetContent.children]
       const at = position.index === undefined || position.index < 0 ? kids.length : Math.min(position.index, kids.length)
       kids.splice(at, 0, moving)
-      children[parent.index] = withChildValue(store, parent.edge, positionFormRows(store, { ...targetContent, children: kids }, targetContent.data.updated?.time ?? 0), targetContent.data.updated?.time ?? 0)
+      children[parent.index] = withChildValue(store, parent.edge, { ...targetContent, children: kids }, targetContent.data.updated?.time ?? 0)
       return { ...value, children }
     }
     const sibling = findAliasEdge(store, value, position.relativeTo)
     if (!sibling) throw new Error('destination not found')
     children.splice(position.position === 'above' ? sibling.index : sibling.index + 1, 0, moving)
-    return positionFormRows(store, { ...value, children }, value.data.updated?.time ?? 0)
+    return { ...value, children }
   }
   root = updateAtScope(store, root, toPath, insert)
   return root
@@ -2677,13 +2674,13 @@ export function proposalView(store: FosStore, nodeValue: FosNodeContent, proposa
         for (const option of [choice.base, ...choice.options.map((o) => o.edge)]) {
           if (!option || !isRowEdge(store, option)) continue
           const id = identityCid(store, option)
-          map.set(edgeKey(store, option), { title: formTitle(store, valueContent(store, id)), cid: id })
+          map.set(edgeKey(store, option), { title: rowTitle(store, id, null), cid: id })
         }
         continue
       }
       if (!isRowEdge(store, edge)) continue
       const id = identityCid(store, edge)
-      map.set(edgeKey(store, edge), { title: formTitle(store, valueContent(store, id)), cid: id })
+      map.set(edgeKey(store, edge), { title: rowTitle(store, id, null), cid: id })
     }
     return map
   }

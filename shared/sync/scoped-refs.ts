@@ -1,5 +1,5 @@
 /** Lexically scoped declarations and their accepted submissions. No capability vocabulary. */
-import { primitive } from './primitives'
+import { primitive, primitiveName } from './primitives'
 import { isHandlerStateLeft } from './capabilities'
 import type { FosStore } from '../dag-implementation/store'
 import { isTemplateType, isLibraryRef, content, identityCid, isBranchChoice, readChoice, isRefNode, refValueCid, typeIdOf, valueContent } from './graph'
@@ -52,7 +52,7 @@ export function declares(store: FosStore, type: string, cid: string): boolean {
   if (isHandlerStateLeft(store, type)) return false
   if (node.data.name || valueContent(store, cid).data.name) return true
   const pattern = store.table.get(type)
-  return isRefNode(store, node) && !isTemplateType(store, type) && (!typeIdOf(store, type) || !!pattern?.data.capabilityDefinition || !!pattern?.data.form?.primitive)
+  return isRefNode(store, node) && !isTemplateType(store, type) && (!typeIdOf(store, type) || !!pattern?.data.capabilityDefinition || primitiveName(store, type) !== null)
 }
 /** The pattern is another graph, not a JSON schema or a nominal type identifier. */
 export const matchesRefPattern = matchesGraph
@@ -64,5 +64,5 @@ export const refValueCompatible = (store: FosStore, pattern: string, value: stri
  */
 export function patternIsValuePredicate(store: FosStore, pattern: string): boolean {
   const node = store.table.get(pattern)
-  return !!node && (!typeIdOf(store, pattern) || !!node.data.capabilityDefinition || !!node.data.form?.primitive)
+  return !!node && (!typeIdOf(store, pattern) || !!node.data.capabilityDefinition || primitiveName(store, pattern) !== null)
 }

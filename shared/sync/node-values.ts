@@ -1,5 +1,5 @@
 /** Host values at the API boundary; records and sequences are ordinary typed ref rows in the graph. */
-import { primitive } from './primitives'
+import { primitive, primitiveName } from './primitives'
 import type { FosStore } from '../dag-implementation/store'
 import { hashContent } from '../dag-implementation/cid'
 import type { FosNodeContent, FosPathElem } from '../types'
@@ -9,13 +9,7 @@ export type NodeValue = null | boolean | number | string | NodeValue[] | { [key:
 type ValueShape = 'text' | 'number' | 'boolean' | 'null' | 'record' | 'sequence'
 
 export function nodeValueType(store: FosStore, shape: ValueShape): string {
-  return put(store, {
-    data: {
-      name: { content: `fos:value:${shape}` },
-      form: shape === 'record' ? { open: true } : shape === 'sequence' ? { open: true, repeat: true } : { primitive: shape }
-    },
-    children: []
-  })
+  return primitive(store, shape === 'text' ? 'string' : shape)
 }
 
 const VALUE_SHAPES: ValueShape[] = ['text', 'number', 'boolean', 'null', 'record', 'sequence']
@@ -127,13 +121,8 @@ export function readGraphValue(store: FosStore, cid: string, depth = 0, active =
         names.add(name)
         const value = readGraphValue(store, child, depth + 1, active)
         if (value === undefined) return undefined
-        const leaf = content(store, type).data.form?.primitive
-        if (
-          leaf &&
-          (leaf === 'null'
-            ? value !== null
-            : typeof value !== (leaf === 'number' || leaf === 'time' ? 'number' : leaf === 'boolean' ? 'boolean' : 'string'))
-        )
+        const leaf = primitiveName(store, type)
+        if ((leaf === 'null' && value !== null) || (leaf === 'string' && typeof value !== 'string') || ((leaf === 'number' || leaf === 'boolean') && typeof value !== leaf))
           return undefined
         entries.push([name, value, valueContent(store, child).data.position?.value ?? field.data.position?.value ?? Number(name)])
       }

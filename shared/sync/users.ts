@@ -23,7 +23,7 @@ import { hashContent } from '../dag-implementation/cid'
 import type { FosStore } from '../dag-implementation/store'
 import type { FosNodeContent, FosPathElem } from '../types'
 import { content, identityCid, isLibraryType, isRowEdge, newId, libraryTypeAt, memberEdgesOf, memberPeerOf, membershipPath, put, refNodeContent, resolveScope, valueCidOf, valueContent, type Scope } from './graph'
-import { constructForm, formRecord, type FormInput } from './forms'
+import { constructRow, fieldValues, rowRecord } from './fields'
 import { plainEdge } from './patterns'
 import { addRow, bindUserAt, deleteTask, headCid, homePath, view, writeGraphNode, type Replica } from './replica'
 import { PLAIN_TYPE } from './library-types'
@@ -57,19 +57,19 @@ export function unverifiedUser(username: string): UserRecord {
   return { account: '', username, name: username, publicKey: '', verification: null }
 }
 
-/** A user object's fields, read through its type's form. */
+/** A user object's fields, read through its type's fields. */
 export function readUser(store: FosStore, typeCid: string, node: FosNodeContent): UserRecord | null {
-  const r = formRecord(store, typeCid, node) as Record<string, FormInput> | undefined
-  if (!r || typeof r !== 'object' || Array.isArray(r) || typeof r.username !== 'string' || !r.username) return null
-  const v = r.verification as Record<string, FormInput> | undefined
-  const verification = v && typeof v === 'object' && !Array.isArray(v) && typeof v.attestation === 'string' && v.attestation
-    ? { by: String(v.by ?? ''), method: String(v.method ?? ''), issuedAt: Number(v.issuedAt ?? 0), attestation: v.attestation }
+  const r = rowRecord(store, typeCid, node.data.alias?.id ?? '', node)
+  if (typeof r.username !== 'string' || !r.username) return null
+  const verification = typeof r.attestation === 'string' && r.attestation
+    ? { by: String(r.verifiedBy ?? ''), method: String(r.verifyMethod ?? ''), issuedAt: Number(r.issuedAt ?? 0), attestation: r.attestation }
     : null
-  return { account: String(r.account ?? ''), username: r.username, name: String(r.name || r.username), publicKey: String(r.publicKey ?? ''), verification }
+  return { account: String(r.account ?? ''), username: r.username, name: String(r.displayName || r.username), publicKey: String(r.publicKey ?? ''), verification }
 }
 
-function userInput(user: UserRecord): FormInput {
-  return { account: user.account, username: user.username, name: user.name, publicKey: user.publicKey, verification: user.verification ?? { by: '', method: '', issuedAt: 0, attestation: '' } }
+function userInput(user: UserRecord): Record<string, string | number> {
+  const v = user.verification
+  return { account: user.account, username: user.username, displayName: user.name, publicKey: user.publicKey, ...(v ? { verifiedBy: v.by, verifyMethod: v.method, issuedAt: v.issuedAt, attestation: v.attestation } : {}) }
 }
 
 /** A user object's identity: the content address of the username, so devices that keep the same person make the same row. */
@@ -80,7 +80,7 @@ export const userObjectId = (user: Pick<UserRecord, 'username'>): string => hash
  * carries its field name (`user`), which is what node exchange keeps of a field.
  */
 export function userObjectContent(store: FosStore, typeCid: string, user: UserRecord, id = userObjectId(user)): FosNodeContent {
-  const node = constructForm(store, typeCid, id, userInput(user), user.verification?.issuedAt ?? 0)
+  const node = constructRow(store, typeCid, id, fieldValues(store, typeCid, userInput(user)), user.verification?.issuedAt ?? 0)
   return { ...node, data: { ...node.data, name: { content: USER_FIELD } } }
 }
 
