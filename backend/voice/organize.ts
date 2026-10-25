@@ -60,8 +60,7 @@ export function organizeHandler(model: () => VoiceDeps, usage?: VoiceUsage): Hos
       }
       const rowsAt = (parent: string | null): Array<[string, string]> => plan.items.filter(item => item.parent === parent).map(item => {
         const type = rowTypeAt(ctx.store, item.type, ctx.step), id = newId()
-        const node = constructTextRow(ctx.store, type, id, item.text, ctx.now)
-        return [type, ctx.put({ ...node, children: [...node.children, ...rowsAt(item.ref)] })]
+        return [type, ctx.put(constructTextRow(ctx.store, type, id, item.text, ctx.now, new Map(), rowsAt(item.ref)))]
       })
       const rows = rowsAt(null)
       return { outputs: { self: valueOfPattern(ctx.store, self.pattern, { peerId: { content: 'fos' } }, [labelRow(ctx.store, plan.title || 'Organized'), ...rows]) } }

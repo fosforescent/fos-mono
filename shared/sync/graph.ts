@@ -516,7 +516,8 @@ export function rowsOfType(store: FosStore, cid: string, typeId: string): Array<
 export function isTemplateType(store: FosStore, typeCid: string): boolean {
   if (!store.table.has(typeCid)) return false
   // a capability pattern (refined with inputs) declares refs too, but it is an instruction, never a template to instantiate
-  if (capabilityName(store, typeCid) !== null) return false
+  // (a handler ref holds a value of its capability: it is a call, not a template either)
+  if (capabilityName(store, typeCid) !== null || capabilityName(store, valueCidOf(store, typeCid)) !== null) return false
   return valueContent(store, typeCid).children.some(edge => {
     if (!isRowEdge(store, edge) || isChoiceEdge(store, edge)) return false
     const identity = content(store, identityCid(store, edge))

@@ -155,20 +155,21 @@ export function constructRow(store: FosStore, type: string, id: string, values: 
   return { data: { alias: { id }, created: { time: now }, updated: { time: now } }, children: [...rows, ...children] }
 }
 /** The content of a new plain row: its title field filled with `text`, as a ref (its identity `id`) whose value holds its child rows. */
-export function constructPlainRow(store: FosStore, title: string, id: string, text: string, now: number): FosNodeContent {
-  return refNodeContent(store, { alias: { id }, created: { time: now }, updated: { time: now } }, fieldText(store, title, text))
+export function constructPlainRow(store: FosStore, title: string, id: string, text: string, now: number, children: FosPathElem[] = []): FosNodeContent {
+  const value = content(store, fieldText(store, title, text))
+  return refNodeContent(store, { alias: { id }, created: { time: now }, updated: { time: now } }, put(store, { ...value, children: [...value.children, ...children] }))
 }
 
 /** A row of `type` holding `text`: a plain row of a text field, else a row whose title field holds it (left open when empty). */
-export function constructTextRow(store: FosStore, type: string, id: string, text: string, now: number, values = new Map<string, string>()): FosNodeContent {
-  if (isTextField(store, type)) return constructPlainRow(store, type, id, text, now)
+export function constructTextRow(store: FosStore, type: string, id: string, text: string, now: number, values = new Map<string, string>(), children: FosPathElem[] = []): FosNodeContent {
+  if (isTextField(store, type)) return constructPlainRow(store, type, id, text, now, children)
   const title = titleField(store, type), body = bodyField(store, type)
   // text of several lines in a row with a body (a note): the whole text is the body, its heading the title
   if (title && body && text.includes('\n')) {
     values.set(body, fieldText(store, body, text))
     values.set(title, fieldText(store, title, markdownTitle(text)))
   } else if (title && text) values.set(title, fieldText(store, title, text))
-  return constructRow(store, type, id, values, now)
+  return constructRow(store, type, id, values, now, children)
 }
 
 /** Whether `edge` in a row's value is one of that row's own fields (not a child row with the same left). */

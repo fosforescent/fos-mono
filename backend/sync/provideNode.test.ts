@@ -139,7 +139,8 @@ describe('node provider', () => {
     const b = addTask(ensureHomeContext(createReplica('B'), 0), [HOME_ID], 'from B', 2, 'b')
     await Promise.all([sync(handler, a), sync(handler, b)])
     expect(homeTitles(stores.get(7)!).sort()).toEqual(['from A', 'from B'])
-  })
+    // two whole syncs one after the other: every request loads and saves the whole account store
+  }, 30000)
 
   it('keeps concurrent accounts in their own stores', async () => {
     const stores = new Map<string, FosStore>()

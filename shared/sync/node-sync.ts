@@ -6,7 +6,7 @@ import { refSubmissions } from './scoped-refs'
 import { sameCapabilityType, capabilityName } from './capabilities'
 import { mergeNodes } from './merge'
 import type { FosDataContent, FosNodeContent, FosNodesData } from '../types'
-import { FOS_DATA_VERSION, cidVersion, isCid, isCurrentCid } from '../dag-implementation/cid'
+import { FOS_DATA_VERSION, cidVersion, hashContent, isCid, isCurrentCid } from '../dag-implementation/cid'
 import { advertisedRows, content, valueContent, identityCid, isRowEdge, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, rowTypeOf, isShippedLibrary, resolveScope, isHandle, isPeerReference,
   scopeBranches, branchSelection, selectBranch, isBranchChoice, readChoice, capabilityNames, putStripped, readProposals, proposalContent, withProposal, submissionAdditions, removeProposalByCid, importNodes, reachableNodes, copyOuterScope, refValueCid, withMainBranchPolicy, readMembers, memberFor, updateAtScope, commitRoot, put, refNodeContent, bookkeepingOf,
   memberEntryPeerAt, inMemberEntry, isMemberEdge, memberEdgesOf, memberPeerOf, membershipPath, withMembershipRow, withMembershipRows, makeLink, isRefNode, SERVER_MEMBER, type Scope } from './graph'
@@ -159,9 +159,11 @@ export function mergeNodeShape(base: NodeShape, next: NodeShape, current: NodeSh
     if (!equal(present, before) && !equal(present, after)) throw new NodeAccessError(`Concurrent change to node field "${key}". Local changes were kept.`)
     if (after === undefined) delete data[key]; else data[key] = after
   }
-  // a node of literal rows only (a field's value) is one value, not rows with their own identity: changed on both sides is a conflict
-  const literals = (shape: NodeShape) => shape.children.filter(child => child.pinned).map(child => child.id).sort()
-  const value = [base, next, current].every(shape => shape.children.every(child => child.pinned))
+  // a node of literal rows only (a field's value) is one value, not rows with their own identity: changed on both sides is a
+  // conflict. A literal row's id is its own content; a grant's names what it grants.
+  const literal = (child: NodeChild) => !!child.pinned && child.id === hashContent({ data: {}, children: [[child.template, child.pinned]] })
+  const literals = (shape: NodeShape) => shape.children.filter(literal).map(child => child.id).sort()
+  const value = [base, next, current].every(shape => shape.children.every(literal))
   if (value && !equal(literals(base), literals(next)) && !equal(literals(base), literals(current)) && !equal(literals(next), literals(current))) {
     throw new NodeAccessError(`Concurrent change to child "${literals(next).find(id => !literals(base).includes(id)) ?? literals(base)[0]}". Local changes were kept.`)
   }

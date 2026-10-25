@@ -1,7 +1,7 @@
 import { labelRow, textOf } from '@fosforescent/shared/sync/fields'
 import { settingOf } from '@fosforescent/shared/sync/index'
 import { standardHostRef } from '../sync/host-runtime'
-import { sameCapabilityType, handlerRef, instructionPrimitives, setRefValueAt, acceptSubmission } from '@fosforescent/shared/sync/index'
+import { sameCapabilityType, handlerRef, withInputs, definitionCapability, instructionPrimitives, setRefValueAt, acceptSubmission } from '@fosforescent/shared/sync/index'
 /**
  * MCP peers: an MCP server the account has access to attaches to a node as a member (`mcp:<server id>`),
  * advertises `tool` (and read/edit) there, and runs its tools for "-tool <name> …" requirements under that
@@ -55,7 +55,9 @@ function handlersAbove(replica: Replica, at: Scope, peerId: string): string[] {
 
 /** The tool's handler, a value behind the same ref that can hold a template: the server's tool runner, offered as the tool. */
 function toolHandler(replica: Replica, server: McpServerInfo, tool: string, at: Scope): string {
-  return handlerRef(replica.store, `${MCP_PEER_PREFIX}${server.id}`, { ...MCP_TOOL_REF, label: tool }, at, tool)
+  // which tool it is fills the capability's `tool` input: the offer is the tool, not every tool
+  const capability = (store: FosStore, scope: Scope) => withInputs(store, definitionCapability(MCP_TOOL_REF, store, scope), { tool })
+  return handlerRef(replica.store, `${MCP_PEER_PREFIX}${server.id}`, { ...MCP_TOOL_REF, label: tool, capability }, at, tool)
 }
 
 /** The server among the account's attached ones that offers `tool`; several is a choice for the owner. */
