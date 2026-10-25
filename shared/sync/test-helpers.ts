@@ -25,10 +25,11 @@ import type { FosDataContent } from '../types'
 export const TASK_DEMAND: Demand = { capability: 'task', done: true }
 
 /** An extension must be declared in a library instance before code can address its field. */
-export function declareTestCapability(r: Replica, name: string, at: Scope = [], data: import('../types').FosDataContent = {}): Replica {
+export function declareTestCapability(r: Replica, name: string, at: Scope = [], data: import('../types').FosDataContent = {}, revised = false): Replica {
   const store = r.store, binding = libraryBindingAt(store, at)!, library = content(store, binding.library)
   const group = libAt(store, at).field('capabilities'), namespace = content(store, group)
-  const type = put(store, { data, children: [[tagNode(store, name), put(store, { data: {}, children: [] })]] })
+  const input: [string, string][] = revised ? [[primitive(store, 'string'), put(store, refNodeContent(store, { alias: { id: `${name}:input` }, name: { content: 'input' } }, null))]] : []
+  const type = put(store, { data, children: [[tagNode(store, name), put(store, { data: {}, children: [] })], ...input] })
   const declaration = put(store, refNodeContent(store, { name: { content: name } }, type))
   const nextGroup = put(store, { ...namespace, children: [...namespace.children.filter(([, right]) => content(store, right).data.name?.content !== name), [type, declaration]] })
   // the group is the value of the library's capabilities ref

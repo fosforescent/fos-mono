@@ -62,11 +62,12 @@ test('nested stores resolve through their enclosing graph and recognize imported
 
 test('primitive restoration keeps the offered capability version after a library upgrade', () => {
   let r = declareTestCapability(createReplica('host'), 'paint')
-  const primitive = async () => ({}), definition = { id: 'paint-primitive', capability: (store: FosStore, at: string[]) => libAt(store, at).capabilities.paint!, primitive }
+  const primitive = async () => ({}), definition = { id: 'paint-primitive', capability: (store: FosStore, at: string[]) => libAt(store, at).capabilities.paint!, run: primitive }
   const ref = primitiveRef(r.store, 'host', definition), original = libAt(r.store).capabilities.paint!
   r = publishPrimitive(r, [], 'host', ref, 1)
   r = addRow(r, [], ref, 'Paint', 2, { id: 'call' })
-  r = declareTestCapability(r, 'paint', [], { description: { content: 'Revised definition' } })
+  // a revised definition: the same capability with an input of its own
+  r = declareTestCapability(r, 'paint', [], {}, true)
   expect(libAt(r.store).capabilities.paint).not.toBe(original)
   expect(handlerOfferId('host', original, definition.id)).not.toBe(handlerOfferId('host', libAt(r.store).capabilities.paint!, definition.id))
   r = loadReplica(serializeReplica(r))
