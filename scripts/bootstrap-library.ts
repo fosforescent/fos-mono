@@ -2,8 +2,9 @@
  * One-time bootstrap of the standard library in the pattern-row model: writes `.fos/library.json`. Run once with
  * `node scripts/bootstrap-library.cjs`, then edit the library in the app and export it as usual.
  *
- * A type is a node of rows `[field, value | void]`: the left is the field, `void` on the right is a hole that must be
- * supplied. Parameters are refs declared in their constructor. Only primitives are read by host code.
+ * A type is its structure: a node of rows `[field, value | void]`, the left the field, `void` on the right a hole that
+ * must be supplied. Name rows only tell apart constructors of the same structure (stringAlias, tag); a type with no
+ * fields of its own carries a tag. Parameters are refs declared in their constructor. Only primitives are read by host code.
  */
 import type { FosNodeContent, FosNodesData, FosPathElem } from '../shared/types'
 import { hashContent, putNode, type FosStore } from '../shared/dag-implementation/store'
@@ -32,9 +33,9 @@ const tag = node([name, text('tag')], [alias, string])
 const stringAliasOf = (value: string) => node([name, text('stringAlias')], [alias, text(value)])
 const tagOf = (value: string) => node([name, text('tag')], [alias, text(value)])
 /** A text field: told apart by its alias, holding one string. */
-const textField = (field: string) => node([name, text(field)], [stringAliasOf(field), string])
+const textField = (field: string) => node([stringAliasOf(field), string])
 /** A text field's value. */
-const fill = (field: string, value: string) => node([name, text(field)], [stringAliasOf(field), text(value)])
+const fill = (field: string, value: string) => node([stringAliasOf(field), text(value)])
 
 const title = textField('title'), body = textField('body'), label = textField('label'), syntax = textField('syntax')
 const done = tagOf('done')
@@ -42,36 +43,37 @@ const done = tagOf('done')
 const icon = putBranches(store, 'icon', null, ['emojiValue', 'fontAwesomeId'].map(option => ({ peerId: option, edge: [stringAliasOf(option), string] })), 'emojiValue')
 const username = textField('username'), displayName = textField('displayName'), publicKey = textField('publicKey')
 const path = textField('path'), sha256 = textField('sha256'), peer = textField('peer'), method = textField('method')
-const by = textField('by'), issuedAt = node([name, text('issuedAt')], [stringAliasOf('issuedAt'), number]), attestation = textField('attestation')
+const by = textField('by'), issuedAt = node([stringAliasOf('issuedAt'), number]), attestation = textField('attestation')
 const filename = textField('filename'), data = textField('data'), markdown = textField('markdown')
 
-const type = (typeName: string, ...rows: FosPathElem[]) => node([name, text(typeName)], ...rows)
-const Home = type('Home')
+/** A type with no fields of its own: told apart by a tag, since the empty node is the wildcard. */
+const tagged = (tagName: string, ...rows: FosPathElem[]) => node([tagOf(tagName), unit], ...rows)
+const Home = tagged('home')
 const types: Record<string, string> = {
-  library: type('Library'),
-  documentRoot: type('Document root'),
+  library: tagged('library'),
+  documentRoot: tagged('documentRoot'),
   home: Home,
-  deviceRoot: type('Device root', [Home, unit]),
-  task: type('Task', [title, never], [done, unit]),
-  note: type('Note', [title, never], [body, never]),
-  comment: type('Comment', [body, never]),
-  specification: type('Specification', [title, never], [body, never]),
-  ref: type('Reference'),
-  query: type('Query', [title, never]),
-  resource: type('Bank', [title, never]),
-  template: type('Template', [title, never]),
-  allocation: type('Allocation'),
-  money: type('Money'),
-  people: type('People'),
-  person: type('Person', [username, never], [displayName, unit]),
-  user: type('User', [username, never], [displayName, unit], [publicKey, unit]),
-  attestation: type('Attestation', [by, never], [method, unit], [issuedAt, unit], [attestation, unit]),
-  attachment: type('Attachment', [filename, never], [data, never]),
-  fileReference: type('File reference', [path, never], [sha256, unit]),
-  relayQueue: type('Relay queue', [peer, never]),
-  relayMessage: type('Relay message', [peer, never]),
-  relayAck: type('Relay acknowledgement', [title, never]),
-  listText: type('List of text'),
+  deviceRoot: tagged('deviceRoot', [Home, unit]),
+  task: node([title, never], [done, unit]),
+  note: node([title, never], [body, never]),
+  comment: node([body, never]),
+  specification: tagged('specification', [title, never], [body, never]),
+  ref: tagged('ref'),
+  query: tagged('query', [title, never]),
+  resource: tagged('bank', [title, never]),
+  template: tagged('template', [title, never]),
+  allocation: tagged('allocation'),
+  money: tagged('money'),
+  people: tagged('people'),
+  person: node([username, never], [displayName, unit]),
+  user: node([username, never], [displayName, unit], [publicKey, unit]),
+  attestation: node([by, never], [method, unit], [issuedAt, unit], [attestation, unit]),
+  attachment: node([filename, never], [data, never]),
+  fileReference: node([path, never], [sha256, unit]),
+  relayQueue: tagged('relayQueue', [peer, never]),
+  relayMessage: tagged('relayMessage', [peer, never]),
+  relayAck: tagged('relayAck', [title, never]),
+  listText: tagged('listText'),
   // fields and value types, reachable by name
   title, body, label, syntax, done, icon, stringAlias, tag, username, displayName, path, markdown,
   text: string, number, time: number, boolean, peer
