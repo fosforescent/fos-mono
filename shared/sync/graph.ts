@@ -1,5 +1,5 @@
 import { allocationOf, allocationShapeOf, withAllocation, type Allocation, type BankResource } from './allocations'
-import { primitive, primitiveName } from './primitives'
+import { hostedPrimitive, primitive, primitiveName } from './primitives'
 import { fieldEdge, fieldValue, fieldViews, isFieldRow, isTextField, leafText, rowBody, titleField, typeRows, type FieldView, fieldRefId, withFieldValue, refTitle, textOf, textValue, withRefTitle, labelRow, withLabel, leafValue, fieldText, constructRow, bodyField } from './fields'
 import { capabilityDeclarations } from './capability-catalog'
 import { resolveBinding } from './bindings'
@@ -516,8 +516,8 @@ export function rowsOfType(store: FosStore, cid: string, typeId: string): Array<
 export function isTemplateType(store: FosStore, typeCid: string): boolean {
   if (!store.table.has(typeCid)) return false
   // a capability pattern (refined with inputs) declares refs too, but it is an instruction, never a template to instantiate
-  // (a handler ref holds a value of its capability: it is a call, not a template either)
-  if (capabilityName(store, typeCid) !== null || capabilityName(store, valueCidOf(store, typeCid)) !== null) return false
+  // (a handler ref holds a value of its capability, holding its primitive: it is a call, not a template either)
+  if (capabilityName(store, typeCid) !== null || capabilityName(store, valueCidOf(store, typeCid)) !== null || hostedPrimitive(store, valueCidOf(store, typeCid))) return false
   return valueContent(store, typeCid).children.some(edge => {
     if (!isRowEdge(store, edge) || isChoiceEdge(store, edge)) return false
     const identity = content(store, identityCid(store, edge))

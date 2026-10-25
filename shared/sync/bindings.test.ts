@@ -1,5 +1,5 @@
 import { createStore } from './graph'
-import { primitive } from './primitives'
+import { primitive, primitiveMemberRow } from './primitives'
 import { valueOfPattern } from './structural'
 import { userView, installTestHandler } from './test-helpers'
 import { setHandlerEnabledAt, discoverHandlers, setMemberCapabilitiesAt, proposeRefAt, applyProposalAt, argumentRefs, renameTask, setRowContentAt, libAt, addMemberAt, addRefAt, addRow, addTask, addSubtasksTemplate, beginTaskWork, content, contextBindings, createReplica, decideTaskResult, headCid, instantiateTemplate, proposeTaskResult, put, refNodeContent, resolveBinding, resolveScope, resolveText, taskWorkContext, view, workAttempts, workHandler, nestScope, textValue } from './index'
@@ -120,8 +120,8 @@ test('a disabled or removed Fos binding cannot enable a previously available act
 test('offline peers cannot satisfy explicit or transitive handler dependencies', () => {
   const r = createReplica('device'), store = r.store
   const type = libAt(store).capabilities.llm!
-  // a handler fos hosts: its implementation runs there
-  const peer = valueOfPattern(store, type, { peerId: { content: 'fos' } }, [[primitive(store, 'implementation'), primitive(store, 'fos:llm')]])
+  // a handler whose primitive runs at fos: it holds the primitive as a member, its entry naming the host
+  const peer = valueOfPattern(store, type, {}, [primitiveMemberRow(store, primitive(store, 'fos:llm'), 'fos')])
   const bound = put(store, refNodeContent(store, { alias: { id: 'handler' } }, peer, []))
   expect(resolveBinding(store, type, bound, [], undefined, { isPeerActive: () => false }).status).toBe('missing')
   expect(resolveBinding(store, type, bound, [], undefined, { isPeerActive: () => true }).status).toBe('ready')

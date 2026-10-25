@@ -1,12 +1,12 @@
 /** A bounded, local planning-agent flow built from rows, refs, templates and proposals. */
-import { primitive } from './primitives'
+import { hostOf, primitive } from './primitives'
 import { instantiateLibraryTemplate } from './replica'
 import { settingOf, completes, isLibraryRef } from './graph'
 import { isHandlerStateLeft } from './capabilities'
 import { discoverHandlers } from './handlers'
 import { contextBindings, resolveBinding, resolveText, type BindingEnvironment } from './bindings'
 import { constructRow, fieldValues, isFieldRow, rowText, titleField, textOf, textValue } from './fields'
-import { libraryNode, rowTitle } from './graph'
+import { libraryNode, rowTitle, valueCidOf } from './graph'
 import {
   requirementViewOf, libAt, commitRoot, content, identityCid, newId, put,
   readProposals, refArguments, refNodeContent, refValueCid, resolveScope,
@@ -52,7 +52,7 @@ export function workHandler(r: Replica, requestPath: Scope, environment: Binding
   const result = handlers.length > 1
     ? { status: 'ambiguous' as const, sources: handlers.map(h => h.cid), problems: ['Choose one language-model handler.'] }
     : resolveBinding(store, type, handlers[0]?.cid ?? null, candidates, undefined, environment)
-  if (result.status === 'ready' && valueContent(store, result.cid!).data.peerId?.content === 'fos' && !fos) return { status: 'missing' as const, sources: result.sources, problems: ['The bound Fos handler is unavailable in this context.'] }
+  if (result.status === 'ready' && hostOf(store, valueCidOf(store, result.cid!)) === 'fos' && !fos) return { status: 'missing' as const, sources: result.sources, problems: ['The bound Fos handler is unavailable in this context.'] }
   return result
 }
 
@@ -170,7 +170,7 @@ export function beginTaskWork(r: Replica, requestPath: Scope, preview: WorkConte
   if (resolved.status !== 'ready') throw new Error(resolved.problems.join('\n'))
   const handler = resolved.cid!
   // the handler the binding resolved (an llm offer) must be the account server's, whose model runs it
-  if (valueContent(store, handler).data.peerId?.content !== 'fos') throw new Error('No executor is configured for this language-model handler.')
+  if (hostOf(store, valueCidOf(store, handler)) !== 'fos') throw new Error('No executor is configured for this language-model handler.')
   const id = newId(), path = [...requestPath, id], contextId = newId(), resultId = newId()
   r = addRow(r, requestPath, PLAIN_TYPE, `Agent attempt ${workAttempts(r, requestPath).length + 1}`, now, { id })
   r = addRow(r, path, NOTE_TYPE, current.prompt, now, { id: contextId })

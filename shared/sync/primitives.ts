@@ -7,6 +7,8 @@
  */
 import { labelRow } from './fields'
 import { matchesGraph, tag, capabilityName } from './structural'
+import { hashContent } from '../dag-implementation/cid'
+import type { FosPathElem } from '../types'
 import { putNode, type FosStore } from '../dag-implementation/store'
 import { content, enclosingScopes, handlerOfferId, libAt, put, refNodeContent, isRefNode, type Scope } from './graph'
 import { addMemberAt, addRow, headCid, setHandlerOffersAt, type Replica } from './replica'
@@ -65,8 +67,26 @@ export type PrimitiveDefinition = PrimitiveImplementation & {
 export const definitionCapability = (definition: Pick<PrimitiveDefinition, 'capability'>, store: FosStore, at: Scope): string =>
   typeof definition.capability === 'function' ? definition.capability(store, at) : libAt(store, at).capabilities[definition.capability]!
 
-/** A handler: a value of its capability whose `implementation` row names the primitive host code runs for it. */
+/**
+ * A handler: a value of its capability holding its primitive as a member, as a node holds a peer: the row
+ * `[primitive, entry]`, whose entry says where it runs (its host) and is where what it may see is granted.
+ */
 export type Primitive = { implementation: string; host: string }
+/** The member row a handler value holds for its primitive `named`, running at `host`. */
+export function primitiveMemberRow(store: FosStore, named: string, host: string): FosPathElem {
+  const entry = put(store, { data: { alias: { id: hashContent({ data: { peerId: { content: host } }, children: [[named, named]] }) }, peerId: { content: host } }, children: [] })
+  return [named, entry]
+}
+/** The primitive a handler value holds as a member and the host it runs at, or null when it holds none. */
+export function hostedPrimitive(store: FosStore, value: string): { primitive: string; host: string } | null {
+  for (const [left, right] of store.table.get(value)?.children ?? []) {
+    const host = primitiveName(store, left) !== null ? store.table.get(right)?.data.peerId?.content : undefined
+    if (host) return { primitive: left, host }
+  }
+  return null
+}
+/** Where the handler value's primitive runs: the host its member entry names, or null. */
+export const hostOf = (store: FosStore, value: string): string | null => hostedPrimitive(store, value)?.host ?? null
 
 /**
  * The handler ref for a definition, as graph content only: a value of its capability naming the definition's primitive.
@@ -77,8 +97,9 @@ export function handlerRef(store: FosStore, host: string, definition: Pick<Primi
   const type = definitionCapability(definition, store, at), label = definition.label ?? definition.id
   const named = primitive(store, definition.id)
   const { alias: _alias, name: _name, ...properties } = content(store, type).data
-  // a handler is a value of its capability: it carries the capability's tag, and the primitive that gives it meaning here
-  const value = put(store, { data: { ...properties, peerId: { content: host } }, children: [...content(store, type).children, tag(store, type), [primitive(store, 'implementation'), named], labelRow(store, label)] })
+  // a handler is a value of its capability: it carries the capability's tag, and holds the primitive that gives it meaning
+  // here as a member, as a node holds a peer
+  const value = put(store, { data: properties, children: [...content(store, type).children, tag(store, type), primitiveMemberRow(store, named, host), labelRow(store, label)] })
   return put(store, refNodeContent(store, { alias: { id: handlerOfferId(host, type, name) }, name: { content: label } }, value, []))
 }
 /** The handler ref a host publishes for a definition, with what it means here (`implementation`, the definition by default). */
@@ -88,9 +109,9 @@ export function primitiveRef(store: FosStore, host: string, definition: Primitiv
   return ref
 }
 
-/** The primitive a handler value names in its `implementation` row. */
+/** The primitive a handler value holds. */
 export function implementationOf(store: FosStore, value: string): string | null {
-  return store.table.get(value)?.children.find(([left]) => left === primitive(store, 'implementation'))?.[1] ?? null
+  return hostedPrimitive(store, value)?.primitive ?? null
 }
 /** What host code means by the handler value's implementation in this store, when this host has one. */
 export function primitiveImplementation<T>(store: FosStore, value: string): { value: T; type: string } | undefined {
@@ -98,9 +119,8 @@ export function primitiveImplementation<T>(store: FosStore, value: string): { va
   return implementation ? store.implementations.get(implementation) as { value: T; type: string } | undefined : undefined
 }
 export function primitiveValue(store: FosStore, cid: string): Primitive | null {
-  const implementation = implementationOf(store, cid), name = implementation && primitiveName(store, implementation)
-  const host = store.table.get(cid)?.data.peerId?.content
-  return name && host ? { implementation: name, host } : null
+  const hosted = hostedPrimitive(store, cid), name = hosted && primitiveName(store, hosted.primitive)
+  return name && hosted ? { implementation: name, host: hosted.host } : null
 }
 
 /** Explicit graph mutation: publish a ref under its host. Merely constructing a primitive advertises nothing. */

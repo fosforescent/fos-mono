@@ -1,5 +1,5 @@
 /** One declaration view for lexical arguments, explicit references, and advertised handlers. */
-import { primitive } from './primitives'
+import { hostOf, primitive } from './primitives'
 import type { FosStore } from '../dag-implementation/store'
 import { fieldNode } from '../library-names'
 import {
@@ -69,7 +69,7 @@ function declaration(location: BindingLocation, pattern: string, access: Binding
   const targets = accepted.values
   const id = node.data.alias?.id ?? path.at(-1) ?? cid, capability = capabilityOfTarget(store, pattern)
   const submissions = targets.map(value => {
-    const peer = content(store, value).data.peerId?.content ?? node.data.peerId?.content ?? peerId
+    const peer = hostOf(store, value) ?? content(store, value).data.peerId?.content ?? node.data.peerId?.content ?? peerId
     const disabled = policy.get(peer) ?? []
     return { cid: value, peerId: peer, enabled: !disabled.includes(id) && !(capability && disabled.includes(capability)), active: !peer || (access.isPeerActive?.(peer) ?? true) }
   })
