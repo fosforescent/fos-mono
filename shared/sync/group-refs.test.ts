@@ -1,4 +1,5 @@
-import { textValue, textOf } from './index'
+import { PLAIN_TYPE } from './library-types'
+import { textValue, textOf, rowTitle } from './index'
 import { primitive } from './primitives'
 import {
   addRef, addRefAt, addRow, addTask, compileRefGraph, content, copyNode, createReplica,
@@ -29,7 +30,7 @@ test('a sibling link declares the shared ref in the group, visible from both par
   r = renameTask(r, ['group'], 'work', 'Updated work', 7)
   const compiled = compileRefGraph(r, at(r, ['group', 'bob', link.id]), ['group', 'bob', link.id])
   expect(compiled.complete).toBe(true)
-  expect(textOf(r.store, compiled.cid)).toBe('Updated work')
+  expect(rowTitle(r.store, compiled.cid, null)).toBe('Updated work')
   const loaded = loadReplica(serializeReplica(r))
   expect(resolveRefIdentity(loaded, ['group', 'bob'], 'work').locations[0]?.path).toEqual(['group', 'work'])
 })
@@ -37,7 +38,7 @@ test('a sibling link declares the shared ref in the group, visible from both par
 test('linking refuses to capture private dependencies; copying closes them without changing their source', () => {
   let r = group()
   r = addRefAt(r, ['group', 'alice'], 'secret', primitive(r.store, 'string'), 5, leaf(r, 'Private value'), 'secret')
-  r = addRow(r, ['group', 'alice'], 'plain', '.secret', 6, { id: 'dependent' })
+  r = addRow(r, ['group', 'alice'], PLAIN_TYPE, '.secret', 6, { id: 'dependent' })
   const before = headCid(r)
   expect(() => addRef(r, ['group', 'bob'], 'dependent', 7)).toThrow(/dependencies.*shared scope/)
   expect(headCid(r)).toBe(before)
@@ -59,7 +60,7 @@ test('passing an outer ref creates an ordinary local declaration whose handler c
   expect(compileRefGraph(r, at(r, ['group', 'alice', 'local']), ['group', 'alice', 'local']).complete).toBe(true)
   expect(valueContent(r.store, at(r, ['group', 'shared'])).data.ref?.id).toBe('outside')
   r = setRefValueAt(r, ['outside'], leaf(r, 'Outer updated'), 9)
-  const compiled = (path: string[]) => content(r.store, compileRefGraph(r, at(r, path), path, { selected: true }).cid).data.description?.content
+  const compiled = (path: string[]) => textOf(r.store, compileRefGraph(r, at(r, path), path, { selected: true }).cid)
   expect(compiled(['group', 'shared'])).toBe('Outer updated')
   expect(compiled(['group', 'alice', 'local'])).toBe('Alice')
   expect(resolveRefIdentity(r, ['group', 'bob'], 'local').status).toBe('missing')
@@ -73,7 +74,7 @@ test('copying an enclosing store binding preserves its declaration scope and clo
   let inner = createReplica()
   nestScope(inner.store, { store: outer.store, root: headCid(outer), at: ['group'] })
   inner = addRefAt(inner, [], 'inner-value', type, 7, leaf(inner, 'Inner'), 'value')
-  inner = addRow(inner, [], 'plain', '..source', 8, { id: 'reference' })
+  inner = addRow(inner, [], PLAIN_TYPE, '..source', 8, { id: 'reference' })
   inner = copyNode(inner, [], 'reference', [], { relativeTo: 'reference', position: 'below' }, 9)
   expect(view(inner, [])!.tasks.find(row => row.id !== 'reference' && row.title === 'Outer')).toBeDefined()
 })

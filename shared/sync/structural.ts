@@ -143,6 +143,8 @@ export function match(store: FosStore, pattern: string, value: string, options: 
         const target = refValueCid(store, P)
         if (target) return go(target, v, key, depth + 1, state)
       }
+      // a tag is a unit type parameterized by its name: what it holds is unit (present) or void (absent)
+      if (!key && tagName(store, p) !== null && (v === never || isUnit(V))) return state
       if (v === never) return options.allowHoles ? state : null
       if (p === never) return state
       if (isBranchChoice(store, V)) {

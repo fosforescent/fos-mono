@@ -354,7 +354,8 @@ function newRowContent(store: FosStore, type: string, typeId: string, id: string
   // a row whose left is a ref calls it: its right holds the call's arguments, filled later
   if (isRefNode(store, content(store, type))) return { data: { alias: { id }, created: { time: now }, updated: { time: now } }, children: text ? [labelRow(store, text)] : [] }
   const values = new Map<string, string>(), done = rowVocabulary(store)?.done
-  if (done && extras.done && completes(store, type)) values.set(done, put(store, { data: {}, children: [] }))
+  // done is always held: unit once done, void until then
+  if (done && completes(store, type)) values.set(done, extras.done ? put(store, { data: {}, children: [] }) : primitive(store, 'void'))
   const row = withTextParameters(store, withKindData(store, constructTextRow(store, type, id, text, now, values), typeId, text, extras), text)
   return typeId === RESOURCE_TYPE ? refNodeContent(store, { alias: { id }, updated: { time: now } }, put(store, row)) : row
 }

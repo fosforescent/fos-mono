@@ -411,12 +411,16 @@ export function completes(store: FosStore, type: string): boolean {
 /** A row's title: its own text (a plain row), the title its ref carries (an argument row), else what its title field holds. */
 export function rowTitle(store: FosStore, nodeCid: string, type: string | null): string {
   const value = valueContent(store, nodeCid)
-  if (type && isTextField(store, type)) return leafText(store, nodeCid) ?? ''
+  if (type && isTextField(store, type)) return textOf(store, nodeCid) ?? ''
   const own = refTitle(store, content(store, nodeCid))
   if (own !== null) return own
   const field = type ? titleField(store, type) : value.children.find(edge => isFieldRow(store, edge) && isTextField(store, edge[0]))?.[0]
   const held = field ? fieldValue(store, value, field) : null
-  return (held ? leafText(store, held) : null) ?? (field ? null : textOf(store, nodeCid)) ?? ''
+  if (held) return leafText(store, held) ?? ''
+  if (field) return ''
+  // a value without field refs (compiled, closed): its text field's row, else its own text
+  const text = value.children.find(([left]) => isTextField(store, left))
+  return (text ? leafText(store, text[1]) : null) ?? textOf(store, nodeCid) ?? ''
 }
 /** Whether a row is done: its `done` field holds unit. */
 export function rowDone(store: FosStore, nodeCid: string): boolean {
