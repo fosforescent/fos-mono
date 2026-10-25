@@ -32,9 +32,10 @@ export function compileLibrary(source: LibrarySource): CompiledLibrary {
     nodes[cid] = node
   }
   visit(source.rootNodeId)
-  // The built-in mutable-ref pointer has a stable content identity, shared with the store.
-  const target = hashContent({ data: { description: { content: 'Target Constructor Node' } }, children: [] })
-  const alias = hashContent({ data: { description: { content: 'Alias Constructor Node' } }, children: [] })
+  // the ref constructors are primitives, `{ ["primitive", name] }` (sync/primitives.ts): content identities shared with every store
+  const text = (value: string) => hashContent({ data: { scalar: { type: 'text', value } }, children: [] })
+  const primitive = (name: string) => hashContent({ data: {}, children: [[text('primitive'), text(name)]] })
+  const target = primitive('target'), alias = primitive('alias')
   // the names the library gives its nodes (refs in the graph; see library-names.ts)
   const names = libraryNames(cid => nodes[cid], source.rootNodeId, target, alias)
   if (names.ambiguous.size) throw new Error(`Ambiguous library fields: ${[...names.ambiguous].join(', ')}`)
