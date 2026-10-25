@@ -1,3 +1,4 @@
+import { textValue, textOf } from './index'
 import { primitive } from './primitives'
 import {
   addMemberAt, addRefAt, addRequirement, addTask, demandPattern, supplyRequirement, supplyValue,
@@ -7,7 +8,7 @@ import {
 } from './index'
 
 const at = (r: ReturnType<typeof createReplica>, path: string[]) => resolveScope(r.store, headCid(r), path)!
-const literal = (r: ReturnType<typeof createReplica>, value: string) => put(r.store, { data: { description: { content: value } }, children: [] })
+const literal = (r: ReturnType<typeof createReplica>, value: string) => textValue(r.store, value)
 
 test('explicit arguments and structural ancestor paths retain their target while bare names resolve locally', () => {
   let r = createReplica(), type = primitive(r.store, 'string')
@@ -21,7 +22,7 @@ test('explicit arguments and structural ancestor paths retain their target while
     expect(resolveText(r, ['child'], '{argument} / {Tools}').text).toBe('Outer tools / Inner tools')
     const compiled = compileRefGraph(r, at(r, ['child', 'argument']), ['child', 'argument'])
     expect(compiled.complete).toBe(true)
-    expect(content(r.store, compiled.cid).data.description?.content).toBe('Outer tools')
+    expect(textOf(r.store, compiled.cid)).toBe('Outer tools')
   }
   const declaration = resolveRefIdentity(r, ['child'], 'outer').locations[0]!
   expect(declaration.scope).toEqual({ store: r.store, path: [] })

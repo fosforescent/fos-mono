@@ -1,3 +1,4 @@
+import { textValue, textOf } from './index'
 import { primitive } from './primitives'
 import { declareTestCapability } from './test-helpers'
 import {
@@ -10,7 +11,7 @@ import {
 } from './index'
 
 const at = (r: ReturnType<typeof createReplica>, path: string[]) => resolveScope(r.store, headCid(r), path)!
-const text = (r: ReturnType<typeof createReplica>, value: string) => put(r.store, { data: { description: { content: value } }, children: [] })
+const text = (r: ReturnType<typeof createReplica>, value: string) => textValue(r.store, value)
 
 test('dot and application syntax agree, and ascent is counted before property lookup', () => {
   expect(parseRefExpression('....ref1.ref2')).toEqual({ up: 3, path: ['ref1', 'ref2'], lexical: false })
@@ -88,8 +89,8 @@ test('compiled dependencies and holes do not depend on editor UUIDs; edits requi
   expect(a.partial.holes[0]!.id).not.toBe(b.partial.holes[0]!.id)
   expect(() => assertCompiledGraph(a.r.store, [a.compiled.cid, a.partial.cid])).not.toThrow()
   a.r = setRefValueAt(a.r, ['550e8400-e29b-41d4-a716-446655440000'], text(a.r, 'After'), 2)
-  expect(content(a.r.store, a.compiled.cid).data.description?.content).toBe('Before')
-  expect(content(a.r.store, compileRefGraph(a.r, a.link, ['consumer'], { selected: true }).cid).data.description?.content).toBe('After')
+  expect(textOf(a.r.store, a.compiled.cid)).toBe('Before')
+  expect(textOf(a.r.store, compileRefGraph(a.r, a.link, ['consumer'], { selected: true }).cid)).toBe('After')
 })
 
 test('constructor calls compile references and explicit overrides while keeping output locations out of the graph', () => {

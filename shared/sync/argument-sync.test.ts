@@ -1,5 +1,5 @@
 import { primitive } from './primitives'
-import { createReplica, ensureHomeContext, shareHome, addRefAt, HOME_ID, put, refValueCid, content, resolveScope, headCid, argumentRefs, proposeRefAt, applyProposalAt, nodeShape, provideNode, SERVER_TRANSPORT_CAPABILITIES, writeNodeValue, addMemberAt, setNodeLinkMask, readNodeValue, type Replica } from './index'
+import { createReplica, ensureHomeContext, shareHome, addRefAt, HOME_ID, put, refValueCid, content, resolveScope, headCid, argumentRefs, proposeRefAt, applyProposalAt, nodeShape, provideNode, SERVER_TRANSPORT_CAPABILITIES, writeNodeValue, addMemberAt, setNodeLinkMask, readNodeValue, type Replica, textValue, textOf } from './index'
 import { syncWith } from './test-helpers'
 import { acceptProvidedNode, resolveRefExpression, readGraphValue, bindingProperties } from './index'
 import { addRow, updateAtScope, commitRoot, valueContent, acceptsChild, rowTypeAt, isRowOfType, PATTERN_TYPE } from './index'
@@ -75,12 +75,12 @@ test('unbound and bound row arguments retain their identity, names, types and va
   a = syncWith(a, account, { now: 2 }); b = syncWith(b, account, { now: 3 })
   expect(refValueCid(b.store, argument(b, 'input'))).toBeNull()
   expect(argument(b, 'input').data.name?.content).toBe('input')
-  const value = put(b.store, { data: { description: { content: 'phone text' } }, children: [] })
+  const value = textValue(b.store, 'phone text')
   const proposal = proposeRefAt(b, [HOME_ID, 'input'], value, 'b', 4)
   b = applyProposalAt(proposal.replica, [HOME_ID, 'input'], proposal.proposalCid, 'b', 4)
   b = syncWith(b, account, { now: 5 }); a = syncWith(a, account, { now: 6 })
   const target = refValueCid(a.store, argument(a, 'input'))!
-  expect(content(a.store, target).data.description?.content).toBe('phone text')
+  expect(textOf(a.store, target)).toBe('phone text')
   expect(argumentRefs(a.store, resolveScope(a.store, headCid(a), [HOME_ID])!).find(arg => arg.name === 'input')?.type).toBe(type)
   expect(nodeShape(a, [HOME_ID]).children.find(child => child.id === 'input')?.right).toEqual({ name: 'input', bound: true })
 })

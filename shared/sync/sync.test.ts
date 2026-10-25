@@ -1,3 +1,4 @@
+import { textOf } from './index'
 import { createStore } from './graph'
 import { primitive } from './primitives'
 import { memberEdgesOf, memberPeerOf, peerNode } from './graph'
@@ -696,7 +697,7 @@ describe('mutable references: root, link rows and reference rows are one node sh
     expect(isHandle(proj)).toBe(false)
     expect(proj.data.alias?.id).toBe('proj')
     expect(proj.data.description).toBeUndefined()
-    expect(valueContent(store, projCid).data.description?.content).toBe('project')
+    expect(textOf(store, projCid)).toBe('project')
     expect(view(r, ['proj'])!.tasks.map((t) => t.title)).toEqual(['design'])
     expect(userView(r)!.tasks[0]).toMatchObject({ id: 'proj', type: TASK_TYPE, title: 'project', isLink: true })
     // editing inside the link advances the ref: new ref node, PREV → the old one, same value shape

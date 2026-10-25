@@ -1,3 +1,4 @@
+import { textValue, textOf } from './index'
 import { primitive } from './primitives'
 import {
   addRefAt, addRow, addTask, applyProposalAt, choosePatternBindingAt, content, createReplica, findEdge, headCid, identityCid, loadReplica,
@@ -7,7 +8,7 @@ import {
 
 const cid = (r: Replica, path: string[]) => resolveScope(r.store, headCid(r), path)!
 const leftOf = (r: Replica, at: string[], id: string) => findEdge(r.store, valueContent(r.store, cid(r, at)), `a:${id}`)![0]
-const leaf = (r: Replica, text: string) => put(r.store, { data: { description: { content: text } }, children: [] })
+const leaf = (r: Replica, text: string) => textValue(r.store, text)
 
 /** A person row with a city row under it. */
 function person(r: Replica, at: string[], id: string, city: string): Replica {
@@ -30,7 +31,7 @@ test('using a pattern with a node submits its values to the pattern refs by posi
   const [binding] = patternBindings(r.store, left)
   expect(binding).toMatchObject({ alias: 'where', name: 'where', value: null })
   expect(binding!.options).toHaveLength(1)
-  expect(content(r.store, binding!.options[0]!.value).data.description?.content).toBe('Paris')
+  expect(textOf(r.store, binding!.options[0]!.value)).toBe('Paris')
   // using it again replaces this row's own submission instead of adding another
   r = usePatternAt(r, ['trip'], 'alice', leftOf(r, ['trip'], 'alice'), 'device', 4).replica
   const again = patternBindings(r.store, leftOf(r, ['trip'], 'alice'))[0]!
@@ -40,7 +41,7 @@ test('using a pattern with a node submits its values to the pattern refs by posi
   r = choosePatternBindingAt(r, ['trip'], 'alice', 'where', again.options[0]!.proposal, 5)
   r = loadReplica(JSON.parse(JSON.stringify(serializeReplica(r))))
   const bound = patternBindings(r.store, leftOf(r, ['trip'], 'alice'))[0]!
-  expect(content(r.store, bound.value!).data.description?.content).toBe('Paris')
+  expect(textOf(r.store, bound.value!)).toBe('Paris')
   expect(bound.options).toEqual([])
 })
 
@@ -82,12 +83,12 @@ test('solve submits every solution in scope, ancestors included, to the placehol
   expect(solved.solutions.map(s => s.source.join('/'))).toEqual(['trip/alice', 'trip/bob', 'carol'])
   const ref = content(r.store, identityCid(r.store, findEdge(r.store, valueContent(r.store, cid(r, ['trip', 'solve'])), 'a:city')!))
   const options = readProposals(r.store, ref).filter(p => p.status === 'open')
-  expect(options.map(p => content(r.store, p.contentCid).data.description?.content).sort()).toEqual(['Oslo', 'Paris', 'Rome'])
-  const paris = options.find(p => content(r.store, p.contentCid).data.description?.content === 'Paris')!
+  expect(options.map(p => textOf(r.store, p.contentCid)).sort()).toEqual(['Oslo', 'Paris', 'Rome'])
+  const paris = options.find(p => textOf(r.store, p.contentCid) === 'Paris')!
   r = applyProposalAt(r, ['trip', 'solve', 'city'], paris.cid, 'device', 6)
   const city = () => content(r.store, identityCid(r.store, findEdge(r.store, valueContent(r.store, cid(r, ['trip', 'solve'])), 'a:city')!))
   expect(content(r.store, refValueCid(r.store, city())!).data.description?.content).toBe('Paris')
-  const rome = readProposals(r.store, city()).find(p => p.status === 'open' && content(r.store, p.contentCid).data.description?.content === 'Rome')!
+  const rome = readProposals(r.store, city()).find(p => p.status === 'open' && textOf(r.store, p.contentCid) === 'Rome')!
   r = applyProposalAt(r, ['trip', 'solve', 'city'], rome.cid, 'device', 7)
   expect(readProposals(r.store, city()).filter(p => p.status === 'open')).toHaveLength(1)
   // bound, the ref is no longer a hole: there is nothing left to solve

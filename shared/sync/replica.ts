@@ -351,6 +351,8 @@ export function addTask(replica: Replica, at: Scope, title: string, now: number,
  */
 function newRowContent(store: FosStore, type: string, typeId: string, id: string, text: string, now: number, extras: Omit<RowExtras, 'store'>): FosNodeContent {
   if (typeId === REF_TYPE) return referenceRowContent(store, id, now, extras)
+  // a row whose left is a ref calls it: its right holds the call's arguments, filled later
+  if (isRefNode(store, content(store, type))) return { data: { alias: { id }, created: { time: now }, updated: { time: now } }, children: text ? [labelRow(store, text)] : [] }
   const values = new Map<string, string>(), done = rowVocabulary(store)?.done
   if (done && extras.done && completes(store, type)) values.set(done, put(store, { data: {}, children: [] }))
   const row = withTextParameters(store, withKindData(store, constructTextRow(store, type, id, text, now, values), typeId, text, extras), text)

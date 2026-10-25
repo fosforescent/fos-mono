@@ -1,3 +1,4 @@
+import { textValue, textOf } from './index'
 import { createStore } from './graph'
 import { primitive } from './primitives'
 import { FosStore } from '../dag-implementation/store'
@@ -77,15 +78,15 @@ test('primitive restoration keeps the offered capability version after a library
 
 test('both sides of a row resolve from its parent; children see its declarations', () => {
   let r = createReplica(), text = primitive(r.store, 'string')
-  const literal = (value: string) => put(r.store, { data: { description: { content: value } }, children: [] })
+  const literal = (value: string) => textValue(r.store, value)
   r = addRefAt(r, [], 'outer', text, 1, literal('parent'), 'chosen')
   const expression = put(r.store, { data: { refExpression: { up: 0, path: ['chosen'], lexical: true } }, children: [] })
   const local = put(r.store, refNodeContent(r.store, { alias: { id: 'inner' }, name: { content: 'chosen' } }, literal('local')))
   const right = put(r.store, { data: { alias: { id: 'row' }, refExpression: { up: 0, path: ['chosen'], lexical: true } }, children: [[text, local]] })
   commitRoot(r.store, updateAtScope(r.store, headCid(r), [], node => ({ ...node, children: [...node.children, [expression, right]] })), 2)
   const compiled = compileRow(r, ['row'])
-  expect(content(r.store, compiled.left.cid).data.description?.content).toBe('parent')
-  expect(content(r.store, compiled.right.cid).data.description?.content).toBe('parent')
+  expect(textOf(r.store, compiled.left.cid)).toBe('parent')
+  expect(textOf(r.store, compiled.right.cid)).toBe('parent')
   expect(resolveRefExpression(r, ['row'], 'chosen').locations[0]?.cid).toBe(local)
 })
 
@@ -183,7 +184,7 @@ test('every lookup by name stops at the nearest scope that answers: ambiguous an
 
 test('a ref path denied at a nearer scope does not resolve from an outer one', () => {
   let r = addTask(createReplica(), [], 'Child', 1, 'child'), text = primitive(r.store, 'string')
-  const literal = (value: string) => put(r.store, { data: { description: { content: value } }, children: [] })
+  const literal = (value: string) => textValue(r.store, value)
   r = addRefAt(r, [], 'outer', text, 2, literal('outer'), 'chosen')
   r = addRefAt(r, ['child'], 'inner', text, 3, literal('inner'), 'chosen')
   const inner = resolveRefExpression(r, ['child'], 'chosen').locations[0]!.cid

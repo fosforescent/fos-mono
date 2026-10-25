@@ -1,4 +1,4 @@
-import { textOf } from './index'
+import { textOf, textValue } from './index'
 import { primitive } from './primitives'
 import {
   createReplica, ensureHomeContext, shareHome, HOME_ID, addRefAt, put, content, refNodeContent,
@@ -37,7 +37,7 @@ test('submitting to an ordinary property ref uses the row left and preserves val
 test('the enclosing left instruction is the only pattern carried through node exchange', () => {
   const device = (id: string) => shareHome(ensureHomeContext(createReplica(id), 0))
   let source = device('source'), receiver = device('receiver')
-  const left = put(source.store, { data: { description: { content: 'Left capability' } }, children: [] })
+  const left = textValue(source.store, 'Left capability')
   const value = put(source.store, { data: { scalar: { type: 'text', value: 'handler value' } }, children: [] })
   const right = put(source.store, refNodeContent(source.store, { alias: { id: 'handler' }, name: { content: 'handler' } }, value, []))
   commitRoot(source.store, updateAtScope(source.store, headCid(source), [HOME_ID], node => ({ ...node, children: [...node.children, [left, right]] })), 1)
@@ -66,7 +66,7 @@ test('a named right ref stays a row while its left definition is loaded separate
   const device = (id: string) => shareHome(ensureHomeContext(createReplica(id), 0))
   const source = device('source')
   let receiver = device('receiver')
-  const left = put(source.store, { data: { description: { content: 'Custom field constructor' } }, children: [] })
+  const left = textValue(source.store, 'Custom field constructor')
   const value = put(source.store, { data: { scalar: { type: 'text', value: 'field value' } }, children: [] })
   const right = put(source.store, refNodeContent(source.store, { alias: { id: 'field' }, name: { content: 'field' } }, value))
   commitRoot(source.store, updateAtScope(source.store, headCid(source), [HOME_ID], node => ({ ...node, children: [...node.children, [left, right]] })), 1)

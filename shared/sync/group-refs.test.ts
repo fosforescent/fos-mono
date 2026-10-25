@@ -1,3 +1,4 @@
+import { textValue, textOf } from './index'
 import { primitive } from './primitives'
 import {
   addRef, addRefAt, addRow, addTask, compileRefGraph, content, copyNode, createReplica,
@@ -7,7 +8,7 @@ import {
 } from './index'
 
 const at = (r: ReturnType<typeof createReplica>, path: string[]) => resolveScope(r.store, headCid(r), path)!
-const leaf = (r: ReturnType<typeof createReplica>, value: string) => put(r.store, { data: { description: { content: value } }, children: [] })
+const leaf = (r: ReturnType<typeof createReplica>, value: string) => textValue(r.store, value)
 function group() {
   let r = addTask(createReplica('alice'), [], 'Group', 1, 'group')
   r = addTask(r, ['group'], 'Alice participation', 2, 'alice')
@@ -28,7 +29,7 @@ test('a sibling link declares the shared ref in the group, visible from both par
   r = renameTask(r, ['group'], 'work', 'Updated work', 7)
   const compiled = compileRefGraph(r, at(r, ['group', 'bob', link.id]), ['group', 'bob', link.id])
   expect(compiled.complete).toBe(true)
-  expect(content(r.store, compiled.cid).data.description?.content).toBe('Updated work')
+  expect(textOf(r.store, compiled.cid)).toBe('Updated work')
   const loaded = loadReplica(serializeReplica(r))
   expect(resolveRefIdentity(loaded, ['group', 'bob'], 'work').locations[0]?.path).toEqual(['group', 'work'])
 })

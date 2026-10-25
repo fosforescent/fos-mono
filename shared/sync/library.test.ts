@@ -10,7 +10,7 @@ import { nodeAuthorityAt } from './node-context'
 import { acceptSubmission, missingApprovals } from './approvals'
 import { BUNDLED_LIBRARY, setLibraryArg, upgradeLibrary, useLibrary, ensureDeviceLibrary, exportLibrary, exportLocalLibrary, libraryPath, manualHandlers, manualHandlersFor } from './library'
 import { LIBRARY_TYPE, PLAIN_TYPE, TASK_TYPE } from './library-types'
-import { libraryBindingAt, libraryTypeAt, loadReplica, serializeReplica, setRefValueAt, openRefs, matchesGraph, rowConstructor } from './index'
+import { libraryBindingAt, libraryTypeAt, loadReplica, serializeReplica, setRefValueAt, openRefs, matchesGraph, rowConstructor, textValue, textOf } from './index'
 import type { FosNodeContent } from '../types'
 
 const TEAM = 'team-library'
@@ -24,7 +24,7 @@ function changedLibrary(r: Replica, title: string): string {
     return [edge[0], put(store, refNodeContent(store, ref.data, node))] as [string, string]
   }) })
 }
-const taskTitle = (r: Replica, at: string[]) => content(r.store, rowTypeAt(r.store, TASK_TYPE, at)).data.description?.content
+const taskTitle = (r: Replica, at: string[]) => textOf(r.store, rowTypeAt(r.store, TASK_TYPE, at))
 
 test('parameter predicates, row types, and manual handlers follow the same explicit library upgrade', () => {
   let r = addTask(createReplica(), [], 'Workspace', 1, 'workspace')
@@ -93,7 +93,7 @@ test('a device root has its library ref, a row of the Library type, found by wha
   expect(edge[0]).toBe(rowTypeAt(r.store, LIBRARY_TYPE))
   expect(libraryPath(r)).toEqual([LIBRARY_ID])
   // a ref holding anything else is no library, whatever it is called
-  const other = addRefAt(r, [HOME_ID], 'notes', rowTypeAt(r.store, PLAIN_TYPE), 2, put(r.store, { data: { description: { content: 'Standard library' } }, children: [] }))
+  const other = addRefAt(r, [HOME_ID], 'notes', rowTypeAt(r.store, PLAIN_TYPE), 2, textValue(r.store, 'Standard library'))
   expect(isLibraryRef(other.store, content(other.store, resolveScope(other.store, headCid(other), [HOME_ID, 'notes'])!))).toBe(false)
   // loading a device root again keeps the library it has: the build's is already its value
   expect(headCid(ensureDeviceLibrary(r, BUNDLED_LIBRARY, 3))).toBe(headCid(r))

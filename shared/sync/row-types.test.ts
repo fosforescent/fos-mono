@@ -1,4 +1,5 @@
 /** Rows are made from the nodes the nearest standard library ref names: shipped in every device root, linked in Home. */
+import { textOf } from './index'
 import { createStore } from './graph'
 import { FosStore } from '../dag-implementation/store'
 import { HOME_ID, LIBRARY_ID, SERVER_MEMBER, content, namesInLibrary, readProposals, put, refNodeContent, resolveScope, rowTypeAt, typeIdOf, valueCidOf, valueContent } from './graph'
@@ -45,7 +46,7 @@ test('the nearest library wins: one linked in Home overrides the shipped one und
   r = addTask(r, [HOME_ID], 'In Home', 3, 'home-task')
   r = addTask(r, [], 'At the root', 4, 'root-task')
   const todo = named(r, [HOME_ID, LIBRARY_ID], TASK_TYPE)
-  expect(valueContent(r.store, todo).data.description?.content).toBe('To-do')
+  expect(textOf(r.store, todo)).toBe('To-do')
   expect(edgeOf(r, [HOME_ID], 'home-task')[0]).toBe(todo)
   expect(edgeOf(r, [], 'root-task')[0]).toBe(named(r, [LIBRARY_ID], TASK_TYPE))
   // deeper still: a project with its own library, for its subtree only
@@ -53,7 +54,7 @@ test('the nearest library wins: one linked in Home overrides the shipped one und
   r = withLibrary(r, [HOME_ID, 'project'], 'Ticket')
   r = addTask(r, [HOME_ID, 'project'], 'Bug', 6, 'bug')
   r = addTask(r, [HOME_ID], 'Elsewhere', 7, 'elsewhere')
-  expect(valueContent(r.store, edgeOf(r, [HOME_ID, 'project'], 'bug')[0]).data.description?.content).toBe('Ticket')
+  expect(textOf(r.store, edgeOf(r, [HOME_ID, 'project'], 'bug')[0])).toBe('Ticket')
   expect(edgeOf(r, [HOME_ID], 'elsewhere')[0]).toBe(todo)
 })
 

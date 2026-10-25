@@ -1,3 +1,4 @@
+import { textValue } from './index'
 import { primitive } from './primitives'
 import {
   addRefAt,
@@ -93,7 +94,7 @@ test('list ordering follows ordinary row moves, including after reload', () => {
 
 test('JSON-looking text is not a record; linked records preserve fields and graph links', () => {
   let r = createReplica('device')
-  const legacy = put(r.store, { data: { description: { content: '{"count":1}' } }, children: [] })
+  const legacy = textValue(r.store, '{"count":1}')
   r = addRefAt(r, [], 'settings', primitive(r.store, 'string'), 1, legacy, 'settings')
   expect(readNodeValue(r, [], 'settings')).toBeNull()
   r = writeLinkedNodeValue(r, [], 'settings', { count: 2 }, 2, { source: { id: 'external', owner: 'peer' } })

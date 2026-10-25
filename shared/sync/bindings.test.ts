@@ -2,12 +2,12 @@ import { createStore } from './graph'
 import { primitive } from './primitives'
 import { valueOfPattern } from './structural'
 import { userView, installTestHandler } from './test-helpers'
-import { setHandlerEnabledAt, discoverHandlers, setMemberCapabilitiesAt, proposeRefAt, applyProposalAt, argumentRefs, renameTask, setRowContentAt, libAt, addMemberAt, addRefAt, addRow, addTask, addSubtasksTemplate, beginTaskWork, content, contextBindings, createReplica, decideTaskResult, headCid, instantiateTemplate, proposeTaskResult, put, refNodeContent, resolveBinding, resolveScope, resolveText, taskWorkContext, view, workAttempts, workHandler, nestScope } from './index'
+import { setHandlerEnabledAt, discoverHandlers, setMemberCapabilitiesAt, proposeRefAt, applyProposalAt, argumentRefs, renameTask, setRowContentAt, libAt, addMemberAt, addRefAt, addRow, addTask, addSubtasksTemplate, beginTaskWork, content, contextBindings, createReplica, decideTaskResult, headCid, instantiateTemplate, proposeTaskResult, put, refNodeContent, resolveBinding, resolveScope, resolveText, taskWorkContext, view, workAttempts, workHandler, nestScope, textValue } from './index'
 import { FosStore } from '../dag-implementation/store'
 import { PLAIN_TYPE, NOTE_TYPE, TEMPLATE_TYPE } from './library-types'
 import { addRequirement } from './arguments'
 
-const literal = (r: ReturnType<typeof createReplica>, text: string) => put(r.store, { data: { description: { content: text } }, children: [] })
+const literal = (r: ReturnType<typeof createReplica>, text: string) => textValue(r.store, text)
 
 test('data and handlers use the same recursively resolved arguments; missing dependencies and cycles stay blocked', () => {
   const r = createReplica(), s = r.store, text = primitive(s, 'string'), callable = put(s, { data: {}, children: [] })
@@ -85,7 +85,7 @@ test('text names bind only to declarations: key-value titles and frontmatter are
 
 test('a nearer name hides an outer one of another type; an unfilled nearer one is a hole bound from further out', () => {
   let r = addTask(createReplica(), [], 'Child', 1, 'child')
-  const text = primitive(r.store, 'string'), other = put(r.store, { data: { description: { content: 'other type' } }, children: [] })
+  const text = primitive(r.store, 'string'), other = textValue(r.store, 'other type')
   r = addRefAt(r, [], 'outer', text, 2, literal(r, 'Ada'), 'who')
   expect(resolveText(r, ['child'], '{{who}}').text).toBe('Ada')
   r = addRefAt(r, ['child'], 'hole', text, 3, null, 'who')

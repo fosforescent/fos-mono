@@ -1,3 +1,4 @@
+import { textValue } from './index'
 import { primitive } from './primitives'
 import { installTestHandler } from './test-helpers'
 import {
@@ -66,7 +67,7 @@ test('the sent context stays pinned even if someone edits the visible snapshot n
 test('planning resolves a note’s names from its declarations, as passed text arguments', () => {
   let { r, path } = setup()
   r = addRow(r, path.slice(0, -1), NOTE_TYPE, 'Required: {{subject}}', 7, { id: 'templated-note' })
-  r = addRefAt(r, [...path.slice(0, -1), 'templated-note'], 'subject', primitive(r.store, 'string'), 8, put(r.store, { data: { description: { content: 'prevent double bookings' } }, children: [] }), 'subject')
+  r = addRefAt(r, [...path.slice(0, -1), 'templated-note'], 'subject', primitive(r.store, 'string'), 8, textValue(r.store, 'prevent double bookings'), 'subject')
   const preview = taskWorkContext(r, path)
   expect(preview.blockers).toEqual([])
   expect(preview.prompt).toContain('Required: prevent double bookings')

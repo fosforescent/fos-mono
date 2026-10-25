@@ -1,4 +1,5 @@
 /** Requirements and allocations are one kind of row, inverses of each other; authority moves through the allocate primitive. */
+import { textOf } from './index'
 import { addTask, createReplica, headCid, view, type Replica } from './replica'
 import { content, libAt, resolveScope, valueContent } from './graph'
 import { primitiveRef, publishPrimitive, primitiveExecutors } from './primitives'
@@ -159,6 +160,6 @@ test('a task requirement is a value containing a done task; a confirmation is a 
   expect(view(r, [])!.tasks.find(t => t.id === 't')!.done).toBe(true)
   // the bound value stays the row's value; the pattern on its left is what was asked
   const cid = resolveScope(r.store, headCid(r), ['t', 'rx'])!
-  expect(valueContent(r.store, cid).data.description?.content).toBe('cheap')
-  expect(content(r.store, cid).data.description?.content).toBe('fast or cheap')
+  expect(textOf(r.store, cid)).toBe('cheap')
+  expect(textOf(r.store, cid)).toBe('fast or cheap')
 })

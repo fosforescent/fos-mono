@@ -1,3 +1,4 @@
+import { textValue } from './index'
 import { primitive } from './primitives'
 import { declareTestCapability } from './test-helpers'
 import {
@@ -7,7 +8,7 @@ import {
   serializeReplica, loadReplica, nestScope, setHandlerEnabledAt, valueContent, evaluationSteps
 } from './index'
 
-const leaf = (r: ReturnType<typeof createReplica>, name: string) => put(r.store, { data: { description: { content: name } }, children: [] })
+const leaf = (r: ReturnType<typeof createReplica>, name: string) => textValue(r.store, name)
 const at = (r: ReturnType<typeof createReplica>, path: string[]) => resolveScope(r.store, headCid(r), path)!
 
 test('a nested document inherits device ref declarations without writing device declarations into the document', () => {
