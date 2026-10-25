@@ -26,7 +26,7 @@ The language runs as a **persistent service** that exposes endpoints for unsatis
 7. [Actors and Effects](#7-actors-and-effects)
 8. [Service Model](#8-service-model)
 9. [Graph Representation](#9-graph-representation)
-10. [Implementation Notes](#10-implementation-notes)
+10. [Interfaces](#10-interfaces)
 
 ---
 
@@ -721,9 +721,9 @@ ALIAS node (mutable reference):
 
 ---
 
-## 10. Implementation Notes
+## 10. Interfaces
 
-### 10.1 New Primitives Required
+### 10.1 Primitives
 
 ```typescript
 // Type system
@@ -742,87 +742,7 @@ SCOPE, BINDING, RULE
 ACTOR, CAPABILITY, PROVIDES_MODALITY, CONNECTION
 ```
 
-### 10.2 Store Extensions
-
-```typescript
-class FosStore {
-  // Existing...
-
-  // Type checking via pattern matching
-  checkType(value: Node, type: Node): boolean
-  inferType(expr: Expression): Node
-
-  // Scope management
-  createScope(parent?: Scope): Scope
-  lookup(scope: Scope, symbol: Symbol): Node | Hole
-  bind(scope: Scope, symbol: Symbol, value: Node): Scope
-
-  // Modal logic
-  availableModalities(): Set<Modality>
-  requireModality(m: Modality): void | Hole
-
-  // Actor registry
-  registerActor(actor: Actor): void
-  findHandler(effectType: EffectType): Actor | null
-  emitEffect(effect: Effect): Promise<Node | Hole>
-
-  // Service model
-  evaluate(): { result: Node, holes: Hole[] }
-  generateEndpoints(holes: Hole[]): Endpoint[]
-  fill(endpointId: string, value: Node): void
-}
-```
-
-### 10.3 Interpreter Extensions
-
-```typescript
-class FosInterpreter {
-  // Existing...
-
-  // Partial evaluation
-  evaluatePartial(): { expr: Expression, holes: Hole[] }
-
-  // Hole management
-  createHole(type: Type, modalities: Modality[]): Hole
-  fillHole(hole: Hole, value: Node): Expression
-
-  // Effect handling
-  handleEffect(effect: Effect): Promise<Node | Hole>
-
-  // Modal checking
-  checkModality(required: Modality): boolean
-  withModality<T>(m: Modality, f: () => T): T | Hole
-}
-```
-
-### 10.4 Service Layer
-
-```typescript
-class FosService {
-  store: FosStore
-  interpreter: FosInterpreter
-  holes: Map<string, Hole>
-  endpoints: Map<string, Endpoint>
-  actors: Map<string, Actor>
-
-  // Lifecycle
-  initialize(graph: Node): void
-  evaluate(): void
-
-  // Endpoints
-  exposeEndpoints(): Endpoint[]
-  handleRequest(endpointId: string, value: Node): void
-
-  // Actors
-  registerActor(actor: Actor): void
-  disconnectActor(actorId: string): void
-
-  // Events
-  handleEvent(event: Event): void
-}
-```
-
-### 10.5 REST API
+### 10.2 REST API
 
 ```
 POST   /api/fulfill/:endpointId    - Fill a hole
@@ -834,7 +754,7 @@ DELETE /api/actors/:id             - Disconnect actor
 GET    /api/modalities             - List available modalities
 ```
 
-### 10.6 WebSocket Events
+### 10.3 WebSocket Events
 
 ```typescript
 // Client -> Server

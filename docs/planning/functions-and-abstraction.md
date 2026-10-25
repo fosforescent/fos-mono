@@ -1,9 +1,5 @@
 # Functions and Abstraction
 
-## Status: Working Ideas (Not Settled)
-
-These are ideas being explored. They need to be fitted together with the other pieces.
-
 ## Core Insight: Constructor vs Function
 
 The only difference between a constructor and a function is **whether they get rewritten on evaluation**:

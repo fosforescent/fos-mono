@@ -163,10 +163,7 @@ proveEquality(a: FosNode, b: FosNode): FosNode | null {
 ### Pattern Matching with Proofs
 
 ```typescript
-// Current: returns matched nodes
-matchPattern(pattern: FosNode, entry: FosNode): FosNode[]
-
-// New: returns substitution context with proofs
+// Returns substitution context with proofs
 matchPatternWithProofs(
   pattern: FosNode,
   entry: FosNode,

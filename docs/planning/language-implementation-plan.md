@@ -18,7 +18,7 @@ This document outlines the plan for implementing the core FOS language semantics
 
 **Rationale:** More neutral terminology that doesn't imply specific interpretation.
 
-| Current | New |
+| From | To |
 |---------|-----|
 | `instruction` | `left` |
 | `target` | `right` |
@@ -27,14 +27,7 @@ This document outlines the plan for implementing the core FOS language semantics
 | `instructionCid` | `leftCid` |
 | `targetCid` | `rightCid` |
 
-**Files affected:**
-- `shared/dag-implementation/expression.ts`
-- `shared/dag-implementation/store.ts`
-- `shared/types.ts` (FosPathElem, etc.)
-- `frontend/vanilla/expression-tree.ts`
-- All other files referencing these terms
-
-## Structural Numbering System (Future)
+## Structural Numbering System
 
 **Idea:** Simple nodes get hierarchical numbers instead of content hashes.
 
@@ -78,8 +71,8 @@ Add to `primitive-node.ts`:
 - `getEqNode` - Equality type
 - `getReflNode` - Reflexivity proof
 - `getTransNode` - Transitivity/composition
-- `getSumNode` - Coproduct (already exists as various primitives)
-- `getProductNode` - Product (already exists)
+- `getSumNode` - Coproduct
+- `getProductNode` - Product
 
 ### Phase 2: Proof-Returning Pattern Matching
 

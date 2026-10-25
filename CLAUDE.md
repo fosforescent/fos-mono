@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Fosforescent is a distributed, collaborative workflow system that combines human and AI inputs through a visual graph-based interface. It's built on a **dependently typed, modal, datalog-like language** using term graph rewriting. The project is in early development stages.
+Fosforescent is a distributed, collaborative workflow system that combines human and AI inputs through a visual graph-based interface, built on a **dependently typed, modal, datalog-like language** using term graph rewriting.
 
 ### Language Design Summary
 
@@ -17,32 +17,14 @@ The core language combines several advanced concepts:
 - **Partial Evaluation**: Expressions that can't be satisfied become service endpoints (holes)
 - **HoTT Foundations**: Variable binding uses equality types with reflexivity proofs
 
-See `docs/language-design.md` for the full language specification and `docs/implementation-roadmap.md` for the implementation plan; most of that plan is not implemented. What runs today is the sync core (`shared/sync/`, `docs/sync.md`): rows, mutable refs, requirements and handlers, pattern-typed accept rules, and evaluation as a step/effect journal (`shared/sync/evaluation.ts`, `backend/sync/evaluation.ts`).
+See `docs/language-design.md` for the full language specification, `docs/implementation-roadmap.md` for the implementation plan, and `docs/sync.md` for the sync core design.
 
-## Architecture
+## Design Principles
 
-### Monorepo Structure
-- **backend/**: Node.js/Express API server with Prisma ORM and PostgreSQL (pgvector for row search); the account server is one peer among others
-- **shared/**: Core graph implementation and type definitions shared between web, desktop and backend
-- **shared/sync/**: Offline/online sync on the FosStore graph (identity-keyed three-way merge, CHOICE nodes for divergences, peer-link protocol); see `docs/sync.md`
-- **web/**: Vanilla-TS task UI used by the browser and wrapped by the Tauri desktop/mobile app; offline-first via localStorage replica
-- **infra/**: Infrastructure configuration including Terraform, Docker Compose, the Prisma schema and migrations (`infra/prisma/`) and API smoke tests
-- **desktop/**: Tauri shell = the `fos` binary: GUI mode and a Rust CLI/REPL mode over the same `.fos/` state (`fos <dir>` = project context, `fos` = home/account context); see `desktop/CLAUDE.md` and `docs/sync.md`
-- **docs/**: Documentation and architecture guides
-
-### Core Graph System
-The heart of Fosforescent is a content-addressable graph implementation in `shared/dag-implementation/`:
-- **FosNode**: Primary node implementation with cryptographic content addressing
-- **FosStore**: Graph storage and querying system
-- **shared/sync/**: everything above the store: mutable refs, rows, requirements, merge, protocol, evaluation, triggers (`docs/sync.md`)
-
-### Key Technologies
-- **Web UI**: vanilla TypeScript, Vite (`web/`), wrapped by Tauri for desktop and mobile
-- **Backend**: Node.js, Express, Prisma, PostgreSQL with pgvector (Vertex embeddings for row search)
-- **Desktop/CLI**: Tauri 2 + Rust, with the TypeScript sync core embedded in QuickJS
-- **Build**: Vite for web, tsc for backend, cargo/tauri for desktop, Docker for the backend image
-- **Testing**: node scripts in `web/tests`, Jest in `backend/` and `shared/`, `node --test` in `desktop/agent-runtime`
-- **Infrastructure**: Docker Compose, Terraform on GCP, Cloudflare Pages for the web app
+- The account server is one peer among others.
+- The web UI is offline-first.
+- Nodes are immutable - mutations create new nodes.
+- Cids must carry the data version (`FOS_DATA_VERSION` in `shared/version.ts`). Data in another version is refused and reset, never migrated; see `docs/cid-versioning.md`.
 
 ## Development Commands
 
@@ -96,90 +78,14 @@ cd desktop/src-tauri && cargo check
 
 ## Build Configuration
 
-- `web/`: Vite SPA; `tsc && vite build`. The same build runs in the browser and inside the Tauri webview.
-- `backend/`: `tsc`; `Dockerfile` builds the image deployed to Cloud Run (`.github/workflows/deploy-backend.yml`).
-- `desktop/`: `tauri build`; its hooks run `npm run build:core` first, bundling `shared/sync/embed.ts` into the gitignored `src-tauri/js/fos-core.js` the binary embeds (run it by hand before a bare `cargo` build or test).
-- Docker Compose (`infra/`): PostgreSQL (pgvector) and the backend.
+- `desktop/`: run `npm run build:core` by hand before a bare `cargo` build or test, so the embedded core (`src-tauri/js/fos-core.js`, gitignored) is current.
 
-## Database Schema
+## Working on the Code
 
-PostgreSQL via Prisma (`infra/prisma/schema.prisma`):
-- **UserModel**: User accounts with Stripe integration
-- **FosNodeModel**: Content-addressable graph nodes
-- **RowEmbeddingModel**: pgvector row embeddings (768-dimensional Vertex `text-embedding-005`) for semantic and market search
-- **IntegrationConnectionModel**, **PeerInviteModel**: OAuth connections and peer invite tokens
-- **MCPServerModel**, **MCPToolModel**, **UserMCPServerAccessModel**: MCP servers that MCP peers run tools on
-- **UserTokenBalanceModel**, **TokenTransactionModel**, **TokenPurchaseModel**: fos points ledger
-- Email and authentication event tracking
-
-## Testing Strategy
-
-- **Web**: `web/tests/*.cjs` drive the real UI controller against an in-memory DOM and fake transports (`npm test` in `web/`)
-- **Shared**: Jest over merge, protocol, refs, evaluation, triggers and the cid format (`shared/sync/*.test.ts`, `shared/dag-implementation/cid.test.ts`)
-- **Backend**: Jest with injected dependencies, no network (`backend/**/*.test.ts`); `infra/apiTests` holds manual API smoke scripts
-- **Desktop**: `cargo test --bin fos`, `node --test` in `desktop/agent-runtime`
-
-## Development Notes
-
-- The graph system uses cryptographic hashing (CID) for content addressing; cids carry the data version (`v0.0.1-…`, `FOS_DATA_VERSION` in `shared/version.ts`, also the standard library's version). Older data is not migrated: it is refused and has to be reset, see `docs/cid-versioning.md`
-- Nodes are immutable - mutations create new nodes
-- The system supports both local and planned distributed operation via DHT
-- Row embeddings live in PostgreSQL (pgvector) and are reindexed after each save (`backend/search/rowIndex.ts`)
-- Authentication uses JWT with Stripe for payments/subscriptions
-
-### Key Design Documents
-
-**Read these before making significant changes to the core system:**
-
-- `docs/sync.md` - The system as built: store, rows, refs, merge, peers, the event grammar, handlers and evaluation
-
-- `docs/language-design.md` - Complete language specification including:
-  - Type system (dependent types, patterns as types, modal types)
-  - Evaluation model (partial evaluation, holes, continuations)
-  - Actor/effect system
-  - Service model (how programs become services)
-  - Graph representation of all constructs
-
-- `docs/implementation-roadmap.md` - Phased implementation plan with:
-  - Phase-by-phase breakdown
-  - File changes required for each phase
-  - Code examples and interfaces
-  - Testing checklist
-
-## Directory CLAUDE.md Files
-
-Each major directory in this monorepo contains its own `CLAUDE.md` file with detailed documentation about that specific area. These files provide:
-
-- **Directory Summary**: Purpose and functionality of the directory
-- **Dependencies**: External and internal dependencies
-- **Data Inputs/Outputs**: What data flows in and out
-- **Events Handled**: What events the system responds to
-- **Data Transformations**: How data is processed
-- **Component Details**: Specific components and their responsibilities
-- **TODOs**: Current and future tasks for that directory
-
-### Important Reminders for Claude Code:
-
-1. **Always check directory CLAUDE.md files** when working in a specific area - they contain crucial context about that part of the system
-2. **Keep directory CLAUDE.md files up to date** when making changes to a directory's functionality
-3. **Use the TODOs sections** in directory CLAUDE.md files to track ongoing work and future improvements
-4. **Reference these files** when explaining code or making architectural decisions
-
-### Directory CLAUDE.md Locations:
-
-- `backend/CLAUDE.md` - Backend server, sync host and handlers
-- `backend/auth/CLAUDE.md` - Authentication system
-- `backend/email/CLAUDE.md` - Email system
-- `backend/subscription/CLAUDE.md` - Payment and subscriptions
-- `docs/CLAUDE.md` - Documentation and architecture
-- `infra/terraform/CLAUDE.md` - Terraform infrastructure configuration
-- `web/CLAUDE.md` - Web UI (browser and Tauri webview)
-- `desktop/CLAUDE.md` - Tauri shell, `fos` CLI/REPL, agent runtime
-- `infra/prisma/CLAUDE.md` - Database schema and management
-- `shared/CLAUDE.md` - Shared package overview
-- `shared/dag-implementation/CLAUDE.md` - Core graph system
-- `shared/sync/CLAUDE.md` - Offline/online sync core
-- `infra/CLAUDE.md` - Infrastructure, Docker, deployment
+- Read `docs/sync.md`, `docs/language-design.md` and `docs/implementation-roadmap.md` before making significant changes to the core system.
+- Docs state what we want, never what the code does. To learn what the code does, read the code; do not trust a doc's description of it and never write one.
+- Always check the directory `CLAUDE.md` file when working in a specific area. When a design decision changes, update the intent there; do not add descriptions of the implementation.
+- Use the TODOs sections in directory `CLAUDE.md` files to track planned work, phrased as intent without status.
 
 ## Dev Tips
 

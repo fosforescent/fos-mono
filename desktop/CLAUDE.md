@@ -1,16 +1,9 @@
 # Desktop CLAUDE.md
 
 ## Directory Summary
-The desktop directory contains the Tauri-based desktop and mobile application for Fosforescent. It wraps the `web/` vanilla-TS frontend and adds native capabilities including file system access, directory navigation, and browser-based authentication. Mobile (iOS/Android) builds run in CI — see `docs/mobile-release.md`.
+The Tauri desktop and mobile application for Fosforescent. It wraps the `web/` frontend and adds native capabilities (file system access, directory navigation, browser-based sign-in). Mobile release: `docs/mobile-release.md`.
 
-## Key Components
-
-### Tauri Configuration
-- `src-tauri/tauri.conf.json` - Main Tauri configuration
-- `src-tauri/Cargo.toml` - Rust dependencies
-- `src-tauri/capabilities/default.json` - Permission capabilities
-
-### One binary, two modes (`src-tauri/src/`)
+## One binary, two modes
 `fos` is the Tauri GUI *and* a Rust CLI/REPL over the same context directory and `.fos/` state (design: `docs/sync.md`, "The `fos` binary"):
 
 ```
@@ -25,41 +18,28 @@ fos . ls <id> | node <id> --out node.json | node <id> --write node.json  navigat
 fos [dir] peers     the .fos stores on this machine this one is linked with; `peers ls <name>` reads one's tree
 ```
 
-- `main.rs` - clap entry: resolves the context (`fos <dir>` or `~`), dispatches to the GUI (`app_lib::run()` with `FOS_TARGET_DIR`, `FOS_DIR`, `FOS_SERVER`, `FOS_HOME_CONTEXT`) or the CLI
-- `core.rs` - QuickJS (`rquickjs`, `parallel` feature) host for the embedded sync core `js/fos-core.js` (a build product, not committed: `npm run build:core` bundles `shared/sync/embed.ts` + `js/prelude.js` shims, and the Tauri dev/build hooks and the release workflows run it; `build.rs` fails with that instruction when it is missing); Rust never reimplements merge/sync semantics, it passes JSON strings through `fosCore.*`
-- `project.rs` - context resolution: `fos.config.toml` discovery (walk up), `[attach]`/`[serve]` config (`toml`; `[server] to/from` and `[peers.<name>]` policy tables pass through to the web app untouched, see `docs/sync.md` "Peer policies"), git branch from `.git/HEAD`, `.fos/` files (`device.json`, `session.json`, `replicas/<branch>.json`, `.gitignore`), home mode = `~/.fos` (optional `~/.fos/config.toml` for the server; `FOS_API_URL` overrides)
-- `workspace.rs` - an open replica for the current branch + session; edits, `sync()` (first sync asks the account where the device attaches; then node by node: `nodeSyncBegin`, and each request `nodeSyncStep` returns goes to `client::provide_node` until it is done), branch switching, `status()`. The home context starts in Home (`homePath`), where a device root's own rows live. Every store is a device root that ships the standard library; only the home context's has Home. Opening a store links it with Home's store and the project stores above it (`link_local_stores`, `stores.rs`), writing both stores (one fos process runs at a time); `browse_store` reads a linked store's tree through node exchange on its files (`fos peers`, `fos peers ls <name>`).
-- `stores.rs` - the `.fos` stores on this machine a store links with (Home's and those above it), and where the stores that linked it are (`.fos/stores.json`); compiled into both the CLI and the GUI (`link_local_stores` and `local_store` commands in `lib.rs`)
-- `client.rs` - account HTTP (`ureq`): login, connect-token attach with approval polling, device login (`/auth/device/start|poll`), attachment, node requests (`provide_node`, the sync transport), proposal decisions, detach
-- `local_server.rs` - `tiny_http` server: `/mcp` (the shared `fos_*` MCP vocabulary through the core's `mcp` entry point, as the directory's owner), `/status`, `/events?since=` long-poll
-- `commands.rs` - CLI commands and the `rustyline` REPL (`ls add done open rm mv cd sync inbox ack status approve reject attach login branches`; `inbox`/`ack <id>` list and acknowledge what relays delivered to this store's peer, through the embed's `relayInbox`/`relayAck`; a user session's sync also pulls the server's member entry above Home)
-- `lib.rs` - Tauri commands for the GUI, exactly the set the web app invokes: `find_project` gives the web app the context (`web/src/project.ts`): the nearest config, or in home mode a synthesized `[attach] server/name` so the GUI also stores state in `~/.fos`; `read_project_file`/`write_project_file` for `.fos/` files; `link_node_directory`/`list_node_directory`/`read_node_file`/`hash_node_file` for linked directories; `fetch_url` for the `-fetch` device primitive (one http(s) request made natively, no browser CORS, body cut at 1 MB) (`web/src/filesystem.ts`; a project window lists its own directory at its root, and `find_project` says `home` so the home context does not list `~`); plus the `node_agent::*` and `agents::*` commands
-- `files.rs` - files addressed relative to a linked root: `resolve_in_root` (refuses `..`, paths outside the root, symbolic links, `.fos`/`.git`) and `hash_in_root` (streamed SHA-256 for the checksums file-reference rows keep); compiled into the binary too so `cargo test --bin fos` runs its tests
-- `node_agent.rs` - authenticated loopback MCP relay for "Connect to agent" (`web/src/node-agent.ts`); desktop targets only (`tiny_http` is not built for iOS/Android), the mobile apps compile a stub in `lib.rs` whose commands return an error
-- `agents.rs` - spawns `../agent-runtime` (CLI launches in a visible terminal, local git), validates repositories, `agent_clis` reports which agent CLIs (`claude`, `codex`) are on PATH, whether VS Code has the Claude Code extension and whether Claude Desktop is set up, so the web app shows them as local peers; `open_agent_link` opens only `vscode://anthropic.claude-code/open?` and `claude://claude.ai/new?` links
-- `claude_desktop.rs` - `claude_desktop_mcp`: preview, add or remove one `fos-…` entry in Claude Desktop's `claude_desktop_config.json` (the only file it touches; other entries kept, `.bak` of the old file)
+### Files (`src-tauri/src/`)
+- `main.rs` - entry: resolves the context and dispatches to the GUI or the CLI
+- `core.rs` - host for the embedded sync core; Rust never reimplements merge/sync semantics
+- `project.rs` - context resolution and `.fos/` files; `[server]` and `[peers.<name>]` policy tables pass through to the web app untouched
+- `workspace.rs` - an open replica for the current branch and session. Every store is a device root that ships the standard library; only the home context's has Home.
+- `stores.rs` - the `.fos` stores on this machine a store links with
+- `client.rs` - account HTTP client
+- `local_server.rs` - local MCP, status and events server
+- `commands.rs` - CLI commands and the REPL
+- `lib.rs` - Tauri commands for the GUI: exactly the set the web app invokes. The home context must not list `~`.
+- `files.rs` - files addressed relative to a linked root; must refuse `..`, paths outside the root, symbolic links, `.fos` and `.git`
+- `node_agent.rs` - authenticated loopback MCP relay for agents (desktop targets only)
+- `agents.rs` - local agent launches; may open only `vscode://anthropic.claude-code/open?` and `claude://claude.ai/new?` links
+- `claude_desktop.rs` - edits one `fos-…` entry in Claude Desktop's `claude_desktop_config.json`, the only file it may touch, keeping other entries and a `.bak` of the old file
 
-Build/test: `cargo build` (binary at `target/debug/fos`), `cargo test --bin fos`. `make desktop-install` builds the release bundle and installs it on this computer (`scripts/desktop-install.cjs`); `make tauri-dev` runs the separate dev app (`tauri.dev.conf.json`: identifier `com.fosforescent.app.dev`, `scripts/tauri-dev.cjs` sets `FOS_STATE_HOME=~/.fos-dev`, which stands in for the home directory, so its state is in `~/.fos-dev/.fos`), so the installed app and the dev app can run side by side without sharing WebView storage, device identity or replicas. Ports: only `tauri dev` opens one (Vite on 5173); the installed app has none, and `fos run` takes `--port` when two CLIs serve at once. Release builds for macOS/Windows/Linux: `.github/workflows/desktop-release.yml` (tag `v*` → GitHub Release, unsigned; see `docs/mobile-release.md`, Desktop). After changing `shared/sync`, rebuild the core bundle with `cd desktop && npm run build:core` (esbuild; `web/node_modules/.bin/esbuild` also works when the root workspace is not installed). Browser sign-in for the CLI needs the backend's `WEB_URL` to point at the web app.
-
-### Web integration
-The web app talks to the shell only through `tauriInvoke` in `web/src/project.ts`, `filesystem.ts`, `node-agent.ts`, `agents.ts` and `local-git.ts`.
-
-## Dependencies
-
-### Rust Dependencies
-- **tauri 2.9.5** - Core Tauri framework
-- **tauri-plugin-log** - Logging (dev only)
-- **tauri-plugin-opener** (`~2.4`, the newest that keeps tauri 2.9.5 locked; `opener:default` in `capabilities/default.json`) - opens URLs in the system browser. The web app calls it through `openExternal` (`web/src/project.ts`, `plugin:opener|open_url`) for the OAuth integration peers (GitHub/Google/Discord): Google refuses sign-ins from embedded webviews (`disallowed_useragent`), and navigating the app's own webview away would lose the app. The provider's callback lands on the web site; the app checks the connection when it regains focus (`App.checkPendingIntegration`).
-- No shell/fs/dialog/deep-link plugins: file access goes through the app's own commands (`lib.rs`)
-- **rquickjs** - embedded JS engine for the sync core
-- **ureq / tiny_http / toml / clap / rustyline** - account client, local server, config, CLI, REPL
-- **dirs** - Home directory detection
-- **open** - Browser opening
-- **tokio** - Async runtime
-
-### npm Dependencies
-- **@tauri-apps/api** - Tauri JavaScript API
-- **@tauri-apps/cli** - Tauri CLI tools
+### Rules
+- The web app talks to the shell only through `tauriInvoke`.
+- No shell/fs/dialog/deep-link plugins: file access goes through the app's own commands. Capabilities stay limited to `core:default` and `opener:default`.
+- OAuth integration sign-ins open in the system browser (Google refuses embedded webviews, and navigating the app's own webview away would lose the app); the app re-reads the connection when it regains focus.
+- The CLI signs in with the device flow (`fos login`), approved from the signed-in web app.
+- The installed app and the dev app must run side by side without sharing WebView storage, device identity or replicas.
+- iOS icons must have no alpha channel (App Store Connect rejects RGBA icons).
 
 ## Requirements
 
@@ -69,18 +49,6 @@ The web app talks to the shell only through `tauriInvoke` in `web/src/project.ts
   ```bash
   sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev
   ```
-
-## CLI Commands
-
-The `fos` CLI is the primary way to launch the desktop app:
-
-```bash
-fos .             # Launch GUI in current directory
-fos ~/project     # Launch GUI in specific directory
-fos init          # Write fos.config.toml in the current folder
-fos repl          # Start interactive REPL
-fos help          # Show help
-```
 
 ## Development Commands
 
@@ -96,78 +64,25 @@ npm run build:core
 rustup update stable
 ```
 
-## Environment Variables
+- `cargo build` (binary at `target/debug/fos`), `cargo test --bin fos`.
+- After changing `shared/sync`, rebuild the core bundle with `cd desktop && npm run build:core` (`web/node_modules/.bin/esbuild` also works when the root workspace is not installed).
+- `make desktop-install` builds the release bundle and installs it on this computer; `make tauri-dev` runs the separate dev app (state in `~/.fos-dev/.fos`).
+- `fos run` takes `--port` when two CLIs serve at once.
+- Browser sign-in for the CLI needs the backend's `WEB_URL` to point at the web app.
+- Release builds for macOS/Windows/Linux: `.github/workflows/desktop-release.yml` (tag `v*`). Mobile: `.github/workflows/mobile-android.yml` and `mobile-ios.yml`; procedure and secrets in `docs/mobile-release.md`.
+- `node scripts/desktop-install.cjs --path-only` repairs PATH for an existing Windows installation; new terminals inherit the change.
 
-The Tauri app reads these environment variables on startup:
+## Environment Variables
 
 - `FOS_TARGET_DIR` - The directory to open (set by CLI launcher)
 - `FOS_SERVER`, `FOS_HOME_CONTEXT` - account server and home mode (set by main.rs)
-
-## Data Inputs/Outputs
-
-### Input Sources
-- `fos.config.toml` and `.fos/` project state
-- Linked directories (read-only listings, previews and SHA-256 checksums)
-- Agent runtime events (NDJSON from `agent-runtime`)
-
-### Output Destinations
-- Web app via IPC (invoke results)
-- System browser (OAuth sign-ins through `tauri-plugin-opener`)
-- `.fos/` project state files
-
-## Sign-in
-
-The web app signs in with the account directly; OAuth integration sign-ins open in the system browser and the app re-reads the connection when it regains focus. The CLI uses the device flow (`fos login`, `/auth/device/start|poll`), approved from the signed-in web app.
-
-## Build Configuration
-
-### Development
-- Uses `npm run dev:web` (runs the `web/` Vite dev server)
-- Connects to Vite dev server at `http://localhost:5173`
-
-### Production
-- Builds the web app via `npm run build:web`
-- Bundles it from `../../web/dist`
-- Creates native installers for all desktop platforms
-
-### Mobile (iOS/Android)
-- Built in GitHub Actions (`.github/workflows/mobile-android.yml` and `mobile-ios.yml`); `gen/android` and `gen/apple` are initialized fresh in CI
-- Android release signing is injected post-init by `.github/scripts/patch-android-signing.sh`
-- iOS uses Xcode automatic cloud signing via App Store Connect API key
-- App icon source: `src-tauri/app-icon.png` (1024px) — CI runs `npx tauri icon` after init, then `.github/scripts/flatten-ios-icons.mjs` strips the alpha channel from the iOS icons (App Store Connect rejects RGBA icons, which tauri emits even with `bg_color`)
-- Full release procedure and required secrets: `docs/mobile-release.md`
-
-## Security
-
-- CSP is currently disabled (`null`) for development
-- Only `core:default` and `opener:default` capabilities; no fs/shell/deep-link plugins
-
-## Current Implementation Status
-
-### ✅ Completed
-- **Project state**: `.fos/` shared by the GUI, CLI and REPL (`device.json`, `session.json`, `replicas/<branch>.json`)
-- **CLI launcher**: `fos .` launches the GUI, `fos init` writes `fos.config.toml`, `fos repl` for the terminal
-- **Agents**: CLI launches in a terminal through `agent-runtime`, connected to the node over a loopback MCP as the agent peer; VS Code and Claude Desktop links; Claude Desktop MCP config
-
-### ✅ Completed (continued)
-- **Online/offline transition**: the `web/` UI keeps a replica in webview localStorage, works offline, and merges with the account on login via `shared/sync` (three-way merge on the FosStore graph, CHOICE nodes for divergences, optional attachment to a single partition). See `docs/sync.md`.
-
-### ❌ Not Started
-- File watching for .fos changes
-- Proper CSP for production builds
-- Custom app icons for all platforms
-- Auto-update functionality
-- Window state persistence
-- Tray icon support
+- `FOS_API_URL` - overrides the account server
 
 ## TODOs
-- [x] Add merge conflict resolution when transitioning offline→online (`shared/sync`, Choice nodes)
-- [ ] File-backed `ReplicaStorage` adapter writing the replica into `.fos/` (currently localStorage on all platforms)
-- [ ] Add file watching for .fos changes
-- [ ] Add proper CSP for production builds
+- [ ] File-backed `ReplicaStorage` adapter writing the replica into `.fos/`
+- [ ] File watching for .fos changes
+- [ ] Proper CSP for production builds
 - [ ] Replace upscaled `src-tauri/app-icon.png` with real 1024×1024 artwork
-- [ ] Add auto-update functionality
-- [ ] Implement window state persistence
-- [ ] Add tray icon support
-
-The Windows NSIS installer automatically adds its actual install directory (default `%LOCALAPPDATA%\Fosforescent`) to the user PATH and removes it during uninstall (`windows/installer-hooks.nsh`, `scripts/desktop-cli-path.ps1`). `node scripts/desktop-install.cjs --path-only` repairs PATH for an existing installation; new terminals inherit the change.
+- [ ] Auto-update functionality
+- [ ] Window state persistence
+- [ ] Tray icon support
