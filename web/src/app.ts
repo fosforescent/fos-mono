@@ -32,7 +32,7 @@ import { executionInput, executionSnapshot } from '../../shared/sync/execution-a
 import { setConstructorEnabledAt, contextMemberRefs, discoverHandlers, contextMembers, publishTemplate, setHandlerEnabledAt, instantiateTemplateValue, shareRefAt, transferRefGraph, copyBidRow, draftBid, rowsOfType } from '../../shared/sync/index'
 import { ensureLocalMcp, stopLocalMcp } from './node-agent'
 import { capabilityLabels, MARKET_PEER } from '../../shared/sync/graph'
-import { NODE_PERMISSION_DEFAULT, isNodeProjection, nodeBranches, nodeBranchBase, validateNodeShape, exchangeNode, nodeShape, sameNodeShape, mergeNodeShape, installNodeShape, materializedNodePaths, nodePersistenceAllowed, rememberNodeSync, nodeSyncKey, nodeSyncRequest, outgoingNodeShape, establishNodeSync, provideNode, pullNode, acceptProvidedNode, acceptTemplateNodes, planNodeSync, nodeSyncPush, finishNodeSync, nodeTemplateRequests, blankNodeRequest, ownHeldChildren, isBlank as isBlankShape, finishBlankNode, nodeLinkEndpoint, nodeRequestLinkId, setNodeLinkMask, isPeerReference, acceptSubmissionRows, type NodeMask, type NodeRequest, type NodeProvider, type ProvidedNode, type ProposalView } from '../../shared/sync/index'
+import { NODE_PERMISSION_DEFAULT, isNodeProjection, nodeBranches, nodeBranchBase, validateNodeShape, exchangeNode, nodeShape, sameNodeShape, mergeNodeShape, installNodeShape, materializedNodePaths, nodePersistenceAllowed, rememberNodeSync, nodeSyncKey, nodeSyncRequest, outgoingNodeShape, establishNodeSync, provideNode, pullNode, acceptProvidedNode, acceptTemplateNodes, planNodeSync, nodeSyncPush, finishNodeSync, nodeTemplateRequests, blankNodeRequest, ownHeldChildren, isBlank as isBlankShape, finishBlankNode, nodeLinkEndpoint, nodeRequestLinkId, setNodeLinkMask, isPeerReference, acceptSubmissionRows, pinnedContent, acceptPinnedContent, type NodeMask, type NodeRequest, type NodeProvider, type ProvidedNode, type ProposalView } from '../../shared/sync/index'
 import { requestPeerNode } from './api'
 import { membershipSyncContext, sendPullRequest, UNKNOWN_PROVIDER, type NodeSyncContext } from '../../shared/sync/node-sync'
 import { parsePastedRows } from './paste'
@@ -1452,11 +1452,15 @@ export class App {
           if (!state && isBlankShape(remote)) baseline = remote
           const dirty = !pullOnly && !sameNodeShape(local, baseline)
           r = establishNodeSync(this.state.replica, path, request, remote, this.now())
+          acceptPinnedContent(r, remote, remote.templates)
           const outgoingBase = outgoingNodeShape(r, path, peer, baseline), outgoing = outgoingNodeShape(r, path, peer, local)
           if (dirty && !sameNodeShape(outgoingBase, outgoing)) {
-            remote = ownHeldChildren(await connection.request({ ...request, update: { base: remote, value: mergeNodeShape(outgoingBase, outgoing, remote) } }), selves)
+            // the values this round pins that the owner does not have go with the update
+            const value = mergeNodeShape(outgoingBase, outgoing, remote), pinned = pinnedContent(r, value, remote)
+            remote = ownHeldChildren(await connection.request({ ...request, update: { base: remote, value }, ...(pinned ? { templateNodes: pinned } : {}) }), selves)
             if (!valid()) return
             validateNodeShape(remote)
+            acceptPinnedContent(r, remote, remote.templates)
           }
           const current = nodeShape(r, path)
           const accepted = mergeNodeShape(outgoingNodeShape(r, path, peer, state?.remote ?? baseline), outgoingNodeShape(r, path, peer, remote), local)
