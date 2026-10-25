@@ -4,6 +4,7 @@ const selected = new WeakMap<App, { path: string; id: string }>()
 import { combobox, type ComboOption } from './combobox'
 import { iconSvg } from './icons'
 import { HOME_TYPE } from '../../shared/sync/library-types'
+import { compareBranches } from './branch-compare'
 export function proposalPreview(app: App) {
   const choice = selected.get(app)
   if (!choice || choice.path !== JSON.stringify(app.state.view) || !app.readsRequests()) return null
@@ -36,7 +37,7 @@ export function alternativePicker(app: App, path: Scope, row: TaskView | null, t
   const active = current?.path === JSON.stringify(path) ? proposals().find(p => p.id === current.id) : undefined
   const previewing = !!active
   const options = (): ComboOption[] => [
-    ...(row?.branches?.names ?? ['Current']).map(name => ({ label: name, group: 'Branches', accessory: row?.branches && !(held && name === 'main') ? { label: requestLabel(name), pressed: !!row.branches.mergeRequests?.includes(name), run: () => app.toggleBranchMergeRequest(path, name) } : undefined, selected: !previewing && name === (row?.branches?.selected ?? 'Current'), run: () => {
+    ...(row?.branches?.names ?? ['Current']).map(name => ({ label: name, group: 'Branches', accessories: row?.branches && name !== row.branches.selected ? [{ label: `Compare ${row.branches.selected} with ${name}`, icon: 'analysis', pressed: false, run: () => compareBranches(app, path, row.branches!.selected, name) }] : [], accessory: row?.branches && !(held && name === 'main') ? { label: requestLabel(name), pressed: !!row.branches.mergeRequests?.includes(name), run: () => app.toggleBranchMergeRequest(path, name) } : undefined, selected: !previewing && name === (row?.branches?.selected ?? 'Current'), run: () => {
       clearProposal(app)
       if (row?.branches) app.selectNodeBranch(path.slice(0, -1), row.id, name, true)
       else app.refresh()
@@ -52,6 +53,7 @@ export function alternativePicker(app: App, path: Scope, row: TaskView | null, t
     if (app.state.voice || app.state.work?.busy) return []
     if (previewing) return row && query ? [{ label: `Copy to branch “${query}”`, group: 'Create', run: () => { if (app.copyProposalToBranch(active!.id, query)) { clearProposal(app); app.refresh() } } }] : []
     const actions: ComboOption[] = []
+    if (row && !query) actions.push({ label: 'New branch…', group: 'Create', run: () => { const name = window.prompt('Branch name'); if (name?.trim()) void app.createNodeBranch(path.slice(0, -1), row.id, name.trim(), true) } })
     if (row && query && !row.branches?.names.includes(query)) actions.push({ label: `Create branch “${query}”`, group: 'Create', run: () => { void app.createNodeBranch(path.slice(0, -1), row.id, query, true) } })
     if (titleMode && row && row.type !== HOME_TYPE && !row.refPeer && !row.construction && !row.template && query && query !== row.title) actions.push({ label: `Set node text to “${query}”`, group: 'Edit', run: () => app.editCurrentText(query, draft) })
     if ((titleMode || header) && row && row.type !== HOME_TYPE && !row.refPeer) actions.push({ label: 'Change template', group: 'Edit', run: () => app.openTemplatePicker(path) })

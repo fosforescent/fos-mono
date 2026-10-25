@@ -12,7 +12,6 @@ const { put, content, rowTypeAt, addConstructedRow, parsePastedRows, rawRowText,
 const TASK_TYPE = 'task'
 const PLAIN_TYPE = 'plain'
 const COMMENT_TYPE = 'comment'
-const ALLOCATION_TYPE = 'allocation'
   // what a real account server advertises with the default handler registry (backend/sync/hostHandlers.ts)
   const SERVER_CAPABILITIES = [...SERVER_TRANSPORT_CAPABILITIES, 'search', 'market', 'llm']
 const tick = () => new Promise(resolve => setImmediate(resolve))
@@ -32,7 +31,7 @@ async function main() {
   assert(document.querySelector('.peer-crumb').textContent.includes('GitHub'), 'opening a sub-peer shows where we are')
   assert(document.querySelector('.peer-tabs [aria-label="Fos server"]').getAttribute('aria-selected') === 'true')
   // its constructor makes its row here: read / write / execute toggles and Complete (connect)
-  document.querySelector('.constructor-grid [aria-label="Connect GitHub"]').click(); await tick()
+  dragConstructor('Connect GitHub').drop(document.querySelector('.ghost')); await tick()
   assert(document.querySelectorAll('.tree .constructor-body .peer-grants input').length === 3, 'a peer row has read / write / execute toggles')
   assert([...document.querySelectorAll('.tree .constructor-body button')].some(b => b.textContent === 'Complete'), 'and a Complete button')
   a.undo(); await tick()
@@ -53,7 +52,7 @@ async function main() {
   const savedSync = a.syncNow; a.syncNow = async () => {}
   // sharing with a Fos user is a row: its search box is in the row
   assert(!document.querySelector('[aria-label="Search Fos users"]'), 'no user search in the panel')
-  document.querySelector('.constructor-grid [aria-label="Share with a Fos user"]').click(); await tick()
+  dragConstructor('Share with a Fos user').drop(document.querySelector('.ghost')); await tick()
   const userSearch = document.querySelector('.tree .constructor-body [aria-label="Search Fos users"]')
   userSearch.value = 'ali ce'
   userSearch.closest('form').dispatchEvent(new window.Event('submit', { cancelable: true })); await tick()
@@ -78,7 +77,7 @@ async function main() {
   assert(peerText, 'peer permissions use the same icon grid')
   peerText.click(); await tick()
   assert.equal(a.nodePermissions(a.state.view, 'user:alice').fields, undefined, 'clicking does not change permissions')
-  dragConstructor('Text').drop(); await tick()
+  peerText.dispatchEvent(new window.Event('contextmenu', { bubbles: true, cancelable: true })); await tick()
   assert(!a.nodePermissions(a.state.view, 'user:alice').fields.includes('description'))
   assert.equal(a.nodePermissions(a.state.view).fields, undefined, 'peer override does not change the node default')
   a.removePeerHere('user:alice')
@@ -90,13 +89,14 @@ async function main() {
     const data = new Map(), transfer = { types: ['application/x-fos-constructor'], setData: (k,v) => data.set(k,v), getData: k => data.get(k) }
     const drag = new window.Event('dragstart', { bubbles: true }); Object.defineProperty(drag, 'dataTransfer', { value: transfer }); control.dispatchEvent(drag)
     const target = document.querySelector('.constructor-drop-target'); assert(!target.hidden)
-    return { control, target, drop() { const event = new window.Event('drop', { bubbles: true, cancelable: true }); Object.defineProperty(event, 'dataTransfer', { value: transfer }); target.dispatchEvent(event) } }
+    return { control, target, drop(destination = target) { const event = new window.Event('drop', { bubbles: true, cancelable: true }); Object.defineProperty(event, 'dataTransfer', { value: transfer }); destination.dispatchEvent(event); control.dispatchEvent(new window.Event('dragend')) } }
   }
-  let drag = dragConstructor('Decision'); assert.equal(drag.target.textContent, 'Disable'); drag.drop(); await tick()
-  assert.equal(document.querySelector('.constructor-grid [aria-label="Decision"]').getAttribute('aria-disabled'), 'true')
-  assert.equal(a.constructorEnabled(a.state.replica.meta.peerId, 'seed:-choice: '), false)
+  let drag = dragConstructor('Decision'); assert.equal(drag.target.textContent, '↑ Invert capability'); drag.drop(); await tick()
+  assert(document.querySelector('.constructor-grid [aria-label="Decision"]').classList.contains('negative'))
+  assert.equal(a.constructorEnabled(a.state.replica.meta.peerId, 'seed:-choice: '), true)
   a.refresh(); await tick()
-  drag = dragConstructor('Decision'); assert.equal(drag.target.textContent, 'Enable'); drag.drop(); await tick()
+  drag = dragConstructor('Decision'); drag.drop(); await tick()
+  assert(!document.querySelector('.constructor-grid [aria-label="Decision"]').classList.contains('negative'))
   assert.equal(a.constructorEnabled(a.state.replica.meta.peerId, 'seed:-choice: '), true)
   assert(document.querySelector('.constructor-drop-target').hidden)
   assert(!document.querySelector('[aria-label="Permissions"]'), 'permissions are expanded inline')
@@ -110,9 +110,10 @@ async function main() {
   assert.equal(a.nodePermissions(a.state.view).fields, undefined, 'cancelling a drag leaves permissions unchanged')
   const fieldDisable = dragConstructor('Text'); a.refresh(); await tick()
   assert(fieldDisable.control.isConnected && fieldDisable.target.isConnected, 'refresh preserves active drag source and target')
-  fieldDisable.drop(); await tick()
+  fieldDisable.control.dispatchEvent(new window.Event('dragend'))
+  document.querySelector('.constructor-grid [aria-label="Text"]').dispatchEvent(new window.Event('contextmenu', { bubbles: true, cancelable: true })); await tick()
   assert(!a.nodePermissions(a.state.view).fields.includes('description'))
-  let fieldDrag = dragConstructor('Text'); assert.equal(fieldDrag.target.textContent, 'Enable'); fieldDrag.drop(); await tick()
+  document.querySelector('.constructor-grid [aria-label="Text"]').dispatchEvent(new window.Event('contextmenu', { bubbles: true, cancelable: true })); await tick()
   assert(a.nodePermissions(a.state.view).fields.includes('description'))
   a.setNodeMask('fos:all-linked-peers', {}, a.state.view)
   assert(!document.querySelector('.view-switch'))
@@ -259,7 +260,7 @@ async function main() {
   assert.notEqual(a.currentRow().title, 'Do not rename')
   const context = document.querySelector('[data-accordion="context"]')
   context.open = true; context.dispatchEvent(new window.Event('toggle'))
-  document.querySelector('[aria-label="Input / edit"]').click()
+  if (document.querySelector('[aria-label="Input / edit"]').getAttribute('aria-pressed') !== 'true') document.querySelector('[aria-label="Input / edit"]').click()
   a.goTo([HOME_ID, second]); await tick()
   assert(document.querySelector('[data-accordion="context"]').open)
   assert.equal(document.querySelector('[aria-label="Input / edit"]').getAttribute('aria-pressed'), 'true')
@@ -312,22 +313,23 @@ async function main() {
   document.querySelector('.constructor-grid [aria-label="Resource bank"]').click()
   assert(!document.querySelector('.constructor-dialog'), 'no parameter dialog')
   const ghost = document.querySelector('.tree .task.ghost textarea.edit')
-  assert.equal(ghost.value, '@money ')
+  assert.equal(ghost.value, '', 'click selects a capability without creating a row')
   ghost.value = '@money Travel budget 50'; ghost.dispatchEvent(new window.Event('input'))
   ghost.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  for (let i = 0; i < 50 && a.currentView().tasks.find(t => t.title === 'Travel budget')?.resource.held !== 50; i++) await tick()
   const budget = a.currentView().tasks.find(t => t.title === 'Travel budget')
-  assert.equal(budget.resource.capacity, 50); assert.equal(budget.resource.type, 'account')
+  assert.equal(budget.resource.held, 50); assert.equal(budget.resource.type, 'account')
   const target = a.addRowAt([], PLAIN_TYPE, '10 Spend'), nested = a.addRowAt([target], PLAIN_TYPE, 'Keep this child')
   const paletteDrop = (el, kind) => { const event = new window.Event('drop', { bubbles: true, cancelable: true }); Object.defineProperty(event, 'dataTransfer', { value: { types: ['application/x-fos-constructor'], getData: type => type === 'application/x-fos-constructor' ? kind : '' } }); el.dispatchEvent(event) }
   // dropped on a row, its text is re-read with the marker: "$ 10 Spend", drawn from the bank above
   paletteDrop(document.querySelector(`[data-id="${target}"]`), 'account')
   assert(!document.querySelector('.constructor-dialog'))
   assert.equal(a.rowAt([target]).allocation.amount, 10)
-  assert.equal(a.rowAt([target]).allocation.resource, budget.id)
-  assert(view(a.state.replica, [HOME_ID, target]).tasks.some(t => t.id === nested))
+  assert.equal(a.rowAt([target]).allocation.resource, '', 'a typed allocation is data: it draws on no bank')
+  void nested // an argument row replaces the plain row; its children are not carried over
   a.undo(); assert.equal(a.rowAt([target]).type, PLAIN_TYPE)
   const requirement = a.addRowAtTop(parseRowInput('-$ 10 Dinner'))
-  a.applyConstructor([HOME_ID, requirement], { type: ALLOCATION_TYPE, text: 'Offer', done: false, extras: { allocation: { type: 'account', amount: 10, unit: 'USD', resource: budget.id } } }, true)
+  a.applyConstructor([HOME_ID, requirement], { type: 'capabilities.allocation', text: 'Offer', done: false, extras: { allocation: { type: 'account', amount: 10, unit: 'USD', resource: '' } } }, true)
   assert.equal(!!a.rowAt([requirement]).requirement, true)
   assert(view(a.state.replica, [HOME_ID, requirement]).tasks.some(t => (!!t.allocation && !t.requirement)))
   const repo = a.applyConstructor([HOME_ID], { type: PLAIN_TYPE, text: 'Project', done: false }, false, 'fosforescent/fos-mono')
@@ -340,7 +342,7 @@ async function main() {
   assert(document.querySelector('.constructor-grid [aria-label="Peer"]')?.draggable, 'the Peer constructor is on the device grid')
   // connections are rows: the constructor makes the row, its Complete connects
   for (const label of ['Virtual peer', 'Direct connection', 'Join with an invite code', 'Node link']) assert(document.querySelector(`.constructor-grid [aria-label="${label}"]`), label)
-  document.querySelector('.constructor-grid [aria-label="Direct connection"]').click(); await tick()
+  dragConstructor('Direct connection').drop(document.querySelector('.ghost')); await tick()
   const direct = a.currentView().tasks.find(t => t.construction?.handler === 'direct')
   assert(direct, 'the constructor made a @{direct} row')
   ;[...document.querySelectorAll(`.task[data-id="${direct.id}"] .constructor-body button`)].find(b => b.textContent === 'Complete').click()
@@ -349,7 +351,7 @@ async function main() {
   document.querySelector('.peer-tabs [aria-label="This device"]').click()
   a.addPlaceholder('connection', 'peer')
   const peerArg = a.placeholders().find(p => p.name === 'connection')
-  assert.throws(() => a.applyConstructor([...repo, peerArg.id], { type: ALLOCATION_TYPE, text: '', done: false, extras: { allocation: { type: 'account', amount: 5, unit: 'USD', resource: '' } } }), /matching/)
+  assert.throws(() => a.applyConstructor([...repo, peerArg.id], { type: 'capabilities.allocation', text: '', done: false, extras: { allocation: { type: 'account', amount: 5, unit: 'USD', resource: '' } } }), /matching/)
   a.applyConstructor([...repo, peerArg.id], { type: PLAIN_TYPE, text: '', done: false, peer: 'virtual' })
   assert.notEqual(a.placeholders().find(p => p.id === peerArg.id).status, 'missing')
   a.goTo([]); const unmet = a.addRowAtTop(parseRowInput('-$ 99 Unfilled')); a.select([unmet]); a.refresh()

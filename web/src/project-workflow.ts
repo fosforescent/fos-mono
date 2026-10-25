@@ -3,10 +3,11 @@ import {
   configureProjectWorkflow, enqueueWorkflowJob, projectWorkflow, projectWorkflows, workflowAt, workflowJob, writeWorkflowJob, executionOrigin,
   CODING_TEMPLATE, instantiateLibraryTemplate, agentRequest, validateAgentRequest, workflowTriggerPath, workflowDefault, instantiateTemplate, addTask,
   writeExecutionOrigin, nodeTrigger, setTriggerEnabled, addRow, addMemberAt, setMemberCapabilitiesAt,
-  withBranches, view, ALLOCATION_TYPE, sameValue,
+  withBranches, view, addRequirement, sameValue,
   type ProjectWorkflow, type WorkflowJob, type Replica, type Scope
 } from '../../shared/sync/index'
 import { agentContext, agentPeerId, launchAgent, localRepository } from './agents'
+import { AGENT_TOOL } from '../../shared/sync/project-workflow'
 import { inTauri, tauriInvoke } from './project'
 import { readRepositoryDeployment } from './api'
 import { hashContent, parseCid } from '../../shared/dag-implementation/cid'
@@ -126,7 +127,7 @@ export function workflowStatus(app: App): HTMLElement | null {
       retry.onclick = async () => {
         if (!window.confirm('Check the desktop terminal and worktree first. A previous agent may still be running. Create a new request?')) return
         const id = crypto.randomUUID()
-        let r = addRow(app.state.replica, path, ALLOCATION_TYPE, `Retry ${row.title}`, app.now(), { id })
+        let r = addRequirement(app.state.replica, path, `Retry ${row.title}`, app.now(), { capability: 'tool', inputs: { tool: AGENT_TOOL } }, id)
         r = writeWorkflowJob(r, [...path, id], { ...job, id, status: 'queued', error: undefined, directory: undefined, requested: app.now() }, app.now())
         await app.saveWorkflowReplica(r)
       }

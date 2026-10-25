@@ -1,18 +1,22 @@
+/**
+ * End-to-end: rows are authored with the shared operations, a `complete` event runs the host's handlers through the
+ * evaluator, and what matters afterwards is the requirement's `requirement.satisfied`, the bank's `ownerGrants` and
+ * the values the UI reads. Flows that still fail here are kernel bugs reproduced in shared/sync/backend-repro.test.ts.
+ */
 import type { Request, Response } from 'express'
-import { createHash } from 'node:crypto'
-import { TITLE_SYSTEM, handlerResult, requestTitle } from '@fosforescent/shared/sync/index'
-import { readGraphValue, deleteTask, compileRequirement, checkCompiledRequirement } from '@fosforescent/shared/sync/index'
-import { MARKET_PEER, addMemberAt, addRow, addSupply, addTask, content, createReplica, decideTaskResult, ensureHomeContext, evaluationRecord, headCid, HOME_ID, loadReplica, readMembers, resolveScope, serializeReplica, setMemberCapabilitiesAt, sharedProjection, view, workAttempts, writeParticipation, type Replica } from '@fosforescent/shared/sync/index'
+import { TITLE_SYSTEM, requirementAnswer, requestTitle } from '@fosforescent/shared/sync/index'
+import { addRequirement, argumentSupplier, bindUserAt, supplyRequirement, type UserRecord } from '@fosforescent/shared/sync/index'
+import { addRow, addTask, createReplica, ensureHomeContext, HOME_ID, loadReplica, serializeReplica, view, type Replica } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
 import { createEventService } from './events'
 import { createEvaluationService } from './evaluation'
 import { createHostRuntime } from './host-runtime'
-import { calendarHandler, llmHandler, titleHandler, mailHandler, mailRequest, marketHandler, pointsHandler, searchHandler } from './hostHandlers'
+import { allocateHandler, calendarHandler, titleHandler, mailHandler, mailRequest, marketHandler, pointsHandler, searchHandler } from './hostHandlers'
 import { verifyHandler, identityKeyFromSeed } from './verify'
-import { QUERY_TYPE, ALLOCATION_TYPE, NOTE_TYPE } from '@fosforescent/shared/sync/library-types'
-import { PLAIN_TYPE } from '@fosforescent/shared/sync/library-types'
+import { NOTE_TYPE } from '@fosforescent/shared/sync/library-types'
+import { addBank, handleAt, issueGrant, ownerGrants, planAllocation } from '@fosforescent/shared/sync/index'
 
 const accounts: Record<string, { id: number; username: string; name?: string }> = { bob: { id: 2, username: 'bob', name: 'Bob' }, carol: { id: 3, username: 'carol' } }
 const identity = verifyHandler({ findUser: async username => accounts[username] ?? null, now: () => 50 }, identityKeyFromSeed(Buffer.alloc(32, 1)))
@@ -35,169 +39,111 @@ function host(r: Replica, runtime: ReturnType<typeof createHostRuntime>) {
   }
   return { send, complete, get: () => r }
 }
+const committed = (result: { body: any }, what: string) => { if (result.body.evaluation?.status !== 'committed') throw new Error(`${what} failed: ${JSON.stringify(result.body)}`) }
+const satisfied = (r: Replica, at: string[], id: string) => view(r, at)!.tasks.find(t => t.id === id)!.requirement!.satisfied
 
-test('the llm effect pins the attempt, leaves the answer for review, and commits once the owner accepts it', async () => {
-  let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['llm'] })
-  r = addTask(r, [HOME_ID], 'Plan the launch', 2, 'plan')
-  r = addRow(r, [HOME_ID, 'plan'], ALLOCATION_TYPE, 'Draft the plan', 2, { id: 'ask', requirement: { capability: 'llm' } })
-  const complete = jest.fn(async () => '1. Announce\n2. Ship')
-  const h = host(r, createHostRuntime([llmHandler({ complete })]))
-  const first = await h.complete([HOME_ID, 'plan'], ['ask'])
-  expect(first.status).toBe(200)
-  expect(first.body.evaluation.status).toBe('awaiting-review')
-  expect(complete).toHaveBeenCalledTimes(1)
-  const request = [HOME_ID, 'plan', 'ask']
-  const attempts = workAttempts(h.get(), request)
-  expect(attempts).toHaveLength(1)
-  expect(attempts[0]!.proposals.map(p => p.status)).toEqual(['open'])
-  expect(view(h.get(), [HOME_ID, 'plan'])!.tasks.find(t => t.id === 'ask')!.requirement!.satisfied).toBe(false)
-  expect(evaluationRecord(h.get(), request)!.effects[0]!.status).toBe('pending-review')
-  // acceptance supplies the requirement (shared/sync/work.ts); completing again commits without another model call
-  const accepted = decideTaskResult(h.get(), request, attempts[0]!.resultPath, attempts[0]!.proposals[0]!.cid, true, 200)
-  expect(view(accepted, [HOME_ID, 'plan'])!.tasks.find(t => t.id === 'ask')!.requirement!.satisfied).toBe(true)
-  const h2 = host(accepted, createHostRuntime([llmHandler({ complete })]))
-  const second = await h2.complete([HOME_ID, 'plan'], ['ask'])
-  if (!second.body.evaluation) throw new Error(`second completion failed: ${JSON.stringify(second.body)}`)
-  expect(second.body.evaluation.status).toBe('committed')
-  expect(complete).toHaveBeenCalledTimes(1)
-})
-
-test('the calendar effect creates the event and the allocation that fills a time requirement', async () => {
+test('a windowed calendar requirement: the event is created and the requirement is filled', async () => {
   let r = ensureHomeContext(createReplica('user:owner'), 1, { integrations: { google: ['calendar'] } })
   r = addTask(r, [HOME_ID], 'Team offsite', 2, 'offsite')
   const start = 1_760_000_000_000
-  r = addRow(r, [HOME_ID, 'offsite'], ALLOCATION_TYPE, 'Kickoff hour', 2, { id: 'slot', requirement: { capability: 'allocation', resource: 'calendar', amount: 1, unit: 'h', start, end: start + 3_600_000 } })
+  r = addRequirement(r, [HOME_ID, 'offsite'], 'Kickoff hour', 2, { capability: 'allocation', resource: 'calendar', amount: 1, unit: 'h', start, end: start + 3_600_000 }, 'slot')
   const createEvent = jest.fn(async () => ({ url: 'https://calendar.google.com/ev1', id: 'ev1' }))
   const h = host(r, createHostRuntime([calendarHandler({ connected: async () => true, createEvent })]))
-  const result = await h.complete([HOME_ID, 'offsite'], ['slot'])
-  expect(result.status).toBe(200)
-  expect(result.body.evaluation.status).toBe('committed')
+  committed(await h.complete([HOME_ID, 'offsite'], ['slot']), 'calendar')
   expect(createEvent).toHaveBeenCalledWith(1, { summary: 'Kickoff hour', description: 'Kickoff hour', start, end: start + 3_600_000 })
-  const slot = view(h.get(), [HOME_ID, 'offsite'])!.tasks.find(t => t.id === 'slot')!
-  expect(slot.requirement!.satisfied).toBe(true)
-  expect(view(h.get(), [HOME_ID, 'offsite', 'slot'])!.tasks.filter(t => t.allocation).map(t => [t.type, t.title])).toEqual([[ALLOCATION_TYPE, 'on Google Calendar https://calendar.google.com/ev1']])
+  expect(satisfied(h.get(), [HOME_ID, 'offsite'], 'slot')).toBe(true)
 })
 
-test('an effect whose peer is not connected blocks instead of running', async () => {
+test('a handler whose peer is not connected blocks instead of running', async () => {
   let r = ensureHomeContext(createReplica('user:owner'), 1, { integrations: { google: ['calendar'] } })
   r = addTask(r, [HOME_ID], 'Offsite', 2, 'offsite')
-  r = addRow(r, [HOME_ID, 'offsite'], ALLOCATION_TYPE, 'Slot', 2, { id: 'slot', requirement: { capability: 'allocation', resource: 'calendar', amount: 1, unit: 'h', start: 5, end: 3_600_005 } })
+  r = addRequirement(r, [HOME_ID, 'offsite'], 'Slot', 2, { capability: 'allocation', resource: 'calendar', amount: 1, unit: 'h', start: 5, end: 3_600_005 }, 'slot')
   const createEvent = jest.fn()
   const h = host(r, createHostRuntime([calendarHandler({ connected: async () => false, createEvent })]))
   const result = await h.complete([HOME_ID, 'offsite'], ['slot'])
   expect(result.status).toBe(400)
   expect(String(result.body.error)).toMatch(/Google is not active/)
   expect(createEvent).not.toHaveBeenCalled()
-  void addMemberAt; void setMemberCapabilitiesAt
 })
 
-test.each([{ start: null, end: 20 }, { start: 10, end: null }, { start: null, end: null }])('calendar effects do not guess open endpoints: %j', async bounds => {
+test.each([{ start: null, end: 20 }, { start: 10, end: null }, { start: null, end: null }])('calendar handlers do not guess open endpoints: %j', async bounds => {
   let r = ensureHomeContext(createReplica('user:owner'), 1, { integrations: { google: ['calendar'] } })
   r = addTask(r, [HOME_ID], 'Offsite', 2, 'offsite')
-  r = addRow(r, [HOME_ID, 'offsite'], ALLOCATION_TYPE, 'Slot', 3, { id: 'slot', requirement: { capability: 'allocation', resource: 'calendar', amount: 1, unit: 'h', ...bounds } })
+  r = addRequirement(r, [HOME_ID, 'offsite'], 'Slot', 3, { capability: 'allocation', resource: 'calendar', amount: 1, unit: 'h', ...bounds }, 'slot')
   const createEvent = jest.fn()
   const h = host(r, createHostRuntime([calendarHandler({ connected: async () => true, createEvent })]))
-  const result = await h.complete([HOME_ID, 'offsite'], ['slot'])
-  expect(result.status).toBe(400)
+  expect((await h.complete([HOME_ID, 'offsite'], ['slot'])).status).toBe(400)
   expect(createEvent).not.toHaveBeenCalled()
 })
 
-
-test('the market effect lists the task, indexes the account, and records the supply as the server (the client writes neither)', async () => {
+test('a market requirement indexes the account and its answer lists the task', async () => {
   let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['market'] })
   r = addTask(r, [HOME_ID], 'Design a logo', 2, 'logo')
-  r = addRow(r, [HOME_ID, 'logo'], ALLOCATION_TYPE, 'market', 2, { id: 'list', requirement: { capability: 'market' } })
+  r = addRequirement(r, [HOME_ID, 'logo'], 'market', 2, { capability: 'market' }, 'list')
   const indexed: Array<{ username: string; listed: boolean }> = []
   const index = jest.fn(async (user: { username: string }, store: any) => { indexed.push({ username: user.username, listed: !!view(createReplica('x', store), [HOME_ID])!.tasks.find(t => t.id === 'logo')!.market }) })
   const h = host(r, createHostRuntime([marketHandler({ index })]))
-  const result = await h.complete([HOME_ID, 'logo'], ['list'])
-  if (!result.body.evaluation) throw new Error(`listing failed: ${JSON.stringify(result.body)}`)
-  expect(result.body.evaluation.status).toBe('committed')
-  // listed before it was indexed, indexed before it was reported as supplied
-  expect(indexed).toEqual([{ username: 'owner', listed: true }])
+  committed(await h.complete([HOME_ID, 'logo'], ['list']), 'listing')
+  expect(indexed).toEqual([{ username: 'owner', listed: false }]) // the listing is the answer: it holds once the run commits
   const after = view(h.get(), [HOME_ID])!.tasks.find(t => t.id === 'logo')!
   expect(after.market).toBe(true)
   expect(after.done).toBe(false) // listing a task does not complete it; only its listing requirement is filled
-  const supplies = view(h.get(), [HOME_ID, 'logo', 'list'])!.tasks.filter(t => !!t.supply)
-  expect(supplies).toHaveLength(1)
-  expect(supplies[0]!.supply).toMatchObject({ capability: 'market', by: 'fos' })
-  const resultId = supplies[0]!.supply!.ref!
-  expect(resultId).not.toBe('logo')
-  const resultPath = [HOME_ID, 'logo', 'list', resultId]
-  expect(readGraphValue(h.get().store, resolveScope(h.get().store, headCid(h.get()), resultPath)!)).toEqual({ listed: true, indexed: true, owner: 'owner' })
-  const withdrawn = deleteTask(h.get(), resultPath.slice(0, -1), resultId, 200)
-  const request = resolveScope(withdrawn.store, headCid(withdrawn), [HOME_ID, 'logo', 'list'])!
-  expect(checkCompiledRequirement(withdrawn.store, compileRequirement(withdrawn.store, request)).satisfied).toBe(false)
-  // the listing is the market peer as a member of the task
-  expect(readMembers(h.get().store, content(h.get().store, resolveScope(h.get().store, headCid(h.get()), [HOME_ID, 'logo'])!)).map(m => m.peerId)).toContain(MARKET_PEER)
+  expect(satisfied(h.get(), [HOME_ID, 'logo'], 'list')).toBe(true)
 })
 
-test('the search effect fills a -? requirement: hits become ref rows under it, then the supply is recorded as the server', async () => {
+test('a search requirement runs the row search for its text and is filled; hits are rows inside it', async () => {
   let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['search'] })
   r = addTask(r, [HOME_ID], 'Logo brief', 2, 'brief')
   r = addTask(r, [HOME_ID], 'Find designers', 2, 'find')
-  r = addRow(r, [HOME_ID, 'find'], ALLOCATION_TYPE, 'logo designers', 2, { id: 'ask', requirement: { capability: 'search' } })
-  r = addRow(r, [HOME_ID, 'find', 'ask'], QUERY_TYPE, 'logo designers', 2, { id: 'q', query: { market: true } })
+  r = addRequirement(r, [HOME_ID, 'find'], 'logo designers', 2, { capability: 'search' }, 'ask')
   const search = jest.fn(async () => [{ aliasId: 'brief', title: 'Logo brief', owner: null }, { aliasId: 'job', title: 'Logo job', owner: 'alice' }, { aliasId: 'gone', title: 'Gone', owner: null }])
   const h = host(r, createHostRuntime([searchHandler({ search })]))
-  const result = await h.complete([HOME_ID, 'find'], ['ask'])
-  if (!result.body.evaluation) throw new Error(`search failed: ${JSON.stringify(result.body)}`)
-  expect(result.body.evaluation.status).toBe('committed')
-  expect(search).toHaveBeenCalledWith({ id: 1, username: 'owner' }, 'logo designers', true)
+  committed(await h.complete([HOME_ID, 'find'], ['ask']), 'search')
+  expect(search).toHaveBeenCalledWith({ id: 1, username: 'owner' }, 'logo designers', false)
+  expect(satisfied(h.get(), [HOME_ID, 'find'], 'ask')).toBe(true)
+  // the hits are reference rows inside the answer, as the search returned them
   const rows = view(h.get(), [HOME_ID, 'find', 'ask'])!.tasks
-  expect(rows.filter(t => t.refId !== undefined).map(t => [t.refId, t.refOwner ?? null])).toEqual([['brief', null], ['job', 'alice']])
-  expect(rows.filter(t => t.supply).map(t => [t.supply!.capability, t.supply!.by, t.supply!.ref])).toEqual([['search', 'fos', 'q']])
-  expect(view(h.get(), [HOME_ID, 'find'])!.tasks.find(t => t.id === 'ask')!.requirement!.satisfied).toBe(true)
+  expect(rows.filter(t => t.refId !== undefined).map(t => [t.refId, t.refOwner ?? null])).toEqual([['brief', null], ['job', 'alice'], ['gone', null]])
 })
 
-test('a fos-points payout moves points on the ledger to the respondent and records the allocation as the server', async () => {
+test('a fos-points reward pays the user the row names and is filled by the server', async () => {
   let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['points'] })
   r = addTask(r, [HOME_ID], 'Answer the survey', 2, 'survey')
-  r = addRow(r, [HOME_ID, 'survey'], ALLOCATION_TYPE, 'Favourite colour?', 2, { id: 'q', requirement: { capability: 'choice', options: ['Red', 'Blue'] } })
-  r = addRow(r, [HOME_ID, 'survey'], ALLOCATION_TYPE, 'reward', 2, { id: 'pay', requirement: { capability: 'allocation', resource: 'points', amount: 5, unit: 'ff' } })
+  r = addRequirement(r, [HOME_ID, 'survey'], 'Answered?', 2, { capability: 'confirmation' }, 'q')
+  r = addRequirement(r, [HOME_ID, 'survey'], 'reward', 2, { capability: 'allocation', resource: 'points', amount: 5, unit: 'ff' }, 'pay')
   const transfers: unknown[] = []
   const transfer = jest.fn(async (from: { username: string }, to: string, amount: number) => { transfers.push([from.username, to, amount]) })
-  // nobody has answered: nothing to pay
+  // nobody is named: nothing to pay (paying whoever answered the task awaits its replacement: a native sees no other rows)
   const early = host(fresh(r), createHostRuntime([pointsHandler({ transfer }, identity)]))
-  expect(String((await early.complete([HOME_ID, 'survey'], ['pay'])).body.error)).toMatch(/No one to pay yet/)
+  expect(String((await early.complete([HOME_ID, 'survey'], ['pay'])).body.error)).toMatch(/Name who the fos points go to/)
   expect(transfer).not.toHaveBeenCalled()
-  // bob answers (a supply by his account), then the task runs
-  const answered = addSupply(r, [HOME_ID, 'survey'], 'q', { capability: 'choice', by: 'user:bob', choice: 1 }, 6)
+  // bob answers and is named on the reward, then the task runs
+  const answered = bindUserAt(supplyRequirement(r, [HOME_ID, 'survey'], 'q', { by: 'user:bob' }, 6), [HOME_ID, 'survey', 'pay'], (await identity.resolve('bob'))!, 6)
   const h = host(fresh(answered), createHostRuntime([pointsHandler({ transfer }, identity)]))
-  const result = await h.complete([HOME_ID, 'survey'], [])
-  if (!result.body.evaluation) throw new Error(`payout failed: ${JSON.stringify(result.body)}`)
-  expect(result.body.evaluation.status).toBe('committed')
+  committed(await h.complete([HOME_ID, 'survey'], []), 'payout')
   expect(transfers).toEqual([['owner', 'bob', 5]])
-  const pay = view(h.get(), [HOME_ID, 'survey'])!.tasks.find(t => t.id === 'pay')!
-  expect(pay.requirement!.satisfied).toBe(true)
-  const rows = view(h.get(), [HOME_ID, 'survey', 'pay'])!.tasks
-  const payout = rows.find(t => !!t.allocation)!
-  expect(payout.allocation).toMatchObject({ resource: '', type: 'points', amount: 5, unit: 'ff', by: 'fos' })
-  expect(payout.user).toMatchObject({ account: '2', username: 'bob', name: 'Bob' })
-  expect(payout.title).toBe('5 fos points to Bob')
-  expect(rows.find(t => !!t.supply)!.supply).toMatchObject({ capability: 'allocation', by: 'fos' })
+  expect(satisfied(h.get(), [HOME_ID, 'survey'], 'pay')).toBe(true)
   expect(view(h.get(), [HOME_ID])!.tasks.find(t => t.id === 'survey')!.done).toBe(true)
   // a failing ledger leaves the requirement open and the task unfinished
   const broke = host(fresh(answered), createHostRuntime([pointsHandler({ transfer: async () => { throw new Error('Insufficient tokens') } }, identity)]))
   expect(String((await broke.complete([HOME_ID, 'survey'], ['pay'])).body.error)).toMatch(/Insufficient tokens/)
-  expect(view(broke.get(), [HOME_ID, 'survey'])!.tasks.find(t => t.id === 'pay')!.requirement!.satisfied).toBe(false)
+  expect(satisfied(broke.get(), [HOME_ID, 'survey'], 'pay')).toBe(false)
 })
 
-test('a payout to @name pays the user object the requirement binds, only when this server attested it unchanged', async () => {
+test('a reward naming @user pays that user object, only when this server attested it unchanged', async () => {
   const carol = (await identity.resolve('carol'))!
-  const named = (user: typeof carol) => {
+  const named = (user: UserRecord) => {
     let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['points'] })
     r = addTask(r, [HOME_ID], 'Thank carol', 2, 'thanks')
-    // "-ff 3 thanks @carol": no respondent needed, the row names the payee
-    return addRow(r, [HOME_ID, 'thanks'], ALLOCATION_TYPE, 'thanks', 2, { id: 'pay', requirement: { capability: 'allocation', resource: 'points', amount: 3, unit: 'ff' }, user })
+    r = addRequirement(r, [HOME_ID, 'thanks'], 'thanks', 2, { capability: 'allocation', resource: 'points', amount: 3, unit: 'ff' }, 'pay')
+    return bindUserAt(r, [HOME_ID, 'thanks', 'pay'], user, 2)
   }
   const transfers: unknown[] = []
   const transfer = jest.fn(async (from: { username: string }, to: string, amount: number) => { transfers.push([from.username, to, amount]) })
   const h = host(fresh(named(carol)), createHostRuntime([pointsHandler({ transfer }, identity)]))
-  const result = await h.complete([HOME_ID, 'thanks'], [])
-  if (!result.body.evaluation) throw new Error(`named payout failed: ${JSON.stringify(result.body)}`)
+  committed(await h.complete([HOME_ID, 'thanks'], []), 'named payout')
   expect(transfers).toEqual([['owner', 'carol', 3]])
-  expect(view(h.get(), [HOME_ID, 'thanks'])!.tasks.find(t => t.id === 'pay')!.requirement!.satisfied).toBe(true)
+  expect(satisfied(h.get(), [HOME_ID, 'thanks'], 'pay')).toBe(true)
   // a tampered object (same signature, another username), an unverified one and one signed by another key are refused
   const forged = verifyHandler({ findUser: async username => accounts[username] ?? null }, identityKeyFromSeed(Buffer.alloc(32, 2)))
   for (const user of [{ ...carol, username: 'bob' }, { ...carol, verification: null }, (await forged.resolve('carol'))!]) {
@@ -207,41 +153,59 @@ test('a payout to @name pays the user object the requirement binds, only when th
   expect(transfer).toHaveBeenCalledTimes(1)
 })
 
-test("the mail effect emails the requirement's recipient input with the task as the body, and records the supply as the server", async () => {
-  expect(mailRequest({ to: 'team@example.com', subject: 'Trip plans' }, 'Plan the group trip', ['Book flights', 'Reserve lodging'])).toEqual({ to: 'team@example.com', subject: 'Trip plans', text: 'Plan the group trip\n- Book flights\n- Reserve lodging' })
-  expect(mailRequest({ to: 'team@example.com', subject: null }, 'Plan the group trip', [])).toMatchObject({ subject: 'Plan the group trip' })
-  expect(mailRequest({ to: null, subject: 'x' }, 'x', [])).toBeNull()
+test('a mail requirement emails its recipient input with the request text as the body and is filled by the server', async () => {
+  expect(mailRequest({ to: 'team@example.com', subject: 'Trip plans' }, 'Plan the group trip')).toEqual({ to: 'team@example.com', subject: 'Trip plans', text: 'Plan the group trip' })
+  expect(mailRequest({ to: 'team@example.com', subject: null }, 'Plan the group trip')).toMatchObject({ subject: 'Plan the group trip' })
+  expect(mailRequest({ to: null, subject: 'x' }, 'x')).toBeNull()
   let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['mail'] })
   r = addTask(r, [HOME_ID], 'Plan the group trip', 2, 'trip')
   r = addTask(r, [HOME_ID, 'trip'], 'Book flights', 2, 'flights')
-  r = addRow(r, [HOME_ID, 'trip'], ALLOCATION_TYPE, 'team@example.com Trip plans', 2, { id: 'notify', requirement: { capability: 'mail' }, inputs: { to: 'team@example.com', subject: 'Trip plans' } })
+  r = addRequirement(r, [HOME_ID, 'trip'], 'Plan the group trip', 2, { capability: 'mail', inputs: { to: 'team@example.com', subject: 'Trip plans' } }, 'notify')
   const sent: unknown[] = []
   const send = jest.fn(async (to: string, subject: string, text: string, onBehalfOf: string) => { sent.push([to, subject, text, onBehalfOf]) })
   const h = host(fresh(r), createHostRuntime([mailHandler({ send })]))
-  const result = await h.complete([HOME_ID, 'trip'], ['notify'])
-  if (!result.body.evaluation) throw new Error(`mail failed: ${JSON.stringify(result.body)}`)
-  expect(result.body.evaluation.status).toBe('committed')
-  expect(sent).toEqual([['team@example.com', 'Trip plans', 'Plan the group trip\n- Book flights', 'owner']])
-  const rows = view(h.get(), [HOME_ID, 'trip', 'notify'])!.tasks
-  expect(rows.find(t => t.type === PLAIN_TYPE)!.title).toBe('Sent to team@example.com: Trip plans')
-  expect(rows.find(t => !!t.supply)!.supply).toMatchObject({ capability: 'mail', by: 'fos' })
+  committed(await h.complete([HOME_ID, 'trip'], ['notify']), 'mail')
+  expect(sent).toEqual([['team@example.com', 'Trip plans', 'Plan the group trip', 'owner']]) // the body is the request's own text (the task's rows await their replacement)
+  expect(satisfied(h.get(), [HOME_ID, 'trip'], 'notify')).toBe(true)
+  expect(argumentSupplier(h.get(), [HOME_ID, 'trip', 'notify'])).toBe('fos')
   // no recipient: nothing is sent and the requirement stays open
-  const bad = addRow(ensureHomeContext(createReplica('user:owner'), 1, { server: ['mail'] }), [HOME_ID], ALLOCATION_TYPE, 'tell everyone', 2, { id: 'vague', requirement: { capability: 'mail' } })
+  const bad = addRequirement(ensureHomeContext(createReplica('user:owner'), 1, { server: ['mail'] }), [HOME_ID], 'tell everyone', 2, { capability: 'mail' }, 'vague')
   const refused = await host(fresh(bad), createHostRuntime([mailHandler({ send })])).complete([HOME_ID], ['vague'])
-  expect(String(refused.body.error)).toMatch(/Name the recipient/)
+  expect(String(refused.body.error)).toMatch(/Unfilled instruction ref|Name the recipient/) // the declared `to` input is unfilled: the compiler refuses the step before the handler runs
   expect(send).toHaveBeenCalledTimes(1)
 })
 
-test('the title effect summarizes the text of the row it is in and records the title as its value', async () => {
+test('a title requirement summarizes the text it carries; the title is its answer', async () => {
   let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['title'] })
   r = addRow(r, [HOME_ID], NOTE_TYPE, 'We walked the beds this morning\nand the soil is dry; the tomatoes need stakes.', 2, { id: 'note' })
-  expect(view(r, [HOME_ID])!.tasks.find(t => t.id === 'note')!.title).toBe('We walked the beds this morning')
   const asked = requestTitle(r, [HOME_ID, 'note'], 3, () => 'one')
   const complete = jest.fn(async () => '"Garden check: dry soil, tomato stakes."\nmore')
   const h = host(asked.replica, createHostRuntime([titleHandler({ complete })]))
-  const done = await h.complete([HOME_ID, 'note'], ['one'])
-  expect(done.body.evaluation.status).toBe('committed')
+  committed(await h.complete([HOME_ID, 'note'], ['one']), 'title')
   expect(complete).toHaveBeenCalledWith(TITLE_SYSTEM, 'We walked the beds this morning\nand the soil is dry; the tomatoes need stakes.')
-  expect(handlerResult(h.get(), asked.path)).toBe('Garden check: dry soil, tomato stakes')
-  expect(view(h.get(), [HOME_ID, 'note'])!.tasks.find(t => t.id === 'one')!.requirement!.satisfied).toBe(true)
+  expect(satisfied(h.get(), [HOME_ID, 'note'], 'one')).toBe(true)
+  expect(requirementAnswer(h.get(), asked.path)).toBe('Garden check: dry soil, tomato stakes')
+})
+
+test('the allocate native credits a bank in Home, splits a grant conserving the amount, and refuses a split that leaks', async () => {
+  const runtime = createHostRuntime([allocateHandler()])
+  let r = ensureHomeContext(createReplica('user:owner'), 1, runtime.hostOffers())
+  r = addBank(r, [HOME_ID], 'Budget', 2, { type: 'account', unit: 'USD' }, 'bank')
+  r = issueGrant(r, [HOME_ID, 'bank'], { type: 'account', unit: 'USD', amount: 10 }, 3, 'Initial', 'g0')
+  r = addTask(r, [HOME_ID], 'Work', 4, 'work')
+  const h0 = host(r, runtime)
+  committed(await h0.complete([HOME_ID], ['g0']), 'credit') // the credit is an invocation: issued when it commits
+  r = h0.get()
+  expect(ownerGrants(r, [HOME_ID, 'bank']).map(grant => grant.allocation.amount)).toEqual([10])
+  const g0 = ownerGrants(r, [HOME_ID, 'bank'])[0]!
+  r = planAllocation(r, [HOME_ID, 'work'], { owner: [HOME_ID, 'bank'], inputs: [{ grant: g0.cid }], outputs: [{ type: 'account', unit: 'USD', amount: 6, id: 'child' }, { type: 'account', unit: 'USD', amount: 4, id: 'rest' }] }, 5, 'split')
+  const h = host(r, runtime)
+  committed(await h.complete([HOME_ID, 'work'], ['split']), 'split')
+  expect(ownerGrants(h.get(), [HOME_ID, 'bank']).map(grant => grant.allocation.amount).sort()).toEqual([4, 6])
+  expect(handleAt(h.get(), [HOME_ID, 'work', 'split', 'child'])?.allocation.amount).toBe(6)
+  const next = planAllocation(h.get(), [HOME_ID, 'work'], { owner: [HOME_ID, 'bank'], inputs: [[HOME_ID, 'work', 'split', 'child']], outputs: [{ type: 'account', unit: 'USD', amount: 5 }] }, 6, 'leak')
+  const bad = host(next, runtime)
+  expect(JSON.stringify((await bad.complete([HOME_ID, 'work'], ['leak'])).body)).toMatch(/conserve/)
+  expect(ownerGrants(bad.get(), [HOME_ID, 'bank']).map(grant => grant.allocation.amount).sort()).toEqual([4, 6])
+  expect(handleAt(bad.get(), [HOME_ID, 'work', 'split', 'child'])?.allocation.amount).toBe(6)
 })

@@ -7,7 +7,8 @@
  */
 import { settingOf } from './graph'
 import { nodeLinkMaskAt } from './node-provider'
-import { consumption } from './execution-access'
+import { handleAt } from './arguments'
+import { instructionPrimitives } from './primitives'
 import { argumentRefs, capabilityPeers } from './bindings'
 import { evaluationRecord, executionOrigin, handlerResult, readNodeValue, writeExecutionOrigin, writeHandlerResult } from './evaluation'
 import { approvalsOf, submissionKey } from './approvals'
@@ -173,6 +174,25 @@ export function sharedInputs(r: Replica, path: Scope): SharedInput[] {
 /** Only declared, unfilled inputs of an execution are writable by its visitor. */
 export function executionInputs(r: Replica, root: Scope): SharedInput[] {
   const result: SharedInput[] = []
+  // A grant an invocation row below the root already consumes is taken, whether or not that row has run yet.
+  const taken = new Set<string>()
+  const collect = (path: Scope, depth: number) => {
+    if (depth > 8) return
+    for (const row of view(r, path)?.tasks ?? []) {
+      if (instructionPrimitives(r, { path: [...path, row.id], row }).length) for (const input of view(r, [...path, row.id])?.tasks ?? []) if (input.refId) {
+        taken.add(input.id)
+        const grant = handleAt(r, [...path, row.id, input.id])
+        if (grant) taken.add(grant.cid)
+      }
+      if (row.refId === undefined && row.type !== TEMPLATE_TYPE) collect([...path, row.id], depth + 1)
+    }
+  }
+  collect(root, 0)
+  const offered = (rowPath: Scope, id: string) => {
+    if (taken.has(id)) return null
+    const grant = handleAt(r, rowPath)
+    return grant && !taken.has(grant.cid) ? grant : null
+  }
   const walk = (path: Scope, depth: number) => {
     if (depth > 8 || result.length >= 32) return
     const cid = resolveScope(r.store, headCid(r), path)
@@ -182,21 +202,30 @@ export function executionInputs(r: Replica, root: Scope): SharedInput[] {
       const relative = [...path.slice(root.length), id]
       if (!refValueCid(r.store, ref)) result.push({ key: JSON.stringify(relative), path: relative, name: arg.name ?? id,
         kind: arg.type === r.store.primitive.documentField.getId() ? 'text' : 'ref', type: arg.type, role: ref.data.refRole ?? 'input' })
-      else walk([...path, id], depth + 1)
+      else {
+        // an argument forwarding an allocation (a passed handle) is offered for use like any handle row
+        const held = offered([...path, id], id)
+        if (held) result.push({ key: JSON.stringify(relative), path: relative, name: arg.name ?? id, kind: 'allocation', direction: 'consume', type: held.allocation.type, unit: held.allocation.unit, amount: held.allocation.amount, start: held.allocation.start, end: held.allocation.end })
+        else walk([...path, id], depth + 1)
+      }
     }
     for (const row of view(r, path)?.tasks ?? []) {
       if (result.length >= 32) break
       const req = row.requirement, relative = [...path.slice(root.length), row.id]
-      if (row.allocation && !view(r, path)?.tasks.some(t => t.supply?.ref === row.id) && !consumption(r, [...path, row.id])) result.push({ key: JSON.stringify(relative), path: relative, name: row.title, kind: 'allocation', direction: 'consume', type: row.allocation.type, unit: row.allocation.unit, amount: row.allocation.amount, start: row.allocation.start, end: row.allocation.end })
-      if (req && !req.satisfied && ['allocation', 'confirmation', 'choice'].includes(req.capability)) result.push({ key: JSON.stringify(relative), path: relative, name: row.title, kind: req.capability as 'allocation' | 'confirmation' | 'choice', ...(req.capability === 'choice' ? { options: req.options } : {}), ...(req.capability === 'allocation' ? { type: req.resource ?? 'inventory', unit: req.unit ?? 'unit', amount: req.amount, start: req.start, end: req.end } : {}) })
+      const held = row.allocation || row.refId !== undefined ? offered([...path, row.id], row.id) : null
+      if (held) result.push({ key: JSON.stringify(relative), path: relative, name: row.title, kind: 'allocation', direction: 'consume', type: held.allocation.type, unit: held.allocation.unit, amount: held.allocation.amount, start: held.allocation.start, end: held.allocation.end })
+      if (req && !req.satisfied && ['allocation', 'confirmation', 'choice'].includes(req.capability ?? '')) result.push({ key: JSON.stringify(relative), path: relative, name: row.title, kind: req.capability as 'allocation' | 'confirmation' | 'choice', ...(req.capability === 'choice' ? { options: req.options } : {}), ...(req.capability === 'allocation' ? { type: req.resource ?? 'inventory', unit: req.unit ?? 'unit', amount: req.amount, start: req.start, end: req.end } : {}) })
       if (row.refId === undefined && row.type !== TEMPLATE_TYPE) walk([...path, row.id], depth + 1)
     }
   }
   const current = root.length ? view(r, root.slice(0, -1))?.tasks.find(row => row.id === root.at(-1)) : null
   const req = current?.requirement
-  if (req && !req.satisfied && ['allocation', 'confirmation', 'choice'].includes(req.capability)) result.push({ key: '[]', path: [], name: current!.title, kind: req.capability as 'allocation' | 'confirmation' | 'choice', ...(req.capability === 'choice' ? { options: req.options } : {}), ...(req.capability === 'allocation' ? { type: req.resource ?? 'inventory', unit: req.unit ?? 'unit', amount: req.amount, start: req.start, end: req.end } : {}) })
-  if (current?.allocation && !consumption(r, root)) result.push({ key: '[]', path: [], name: current.title, kind: 'allocation', direction: 'consume', ...current.allocation })
-  walk(root, 0); return result.slice(0, 32)
+  if (req && !req.satisfied && ['allocation', 'confirmation', 'choice'].includes(req.capability ?? '')) result.push({ key: '[]', path: [], name: current!.title, kind: req.capability as 'allocation' | 'confirmation' | 'choice', ...(req.capability === 'choice' ? { options: req.options } : {}), ...(req.capability === 'allocation' ? { type: req.resource ?? 'inventory', unit: req.unit ?? 'unit', amount: req.amount, start: req.start, end: req.end } : {}) })
+  const rootHeld = current ? handleAt(r, root) : null
+  if (current && rootHeld) result.push({ key: '[]', path: [], name: current.title, kind: 'allocation', direction: 'consume', type: rootHeld.allocation.type, unit: rootHeld.allocation.unit, amount: rootHeld.allocation.amount, start: rootHeld.allocation.start, end: rootHeld.allocation.end })
+  walk(root, 0)
+  // A named ref row is reached both as an argument and as a row; its inputs count once.
+  return result.filter((field, index) => result.findIndex(other => other.key === field.key) === index).slice(0, 32)
 }
 
 /**

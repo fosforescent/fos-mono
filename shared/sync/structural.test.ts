@@ -1,4 +1,4 @@
-import { createReplica, put, namedRefPattern, matchesGraph, putBranches, refNodeContent, addRefAt, proposeRefAt, applyProposalAt, resolveScope, headCid, content, compileRow, compileRefGraph, refValueCompatible, addRow, instantiateTemplateValue, templateValuePattern } from './index'
+import { createReplica, put, namedRefPattern, matchesGraph, putBranches, refNodeContent, addRefAt, proposeRefAt, applyProposalAt, resolveScope, headCid, content, compileRow, compileRefGraph, refValueCompatible, addRow, instantiateTemplateValue, templateValuePattern, addRequirement } from './index'
 
 const setup = () => {
   const r = createReplica(), s = r.store
@@ -56,7 +56,7 @@ test('immutable property rows are addressable only under their actual parent', (
 test('a template input matches its constructed product without requiring editor policy rows', () => {
   let r = createReplica()
   r = addRow(r, [], 'template', 'Workflow definition', 1, { id: 'definition' })
-  r = addRow(r, ['definition'], 'allocation', 'Review it', 2, { id: 'review', requirement: { capability: 'confirmation' } })
+  r = addRequirement(r, ['definition'], 'Review it', 2, { capability: 'confirmation' }, 'review')
   const definition = resolveScope(r.store, headCid(r), ['definition'])!
   const pattern = templateValuePattern(r.store, definition)
   r = addRow(r, [], 'task', 'My instance', 3, { id: 'instance' })

@@ -142,42 +142,8 @@ export type FosDataContent = {
     createdAt: number
   }
   /** On a proposal node (a peer's branch at a link node). */
-  /**
-   * A requirement row under a task ("-" prefix): a capability / effect handler that must be supplied before the
-   * task can be completed. The capability names the child row that fills it: `task` (a done task),
-   * `allocation` (an allocation of `resource`), `search` (a run query), `confirmation`/`choice` (a supply by a
-   * signed-in person), `market`/`mail` (a peer that registered that capability), `peer` (a named peer confirms).
-   */
-  requirement?: {
-    capability: string
-    resource?: 'calendar' | 'account' | 'inventory' | 'person' | 'points' | 'location'
-    amount?: number
-    unit?: string
-    start?: number | null
-    end?: number | null
-    options?: string[]
-    /**
-     * `peer` requirements: a peer id the task is assigned to (a shared host, a device). A user named with `-@name`
-     * is not a string here: the row's `user` field binds their user object (sync/users.ts).
-     */
-    peer?: string
-    /** `location` requirements ("-at Eiffel Tower 18:00..20:00"): the named place to be at, when the row names one. */
-    place?: string
-    /** `repo` requirements: the repository (owner/name) the issue goes to. */
-    repo?: string
-    /** `tool` requirements: the tool (of an MCP peer attached above) to run; the text is its input. */
-    tool?: string
-  },
-  /** Editable supply syntax. Compile `ref` through parent scope into a declaration CID before validation. */
-  supply?: {
-    capability: string
-    by: string
-    at: number
-    ref?: string
-    /** Opaque receipt from an external service; never a graph reference. */
-    receipt?: string
-    choice?: number
-  },
+  /** On an issued grant: what tells two grants of equal amount apart. Authority is a value, so each issue is a new one. */
+  nonce?: { value: string },
   /** On a member reference: granted capabilities (CAPABILITY edges) the owner has switched off; the member still sees them, as offline. */
   disabledCapabilities?: {
     content: string[]
@@ -218,11 +184,11 @@ export type FosDataContent = {
   refHole?: { slot: number; role: 'input' | 'output' },
   /** A declaration in a compiled lexical frame. Its handler/value is the right side of its binding edge. */
   refDeclaration?: { slot: number },
-  /** Closed authority-transition graphs. Domain checking is supplied by the grant's bound handler. */
-  authorityFrame?: { role: 'state' | 'bindings' | 'grant' | 'operation' | 'operations' | 'transaction' | 'reference' | 'invocation' | 'rebindings'; revision?: number; nextSlot?: number },
   /** Rows in this node submit alternative handlers to the capability on their left. They are not equalities. */
   refAlternatives?: true,
   refCompilation?: { cid: string },
+  /** A signature over this value's unsigned node by the key named; made and checked through the sign and verify-signature capabilities. */
+  signature?: { key: string; value: string },
   /** A type error node ([TYPE_ERROR, error]): the alias ids of the row's children its type does not accept. */
   typeError?: {
     rejected: string[]
@@ -241,23 +207,12 @@ export type FosDataContent = {
   resource?: {
     type: 'calendar' | 'account' | 'inventory' | 'person' | 'points' | 'location'
     unit: string
-    capacity?: number
     start?: number | null
     end?: number | null
   },
   /** An allocation locks `amount` for an optional time window. Compile its editor locator to a declaration CID before accounting. */
   allocation?: {
-    /** Handler demands use the same signed entry as resource allocations. */
-    capability?: NonNullable<FosDataContent['requirement']>['capability']
-    options?: string[]
-    peer?: string
-    repo?: string
-    tool?: string
     at?: number
-    ref?: string
-    /** Opaque receipt from an external service; never a graph reference. */
-    receipt?: string
-    choice?: number
     resource: string
     type: 'calendar' | 'account' | 'inventory' | 'person' | 'points' | 'location'
     amount: number

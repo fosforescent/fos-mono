@@ -5,17 +5,21 @@
  * saved, and the evaluation that was left awaiting review is continued so the task completes. Redelivered
  * confirmations find the record already paid and change nothing.
  */
-import { createReplica, evaluationRecord, headCid, paymentRecord, resolveScope, settlePaymentRecord, writePaymentRecord, type Scope } from '@fosforescent/shared/sync/index'
+import { createReplica, evaluationRecord, headCid, resolveScope, settlePayment, view, type Scope } from '@fosforescent/shared/sync/index'
 import { withUserLock, type AccountStoreDeps } from './accountStore'
 
 export type PaymentConfirmation = {
   owner: string
   /** The requirement's path in the owner's store, as recorded in the provider's metadata. */
   path: Scope
-  /** The provider's id for the payment; must match the requirement's record. */
+  /** The provider's id for the payment. */
   id: string
   intent?: string
-  /** A failed or expired payment: the record is marked and the owner can run the task again to open a new one. */
+  /** The payment as it was opened, from the session's metadata. */
+  amount?: number
+  unit?: string
+  payee?: string
+  /** A failed or expired payment: nothing is recorded; the owner runs the task again to open a new one. */
   failed?: string
 }
 
@@ -31,16 +35,12 @@ export function createPaymentSettlement(deps: AccountStoreDeps, continueEvaluati
         if (!loaded) return { result: 'unknown', evaluate: null }
         let r = createReplica(`user:${confirmation.owner}`, loaded.store)
         if (!resolveScope(r.store, headCid(r), confirmation.path)) return { result: 'unknown', evaluate: null }
-        const record = paymentRecord(r, confirmation.path)
-        if (!record || record.id !== confirmation.id) return { result: 'unknown', evaluate: null }
-        if (record.status === 'paid') return { result: 'already-settled', evaluate: null }
-        if (confirmation.failed) {
-          r = writePaymentRecord(r, confirmation.path, { ...record, status: 'failed', url: null, error: confirmation.failed }, now())
-          await deps.saveStore(loaded.user, r.store)
-          deps.notify?.(loaded.user.id, { type: 'sync_changed', by: 'fos:payment' })
-          return { result: 'failed', evaluate: null }
-        }
-        const settled = settlePaymentRecord(r, confirmation.path, { intent: confirmation.intent }, now())
+        const request = view(r, confirmation.path.slice(0, -1))?.tasks.find(t => t.id === confirmation.path.at(-1))
+        if (!request?.requirement) return { result: 'unknown', evaluate: null }
+        if (request.requirement.satisfied) return { result: 'already-settled', evaluate: null }
+        if (confirmation.failed) return { result: 'failed', evaluate: null }
+        if (!(confirmation.amount! > 0) || !confirmation.unit || !confirmation.payee) return { result: 'unknown', evaluate: null }
+        const settled = settlePayment(r, confirmation.path, { amount: confirmation.amount!, unit: confirmation.unit, payee: confirmation.payee, ...(confirmation.intent ? { intent: confirmation.intent } : {}) }, now())
         if (!settled.settled) return { result: 'unknown', evaluate: null }
         await deps.saveStore(loaded.user, settled.replica.store)
         deps.notify?.(loaded.user.id, { type: 'sync_changed', by: 'fos:payment' })

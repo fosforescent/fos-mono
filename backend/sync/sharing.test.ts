@@ -1,14 +1,14 @@
 import type { Request, Response } from 'express'
 import { verify } from 'jsonwebtoken'
-import { HOME_ID, approvalsOf, handlerResult, sharedLinkAt, addMemberAt, addRow, addTask, addRefAt, createReplica, publish, unpublish, sharedProjection, writeNodeValue, participation, headCid, argumentRefs, content, refValueCid, removeMemberAt, setMemberCapabilitiesAt, renameTask, ensureSharedLink, sharedAddressAt, ensureHomeContext, view, readNodeValue, resolveScope, valueContent, put, withProposal, proposalContent, commitRoot, updateAtScope, putStripped, readProposals, type Replica } from '@fosforescent/shared/sync/index'
+import { HOME_ID, approvalsOf, handlerResult, sharedLinkAt, addMemberAt, addAllocation, addRequirement, addRow, addTask, addRefAt, createReplica, publish, unpublish, sharedProjection, writeNodeValue, participation, headCid, argumentRefs, content, refValueCid, removeMemberAt, setMemberCapabilitiesAt, renameTask, ensureSharedLink, sharedAddressAt, ensureHomeContext, view, readNodeValue, resolveScope, valueContent, put, withProposal, proposalContent, commitRoot, updateAtScope, putStripped, readProposals, type Replica } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
 import { createSharingHandlers } from './sharing'
-import { NOTE_TYPE, ALLOCATION_TYPE } from '@fosforescent/shared/sync/library-types'
+import { NOTE_TYPE } from '@fosforescent/shared/sync/library-types'
 const at = { owner: 'host', path: ['poll'] }
 function setup(audience: 'public' | 'users' = 'public', mode: 'approval' | 'rank' = 'approval') {
-  let host = addRow(createReplica('user:host'), [], ALLOCATION_TYPE, 'Lunch?', 1, { id: 'poll', requirement: { capability: 'choice', options: ['Soup', 'Salad'] } })
+  let host = addRequirement(createReplica('user:host'), [], 'Lunch?', 1, { capability: 'choice', options: ['Soup', 'Salad'] }, 'poll')
   // published: the audience may run the node (execute only); its choice is an input visitors answer
   host = publish(host, ['poll'], audience, 2)
   void mode
@@ -128,8 +128,8 @@ test("a visitor's approval is an approval row of the submission; it merges only 
 })
 test('allocation links preserve supplied time bounds, hide private locators and reject mismatching sources', async () => {
   const s = setup('users')
-  s.replicas.host = addRow(s.replicas.host, ['poll'], ALLOCATION_TYPE, 'Bring one dress', 5, { id: 'need', requirement: { capability: 'allocation', resource: 'inventory', unit: 'dress', amount: 1 } })
-  s.replicas.guest = addRow(s.replicas.guest, [], ALLOCATION_TYPE, 'private inventory label', 5, { id: 'dress', allocation: { resource: 'private-bank', type: 'inventory', unit: 'dress', amount: 1, start: 123, end: 456 } })
+  s.replicas.host = addRequirement(s.replicas.host, ['poll'], 'Bring one dress', 5, { capability: 'allocation', resource: 'inventory', unit: 'dress', amount: 1 }, 'need')
+  s.replicas.guest = addAllocation(s.replicas.guest, [], 'private inventory label', 5, { resource: 'private-bank', type: 'inventory', unit: 'dress', amount: 1, start: 123, end: 456 }, { id: 'dress' })
   const visit = await s.call('visit', at, 'guest')
   const saved = await s.call('submit', input(visit.body, { fields: { need: { source: 'dress' } } }), 'guest')
   expect(saved.status).toBe(200)

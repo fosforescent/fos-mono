@@ -32,7 +32,7 @@ export function agentContext(r: Replica, at: Scope) {
     nodes.push({ path: relative, text: resolveText(r, path, node.name ?? '').text, type, done: node.done })
     for (const row of node.tasks) {
       // Linked values can point outside this subtree; do not disclose their targets.
-      if (row.refId !== undefined || !!row.supply || row.construction) continue
+      if (row.refId !== undefined || row.construction) continue
       walk([...path, row.id], [...relative, row.id], row.type)
     }
   }

@@ -150,10 +150,9 @@ test('an organize request is a requirement in the target holding the capture as 
   const row = view(asked.replica, [HOME_ID, 'garden'])!.tasks.find(t => t.id === asked.path.at(-1))!
   expect(row.title).toBe('Voice note')
   expect(row.requirement).toMatchObject({ capability: 'organize', satisfied: false })
-  // the capture is the requirement's row made from the note type (the edge's left node)
-  const note = view(asked.replica, asked.path)!.tasks[0]!
-  const edge = findEdge(asked.replica.store, valueContent(asked.replica.store, resolveScope(asked.replica.store, headCid(asked.replica), asked.path)!), 'a:' + note.id)!
-  expect(edge[0]).toBe(libraryTypeAt(asked.replica.store, NOTE_TYPE, asked.path))
+  // the capture is the request's input: part of what it asks, read by its handler as an operand
+  expect(row.requirement!.inputs).toEqual({ capture: 'water the tomatoes' })
+  expect(view(asked.replica, asked.path)!.tasks).toEqual([])
   expect(organizeRequestAt(asked.replica, asked.path)).toEqual({ label: 'Voice note', text: 'water the tomatoes' })
   expect(organizeRequestAt(asked.replica, [HOME_ID, 'garden', 'tomatoes'])).toBeNull()
   // the organizer never files into its own request

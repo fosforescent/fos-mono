@@ -1,6 +1,6 @@
-import { userView } from './test-helpers'
-import { addRow, addSupply, addTask, createReplica, evaluateNode, evaluationRecord, evaluationSteps, allocationProblems, selectExecutor, view, renameTask, setTaskDone, serializeReplica, loadReplica, type EvaluationDriver, type Replica } from './index'
-import { RESOURCE_TYPE, ALLOCATION_TYPE } from './library-types'
+import { TASK_DEMAND, answering, userView } from './test-helpers'
+import { TASK_TYPE } from './library-types'
+import { addAllocation, addBank, addRequirement, addRow, addTask, createReplica, evaluateNode, evaluationRecord, evaluationSteps, handleAt, ownerGrants, selectExecutor, supplyRequirement, view, renameTask, serializeReplica, loadReplica, type EvaluationDriver, type Replica } from './index'
 
 function setup() {
   let r = addTask(createReplica('owner'), [], 'Parent', 1, 'parent')
@@ -24,32 +24,32 @@ test('opens parent first, commits leaves first, persists the journal and marks t
 })
 test('an unresolved confirmation stops all effects before opening a transaction', async () => {
   const s = setup()
-  s.set(addRow(s.get(), ['parent', 'child'], ALLOCATION_TYPE, 'Confirm', 3, { requirement: { capability: 'confirmation' } }))
+  s.set(addRequirement(s.get(), ['parent', 'child'], 'Confirm', 3, { capability: 'confirmation' }))
   await expect(evaluateNode(['parent'], s.driver)).rejects.toThrow(/Unfulfilled confirmation/)
   expect(s.events).toEqual([])
 })
-test('a failed effect gets a manual recovery task and cannot be repeated after reload', async () => {
+test('a native that fails leaves nothing behind: its writes were pending, the run rolls back and can be repeated after reload', async () => {
   const s = setup()
-  s.set(addRow(s.get(), ['parent'], ALLOCATION_TYPE, 'Create issue', 3, { id: 'req', requirement: { capability: 'repo' } }))
-  s.driver.executors = step => step.row?.requirement?.capability === 'repo' ? [{ effect: async () => { throw new Error('Response lost after sending') } }] : []
-  const result = await evaluateNode(['parent'], s.driver)
-  expect(result.status).toBe('needs-recovery')
-  expect(view(s.get(), ['parent'])!.tasks.some(t => t.title.includes('Manually roll back'))).toBe(true)
-  expect(userView(s.get())!.tasks[0]!.done).toBe(false)
-  s.set(loadReplica(serializeReplica(s.get())))
-  await expect(evaluateNode(['parent'], s.driver)).rejects.toThrow(/needs recovery/)
-})
-test('compensates successful effects in reverse order when commit fails', async () => {
-  const s = setup(), reverted: string[] = []
-  for (const id of ['a', 'b']) s.set(addRow(s.get(), ['parent'], ALLOCATION_TYPE, id, 3, { id, requirement: { capability: 'repo' } }))
-  s.driver.executors = step => step.row?.requirement?.capability === 'repo' ? [{ effect: async step => { s.set(addSupply(s.get(), step.path.slice(0, -1), step.path.at(-1)!, { capability: 'repo', by: 'test' }, 4)) } }] : []
-  s.driver.commit = async () => { throw new Error('Commit failed') }
-  s.driver.rollback = async step => { reverted.push(step.path.at(-1)!) }
+  s.set(addRequirement(s.get(), ['parent'], 'Create issue', 3, { capability: 'repo' }, 'req'))
+  s.driver.executors = step => step.row?.requirement?.capability === 'repo' ? [{ native: async () => { throw new Error('Response lost after sending') } }] : []
   const result = await evaluateNode(['parent'], s.driver)
   expect(result.status).toBe('rolled-back')
-  expect(reverted).toEqual(['a', 'b'])
+  expect(result.error).toMatch(/Response lost/)
   expect(userView(s.get())!.tasks[0]!.done).toBe(false)
-  expect(view(s.get(), ['parent'])!.tasks.find(t => t.id === 'child')!.done).toBe(false)
+  s.set(loadReplica(serializeReplica(s.get())))
+  s.driver.executors = step => step.row?.requirement?.capability === 'repo' ? [{ native: answering('test') }] : []
+  expect((await evaluateNode(['parent'], s.driver)).status).toBe('committed')
+})
+test('a failed commit discards every native\'s answers: no requirement stays filled, no task done', async () => {
+  const s = setup()
+  for (const id of ['a', 'b']) s.set(addRequirement(s.get(), ['parent'], id, 3, { capability: 'repo' }, id))
+  s.driver.executors = step => step.row?.requirement?.capability === 'repo' ? [{ native: answering('test') }] : []
+  s.driver.commit = async () => { throw new Error('Commit failed') }
+  const result = await evaluateNode(['parent'], s.driver)
+  expect(result.status).toBe('rolled-back')
+  expect(result.effects.map(e => e.status)).toEqual(['reverted', 'reverted'])
+  expect(view(s.get(), ['parent'])!.tasks.filter(t => t.requirement).map(t => t.requirement!.satisfied)).toEqual([false, false])
+  expect(userView(s.get())!.tasks[0]!.done).toBe(false)
 })
 test('refuses instructions changed during open and keeps unrelated edits', async () => {
   const s = setup()
@@ -57,30 +57,20 @@ test('refuses instructions changed during open and keeps unrelated edits', async
   expect((await evaluateNode(['parent'], s.driver)).status).toBe('rolled-back')
   expect(view(s.get(), ['parent'])!.tasks[0]!.title).toBe('Changed elsewhere')
 })
-test('legacy allocation rows cannot consume a bank without an explicit authority transition', async () => {
+test('amount rows are data: evaluating them moves no authority and a bank without grants holds none', async () => {
   const s = setup()
-  s.set(addRow(s.get(), [], RESOURCE_TYPE, 'Drill', 1, { id: 'bank', resource: { type: 'inventory', unit: 'drill', capacity: 1 } }))
-  for (const [path, start, end] of [[['parent'], 10, 20], [[], 15, 25]] as const) s.set(addRow(s.get(), [...path], ALLOCATION_TYPE, 'Reservation', 2, { allocation: { resource: 'bank', type: 'inventory', unit: 'drill', amount: 1, start, end } }))
-  await expect(evaluateNode(['parent'], s.driver)).rejects.toThrow(/explicit authority transfer or split/)
-  expect(s.events).toEqual([])
+  s.set(addBank(s.get(), [], 'Drill', 1, { type: 'inventory', unit: 'drill' }, 'bank'))
+  for (const path of [['parent'], []]) s.set(addAllocation(s.get(), path, 'Reservation', 2, { resource: '', type: 'inventory', unit: 'drill', amount: 1 }, { id: `reservation-${path.length}` }))
+  expect(evaluationSteps(s.get(), ['parent']).map(step => step.path)).toEqual([['parent'], ['parent', 'child']])
+  expect((await evaluateNode(['parent'], s.driver)).status).toBe('committed')
+  expect(ownerGrants(s.get(), ['bank'])).toEqual([])
+  expect(handleAt(s.get(), ['parent', 'reservation-1'])).toBeNull()
 })
 
-test('a scalar bank capacity never substitutes for owned authority, regardless of its scope or amount', () => {
-  let r = createReplica('owner')
-  for (const group of ['a', 'b']) {
-    r = addTask(r, [], group, 1, group)
-    r = addRow(r, [group], RESOURCE_TYPE, `${group} bank`, 2, { id: 'bank', resource: { type: 'inventory', unit: 'drill', capacity: group === 'a' ? 2 : 0 } })
-    r = addRow(r, [group], ALLOCATION_TYPE, 'Reserve', 3, { id: 'reservation', allocation: { resource: 'bank', type: 'inventory', unit: 'drill', amount: 1 } })
-  }
-  expect(allocationProblems(r, evaluationSteps(r, ['a', 'reservation']))).toEqual([expect.stringMatching(/explicit authority/)])
-  expect(allocationProblems(r, evaluationSteps(r, ['b', 'reservation']))).toEqual([expect.stringMatching(/explicit authority/)])
-  r = addRow(r, [], ALLOCATION_TYPE, 'Outside', 4, { id: 'outside', allocation: { resource: 'bank', type: 'inventory', unit: 'drill', amount: 1 } })
-  expect(allocationProblems(r, evaluationSteps(r, ['outside']))).toEqual([expect.stringMatching(/explicit authority/)])
-})
 test('completes task requirements bottom up without publishing partial completion', async () => {
   const s = setup()
-  s.set(addRow(s.get(), ['parent'], ALLOCATION_TYPE, 'Child task', 1, { id: 'needs-task', requirement: { capability: 'task' } }))
-  s.set(addTask(s.get(), ['parent', 'needs-task'], 'Nested', 1, 'nested'))
+  s.set(addRequirement(s.get(), ['parent'], 'Child task', 1, TASK_DEMAND, 'needs-task'))
+  s.set(addRow(s.get(), ['parent', 'needs-task'], TASK_TYPE, 'Nested', 1, { id: 'nested' }))
   expect((await evaluateNode(['parent'], s.driver)).status).toBe('committed')
   expect(userView(s.get())!.tasks[0]!.done).toBe(true)
 })
@@ -107,51 +97,18 @@ test('failure to persist final completion leaves tasks open', async () => {
   expect(view(s.get(), ['parent'])!.tasks[0]!.done).toBe(false)
 })
 
-test('amount alone does not fulfill a different unit or time window', async () => {
+test('a plain amount typed inside a resource requirement is data and does not fulfil it', async () => {
   const s = setup()
-  s.set(addRow(s.get(), ['parent'], ALLOCATION_TYPE, 'Reservation', 1, { id: 'need', requirement: { capability: 'allocation', resource: 'inventory', unit: 'drill', amount: 1, start: 10, end: 20 } }))
-  s.set(addRow(s.get(), ['parent', 'need'], ALLOCATION_TYPE, 'Wrong window', 1, { allocation: { resource: 'bank', type: 'inventory', unit: 'drill', amount: 1, start: 30, end: 40 } }))
+  s.set(addRequirement(s.get(), ['parent'], 'Reservation', 1, { capability: 'allocation', resource: 'inventory', unit: 'drill', amount: 1 }, 'need'))
+  s.set(addAllocation(s.get(), ['parent', 'need'], 'Wrong unit', 1, { resource: '', type: 'inventory', unit: 'hammer', amount: 1 }))
   expect(view(s.get(), ['parent'])!.tasks.find(t => t.id === 'need')!.requirement!.satisfied).toBe(false)
   await expect(evaluateNode(['parent'], s.driver)).rejects.toThrow()
 })
 
-test('declared return slots can start empty, but an effect cannot commit with an unfilled return', async () => {
-  const { addRefAt } = await import('./index')
-  const s = setup()
-  s.set(addRow(s.get(), ['parent'], ALLOCATION_TYPE, 'Produce a result', 3, { id: 'req', requirement: { capability: 'tool' } }))
-  s.set(addRefAt(s.get(), ['parent', 'req'], 'result', s.get().store.primitive.documentField.getId(), 4))
-  s.driver.executors = step => step.row?.requirement?.capability === 'tool' ? [{ effect: async () => { s.set(addSupply(s.get(), ['parent'], 'req', { capability: 'tool', by: 'tool' }, 5)) } }] : []
-  s.driver.outputs = () => ['result']
-  const record = await evaluateNode(['parent'], s.driver)
-  expect(record.status).toBe('needs-recovery')
-  expect(record.error).toMatch(/valid return value/)
-  expect(userView(s.get())!.tasks[0]!.done).toBe(false)
-})
-
-test.each([false, true])('output rows are tracked by declaration identity, not a name prefix (change input: %s)', async changeInput => {
-  const { writeNodeValue } = await import('./index')
-  const s = setup(), path = ['parent', 'child']
-  s.set(writeNodeValue(s.get(), path, 'result', {}, 3))
-  s.set(writeNodeValue(s.get(), path, 'result.other', { count: 1 }, 3))
-  const { argumentRefs, content, resolveScope, headCid } = await import('./index')
-  const declared = argumentRefs(s.get().store, resolveScope(s.get().store, headCid(s.get()), path)!).find(a => a.name === 'result')!
-  const output = content(s.get().store, declared.cid).data.alias!.id
-  s.driver.outputs = () => [output]
-  s.driver.executors = () => [{ effect: async () => {
-    s.set(writeNodeValue(s.get(), path, 'result', { nested: { count: 2 } }, 4))
-    if (changeInput) s.set(writeNodeValue(s.get(), path, 'result.other', { count: 9 }, 4))
-  } }]
-  const record = await evaluateNode(path, s.driver)
-  if (changeInput) {
-    expect(record.status).toBe('needs-recovery')
-    expect(record.error).toMatch(/Instructions changed/)
-  } else expect(record.status).toBe('committed')
-})
-
 test('a step with several executors is a choice for its owner, never the first one a host lists', async () => {
   const s = setup(), ran: string[] = []
-  s.set(addRow(s.get(), ['parent'], ALLOCATION_TYPE, 'Create issue', 3, { id: 'req', requirement: { capability: 'repo' } }))
-  const executor = (name: string) => ({ effect: async () => { ran.push(name) } })
+  s.set(addRequirement(s.get(), ['parent'], 'Create issue', 3, { capability: 'repo' }, 'req'))
+  const executor = (name: string) => ({ native: async () => { ran.push(name); return {} } })
   s.driver.executors = step => step.row?.requirement?.capability === 'repo' ? [executor('first'), executor('second')] : []
   await expect(evaluateNode(['parent'], s.driver)).rejects.toThrow(/2 handlers can run this step/)
   expect(ran).toEqual([])

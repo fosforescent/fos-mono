@@ -1,17 +1,17 @@
 /** Shared, read-only resolution for data arguments and callable values. */
 import { discoverHandlers, type HandlerEnvironment } from './handlers'
-import { resolveRequirementOutput } from './destructure'
 import { formText } from './forms'
 import type { FosStore } from '../dag-implementation/store'
 import {
-  isBranchChoice, selectedBranchValue, libraryTypeAt, type Capability, childRows, flowOf, requirementSatisfied, content, isChoiceEdge, isRefNode, refValueCid,
+  isBranchChoice, selectedBranchValue, libraryTypeAt, type Capability, childRows, isRequirementRow, argumentSatisfied, content, isChoiceEdge, isRefNode, refValueCid,
   valueContent, importNodes, reachableNodes, type Scope
 } from './graph'
-import { isAllocationType } from './library-types'
 import { type Replica } from './replica'
 import { sameCapabilityType } from './capabilities'
 import { bindingProperties, visibleBindings, bindingTree, bindingAvailable, bindingAssignments, submissionRef, type ScopedBinding } from './scope-bindings'
-import { matchesGraph } from './structural'
+import { matchesGraph, patternHasStructure } from './structural'
+import { patternIsValuePredicate } from './scoped-refs'
+import { isNegative } from './parameters'
 import { parseRefExpression, resolveRefExpression, resolveRefIdentity, nodeOccurrence, textRefExpressions, type RefAccess } from './ref-paths'
 
 export type BindingEnvironment = HandlerEnvironment & RefAccess & {
@@ -56,7 +56,11 @@ export function contextBindings(r: Replica, at: Scope, environment: BindingEnvir
 export function resolveBinding(store: FosStore, type: string | null, target: string | ScopedBinding | null, candidates: BindingCandidate[] = [], name?: string, environment: BindingEnvironment = {}): BindingResolution {
   const sources = new Set<string>(), active = new Set<string>()
   const fail = (status: BindingResolution['status'], message: string): BindingResolution => ({ status, sources: [...sources], problems: [message] })
-  const compatible = (_actual: string, wanted: string | null, cid: string): boolean => wanted !== null && matchesGraph(store, wanted, cid)
+  // A pattern with structure selects by the candidate's value; a bare capability selects by the candidate's declared type.
+  // A negative declaration asks for a value; it is never a value to select. Otherwise a pattern with structure selects
+  // by the candidate's value and a bare capability by the candidate's declared type.
+  const compatible = (declared: string, wanted: string | null, cid: string): boolean => wanted !== null && !isNegative(store, declared) &&
+    (patternHasStructure(store, wanted) ? matchesGraph(store, wanted, cid) : matchesGraph(store, wanted, declared, { side: 'left' }))
   const choose = (wanted: string | null, label?: string, excluded?: string, anonymous = false): BindingResolution => {
     const matches = [...new Set(candidates.filter(c => c.cid !== excluded && (!label || c.binding?.nameVisible !== false) &&
       (label && c.name === label || compatible(c.type, wanted, c.cid) && (!label || anonymous && (!c.name || !!c.refIds)))).map(c => c.cid))]
@@ -92,6 +96,8 @@ export function resolveBinding(store: FosStore, type: string | null, target: str
     return { ...values[0]!, binding: values[0]!.binding ?? binding, sources: [...sources] }
   }
   const follow = (cid: string, wanted: string | null, inherited = candidates.find(candidate => candidate.cid === cid)?.scope ?? (environment.scope ? { store: environment.scope.replica.store, path: environment.scope.path } : undefined), explicit = false): BindingResolution => {
+    // A row's instruction is not its value's predicate: a reference row's type (a library row type) imposes nothing on what it refers to.
+    if (wanted && !patternIsValuePredicate(store, wanted)) wanted = null
     const declaration = !explicit && candidates.find(candidate => candidate.cid === cid)?.binding
     if (declaration && bindingAssignments(declaration).length) return followDeclaration(declaration, wanted)
     const occurrence = nodeOccurrence(store, cid)
@@ -119,20 +125,21 @@ export function resolveBinding(store: FosStore, type: string | null, target: str
       }
       if (isBranchChoice(store, node)) { const selected = selectedBranchValue(store, cid); return selected ? follow(selected, wanted, scope) : fail('missing', 'Choose a supplied value branch') }
       if (node.children.some(e => isChoiceEdge(store, e))) return fail('conflict', 'Resolve conflicting values first')
-      const output = resolveRequirementOutput(store, cid, scope?.path, environment)
-      if (output) return output.cid ? { status: 'ready', cid: output.cid, binding: output.binding, sources: [...sources], problems: [] } : fail('missing', output.error ?? 'Unfilled requirement')
       if (node.data.ref) {
         if (node.data.ref.peer || node.data.ref.owner) return fail('missing', 'The remote reference needs a handler in this scope')
         if (!scope) return fail('missing', 'The reference needs its lexical scope')
         const found = resolveRefIdentity({ store: scope.store }, scope.path, node.data.ref.id, environment)
         if (found.status !== 'ready') return fail(found.status === 'ambiguous' ? 'ambiguous' : 'missing', 'The reference is unavailable in this scope')
         const location = found.locations[0]!
-        return followDeclaration(location, wanted)
+        // The reference row's pattern describes a reference, not the referenced value's constructor (as in compileRefGraph).
+        return followDeclaration(location, null)
       }
       if (isRefNode(store, node)) {
         const targets = [...new Set(node.children.filter(e => e[0] === store.primitive.targetPointerConstructor.getId()).map(e => e[1]))]
         if (!targets.length) return explicit ? fail('missing', 'The explicitly referenced declaration has no supplied value') : choose(wanted, node.data.name?.content, cid, true)
-        const values = targets.map(t => follow(t, wanted, scope))
+        // a ref row's value sees the declarations inside that row (an answer written inside a requirement), so it resolves from the row's own path
+        const inner: BindingScope | undefined = occurrence ? { store, path: occurrence } : scope
+        const values = targets.map(t => follow(t, wanted, inner))
         const blocked = values.find(v => v.status !== 'ready')
         if (blocked) return { ...blocked, sources: [...sources] }
         if (new Set(values.map(v => v.cid)).size > 1) return fail('conflict', 'Incompatible bindings for the same reference')
@@ -142,8 +149,8 @@ export function resolveBinding(store: FosStore, type: string | null, target: str
       const peer = node.data.peerId?.content
       if (peer && environment.isPeerActive && !environment.isPeerActive(peer)) return fail('missing', `Peer ${peer} is not active`)
       if (environment.checkDependencies === false) return { status: 'ready', cid, sources: [...sources], problems: [] }
-      for (const child of childRows(store, cid).filter(c => isAllocationType(c.type) && flowOf(c.type, c.value).requirement)) {
-        if (!requirementSatisfied(store, child.cid)) { sources.add(child.cid); return fail('missing', 'A required resource or confirmation is unresolved') }
+      for (const child of childRows(store, cid).filter(c => isRequirementRow(store, c.edge))) {
+        if (!argumentSatisfied(store, child.cid, child.edge[0])) { sources.add(child.cid); return fail('missing', 'A required resource or confirmation is unresolved') }
       }
       for (const arg of argumentRefs(store, cid)) {
         if (content(store, arg.cid).data.refRole === 'output') continue

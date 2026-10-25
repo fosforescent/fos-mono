@@ -18,16 +18,16 @@ import { FosStore } from '../dag-implementation/store'
 import { UnsupportedDataVersionError, hashContent } from '../dag-implementation/cid'
 import type { FosContextData, FosNodeContent, FosPathElem } from '../types'
 import { constructForm, formFields, formText, formTitle, formValueAt, positionFormRows, setFormTitle, type FormInput } from './forms'
-import { ALLOCATION_TYPE, COMMENT_TYPE, NOTE_TYPE, PLAIN_TYPE, QUERY_TYPE, REF_TYPE, RESOURCE_TYPE, TASK_TYPE, TEMPLATE_TYPE, isAllocationType } from './library-types'
+import { COMMENT_TYPE, NOTE_TYPE, PLAIN_TYPE, QUERY_TYPE, REF_TYPE, RESOURCE_TYPE, TASK_TYPE, TEMPLATE_TYPE } from './library-types'
 import { legacyCommentMetadata } from './legacy-comment'
 import { knownUser, publishPeerKey, userType, withUserField, type UserRecord } from './users'
-import { membershipPath, withMembershipRow, homeIdOf, isValueSubmission, settingOf, withRequirementInputs } from './graph'
+import { membershipPath, withMembershipRow, homeIdOf, isValueSubmission, settingOf, isRequirementRow } from './graph'
+import { isNegative } from './parameters'
 import {
   withMainBranchPolicy, libAt, refValueCid, putRefValueBranches, selectBranch, isBranchChoice, branchEdge, branchSelection, readChoice, scopeBranches,
   HOME_ID,
   capabilityNames,
   homeContextCid,
-  canonicalRowData,
   type Capability,
   type MovePosition,
   type NodeView,
@@ -317,12 +317,12 @@ export function scopeLabel(replica: Replica, at: Scope = []): string {
 // Local edits. Each returns the same replica object (the store is mutated and
 // the root advanced); callers treat the returned value as the new state.
 
-function edit(replica: Replica, at: Scope, now: number, fn: (value: FosNodeContent) => FosNodeContent): Replica {
+export function edit(replica: Replica, at: Scope, now: number, fn: (value: FosNodeContent) => FosNodeContent): Replica {
   return commitEdit(replica, updateAtScope(replica.store, headCid(replica), at, fn), now)
 }
 
 /** Like `edit`, but `fn` sees the identity node at `at` (the ref node of a link row): for bookkeeping. */
-function editNode(replica: Replica, at: Scope, now: number, fn: (node: FosNodeContent) => FosNodeContent): Replica {
+export function editNode(replica: Replica, at: Scope, now: number, fn: (node: FosNodeContent) => FosNodeContent): Replica {
   return commitEdit(replica, updateAtScope(replica.store, headCid(replica), at, fn, 'node'), now)
 }
 
@@ -379,10 +379,15 @@ function withTextParameters(store: FosStore, node: FosNodeContent): FosNodeConte
 export function addTask(replica: Replica, at: Scope, title: string, now: number, id: string = newId()): Replica {
   const trimmed = title.trim()
   if (!trimmed) return replica
-  return edit(replica, at, now, (value) => {
+  // the first row inside an open requirement starts its value (addRow knows how)
+  const parent = at.length ? resolveScope(replica.store, headCid(replica), at.slice(0, -1)) : null
+  const parentEdge = parent ? findEdge(replica.store, valueContent(replica.store, parent), `a:${at.at(-1)}`) : undefined
+  if (parentEdge && isRequirementRow(replica.store, parentEdge)) return addRow(replica, at, TASK_TYPE, trimmed, now, { id })
+  const added = edit(replica, at, now, (value) => {
     const cid = put(replica.store, withTextParameters(replica.store, taskContent(id, trimmed, false, now, now)))
     return { ...value, children: [...value.children, rowEdgeAt(replica.store, TASK_TYPE, cid, at)] }
   })
+  return added
 }
 
 export type AddRowOptions = Omit<RowExtras, 'store'> & { position?: MovePosition; id?: string }
@@ -455,11 +460,12 @@ export function addRow(replica: Replica, at: Scope, type: string, text: string, 
   const parentEdge = parent ? findEdge(store, valueContent(store, parent), `a:${at.at(-1)}`) : null
   const parentType = parentEdge ? rowTypeOf(store, parentEdge) : null
   const repeated = typeId === PLAIN_TYPE && parentType && content(store, parentType).data.form?.repeat ? formFields(store, parentType)[0]?.type : null
-  if (!text.trim() && !BLANK_TYPES.includes(typeId) && !isAllocationType(typeId)) return replica
+  // Explicit graph definitions may have inputs without a title at all.
+  if (!text.trim() && !store.table.has(type) && !BLANK_TYPES.includes(typeId)) return replica
   const template = repeated ?? resolveRowType(store, type, at)
   const body = rowBody(store, template, text)
   const id = options.id ?? newId()
-  return edit(replica, at, now, (value) => {
+  const place = (value: FosNodeContent) => {
     const { position: _p, id: _i, ...extras } = options
     const constructed = content(store, template).data.form
     const numeric = constructed?.primitive === 'number' || constructed?.primitive === 'time'
@@ -477,7 +483,13 @@ export function addRow(replica: Replica, at: Scope, type: string, text: string, 
     }
     children.push(edge)
     return positionFormRows(store, { ...value, children }, now)
-  })
+  }
+  // The first row typed inside an open requirement starts the value it is bound to: a container the pattern reads.
+  // Until then the hole has no value, and editing it would make the ref its own content.
+  if (parentEdge && isRequirementRow(store, parentEdge) && !refValueCid(store, content(store, identityCid(store, parentEdge)))) {
+    return editNode(replica, at, now, node => refNodeContent(store, { ...node.data, updated: { time: now } }, put(store, place({ data: {}, children: [] })), bookkeepingOf(store, node)))
+  }
+  return edit(replica, at, now, place)
 }
 
 /**
@@ -507,7 +519,7 @@ export function setRowContentAt(replica: Replica, at: Scope, aliasId: string, ty
       if (extras.resource) data.resource = extras.resource
     }
     if (type === QUERY_TYPE && extras.query) data.query = { ...(node.data.query ?? {}), ...extras.query }
-    const next = withChildValue(replica.store, edge, userBound(replica, at, withTextParameters(replica.store, { ...converted, data: canonicalRowData(data) }), extras), now)
+    const next = withChildValue(replica.store, edge, userBound(replica, at, withTextParameters(replica.store, { ...converted, data }), extras), now)
     const changed = identityCid(replica.store, next)
     return replaceEdge(replica.store, value, `a:${aliasId}`, kept ? rowEdge(replica.store, changed, kept) : rowEdgeAt(replica.store, template, changed, at))
   })
@@ -515,9 +527,6 @@ export function setRowContentAt(replica: Replica, at: Scope, aliasId: string, ty
 
 /** The row with its `user` field as `extras.user` says: bound (null removes it); left alone when absent. */
 function userBound(replica: Replica, at: Scope, node: FosNodeContent, extras: Omit<RowExtras, 'store'>): FosNodeContent {
-  // a requirement's inputs, as `extras.inputs` gives them: named fields its capability declares
-  const capability = node.data.requirement?.capability ?? extras.requirement?.capability
-  if (extras.inputs && capability) node = withRequirementInputs(replica.store, node, capability, extras.inputs, at)
   if (extras.user === undefined) return node
   return withUserField(replica.store, node, extras.user && knownUser(replica, extras.user), userType(replica.store, at))
 }
@@ -526,6 +535,9 @@ function userBound(replica: Replica, at: Scope, node: FosNodeContent, extras: Om
 export function bindUserAt(replica: Replica, at: Scope, user: UserRecord | null, now: number): Replica {
   if (!at.length || !resolveScope(replica.store, headCid(replica), at)) throw new Error('Row not found.')
   const type = userType(replica.store, at)
+  const parent = resolveScope(replica.store, headCid(replica), at.slice(0, -1)), edge = parent ? findEdge(replica.store, valueContent(replica.store, parent), `a:${at.at(-1)}`) : undefined
+  // a requirement's @user is part of what it asks: it lives on the declaration, not on the value bound to it
+  if (edge && isRequirementRow(replica.store, edge)) return editNode(replica, at, now, node => withUserField(replica.store, node, user, type))
   return edit(replica, at, now, value => withUserField(replica.store, value, user, type))
 }
 
@@ -596,33 +608,6 @@ export function addRef(replica: Replica, at: Scope, targetAliasId: string, now: 
   const options = { refId: targetAliasId, targetCid: targetCid ?? undefined }
   if (position && 'into' in position) return addRow(r, [...at, position.into], REF_TYPE, '', now, options)
   return addRow(r, at, REF_TYPE, '', now, { ...options, position })
-}
-
-/** Satisfy a requirement row at `at`/`requirementId` with a supply (who, and for search/allocation which row by alias id). */
-export function addSupply(replica: Replica, at: Scope, requirementId: string, supply: { capability: string; by: string; ref?: string; receipt?: string; choice?: number }, now: number, id?: string): Replica {
-  if (supply.ref && !resolveRef(replica, supply.ref, [...at, requirementId])) {
-    const source = findRowByAlias(replica.store, headCid(replica), supply.ref)
-    if (!source) throw new Error('The supplied reference is unavailable.')
-    replica = shareRefAt(replica, [...source.path, source.row.id], [...at, requirementId], now)
-  }
-  const labels: Record<string, string> = {
-    confirmation: `confirmed by ${supply.by}`,
-    choice: `chose option ${(supply.choice ?? 0) + 1}`,
-    search: 'search results',
-    title: `titled by ${supply.by}`,
-    allocation: 'allocation',
-    task: 'task done',
-    market: `listed on the market by ${supply.by}`,
-    mail: `mail sent by ${supply.by}`,
-    peer: `done by ${supply.by}`,
-    llm: `answered by ${supply.by}`,
-    repo: `issue opened by ${supply.by}`,
-    tool: `run by ${supply.by}`,
-    verify: `verified by ${supply.by}`,
-    organize: `organized by ${supply.by}`
-  }
-  const label = Object.hasOwn(labels, supply.capability) ? labels[supply.capability] : undefined
-  return addRow(replica, [...at, requirementId], ALLOCATION_TYPE, label ?? `${supply.capability} supplied by ${supply.by}`, now, { supply: { ...supply, at: now }, id })
 }
 
 /** The template row called `name` that a row at `at` sees (nearest ancestor first), or null. */
@@ -832,6 +817,8 @@ export function renameTask(replica: Replica, at: Scope, taskId: string, title: s
   const edge = parent && findChildEdge(replica, valueContent(replica.store, parent), taskId)
     // a note's body and a pre-constructor comment (migrated on edit) are rewritten through their type
     if (edge && (valueContent(replica.store, identityCid(replica.store, edge)).data.comment || isRowOfType(replica.store, edge, NOTE_TYPE))) return setRowContentAt(replica, at, taskId, isRowOfType(replica.store, edge, NOTE_TYPE) ? NOTE_TYPE : COMMENT_TYPE, title, {}, now)
+  // a requirement is titled by its own declaration, whatever value it is bound to
+  if (edge && isRequirementRow(replica.store, edge)) return editNode(replica, [...at, taskId], now, node => node.data.description?.content === trimmed ? node : { ...node, data: { ...node.data, description: { content: trimmed }, updated: { time: now } } })
   return updateTask(replica, at, taskId, now, (task) => {
       if (projectsTitle(task)) return withTextParameters(replica.store, setFormTitle(replica.store, task, task.data.presentation?.headline ? title : trimmed, now))
     if (task.data.description?.content === trimmed) return null
@@ -1055,7 +1042,8 @@ function boundRefValue(replica: Replica, at: Scope, value: FosNodeContent, targe
   const parent = at.length ? resolveScope(store, headCid(replica), at.slice(0, -1)) : null
   const edge = parent ? findEdge(store, valueContent(store, parent), `a:${at.at(-1)}`) : undefined
   const type = edge && rowTypeOf(store, edge)
-  if (!type || !refValueCompatible(store, type, target)) throw new Error('The submitted value has an incompatible ref type.')
+  // a reference is followed by the resolver when the value is read; its own shape says nothing about what it refers to
+  if (!type || (!content(store, target).data.ref && !refValueCompatible(store, type, target))) throw new Error('The submitted value has an incompatible ref type.')
   const previous = refValueCid(store, value)
   let bound = target
   if (previous && previous !== target) {

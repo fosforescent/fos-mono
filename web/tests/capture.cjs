@@ -58,7 +58,7 @@ async function main() {
       const submitted = await c.proposeOrganizePlan(server, target, plan, { label: request.label, stamp: 'now', text: request.text }, 10)
       const result = { rows: submitted.rows.length, under: [], captureId: submitted.captureId, title: plan.title, proposal: submitted.proposalCid, name: submitted.name, additions: submitted.additions }
       server = c.writeHandlerResult(submitted.replica, path, result, 10)
-      server = c.addSupply(server, target, path.at(-1), { capability: 'organize', by: 'fos', ref: submitted.captureId }, 10)
+      server = c.supplyRequirement(server, target, path.at(-1), { by: 'fos', ref: submitted.captureId }, 10)
       return json(200, { evaluation: { status: 'committed' } })
     }
     if (u.pathname === '/user/data/peer-sync/provide-node') {

@@ -1,5 +1,7 @@
 import { capabilityDeclarations } from './capability-catalog'
-import { compileRequirement, checkCompiledRequirement } from './compiled-requirements'
+import { resolveBinding } from './bindings'
+import { bindingProperties, type ScopedBinding } from './scope-bindings'
+import { nodeOccurrence } from './ref-paths'
 import { readGraphValue } from './node-values'
 /**
  * Graph helpers for sync, written against the hash-consed FosStore.
@@ -43,15 +45,15 @@ import { readGraphValue } from './node-values'
  * uses. A node's cid changes with every edit; its alias id does not.
  */
 
-import { allocationValue } from './destructure'
-import { resourceWindow, resourceWindowSatisfies } from './resource-window'
 
-import { capabilityName, sameCapabilityType, isExecuteLeft, isTriggerLeft } from './capabilities'
+import { capabilityName, sameCapabilityType, isExecuteLeft, isHandlerStateLeft, isTriggerLeft } from './capabilities'
 import * as COMPILED_LIBRARY from './library.generated.json'
 import { libraryNames, type LibraryNames } from '../library-names'
-import { DEVICE_ROOT_TYPE, DOCUMENT_ROOT_TYPE, HOME_TYPE, LIBRARY_TYPE, MONEY_TYPE, PATTERN_TYPE, PLAIN_TYPE, QUERY_TYPE, REF_TYPE, RESOURCE_TYPE, TASK_TYPE, TEMPLATE_TYPE, isAllocationType } from './library-types'
+import { DEVICE_ROOT_TYPE, DOCUMENT_ROOT_TYPE, HOME_TYPE, LIBRARY_TYPE, PATTERN_TYPE, PLAIN_TYPE, QUERY_TYPE, REF_TYPE, RESOURCE_TYPE, TASK_TYPE, TEMPLATE_TYPE } from './library-types'
+import { isNegative } from './parameters'
+import { isClassifyingRow, isKindRow, isTagRow, tag, tagsOf, valueOfPattern } from './structural'
 import { formAttribution, formElements, formTitle, positionFormRows, type FormElement } from './forms'
-import { sameUser, userOf, userPeerId, type UserRecord } from './users'
+import { userOf, userPeerId, type UserRecord } from './users'
 import { FosStore } from '../dag-implementation/store'
 import { canonicalTypeErrors, isTypeErrorEdge, plainEdge, typeErrorOf, unwrapRootTarget } from './patterns'
 import { hashContent, isCurrentCid, verifyCid } from '../dag-implementation/cid'
@@ -424,6 +426,8 @@ export function rowsOfType(store: FosStore, cid: string, typeId: string): Array<
  */
 export function isTemplateType(store: FosStore, typeCid: string): boolean {
   if (!store.table.has(typeCid)) return false
+  // a capability pattern (refined with inputs) declares refs too, but it is an instruction, never a template to instantiate
+  if (content(store, typeCid).data.capabilityDefinition) return false
   return valueContent(store, typeCid).children.some(edge => {
     if (!isRowEdge(store, edge) || isChoiceEdge(store, plainEdge(store, edge))) return false
     const identity = content(store, identityCid(store, edge))
@@ -435,11 +439,6 @@ export function isTemplateType(store: FosStore, typeCid: string): boolean {
 export function isTaskRow(store: FosStore, edge: FosPathElem): boolean {
   const type = rowTypeOf(store, edge)
   return !!type && (typeIdOf(store, type) === TASK_TYPE || isTemplateType(store, type))
-}
-
-/** A row of the Allocation type or a sub-type of it (money): a signed entry of a resource. */
-export function isAllocationRow(store: FosStore, edge: FosPathElem): boolean {
-  return isAllocationType(rowTypeIdOf(store, edge))
 }
 
 /** Resolve a new row's type from the library bound at its parent `at`; missing fields must fail. */
@@ -768,34 +767,22 @@ export type RowExtras = {
   author?: { id: string; name: string }
   targetCid?: string
   store?: FosStore
-  requirement?: NonNullable<FosNodeContent['data']['requirement']>
-  supply?: NonNullable<FosNodeContent['data']['supply']>
   query?: NonNullable<FosNodeContent['data']['query']>
   resource?: NonNullable<FosNodeContent['data']['resource']>
-  allocation?: NonNullable<FosNodeContent['data']['allocation']>
   /** The user `@name` names: bound as the row's `user` field (a user object); null removes it. */
   user?: UserRecord | null
-  /** Values for the inputs the requirement's capability declares (its refs, by name): named fields on the row's value. */
-  inputs?: Record<string, string>
 }
-
-const DEFAULT_ALLOCATION = { resource: '', type: 'inventory' as const, amount: 0, unit: 'unit' }
 
 /**
  * Content of a new row of the library type `typeId` (the native data that type's rows carry). `text` is the title;
- * a reference ignores it. An allocation (or money) row is a requirement (negative), a supply or a plain allocation.
+ * a reference ignores it. Argument rows (requirements and allocations) are made by sync/arguments.ts, not here.
  */
 export function rowContent(typeId: string, id: string, text: string, now: number, extra: RowExtras = {}): FosNodeContent {
   const data: FosNodeContent['data'] = { alias: { id }, description: { content: text }, updated: { time: now } }
   if (typeId === TASK_TYPE) data.todo = { completed: !!extra.done, time: now }
-  if (isAllocationType(typeId)) {
-    if (extra.requirement) data.requirement = extra.requirement
-    else if (extra.supply) data.supply = extra.supply
-    else data.allocation = extra.allocation ?? DEFAULT_ALLOCATION
-  }
   if (typeId === QUERY_TYPE) data.query = extra.query ?? {}
   if (typeId === RESOURCE_TYPE) {
-    data.resource = { ...(extra.resource ?? { type: 'inventory', unit: 'unit' }), ...resourceWindow(extra.resource ?? {}) }
+    data.resource = extra.resource ?? { type: 'inventory', unit: 'unit' }
     // Resource banks supply ordinary named bindings, just like other capability handlers.
     data.name = { content: text }
     if (extra.store) {
@@ -808,25 +795,7 @@ export function rowContent(typeId: string, id: string, text: string, now: number
     // a reference row is itself a ref node: TARGETPOINTER holds a snapshot of the row it stands for
     if (extra.targetCid && extra.store) return refNodeContent(extra.store, data, extra.targetCid)
   }
-  canonicalRowData(data)
   return { data, children: [] }
-}
-
-
-/** One write representation; older requirement records are only a read adapter. */
-export function canonicalRowData(data: FosNodeContent['data']): FosNodeContent['data'] {
-  if (data.requirement) {
-    const req = data.requirement
-    data.allocation = { ...req, capability: req.capability, resource: '', type: req.resource ?? 'inventory', amount: req.capability === 'allocation' ? -Math.abs(req.amount ?? 0) : -1, unit: req.unit ?? 'unit', ...(req.start !== undefined ? { start: req.start } : {}), ...(req.end !== undefined ? { end: req.end } : {}) }
-    delete data.requirement
-  } else if (data.supply) {
-    const supply = data.supply
-    data.allocation = { ...supply, resource: '', type: 'inventory', amount: 1, unit: 'unit' }
-    delete data.supply
-  }
-  if (data.allocation) data.allocation = { ...data.allocation, ...resourceWindow(data.allocation) }
-  if (data.resource) data.resource = { ...data.resource, ...resourceWindow(data.resource) }
-  return data
 }
 
 /** The edge for row node `cid` made from `type` (a row type or a template row). */
@@ -873,21 +842,16 @@ export function convertRow(store: FosStore, value: FosNodeContent, typeId: strin
 
 /** Same node as a row of the library type `typeId`: the native data of its old type dropped, the new type's added. */
 export function convertRowContent(value: FosNodeContent, typeId: string, now: number, extra: Omit<RowExtras, 'store'> = {}): FosNodeContent {
-  const { todo: _todo, comment: _comment, ref: _ref, requirement: _rq, supply: _su, query: _q, resource: _rs, allocation: _al, ...rest } = value.data
+  const { todo: _todo, comment: _comment, ref: _ref, query: _q, resource: _rs, allocation: _al, ...rest } = value.data
   const data: FosNodeContent['data'] = { ...rest, updated: { time: now } }
   if (typeId === TASK_TYPE) data.todo = { completed: !!value.data.todo?.completed, time: value.data.todo?.time ?? now }
   if (typeId === REF_TYPE) data.ref = value.data.ref ?? { id: '' }
-  if (isAllocationType(typeId)) {
-    if (extra.requirement) data.requirement = extra.requirement
-    else if (extra.supply) data.supply = extra.supply
-    else data.allocation = extra.allocation ?? value.data.allocation ?? (value.data.requirement || value.data.supply ? canonicalRowData({ requirement: value.data.requirement, supply: value.data.supply }).allocation : DEFAULT_ALLOCATION)
-  }
   if (typeId === QUERY_TYPE) data.query = value.data.query ?? {}
   if (typeId === RESOURCE_TYPE) {
     data.resource = extra.resource ?? value.data.resource ?? { type: 'inventory', unit: 'unit' }
     data.name = { content: value.data.description?.content ?? '' }
   }
-  return { ...value, data: canonicalRowData(data) }
+  return { ...value, data }
 }
 
 /** A peer edge's identity (a device attached to the store): the content address of who it is, apart from a member entry for the same peer. */
@@ -1057,7 +1021,8 @@ export function updateAtScope(store: FosStore, nodeCid: string, scope: Scope, fn
     return next === identityCid(store, active) ? nodeCid : updateBranch(store, nodeCid, withIdentity(store, active, next))
   }
   const ref = isRefNode(store, identity) && !isHandle(identity)
-  const value = ref ? valueContent(store, nodeCid) : identity
+  // an unfilled ref holds nothing: what is written into it starts an empty container, never a copy of the ref itself
+  const value = ref ? (refValueCid(store, identity) ? valueContent(store, nodeCid) : { data: {}, children: [] }) : identity
 
   // the result for this node given its new content
   const advance = (nextValue: FosNodeContent): string => {
@@ -1385,11 +1350,11 @@ export type TaskView = {
   template?: { id: string; name: string }
   /** Reference errors: the template the row is pinned to, requested from the peer and not received yet. */
   missingTemplate?: { cid: string }
-  /** `have`: for allocation requirements, the amount already allocated to it (child allocations and supplied references); `need` its amount. */
-  requirement?: NonNullable<FosDataContent['requirement']> & { satisfied: boolean; summary: string; have?: number; need?: number }
-  supply?: NonNullable<FosDataContent['supply']>
+  /** A negative argument row (a requirement): what it demands and whether its value satisfies it. */
+  requirement?: RequirementView
   query?: NonNullable<FosDataContent['query']>
-  resource?: NonNullable<FosDataContent['resource']> & { allocated: number; available: number | null }
+  /** `held`: the net amount of the bank's grants (negative grants retire authority). */
+  resource?: NonNullable<FosDataContent['resource']> & { held: number }
   allocation?: NonNullable<FosDataContent['allocation']>
   /** Listed on the market: the market peer is a member of this node (`isListed`). */
   market?: boolean
@@ -1458,7 +1423,9 @@ export function marketGrantsOf(store: FosStore, nodeCid: string): Capability[] |
 }
 /** Is the node listed right here (the market is its member with `read`)? */
 export function isListed(store: FosStore, nodeCid: string): boolean {
-  return !!marketGrantsOf(store, nodeCid)?.includes('read')
+  if (marketGrantsOf(store, nodeCid)?.includes('read')) return true
+  // a node is also listed while a market requirement under it holds its answer (the server's listing)
+  return childRows(store, nodeCid).some(row => { const view = requirementViewOf(store, row.edge, row.cid); return !!view && view.capability === 'market' && view.satisfied })
 }
 /**
  * The native projection of the named argument ref `name` on the node `nodeCid` (what `readNodeValue` reads, without a
@@ -1494,9 +1461,11 @@ export function rowView(store: FosStore, nodeCid: string, edge?: FosPathElem): T
   const sub = countNode(store, nodeCid)
   const typeError = edge ? typeErrorOf(store, edge) : null
   const definition = typeCid ? valueContent(store, typeCid) : undefined
+  // a requirement row is titled by its own declaration, whatever value is bound to it
+  const asks = !!typeCid && isNegative(store, typeCid) && isRefNode(store, identity) && !!identity.data.description
   const view: TaskView = {
     id: aliasIdOf(identity) ?? aliasIdOf(value) ?? nodeCid,
-    title: formTitle(store, value, definition),
+    title: asks ? identity.data.description!.content : formTitle(store, value, definition),
     type,
     ...(typeCid ? { typeCid } : {}),
     ...(definition?.data.description?.content ? { typeName: definition.data.description.content } : {}),
@@ -1504,7 +1473,7 @@ export function rowView(store: FosStore, nodeCid: string, edge?: FosPathElem): T
     done: task && !!value.data.todo?.completed,
     createdAt: created,
     updatedAt: value.data.updated?.time ?? created,
-    childCount: value.children.filter((e) => isRowEdge(store, e)).length,
+    childCount: value.children.filter((e) => isRowEdge(store, e) && !(isKindRow(store, e) && !content(store, identityCid(store, e)).data.alias)).length,
     childChoices: value.children.filter((e) => isChoiceEdge(store, e)).length,
     subtreeTasks: sub.tasks,
     subtreeDone: sub.done,
@@ -1535,75 +1504,132 @@ export function rowView(store: FosStore, nodeCid: string, edge?: FosPathElem): T
   if (missing) view.missingTemplate = { cid: missing.cid }
   if (task) { const blockers = taskBlockers(store, nodeCid); if (blockers.length) view.blockedBy = blockers }
   if (isBranchChoice(store, identity)) view.branches = { selected: branchSelection(store, nodeCid), names: readChoice(store, nodeCid).options.map(o => o.peerId), mergeRequests: readChoice(store, nodeCid).options.filter(o => o.requestMerge).map(o => o.peerId) }
-  const user = userOf(store, value)
+  // a requirement's @user is part of its declaration; an answer that carries one (an attested user) refines it
+  const user = asks ? userOf(store, value) ?? userOf(store, identity) : userOf(store, value)
   if (user) view.user = user
-  if (!held && isAllocationType(type)) {
-    const flow = flowOf(type, value)
-    if (flow.requirement) {
-      const progress = requirementProgress(store, nodeCid)
-      view.requirement = { ...flow.requirement, satisfied: requirementSatisfied(store, nodeCid), summary: requirementSummary(flow.requirement, user), ...(progress ? progress : {}) }
-    }
-    if (flow.supply) view.supply = flow.supply
-    if (flow.allocation) view.allocation = allocationValue(store, nodeCid)
-  }
+  const requirement = !held && edge ? requirementViewOf(store, edge, nodeCid, user) : undefined
+  if (requirement) view.requirement = requirement
+  if (!held && edge && isAllocationRow(store, edge) && value.data.allocation) view.allocation = value.data.allocation
   if (type === QUERY_TYPE) view.query = value.data.query ?? {}
-  if (type === RESOURCE_TYPE && value.data.resource) { const allocated = allocatedIn(store, nodeCid); view.resource = { ...value.data.resource, allocated, available: value.data.resource.capacity === undefined ? null : value.data.resource.capacity - allocated } }
+  if (type === RESOURCE_TYPE && value.data.resource) view.resource = { ...value.data.resource, held: grantEntries(store, refValueCid(store, identity) ?? nodeCid).reduce((sum, grant) => sum + grant.allocation.amount, 0) }
   if (isListed(store, nodeCid)) view.market = true
   if (typeError?.length) view.typeError = typeError
   return view
 }
 
 // ---------------------------------------------------------------------------
-// Requirements, supplies, resources
+// Arguments: requirements (negative) and allocations (positive), banks and grants
+
+/** The name a capability node carries (`capabilities.<name>`), or null for any other node. Presentation only. */
+export function capabilityNameOf(store: FosStore, type: string | null | undefined): string | null {
+  const id = typeIdOf(store, type)
+  return id?.startsWith('capabilities.') ? id.slice('capabilities.'.length) : null
+}
+/** A requirement row: an argument row whose pattern is negative (it asks for a value) and whose right is the ref that holds it. */
+export function isRequirementRow(store: FosStore, edge: FosPathElem): boolean {
+  const left = isRowEdge(store, edge) ? rowTypeOf(store, edge) : null
+  return !!left && isNegative(store, left) && isRefNode(store, content(store, identityCid(store, edge)))
+}
+/**
+ * An allocation row: a row whose pattern is a positive allocation. In the tree its right is a ref holding the amount
+ * (a grant when a bank issued it: a handle); inside a bank's value its right is the grant itself, an element of the set.
+ */
+export function isAllocationRow(store: FosStore, edge: FosPathElem): boolean {
+  const left = isRowEdge(store, edge) ? rowTypeOf(store, edge) : null
+  return !!left && !isNegative(store, left) && !!content(store, left).data.allocation
+}
+
+/** What a requirement demands, read from its pattern, and whether its value satisfies it. */
+export type RequirementView = {
+  capability: string | null; satisfied: boolean; summary: string
+  /** The pattern pins the allocate contract: only a grant satisfies it. */
+  linear: boolean
+  resource?: ResourceType; amount?: number; unit?: string; start?: number | null; end?: number | null
+  options?: string[]
+  /** Named inputs the demand carries for its handler (a recipient, a repository, a tool), by name. */
+  inputs: Record<string, string>
+  tool?: string; repo?: string; peer?: string; place?: string
+}
+
+/** The options a choice pattern declares, in order: its alternative rows other than its classifying and capability rows. */
+export function patternOptions(store: FosStore, pattern: string): string[] {
+  const node = content(store, pattern)
+  if (!node.data.refAlternatives) return []
+  return node.children.filter(edge => !isClassifyingRow(store, edge, node) && !isKindRow(store, edge))
+    .map(([, option]) => content(store, option).data.description?.content ?? '')
+}
+/** The named inputs a pattern carries: its rows whose right is a named ref, with the text each holds. */
+export function patternInputs(store: FosStore, pattern: string): Record<string, string> {
+  const result: Record<string, string> = {}
+  for (const [, right] of content(store, pattern).children) {
+    const ref = store.table.get(right)
+    if (!ref || !isRefNode(store, ref) || !ref.data.name) continue
+    const value = refValueCid(store, ref)
+    if (value) result[ref.data.name.content] = content(store, value).data.description?.content ?? ''
+  }
+  return result
+}
+/**
+ * The pattern with `inputs` filled: a declared input ref of the same name holds the text, an undeclared one is added
+ * as a text row. A value of the pattern carries the same rows, so what the handler reads is part of the contract.
+ */
+export function withInputs(store: FosStore, pattern: string, inputs: Record<string, string>): string {
+  const node = content(store, pattern)
+  let children = node.children
+  for (const [name, text] of Object.entries(inputs)) {
+    const value = put(store, { data: { description: { content: text } }, children: [] })
+    const index = children.findIndex(([, right]) => { const ref = store.table.get(right); return !!ref && isRefNode(store, ref) && ref.data.name?.content === name })
+    const left = index >= 0 ? children[index]![0] : store.primitive.documentField.getId()
+    const row: FosPathElem = [left, put(store, refNodeContent(store, { alias: { id: hashContent({ data: { name: { content: name }, description: { content: 'input' } }, children: [] }) }, name: { content: name } }, value))]
+    children = index >= 0 ? children.map((edge, i) => i === index ? row : edge) : [...children, row]
+  }
+  return put(store, { ...node, children })
+}
+/** The text of the input `name` of the row's pattern, or null. */
+export function inputOf(store: FosStore, pattern: string, name: string): string | null {
+  return patternInputs(store, pattern)[name] ?? null
+}
 
 /**
- * What an allocation-typed row is, read from the sign of its amount: a negative entry is a requirement (what its
- * parent needs), a positive one is supplied. A money row (`lib.money`) is told apart by sign alone:
- * negative = a request for payment, positive = a payment (a supply that is also an allocation of that amount). Other
- * allocation rows supply a handler's answer when they name its capability; without one they are plain allocations.
+ * An argument is satisfied when its ref is bound to a value that satisfies its pattern, through the same resolution
+ * every argument gets: a reference to a row is followed, choices must be resolved, and nothing switches on a name.
  */
-export function flowOf(typeId: string, value: FosNodeContent): { requirement?: NonNullable<FosDataContent['requirement']>; supply?: NonNullable<FosDataContent['supply']>; allocation?: boolean } {
-  const requirement = demandOf(value)
-  if (requirement) return { requirement }
-  const a = value.data.allocation
-  if (typeId === MONEY_TYPE) return a && a.amount > 0 ? { supply: { capability: 'allocation', by: a.by ?? '', at: a.at ?? 0, ...(a.ref ? { ref: a.ref } : {}), ...(a.receipt ? { receipt: a.receipt } : {}) }, allocation: true } : {}
-  const supply = supplyOf(value)
-  return supply ? { supply } : a ? { allocation: true } : {}
+export function argumentSatisfied(store: FosStore, cid: string, pattern: string): boolean {
+  const node = content(store, cid)
+  if (!isRefNode(store, node) || !refValueCid(store, node)) return false
+  return resolveBinding(store, pattern, cid, [], undefined, { checkDependencies: false }).status === 'ready'
 }
 
-/** Supplied handler values are positive entries of the same flow record (a money row: see `flowOf`). */
-export function supplyOf(value: FosNodeContent): FosDataContent['supply'] {
-  if (value.data.supply) return value.data.supply
-  const a = value.data.allocation
-  return a?.capability && a.amount > 0 ? { capability: a.capability, by: a.by ?? '', at: a.at ?? 0, ...(a.ref ? { ref: a.ref } : {}), ...(a.receipt ? { receipt: a.receipt } : {}), ...(a.choice !== undefined ? { choice: a.choice } : {}) } : undefined
+/** The requirement row `edge` as the tree shows it; undefined for any other row. */
+export function requirementViewOf(store: FosStore, edge: FosPathElem, cid: string, user?: UserRecord | null): RequirementView | undefined {
+  if (!isRequirementRow(store, edge)) return undefined
+  const pattern = rowTypeOf(store, edge)!, node = content(store, pattern), allocation = node.data.allocation, inputs = patternInputs(store, pattern)
+  // linear: the pattern is tagged with a second capability, the contract that checks the grant it demands
+  const view: RequirementView = { capability: node.data.capabilityDefinition?.name ?? null, satisfied: argumentSatisfied(store, cid, pattern), summary: '', linear: tagsOf(store, node).length > 1, inputs,
+    ...(allocation ? { resource: allocation.type, ...(allocation.amount !== undefined ? { amount: allocation.amount } : {}), ...(allocation.unit ? { unit: allocation.unit } : {}),
+      ...(allocation.start !== undefined ? { start: allocation.start } : {}), ...(allocation.end !== undefined ? { end: allocation.end } : {}) } : {}),
+    ...(node.data.refAlternatives ? { options: patternOptions(store, pattern) } : {}),
+    ...(inputs.tool !== undefined ? { tool: inputs.tool } : {}), ...(inputs.repo !== undefined ? { repo: inputs.repo } : {}),
+    ...(inputs.peer !== undefined ? { peer: inputs.peer } : {}), ...(inputs.place !== undefined ? { place: inputs.place } : {}) }
+  view.summary = requirementSummary(view, user)
+  return view
 }
 
-/** A demand and a contribution are signed entries of the same resource. Legacy demand records still read. */
-export function demandOf(value: FosNodeContent): FosDataContent['requirement'] {
-  if (value.data.requirement) return value.data.requirement
-  const a = value.data.allocation
-  return a && (a.amount < 0 || (a.amount === 0 && !!a.capability)) ? { capability: a.capability ?? 'allocation', ...(!a.capability || a.capability === 'allocation' ? { resource: a.type, amount: -a.amount, unit: a.unit } : {}), ...(a.options ? { options: a.options } : {}), ...(a.peer ? { peer: a.peer } : {}), ...(a.repo ? { repo: a.repo } : {}), ...(a.tool ? { tool: a.tool } : {}), ...(a.start !== undefined ? { start: a.start } : {}), ...(a.end !== undefined ? { end: a.end } : {}) } : undefined
-}
-
-
-export function requirementSummary(req: NonNullable<FosDataContent['requirement']>, user?: UserRecord | null): string {
+/** A requirement's one-line summary. Presentation by the capability's own name; execution never reads it. */
+export function requirementSummary(req: Pick<RequirementView, 'capability' | 'resource' | 'amount' | 'unit' | 'options' | 'repo' | 'tool' | 'peer'>, user?: UserRecord | null): string {
   const named = user ? ` @${user.username}` : ''
   switch (req.capability) {
     case 'confirmation': return 'confirmation'
     case 'choice': return `choice${req.options?.length ? ` (${req.options.join(' | ')})` : ''}`
     case 'search': return 'search'
-    case 'allocation': return `${req.resource ?? 'resource'}${req.amount !== undefined ? ` ${req.amount} ${req.unit ?? ''}`.trimEnd() : ''}${named}`
+    case 'allocation': case 'send-payment': case 'points': case 'calendar':
+      return req.resource ? `${req.resource}${req.amount !== undefined ? ` ${req.amount} ${req.unit ?? ''}`.trimEnd() : ''}${named}` : req.capability
     case 'task': return 'task'
-    case 'market': return 'market'
-    case 'mail': return 'mail'
     case 'peer': return user ? `@${user.username}` : req.peer ? `@${req.peer}` : 'peer'
-    case 'llm': return 'llm'
     case 'repo': return req.repo ? `repo ${req.repo}` : 'repo'
     case 'tool': return req.tool ? `tool ${req.tool}` : 'tool'
     case 'verify': return user ? `verify @${user.username}` : 'verify'
-    case 'organize': return 'organize'
-    case 'title': return 'title'
-    default: return req.capability
+    default: return req.capability ?? 'requirement'
   }
 }
 
@@ -1619,49 +1645,6 @@ export function childRows(store: FosStore, cid: string): ChildRow[] {
   }
   return out
 }
-/** Allocation rows that hold an amount of a resource (positive entries, money payments included). */
-const allocationEntry = (row: ChildRow): boolean => isAllocationType(row.type) && !!flowOf(row.type, row.value).allocation
-/** Rows that are requirements of their parent (negative allocation entries). */
-const requirementEntry = (row: ChildRow) => isAllocationType(row.type) ? flowOf(row.type, row.value).requirement : undefined
-
-/** The user constraint on a requirement and its supplied allocation. */
-export type RequiredUser = { required: UserRecord | null; given: UserRecord | null | undefined }
-
-/**
- * Does an allocation count towards an allocation requirement at all (resource type matches), whatever its amount?
- * A requirement that names a user (`-@bob`, `-ff 5 @bob`) counts only allocations for that same user object.
- */
-export function allocationMatches(req: NonNullable<FosDataContent['requirement']>, a: FosDataContent['allocation'] | undefined, users?: RequiredUser): boolean {
-  return !!a && (!req.resource || a.type === req.resource) && (!req.unit || a.unit?.toUpperCase() === req.unit.toUpperCase()) &&
-    resourceWindowSatisfies(a, req) &&
-    (!users?.required || (!!users.given && sameUser(users.required, users.given))) &&
-    // a named place is met by an allocation at that place by name, or by a position (a device's location) with no name
-    (!req.place || !a.location?.name || a.location.name.trim().toLowerCase() === req.place.trim().toLowerCase())
-}
-
-/**
- * How much of an allocation requirement is covered: the amounts of the allocation rows inside it (a money request's
- * payments among them) and of the allocations its supplies reference, against the amount it asks for. Null for other
- * requirements or when the requirement names no amount.
- */
-export function requirementProgress(store: FosStore, requirementCid: string): { have: number; need: number } | null {
-  return checkCompiledRequirement(store, compileRequirement(store, requirementCid)).progress
-}
-
-/**
- * A requirement is satisfied by a child row that fills it: a done task (`task`), an allocation of the resource and
- * amount (`allocation`; for money, payments), a query that has been run (`search`); or by a supply row under it that
- * matches its capability (confirmation, choice, a peer's answer, or a reference to an allocation/query row elsewhere).
- */
-export function requirementSatisfied(store: FosStore, requirementCid: string): boolean {
-  const node = content(store, requirementCid)
-  if (isRefNode(store, node) && !refValueCid(store, node)) return false
-  const req = demandOf(valueContent(store, requirementCid))
-  if (!req) return true
-  // Signed resource rows are a standard-library adapter. A handler input is not a result.
-  return checkCompiledRequirement(store, compileRequirement(store, requirementCid)).satisfied
-}
-
 /** Resolve templates from direct enclosing declarations, then the bound library's fields. */
 export function findTemplate(store: FosStore, rootCid: string, name: string, at: Scope = []): { row: TaskView; cid: string } | null {
   const wanted = name.trim().toLowerCase()
@@ -1683,21 +1666,37 @@ export function findTemplate(store: FosStore, rootCid: string, name: string, at:
 }
 /** Summaries of the requirements under a task that are not satisfied yet. */
 export function taskBlockers(store: FosStore, taskCid: string): string[] {
-  return childRows(store, taskCid).flatMap((row) => {
-    const req = requirementEntry(row)
-    return req && !requirementSatisfied(store, row.cid) ? [requirementSummary(req, userOf(store, row.value))] : []
+  return childRows(store, taskCid).flatMap(row => {
+    const req = requirementViewOf(store, row.edge, row.cid, userOf(store, content(store, row.cid)) ?? userOf(store, row.value))
+    return req && !req.satisfied ? [req.summary] : []
   })
 }
 
-/** Sum of allocation amounts anywhere under a resource bank (sub-banks included). */
-export function allocatedIn(store: FosStore, bankCid: string): number {
-  const type = valueContent(store, bankCid).data.resource?.type
-  const sum = (cid: string): number => childRows(store, cid).reduce((total, child) => {
-    const allocation = allocationEntry(child) ? allocationValue(store, child.cid) : undefined
-    const amount = allocation && (!type || allocation.type === type) ? allocation.amount : 0
-    return total + amount + sum(child.cid)
-  }, 0)
-  return sum(bankCid)
+/** Whether a value is tagged with the checking contract `contract`: the capability node whose handler moves it. */
+export function allocationContract(store: FosStore, value: FosNodeContent, contract: string): string | null {
+  return tagsOf(store, value).includes(contract) ? contract : null
+}
+/** The checking contract a bank's value declares: its one tag. A bank is not a value of a capability, so it carries no other tag. */
+export function ownerContract(store: FosStore, value: FosNodeContent): string | null {
+  const tags = tagsOf(store, value)
+  return tags.length === 1 ? tags[0]! : null
+}
+
+/**
+ * The grants a value holds: its allocation rows whose value is a non-zero grant pinned to the contract the value
+ * itself declares. A value that declares no contract holds no grants, so a copy of a grant's value elsewhere is data.
+ */
+export function grantEntries(store: FosStore, stateCid: string): Array<{ id: string; cid: string; edge: FosPathElem; contract: string; allocation: NonNullable<FosDataContent['allocation']> }> {
+  const state = content(store, stateCid), owner = ownerContract(store, state)
+  if (!owner) return []
+  return state.children.flatMap(edge => {
+    if (!isAllocationRow(store, edge)) return []
+    const identity = identityCid(store, edge), node = content(store, identity)
+    const cid = isRefNode(store, node) ? refValueCid(store, node) : identity
+    if (!cid || !store.table.has(cid)) return []
+    const value = content(store, cid), allocation = value.data.allocation, contract = allocationContract(store, value, owner)
+    return allocation && allocation.amount !== 0 && contract ? [{ id: node.data.alias?.id ?? cid, cid, edge, contract, allocation }] : []
+  })
 }
 
 function describeEdge(store: FosStore, edge: FosPathElem | null): { task: TaskView | null; label: string | null } {
@@ -1781,6 +1780,10 @@ export function viewNode(store: FosStore, cid: string, constructors = false): No
   for (const edge of value.children) {
     // a library instance is the library's binding, a container, not one of the node's rows (Settings lists it)
     if (isRowEdge(store, edge) && !constructors && isLibraryInstance(store, content(store, identityCid(store, edge)))) continue
+    // the rows a value carries as a value of its pattern (a capability's slots and inputs) are not the node's rows
+    if (isKindRow(store, edge) && !content(store, identityCid(store, edge)).data.alias) continue
+    // a handler's own state rows (the evaluator's journal) and a value's contract pin are not rows of the node either
+    if (isRowEdge(store, edge) && (isHandlerStateLeft(store, plainEdge(store, edge)[0]) || isTagRow(store, edge))) continue
     if (isRowEdge(store, edge)) {
       view.tasks.push(rowView(store, identityCid(store, edge), edge))
     } else if (isChoiceEdge(store, edge)) {
@@ -1818,32 +1821,6 @@ export function settingOf(store: FosStore, node: FosNodeContent): { key: string;
   const target = refValueCid(store, node)
   const peer = target && store.table.has(target) ? content(store, target).data.peerId?.content : undefined
   return peer ? { key: node.data.name.content, peer } : null
-}
-
-/** The inputs a capability declares: its refs (rows `[what the input is, ref]`), by name. */
-export function capabilityInputs(store: FosStore, capability: string, at: Scope = []): Array<{ name: string; left: string }> {
-  return content(store, libAt(store, at).capabilities[capability]!).children.flatMap(([left, right]) => {
-    const ref = store.table.get(right)
-    return ref && isRefNode(store, ref) && ref.data.name ? [{ name: ref.data.name.content, left }] : []
-  })
-}
-/** A requirement row's value with `inputs` (text by input name) as its named input fields, each replacing an earlier one. */
-export function withRequirementInputs(store: FosStore, node: FosNodeContent, capability: string, inputs: Record<string, string>, at: Scope = []): FosNodeContent {
-  const declared = capabilityInputs(store, capability, at)
-  let children = node.children
-  for (const [name, text] of Object.entries(inputs)) {
-    const input = declared.find(d => d.name === name)
-    if (!input) throw new Error(`The ${capability} capability has no ${name} input.`)
-    const id = hashContent({ data: { name: { content: name }, ref: { id: node.data.alias?.id ?? '' } }, children: [] })
-    const field: FosPathElem = [input.left, put(store, refNodeContent(store, { alias: { id }, name: { content: name } }, put(store, { data: { description: { content: text } }, children: [] })))]
-    children = [...children.filter(edge => !(edge[0] === input.left && content(store, edge[1]).data.name?.content === name)), field]
-  }
-  return { ...node, children }
-}
-/** The text of the requirement row value's input `name` (a named field its capability declares), or null. */
-export function requirementInput(store: FosStore, node: FosNodeContent, name: string): string | null {
-  const edge = node.children.find(([, right]) => store.table.get(right)?.data.name?.content === name && isRefNode(store, content(store, right)))
-  return edge ? valueContent(store, identityCid(store, edge)).data.description?.content ?? null : null
 }
 
 /** Where a peer is attached: the scope of the first node (depth-first) carrying a [PEER, ref] edge for `peerId`. */
@@ -2023,7 +2000,8 @@ export function stripLink(store: FosStore, value: FosNodeContent): FosNodeConten
 
 /** Bookkeeping edges (PREV, PROPOSAL, PEER) of a link node, wherever they live. */
 export function bookkeepingOf(store: FosStore, value: FosNodeContent): FosPathElem[] {
-  return value.children.filter((e) => isBookkeepingEdge(store, e))
+  // a ref identity's own rows (a requirement's @user field) stay with it through every rebinding, like its bookkeeping
+  return value.children.filter((e) => isBookkeepingEdge(store, e) || (isRefNode(store, value) && (isRowEdge(store, e) || isMemberEdge(store, e))))
 }
 
 /** Put a stripped content node and return its cid. */
@@ -2133,7 +2111,10 @@ export function memberHolderCid(store: FosStore, cid: string): string {
 function memberHolder(store: FosStore, value: FosNodeContent): FosNodeContent {
   if (isBranchChoice(store, value)) { const edge = withMainBranchPolicy(store, () => branchEdge(store, put(store, value))); if (edge) return memberHolder(store, content(store, identityCid(store, edge))) }
   const target = !isHandle(value) && isRefNode(store, value) ? refValueCid(store, value) : null
-  return target && store.table.has(target) ? content(store, target) : value
+  if (!target || !store.table.has(target)) return value
+  // a membership written on the ref itself (while it held nothing) stays a membership once it holds a value
+  const own = value.children.filter(edge => isMemberEdge(store, edge)), held = content(store, target)
+  return own.length ? { ...held, children: [...own, ...held.children] } : held
 }
 /** `peerId`'s membership row in `value` (a node, or a link to one), if it has one. */
 export function membershipOf(store: FosStore, value: FosNodeContent, peerId: string): FosPathElem | undefined {
@@ -2160,7 +2141,8 @@ function withMemberHolder(store: FosStore, value: FosNodeContent, holder: FosNod
   const pointer = store.primitive.targetPointerConstructor.getId()
   const target = !isHandle(value) && isRefNode(store, value) ? refValueCid(store, value) : null
   if (!target || !store.table.has(target)) return holder
-  return { ...value, children: value.children.map(([key, cid]): FosPathElem => key === pointer ? [key, put(store, holder)] : [key, cid]) }
+  // the holder now carries every membership, the ref's own included: none stays behind on the ref to outlive a removal
+  return { ...value, children: value.children.filter(edge => !isMemberEdge(store, edge)).map(([key, cid]): FosPathElem => key === pointer ? [key, put(store, holder)] : [key, cid]) }
 }
 
 /** The memberships of `value` (a node, or a link to one). */
@@ -2217,7 +2199,7 @@ export function memberRefContent(store: FosStore, peerId: string, name: string |
       ...from.map((c): FosPathElem => {
         const pattern = store.table.has(c) ? c : libAt(store, at).capabilities[c]!
         const id = handlerOfferId(peerId, pattern)
-        const value = put(store, { data: { peerId: { content: peerId }, description: { content: c }, behavior: { content: id } }, children: [...content(store, pattern).children] })
+        const value = put(store, { data: { peerId: { content: peerId }, description: { content: c }, behavior: { content: id } }, children: [...content(store, pattern).children, tag(store, pattern)] })
         const ref = put(store, refNodeContent(store, { alias: { id }, name: { content: c } }, value))
         return [store.primitive.acceptsNode.getId(), advertisement(store, pattern, ref)]
       })
@@ -2392,10 +2374,13 @@ export function removeProposalByCid(store: FosStore, value: FosNodeContent, prop
 
 /** New version of a link node: a ref node pointing at `strippedContent`, keeping members/proposals/peers, PREV → the version it replaces. */
 export function relinkContent(store: FosStore, previous: FosNodeContent, previousCid: string, strippedContent: FosNodeContent, now: number): FosNodeContent {
-  const bookkeeping = previous.children.filter((e) => isBookkeepingEdge(store, e) && !isPrevEdge(store, e))
+  // bookkeeping stays with the identity, and so do the identity's own rows (a requirement's @user field)
+  const bookkeeping = previous.children.filter((e) => (isBookkeepingEdge(store, e) && !isPrevEdge(store, e)) || isMemberEdge(store, e) || isRowEdge(store, e))
   const data: FosNodeContent['data'] = { alias: previous.data.alias ?? strippedContent.data.alias ?? { id: newId() }, updated: { time: now } }
   if (previous.data.ref) data.ref = previous.data.ref
   if (previous.data.name) data.name = previous.data.name
+  // a declaration's own text (a requirement's title) stays with the identity, whatever value it is bound to
+  if (previous.data.description) data.description = previous.data.description
   if (previous.data.nativeDefaults) data.nativeDefaults = previous.data.nativeDefaults
   const branches = refBranches(store, previous)
   const active = branches && branchEdge(store, branches.cid)
@@ -2502,7 +2487,7 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
     // the template's own trigger makes instances; the trigger rows inside it are declarations its instances bind
     if (instantiate && root && isRowEdge(store, edge) && isTriggerLeft(store, plainEdge(store, edge)[0])) return false
     // an instance is no type: what its template accepts (its pattern rows) stays with the template
-    if (isRowEdge(store, edge)) return !(instantiate && !definition && (type === PATTERN_TYPE || (isAllocationType(type) && !!flowOf(type!, valueContent(store, identityCid(store, edge))).supply)))
+    if (isRowEdge(store, edge)) return !(instantiate && !definition && type === PATTERN_TYPE)
     if (isBookkeepingEdge(store, edge) || edge[0] === store.primitive.targetPointerConstructor.getId() || edge[0] === store.primitive.instructionPointerConstructor.getId()) return false
     return true // Literal graph constraints must survive copying alongside owned rows.
   })
@@ -2556,8 +2541,7 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
     if (instantiate && data.todo) data.todo = { ...data.todo, completed: false, time: now }
     if (instantiate && data.query) data.query = { market: data.query.market }
     if (data.ref && !data.ref.owner) data.ref = { ...data.ref, id: ids.get(data.ref.id) ?? data.ref.id }
-    if (data.supply?.ref) data.supply = { ...data.supply, ref: ids.get(data.supply.ref) ?? data.supply.ref }
-    if (data.allocation) data.allocation = { ...data.allocation, resource: ids.get(data.allocation.resource) ?? data.allocation.resource, ...(data.allocation.ref ? { ref: ids.get(data.allocation.ref) ?? data.allocation.ref } : {}) }
+    if (data.allocation) data.allocation = { ...data.allocation, resource: ids.get(data.allocation.resource) ?? data.allocation.resource }
     // Typed arguments keep defaults, including ref-to-ref defaults. They get a fresh identity.
     const target = refValueCid(store, identity)
     const children = type ? [] : childEdges(value, definitions.has(cid), cid === nodeCid).map(copyEdge)

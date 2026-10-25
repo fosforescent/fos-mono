@@ -1,8 +1,10 @@
-import { resolveAllocationValue } from './destructure'
-import { compileAuthorityInvocation } from './authority-compilation'
-import { stageAuthorityPublications } from './authority-publication'
-import { copyOuterScope } from './graph'
 /** Evaluation uses ordinary typed refs for its journal and ordinary tasks for compensation. */
+import { compileOperands, type Native } from './native'
+import { isOutputPattern } from './parameters'
+import type { BindingLocation } from './scope-bindings'
+import { proposeTransactionWrite } from './transactions'
+import { copyOuterScope } from './graph'
+import { commitTransactionWrites, discardTransactionWrites } from './transactions'
 import { mergeNodes } from './merge'
 import { hashContent } from '../dag-implementation/cid'
 import { settingOf } from './graph'
@@ -15,8 +17,7 @@ import { compileInstructions } from './ref-compiler'
 import { instructionPrimitives } from './primitives'
 import { readRowValue, rowWithLeft, writeRowValue } from './row-values'
 import { executeLeft, isExecuteLeft, isTriggerLeft } from './capabilities'
-import { commitRoot, content, refValueCid, newId, put, refNodeContent, resolveScope, updateAtScope, valueContent, identityCid, scopeBranches, selectBranch, importNodes, reachableNodes, type Scope, type TaskView } from './graph'
-import { compileRequirement, checkCompiledRequirement } from './compiled-requirements'
+import { commitRoot, content, findEdge, isRequirementRow, refBindingBaseCid, refValueCid, newId, put, refNodeContent, resolveScope, updateAtScope, valueContent, identityCid, scopeBranches, selectBranch, importNodes, reachableNodes, type Scope, type TaskView } from './graph'
 import { addRefAt, addTask, headCid, setTaskDone, view, loadReplica, serializeReplica, type Replica } from './replica'
 
 const EVALUATION_BUDGET_MS = 120000
@@ -133,16 +134,11 @@ export function evaluationRecord(r: Replica, path: Scope): EvaluationRecord | nu
 }
 
 export type EvaluationStep = { path: Scope; row: TaskView | null }
-const authorityInstruction = (r: Replica, step: EvaluationStep): string | undefined => {
-  const type = step.row?.typeCid
-  return type && content(r.store, type).data.authorityFrame?.role === 'invocation' ? type : undefined
-}
-export type StepExecutor = {
-  /** `'pending'`: the result awaits human review (a proposal); the evaluation pauses as `awaiting-review` instead of committing. */
-  effect(step: EvaluationStep, operation: string): Promise<void | 'pending'>
-  /** It submits to the step's open refs itself (solve, fetch): they need not be bound before it runs. */
-  opensRefs?: boolean
-}
+/**
+ * What runs a step: a native, the one shape every host implementation has (sync/native.ts). It sees compiled operands
+ * and answers values, which the evaluator submits as the evaluation's pending writes; discarding them reverts it.
+ */
+export type StepExecutor = { native: Native }
 /** The one executor that runs a step, or why there is none to run. Every host selects through this. */
 export function selectExecutor<E>(executors: E[]): { executor: E } | { executor: null; problem: string | null } {
   if (executors.length === 1) return { executor: executors[0]! }
@@ -159,12 +155,9 @@ export type EvaluationDriver = BindingEnvironment & {
    * one; several are a choice the owner makes in the graph, never an ordering this host picks from.
    */
   executors(step: EvaluationStep): StepExecutor[]
-  /** Explicit return slots may be unfilled before execution and written by the effect. */
-  outputs?(step: EvaluationStep): string[]
   open?(step: EvaluationStep, transaction: string): Promise<void>
   commit?(step: EvaluationStep, transaction: string): Promise<void>
   abort?(step: EvaluationStep, transaction: string): Promise<void>
-  rollback?(step: EvaluationStep, operation: string): Promise<void>
 }
 
 export function evaluationSteps(r: Replica, path: Scope): EvaluationStep[] {
@@ -172,10 +165,9 @@ export function evaluationSteps(r: Replica, path: Scope): EvaluationStep[] {
   const walk = (at: Scope, depth: number) => {
     if (depth > 64 || steps.length >= 1000) throw new Error('Narrow the evaluation to fewer than 1,000 rows and 64 levels.')
     const row = at.length ? view(r, at.slice(0, -1))?.tasks.find(t => t.id === at.at(-1)) ?? null : null
-    // a template's rows are a definition; references and supplies are not steps
+    // a template's rows are a definition; references are not steps
     if (row?.type === TEMPLATE_TYPE) return
-    const authority = authorityInstruction(r, { path: at, row })
-    if (row && (row.refId !== undefined || row.supply) && !authority) return
+    if (row && row.refId !== undefined) return
     const cid = resolveScope(r.store, headCid(r), at)
     if (depth > 0 && cid && settingOf(r.store, content(r.store, cid))) return
     // the execute row is the evaluator's own: its journal, not a step
@@ -190,11 +182,42 @@ export function evaluationSteps(r: Replica, path: Scope): EvaluationStep[] {
     if (node.choices.length) throw new Error('Resolve conflicting choices before evaluation.')
     // Data/argument rows still belong to the graph. Only executable left sides
     // become evaluation steps; the requested root remains the transaction boundary.
-    if (depth === 0 || authority || row?.checkable || row?.requirement || row?.allocation || instructionPrimitives(r, { path: at, row }).length) steps.push({ path: at, row })
+    if (depth === 0 || row?.checkable || row?.requirement || instructionPrimitives(r, { path: at, row }).length) steps.push({ path: at, row })
+    // a satisfied requirement's rows are its bound value, not steps; an open one may hold the tasks that fill it
+    if (depth > 0 && row?.requirement?.satisfied) return
     for (const child of node.tasks) walk([...at, child.id], depth + 1)
   }
   walk(path, 0)
   return steps
+}
+
+/**
+ * Execution order: children before parents and later rows first, except that a step whose rows refer to another
+ * step's row (by identity or as the head of a property path) runs after it, so it can use what that step produced.
+ */
+export function executionOrder(r: Replica, steps: EvaluationStep[]): EvaluationStep[] {
+  const byId = new Map(steps.flatMap((step, index) => step.path.length ? [[step.path.at(-1)!, index] as [string, number]] : []))
+  const dependencies = steps.map(step => {
+    const cid = resolveScope(r.store, headCid(r), step.path)
+    const referenced = new Set<number>()
+    for (const edge of cid ? valueContent(r.store, cid).children : []) {
+      const node = content(r.store, identityCid(r.store, edge)), value = valueContent(r.store, identityCid(r.store, edge))
+      for (const id of [node.data.ref?.id, node.data.refExpression?.path[0], value.data.ref?.id, value.data.refExpression?.path[0]]) {
+        const index = id === undefined ? undefined : byId.get(id)
+        if (index !== undefined && steps[index] !== step) referenced.add(index)
+      }
+    }
+    return referenced
+  })
+  const order: EvaluationStep[] = [], placed = new Set<number>(), visiting = new Set<number>()
+  const place = (index: number) => {
+    if (placed.has(index) || visiting.has(index)) return
+    visiting.add(index)
+    for (const dependency of dependencies[index]!) place(dependency)
+    visiting.delete(index); placed.add(index); order.push(steps[index]!)
+  }
+  for (let index = steps.length - 1; index >= 0; index--) place(index)
+  return order
 }
 
 function problems(r: Replica, step: EvaluationStep, driver: EvaluationDriver): string[] {
@@ -207,41 +230,73 @@ function problems(r: Replica, step: EvaluationStep, driver: EvaluationDriver): s
   // a received ref (a primitive without `negative`) is filled at run time, so it does not hold the step back
   issues.push(...compileInstructions(r, step.path, { canRead: driver.canRead }).blocking.map(hole => `Unfilled instruction ref: ${hole.id} (${hole.reason})`))
   const candidates = contextBindings(r, step.path, driver)
-  const outputs = new Set(driver.outputs?.(step) ?? [])
-  if (!selected.executor?.opensRefs) for (const arg of argumentRefs(r.store, cid).filter(a => !settingOf(r.store, content(r.store, a.cid)) && content(r.store, a.cid).data.refRole !== 'output' && !outputs.has(content(r.store, a.cid).data.alias?.id ?? ''))) {
+  // a negative argument (a requirement) is the step's own to fill: an output, never an input it needs first
+  for (const arg of argumentRefs(r.store, cid).filter(a => !settingOf(r.store, content(r.store, a.cid)) && content(r.store, a.cid).data.refRole !== 'output' && !isOutputPattern(r.store, a.type))) {
     issues.push(...resolveBinding(r.store, arg.type, arg.cid, candidates, undefined, { ...driver, scope: { replica: r, path: step.path } }).problems)
   }
   issues.push(...resolveText(r, step.path, formText(r.store, valueContent(r.store, cid)), [], driver).bindings.flatMap(b => b.problems))
   const req = step.row?.requirement
-  if (req) issues.push(...checkCompiledRequirement(r.store, compileRequirement(r.store, cid, step.path, driver)).problems)
   if (req && !req.satisfied && !executors.length) {
+    // a requirement with steps of its own (a task inside it) is fulfilled by running them; one with neither is unmet
     const childTasks = view(r, step.path)?.tasks.filter(t => t.checkable) ?? []
-    if (req.capability !== 'task' || !childTasks.length) issues.push(`Unfulfilled ${req.capability}: ${step.row!.title}`)
+    if (!childTasks.length) issues.push(`Unfulfilled ${req.capability}: ${step.row!.title}`)
   }
   return issues
 }
-const opensRefs = (driver: EvaluationDriver, step: EvaluationStep) => !!selectExecutor(driver.executors(step)).executor?.opensRefs
 // Refuse changed instructions and bound arguments across an await; effect results are handled separately.
-// With `opens`, the step's unbound refs are its handler's to submit to (solve, fetch), so they are not instructions.
-const instruction = (r: Replica, path: Scope, outputs: string[] = [], opens = false) => {
+const instruction = (r: Replica, path: Scope) => {
   const cid = resolveScope(r.store, headCid(r), path)
   if (!cid) return null
+  // A requirement step's instruction is its declaration (the pattern, its own text): the value bound to it is the step's result.
+  const parentCid = path.length ? resolveScope(r.store, headCid(r), path.slice(0, -1)) : null
+  const edge = parentCid ? findEdge(r.store, valueContent(r.store, parentCid), `a:${path.at(-1)}`) : undefined
+  if (edge && isRequirementRow(r.store, edge)) {
+    const { updated: _updated, ...own } = content(r.store, cid).data
+    return JSON.stringify({ data: own, pattern: edge[0] })
+  }
   const { updated: _updated, ...data } = valueContent(r.store, cid).data
   const args = argumentRefs(r.store, cid)
   // Output properties are supplied by the effect too. Track their enclosing declaration identities.
-  const input = (a: { cid: string; name?: string; refIds?: string[] }) => !settingOf(r.store, content(r.store, a.cid)) &&
-    !outputs.includes(content(r.store, a.cid).data.alias?.id ?? '') &&
-    !a.refIds?.some(id => outputs.includes(id)) &&
-    !(opens && !refValueCid(r.store, content(r.store, a.cid)))
+  // a declared output (a requirement's result, a handler's return) is the effect's to fill, not part of the instruction
+  const input = (a: { cid: string; type: string; name?: string; refIds?: string[] }) => !settingOf(r.store, content(r.store, a.cid)) &&
+    content(r.store, a.cid).data.refRole !== 'output' && !isOutputPattern(r.store, a.type)
   const candidates = contextBindings(r, path)
   const resolved = args.filter(input).map(arg => {
     const value = resolveBinding(r.store, arg.type, arg.cid, candidates, undefined, { scope: { replica: r, path } })
-    // Declaration provenance is compiler/UI state, never part of the persisted execution signature.
-    return { cid: arg.cid, type: arg.type, name: arg.name, status: value.status, value: value.cid }
+    // Declaration provenance is compiler/UI state, never part of the persisted execution signature; pending
+    // submissions on a declaration are not its instruction either.
+    return { cid: refBindingBaseCid(r.store, content(r.store, arg.cid)), type: arg.type, name: arg.name, status: value.status, value: value.cid }
   })
   const text = resolveText(r, path, formText(r.store, valueContent(r.store, cid)))
-  return JSON.stringify({ data, instruction: compileInstructions(r, path, { outputs, openOutputs: true }).cid, arguments: resolved,
+  return JSON.stringify({ data, instruction: compileInstructions(r, path, { openOutputs: true }).cid, arguments: resolved,
     text: text.text, bindings: text.bindings.map(binding => ({ status: binding.status, cid: binding.cid })) })
+}
+
+/**
+ * Run a native: compile the step's operands, hand them over, and submit what it answers as this evaluation's pending
+ * writes, each to the declaration the compiler named and checked against that declaration's pattern. Outputs win
+ * over proposals for one destination (a remainder rebinding the handle it came from).
+ */
+async function runNative(native: Native, step: EvaluationStep, evaluation: string, driver: EvaluationDriver): Promise<void | 'pending'> {
+  const before = driver.get()
+  // the compiler sees only the binding environment; the driver's other fields (its `outputs(step)`) are not compile options
+  const { compiled, sources } = compileOperands(before, step.path, { ...(driver.canRead ? { canRead: driver.canRead } : {}), ...(driver.isPeerActive ? { isPeerActive: driver.isPeerActive } : {}) })
+  const result = await native(compiled, { evaluation, step: step.path, now: driver.now(), store: before.store, put: node => put(before.store, node) })
+  const writes = new Map<string, { binding: BindingLocation; value: string }>()
+  for (const [name, value] of Object.entries(result.proposals ?? {})) {
+    const binding = sources[name]
+    if (!binding) throw new Error(`The handler proposed a value for ${name}, which is not an operand of this step.`)
+    writes.set(binding.cid, { binding, value })
+  }
+  for (const [name, value] of Object.entries(result.outputs ?? {})) {
+    const binding = sources[name]
+    if (!binding || !(name in compiled.outputs)) throw new Error(`The handler answered ${name}, which is not an output of this step.`)
+    writes.set(binding.cid, { binding, value })
+  }
+  let r = driver.get()
+  for (const { binding, value } of writes.values()) r = proposeTransactionWrite(r, binding, value, evaluation, driver.now())
+  await driver.save(r)
+  return result.pending ? 'pending' : undefined
 }
 
 export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promise<EvaluationRecord> {
@@ -250,16 +305,10 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
   const steps = evaluationSteps(driver.get(), path)
   if (!steps.length) throw new Error('Apply the template before evaluating it.')
   const initial = driver.get()
-  const authorityPlans = steps.flatMap(step => {
-    const type = authorityInstruction(initial, step)
-    return type ? [compileAuthorityInvocation(initial, type, step.path, driver)] : []
-  })
-  // Validate the complete publication before any native effect can run. Staging changes no live refs.
-  stageAuthorityPublications(initial, authorityPlans, driver.now())
   if (path.some((id, i) => view(initial, path.slice(0, i))?.tasks.some(t => t.id === id && t.type === TEMPLATE_TYPE))) throw new Error('Apply the template before evaluating it.')
-  const issues = [...allocationProblems(initial, steps), ...steps.flatMap(step => problems(driver.get(), step, driver))]
+  const issues = steps.flatMap(step => problems(driver.get(), step, driver))
   if (issues.length) throw new Error([...new Set(issues)].join('\n'))
-  const versions = new Map(steps.map(step => [JSON.stringify(step.path), instruction(driver.get(), step.path, driver.outputs?.(step), opensRefs(driver, step))]))
+  const versions = new Map(steps.map(step => [JSON.stringify(step.path), instruction(driver.get(), step.path)]))
   const executionShape = (step: EvaluationStep) => {
     const descendants = evaluationSteps(driver.get(), step.path).slice(1)
     return JSON.stringify(descendants.filter(child => !descendants.some(parent => parent.path.length < child.path.length && parent.path.every((id, i) => child.path[i] === id))).map(child => [child.path, child.row?.typeCid]))
@@ -273,7 +322,7 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
     if (driver.now() - record.started > EVALUATION_BUDGET_MS) throw new Error('Evaluation exceeded two minutes. Review its effects before retrying.')
     const current = evaluationRecord(driver.get(), path)
     if (!current || current.id !== record.id || !['opening', 'running', 'committing'].includes(current.status)) throw new Error('The evaluation claim changed. Review recovery before retrying.')
-    if (instruction(driver.get(), step.path, driver.outputs?.(step), opensRefs(driver, step)) !== versions.get(JSON.stringify(step.path))) throw new Error('Instructions changed during evaluation. Review and run again.')
+    if (instruction(driver.get(), step.path) !== versions.get(JSON.stringify(step.path))) throw new Error('Instructions changed during evaluation. Review and run again.')
     if (!applied.has(JSON.stringify(step.path)) && executionShape(step) !== children.get(JSON.stringify(step.path))) throw new Error('The child rows changed during evaluation. Review and run again.')
     const errors = problems(driver.get(), fresh(step), driver)
     if (errors.length) throw new Error(errors.join('\n'))
@@ -284,28 +333,19 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
   try {
     for (const step of steps) { check(step); opened.push(step); await driver.open?.(fresh(step), record.id) }
     record.status = 'running'; await save()
-    for (const step of [...steps].reverse()) {
+    for (const step of executionOrder(driver.get(), steps)) {
       check(step)
       const current = fresh(step)
       const executor = current.row?.requirement?.satisfied ? null : selectExecutor(driver.executors(current)).executor
       if (!executor) continue
       for (const planned of steps) check(planned)
-      const resourceErrors = allocationProblems(driver.get(), steps)
-      if (resourceErrors.length) throw new Error(resourceErrors.join('\n'))
       const effect = { path: step.path, title: current.row?.title ?? 'Ref', status: 'attempting' as EvaluationRecord['effects'][number]['status'] }
       record.effects.push(effect); await save() // persist before sending, including an uncertain failed response
       applied.add(JSON.stringify(step.path))
-      const beforeCid = resolveScope(driver.get().store, headCid(driver.get()), step.path)!
-      const outputs = new Set(driver.outputs?.(step) ?? [])
-      const expectedOutputs = argumentRefs(driver.get().store, beforeCid).filter(a => outputs.has(content(driver.get().store, a.cid).data.alias?.id ?? '')).map(a => ({ id: content(driver.get().store, a.cid).data.alias!.id, type: a.type }))
-      const outcome = await executor.effect(current, `${record.id}:${JSON.stringify(step.path)}`)
+      // a native's answers are this evaluation's pending writes: checked against their declarations now, live at commit
+      const outcome = await runNative(executor.native, step, record.id, driver)
       if (outcome === 'pending') { effect.status = 'pending-review'; awaiting = true; await save(); continue }
-      for (const output of expectedOutputs) {
-        const r = driver.get(), cid = resolveScope(r.store, headCid(r), [...step.path, output.id])
-        if (!cid || !refValueCid(r.store, content(r.store, cid)) || resolveBinding(r.store, output.type, cid, contextBindings(r, step.path, driver), undefined, driver).status !== 'ready') throw new Error('The handler did not supply a valid return value. Review its result before continuing.')
-      }
       effect.status = 'applied'; await save()
-      if (current.row?.requirement && !fresh(step).row?.requirement?.satisfied) throw new Error('The handler has not fulfilled its requirement. Review its result before continuing.')
     }
     // A result left for review stops here: the owner accepts it (which supplies the requirement) and completes again.
     if (awaiting) { record.status = 'awaiting-review'; await save(); return record }
@@ -314,15 +354,11 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
       check(step)
       await driver.commit?.(fresh(step), record.id)
     }
-    // Completion is published together only after every commit succeeds.
+    // Completion and the steps' proposed writes are published together, only after every commit succeeds.
     const live = driver.get()
-    const allocationErrors = allocationProblems(live, steps)
-    if (allocationErrors.length) throw new Error(allocationErrors.join('\n'))
-    const authorityRoot = stageAuthorityPublications(live, authorityPlans, driver.now())
     let r = loadReplica(serializeReplica(live))
-    importNodes(r.store, reachableNodes(live.store, [authorityRoot]))
-    commitRoot(r.store, authorityRoot, driver.now())
     copyOuterScope(live.store, r.store)
+    r = commitTransactionWrites(r, record.id, driver.now())
     for (const step of steps) for (const [id, name] of Object.entries(scopeBranches(live.store, headCid(live), step.path))) selectBranch(r.store, id, name)
     for (const step of [...steps].reverse()) if (step.row?.checkable) {
       r = setTaskDone(r, step.path.slice(0, -1), step.path.at(-1)!, true, driver.now())
@@ -341,16 +377,9 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
       commitRoot(current.store, restored.cid, driver.now())
     }
     record.error = error instanceof Error ? error.message : String(error)
-    for (const effect of [...record.effects].reverse()) {
-      try {
-        if (!driver.rollback) throw new Error('Handler has no rollback operation')
-        await driver.rollback(fresh({ path: effect.path, row: null }), `${record.id}:${JSON.stringify(effect.path)}`)
-        effect.status = 'reverted'
-      } catch {
-        effect.status = 'manual'; effect.task = newId()
-        await driver.save(addTask(driver.get(), path, `Manually roll back or verify: ${effect.title} (evaluation ${record.id})`, driver.now(), effect.task))
-      }
-    }
+    try { await driver.save(discardTransactionWrites(driver.get(), record.id, driver.now())) } catch { /* the pending writes stay visible as open submissions */ }
+    // every native's writes were pending submissions, discarded above; what a native did outside the graph is its own to compensate
+    for (const effect of [...record.effects].reverse()) effect.status = 'reverted'
     for (const step of [...opened].reverse()) {
       try { await driver.abort?.(fresh(step), record.id) }
       catch {
@@ -363,17 +392,6 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
     await save()
   }
   return record
-}
-
-/** Legacy amount rows remain data; consuming authority requires an explicit graph invocation. */
-export function allocationProblems(r: Replica, steps: EvaluationStep[]): string[] {
-  return steps.flatMap(step => {
-    const cid = resolveScope(r.store, headCid(r), step.path)
-    if (!cid) return ['The allocation is unavailable.']
-    const allocation = resolveAllocationValue(r.store, cid)
-    if (allocation.error) return [allocation.error]
-    return allocation.debit || allocation.value?.resource ? ['Spending resources requires an explicit authority transfer or split.'] : []
-  })
 }
 
 /** Run under the same executor lock as evaluation, after confirming the old execution has stopped. */

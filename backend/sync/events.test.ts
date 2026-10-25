@@ -1,10 +1,10 @@
 import type { Request, Response } from 'express'
-import { addRow, addTask, addMemberAt, instantiateTemplate, setTaskDone, applyProposalAt, createBranch, createReplica, removeMemberAt, setMemberCapabilitiesAt, selectBranch, view, type Replica } from '@fosforescent/shared/sync/index'
+import { addRequirement, addRow, addTask, addMemberAt, instantiateTemplate, setTaskDone, applyProposalAt, createBranch, createReplica, removeMemberAt, setMemberCapabilitiesAt, selectBranch, view, type Replica } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
 import { createEventService } from './events'
-import { PLAIN_TYPE, ALLOCATION_TYPE, TEMPLATE_TYPE } from '@fosforescent/shared/sync/library-types'
+import { PLAIN_TYPE, TEMPLATE_TYPE } from '@fosforescent/shared/sync/library-types'
 function setup() {
   let r = addTask(createReplica('owner'), [], 'Private sibling', 1, 'private')
   r = addTask(r, [], 'Project specification', 1, 'project')
@@ -169,7 +169,7 @@ test('a peer granted execute lists the open work in its scope, its own first, an
   r = addTask(r, ['project'], 'Already shipped', 4, 'shipped')
   r = setTaskDone(r, ['project'], 'shipped', true, 5)
   r = addTask(r, ['project', 'shipped'], 'Hidden under done work', 5, 'under-done')
-  r = addRow(r, ['project', 'ui'], ALLOCATION_TYPE, 'Sign-off', 5, { id: 'signoff', requirement: { capability: 'confirmation' } })
+  r = addRequirement(r, ['project', 'ui'], 'Sign-off', 5, { capability: 'confirmation' }, 'signoff')
   r = addMemberAt(r, ['project', 'tests'], 'agent', 'Coding agent', ['execute'], 6)
   s.set(r)
   const tools = (await s.rpc('tools/list')).body.result.tools.map((t: any) => t.name)

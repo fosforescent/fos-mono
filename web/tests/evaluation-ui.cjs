@@ -7,11 +7,10 @@ const dir = mkdtempSync(path.join(require('node:os').tmpdir(), 'fos-evaluation-u
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTextAreaElement','Node','Option','navigator','localStorage','sessionStorage','location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export * from './src/analysis'; export {createMemoryStorage} from './src/storage'; export {createProjectStorage} from './src/project'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), external: ['mermaid','katex','katex/*'] })
-const { addRow, addConstructedRow, content, put, rowTypeAt, analysisRows, queryAnalysis, analysisTotals, App, mountUi, createMemoryStorage, createProjectStorage, loadReplica, evaluationRecord, SERVER_TRANSPORT_CAPABILITIES } = require(path.join(dir, 'test.cjs'))
+const { addRow, addRequirement, addConstructedRow, content, put, rowTypeAt, analysisRows, queryAnalysis, analysisTotals, App, mountUi, createMemoryStorage, createProjectStorage, loadReplica, evaluationRecord, SERVER_TRANSPORT_CAPABILITIES } = require(path.join(dir, 'test.cjs'))
 const TASK_TYPE = 'task'
 const PLAIN_TYPE = 'plain'
 const NOTE_TYPE = 'note'
-const ALLOCATION_TYPE = 'allocation'
 const TEMPLATE_TYPE = 'template'
 async function main() {
   const storage = createMemoryStorage()
@@ -143,7 +142,7 @@ async function main() {
   document.querySelector('.peer-tabs [aria-label="Standard library"]').click()
 
   const need = [...target.slice(0, -1), 'choose-research']
-  app.set({ replica: addRow(app.state.replica, target.slice(0, -1), ALLOCATION_TYPE, 'Choose research', Date.now(), { id: 'choose-research', requirement: { capability: 'choice', options: ['Graphs', 'Biology'] } }) })
+  app.set({ replica: addRequirement(app.state.replica, target.slice(0, -1), 'Choose research', Date.now(), { capability: 'choice', options: ['Graphs', 'Biology'] }, 'choose-research') })
   await app.startExecution(need)
   assert(!document.querySelector('.execution-root-input button').disabled)
   document.querySelector('.execution-root-input button').click()

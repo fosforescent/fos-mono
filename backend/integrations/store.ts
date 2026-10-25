@@ -4,7 +4,7 @@
  */
 
 import type { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { createReplica, addSupply, headCid, view, type Replica, type Scope, type TaskView } from '@fosforescent/shared/sync/index'
+import { createReplica, supplyRequirement, headCid, view, type Replica, type Scope, type TaskView } from '@fosforescent/shared/sync/index'
 import type { AccountStoreDeps, AccountUser } from '../sync/accountStore'
 
 /** The account's peer id (as `serverPeerIdFor` in accountStore; repeated here so this module loads without express/prisma in tests). */
@@ -48,4 +48,4 @@ export function walkRows(replica: Replica, at: Scope = []): Array<{ at: Scope; r
 }
 
 /** The texted-commands view of a tree: add a row at the root, list open tasks, check one off. */
-export { addSupply }
+export { supplyRequirement }

@@ -1,4 +1,4 @@
-import { matchesGraph } from './structural'
+import { matchesGraph, tag } from './structural'
 /** Host-language implementations are opaque execute-only values, constructed as graph refs. */
 import type { FosStore } from '../dag-implementation/store'
 import { content, put, refNodeContent, isRefNode, resolveScope } from './graph'
@@ -19,7 +19,8 @@ export function primitiveRef(store: FosStore, input: { id: string; implementatio
   if (input.native) store.getNodeByAddress(primitive)!.nativeImplementation = { value: input.native, type: input.type }
   const { alias: _alias, capabilityDefinition: _capability, ...properties } = content(store, input.type).data
   if (_capability || properties.form) { delete properties.name; delete properties.description }
-  const value = put(store, { data: { ...properties, peerId: { content: input.host }, description: properties.description ?? { content: input.label ?? input.id } }, children: [...content(store, input.type).children, [primitiveConstructor(store), primitive]] })
+  // a handler is a value of its capability: it carries the capability's tag, and the primitive that gives it meaning here
+  const value = put(store, { data: { ...properties, peerId: { content: input.host }, description: properties.description ?? { content: input.label ?? input.id } }, children: [...content(store, input.type).children, tag(store, input.type), [primitiveConstructor(store), primitive]] })
   return put(store, refNodeContent(store, { alias: { id: input.id }, name: { content: input.label ?? input.id } }, value, []))
 }
 
@@ -36,13 +37,10 @@ export function primitiveValue(store: FosStore, cid: string): Primitive | null {
   return primitive?.access === 'execute' && !!primitive.implementation && !!primitive.host ? primitive : null
 }
 
-/** Row instructions are refs. Old signed-resource syntax is adapted only at this boundary. */
+/** A row's instruction is its left node: a handler ref, or the capability a requirement asks for. */
 export function instructionRefType(replica: Replica, step: EvaluationStep): string | null {
-  if (step.row?.requirement) return libAt(replica.store, step.path.slice(0, -1)).capabilities[step.row.requirement.capability]!
-  const cid = resolveScope(replica.store, headCid(replica), step.path)
   const left = step.row?.typeCid ?? step.row?.type
-  return left && replica.store.table.has(left) ? left :
-    null
+  return left && replica.store.table.has(left) ? left : null
 }
 
 export function instructionPrimitives(replica: Replica, step: EvaluationStep): Primitive[] {
@@ -61,7 +59,9 @@ export function matchesInstructionRef(replica: Replica, step: EvaluationStep, of
     // One native implementation can back several tools; its accepted value identifies the selected tool.
     if (!refSubmissions(replica.store, offered.cid).some(cid => expected.includes(cid))) return false
   }
-  return !!offered.cid && matchesGraph(replica.store, wanted, offered.cid)
+  // the offer's capability generalizes the row's left: a refined pattern (a requirement for 50 USD) is still a row of its capability
+  const refined = !!replica.store.table.get(wanted)?.data.capabilityDefinition
+  return !!offered.cid && ((refined && matchesGraph(replica.store, offered.type, wanted, { side: 'left' })) || matchesGraph(replica.store, wanted, offered.cid))
 }
 
 /** Put the selected ref on the instruction side, leaving the right side for inputs and outputs. */

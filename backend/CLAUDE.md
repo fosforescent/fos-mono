@@ -2,7 +2,7 @@
 
 ## Directory Summary
 
-Resource submissions must preserve the supplier's nullable time bounds for every resource type. Validation must use the shared interval predicates, distinguish a demand from consuming a grant, and reject widening an existing grant. Calendar effects must require an explicit finite event start and end; do not infer an endpoint from the amount or replace null with the current time.
+Resource submissions preserve the supplier's time bounds as data for every resource type; nothing enforces them. Using an offered allocation from the hosted input endpoint authors the shared allocate invocation (`consumeAllocation`) and the host's evaluation runs it through the server's `allocate` handler; the endpoint records no consumption itself. Calendar effects must require an explicit finite event start and end; do not infer an endpoint from the amount or replace null with the current time.
 The backend directory contains the Node.js/Express API server that provides the core functionality for Fosforescent. It handles authentication, data management, graph operations, subscriptions, and is the always-on account peer for the web, desktop and CLI clients.
 
 ## Key Components
@@ -141,6 +141,9 @@ The backend directory contains the Node.js/Express API server that provides the 
 - [x] Fixed all TypeScript compilation errors (100+ → 0)
 - [x] Fixed Express middleware type compatibility
 - [x] Added missing database schema fields for Stripe integration
+## Handlers and argument rows
+Requirements and allocations are one kind of row (`shared/sync/arguments.ts`: `[pattern, ref]`, negative = requirement). A `HostHandler` executes either as a `native` (compiled operands in, values out; the evaluator writes; `allocateHandler` = `allocateNative`) or as a `legacy` effect that writes the tree itself. Legacy handlers fill their requirement with `supplyRequirement(r, at, id, { by, receipt?, ref?, choice? }, now)`; handlers that mint authority outside the graph (fos points, calendar, confirmed payments) bind a grant with `grantValue` + `bindIssuedAuthority` (the documented escape until they are natives whose bank is a row). Resource requirements all carry the `allocation` capability, so the points, payment and calendar handlers register under `allocation` with a `handles` predicate on `requirement.resource` (`points`, `account`, windowed `calendar`/`person`): a name-dispatch leftover to replace with rows. Named inputs (`-mail to subject`, `-repo`, `-tool`) are read from `step.row.requirement.inputs`. Signing (`sign`/`verify-signature` handlers, grant signatures) is gutted. Who supplied an argument: `argumentSupplier(r, path)`.
+
 ## Graph evaluation and cron
 `sync/events.ts` adapts HTTP, MCP and the WebSocket to the event grammar; an `invite` event also delivers the node into the invitee's Home (`ensureMemberLink`) when the registry advertises `relay`. `sync/evaluation.ts` runs owner evaluations (`runNode`, reached through a `complete` event, and `runCron`). It checks the submitted content version and branch selections under the existing per-user load/save lock, then uses the shared evaluator with the host runtime as its driver. The journal is saved before dispatch; uncertainty becomes manual recovery rather than a duplicate retry. Invited peer credentials cannot initiate account integration effects: their `complete` becomes an evaluation request (see `shared/sync/events.ts`).
 

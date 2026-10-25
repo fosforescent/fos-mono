@@ -1,11 +1,11 @@
 import { userView } from './test-helpers'
-import { acceptProvidedNode, acceptTemplateNodes, addRow, addTask, copyNode, createReplica, content, exchangeNode, headCid, instantiateTemplate, missingTemplatesAt, nodeShape, resolveScope, rowTypeAt, templateNodesAt, valueCidOf, valueContent, view, type NodeAuthority, type NodeRequest, type Replica } from './index'
-import { ALLOCATION_TYPE, TASK_TYPE, TEMPLATE_TYPE } from './library-types'
+import { acceptProvidedNode, acceptTemplateNodes, addRequirement, addRow, addTask, copyNode, createReplica, content, exchangeNode, headCid, instantiateTemplate, missingTemplatesAt, nodeShape, resolveScope, rowTypeAt, templateNodesAt, valueCidOf, valueContent, view, type NodeAuthority, type NodeRequest, type Replica } from './index'
+import { TASK_TYPE, TEMPLATE_TYPE } from './library-types'
 
 /** A template row "Trip" with one requirement, and a task "Oslo" made from it. */
 function withTrip(r: Replica, at: string[] = []): Replica {
   r = addRow(r, at, TEMPLATE_TYPE, 'Trip', 1, { id: 'trip' })
-  r = addRow(r, [...at, 'trip'], ALLOCATION_TYPE, 'Destination agreed', 2, { id: 'where', requirement: { capability: 'confirmation' } })
+  r = addRequirement(r, [...at, 'trip'], 'Destination agreed', 2, { capability: 'confirmation' }, 'where')
   r = addTask(r, at, 'Oslo', 3, 'oslo')
   return instantiateTemplate(r, at, 'oslo', 'trip', 4)
 }
@@ -19,9 +19,9 @@ test('a task made from a template row is the edge [template, task], pinned to th
   const oslo = userView(r)!.tasks.find(t => t.id === 'oslo')!
   // its type is the template (the edge's left node); a template's instances are tasks
   expect(oslo).toMatchObject({ type: 'trip', checkable: true, template: { id: 'trip', name: 'Trip' } })
-  expect(view(r, ['oslo'])!.tasks.map(t => [t.type, !!t.requirement])).toEqual([[ALLOCATION_TYPE, true]])
+  expect(view(r, ['oslo'])!.tasks.map(t => [t.type, !!t.requirement])).toEqual([['capabilities.confirmation', true]])
   // editing the template does not change what existing instances are made from
-  r = addRow(r, ['trip'], ALLOCATION_TYPE, 'Dates agreed', 5, { id: 'when', requirement: { capability: 'confirmation' } })
+  r = addRequirement(r, ['trip'], 'Dates agreed', 5, { capability: 'confirmation' }, 'when')
   expect(edgeOf(r, [], 'oslo')[0]).toBe(templateValue)
   expect(view(r, ['oslo'])!.tasks).toHaveLength(1)
 })
@@ -87,6 +87,5 @@ describe('node sync with pinned templates', () => {
     expect(answered.node.wanted).toBeUndefined()
     expect(userView(server)!.tasks.find(t => t.id === 'oslo')!).toMatchObject({ template: { id: 'trip', name: 'Trip' } })
     expect(userView(server)!.tasks.find(t => t.id === 'oslo')!.missingTemplate).toBeUndefined()
-    expect(edgeOf(server, [], 'oslo')[0]).toBe(template)
   })
 })

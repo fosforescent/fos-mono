@@ -1,7 +1,10 @@
 import { resourceHandlers } from '../../shared/sync/resource-bindings'
-import { resourceWindowContains } from '../../shared/sync/resource-window'
+import { invertPolarity } from '../../shared/sync/parameters'
+import { capabilityPresentation } from './capability-presentation'
 import { setLibraryArg } from '../../shared/sync/library'
-import { nativeRef, nodeTransportAt, offerNodeTransport, type NodeTransport } from '../../shared/sync/native-refs'
+import { nodeTransportAt, offerNodeTransport, type NodeTransport } from '../../shared/sync/native-refs'
+import { nativeOffer } from '../../shared/sync/natives'
+import type { FosStore } from '../../shared/dag-implementation/store'
 import { primitiveImplementation } from '../../shared/sync/primitives'
 import { handlerOfferId } from '../../shared/sync/graph'
 /** A device's location reader: the native it passes its library for `requires.deviceLocation`. */
@@ -12,7 +15,7 @@ import { nativeRefValues } from '../../shared/sync/native-refs'
 import { sameValue } from '../../shared/sync/merge'
 import { parseRowInput } from './rows'
 import { isHandlerStateLeft } from '../../shared/sync/capabilities'
-import { capabilityDeclarations, visibleBindings, bindingTree, bindingLayers, selectBinding, requirementHandlerTypes, sameCapabilityType, compileInstructions, executionInputs, addRefCall, primitiveValue, refSubmissions, matchesInstructionRef, templateValuePattern, solveAt, usePatternAt, patternBindings, choosePatternBindingAt, findEdge, valueCidOf, type PatternBinding, constructAt, namesInLibrary, rowConstructor, openRefs, assignedValue, assignRefAt, textOf, capabilityName, readProposals, type OpenRef } from '../../shared/sync/index'
+import { capabilityDeclarations, visibleBindings, bindingTree, bindingLayers, selectBinding, sameCapabilityType, compileInstructions, executionInputs, addRefCall, primitiveValue, refSubmissions, matchesInstructionRef, templateValuePattern, solveAt, usePatternAt, patternBindings, choosePatternBindingAt, findEdge, valueCidOf, type PatternBinding, constructAt, namesInLibrary, rowConstructor, openRefs, assignedValue, assignRefAt, textOf, capabilityName, readProposals, type OpenRef } from '../../shared/sync/index'
 import { createDeviceHandlers } from './device-handlers'
 import { compileConstructorCall } from '../../shared/sync/constructor-rows'
 import { capabilityOfTarget } from '../../shared/sync/graph'
@@ -24,14 +27,14 @@ import { libraryPath, MANUAL_HANDLERS } from '../../shared/sync/library'
 import { libraryBindingAt, childRows, rowView } from '../../shared/sync/graph'
 import { addSpecification, specificationRows, importSpecifications, queueSpecificationVerification, type FeatureSpecification } from '../../shared/sync/specifications'
 import { executionInput, executionSnapshot } from '../../shared/sync/execution-access'
-import { setConstructorEnabledAt, contextMemberRefs, discoverHandlers, contextMembers, publishTemplate, setHandlerEnabledAt, instantiateTemplateValue, shareRefAt, transferRefGraph, copyBidRow, draftBid, rowsOfType, supplyOf } from '../../shared/sync/index'
+import { setConstructorEnabledAt, contextMemberRefs, discoverHandlers, contextMembers, publishTemplate, setHandlerEnabledAt, instantiateTemplateValue, shareRefAt, transferRefGraph, copyBidRow, draftBid, rowsOfType } from '../../shared/sync/index'
 import { ensureLocalMcp, stopLocalMcp } from './node-agent'
 import { capabilityLabels, MARKET_PEER } from '../../shared/sync/graph'
 import { NODE_PERMISSION_DEFAULT, isNodeProjection, nodeBranches, nodeBranchBase, validateNodeShape, exchangeNode, nodeShape, sameNodeShape, mergeNodeShape, installNodeShape, materializedNodePaths, nodePersistenceAllowed, rememberNodeSync, nodeSyncKey, nodeSyncRequest, outgoingNodeShape, establishNodeSync, provideNode, pullNode, acceptProvidedNode, acceptTemplateNodes, planNodeSync, nodeSyncPush, finishNodeSync, nodeTemplateRequests, blankNodeRequest, ownHeldChildren, isBlank as isBlankShape, finishBlankNode, nodeLinkEndpoint, nodeRequestLinkId, setNodeLinkMask, isPeerReference, acceptSubmissionRows, type NodeMask, type NodeRequest, type NodeProvider, type ProvidedNode, type ProposalView } from '../../shared/sync/index'
 import { requestPeerNode } from './api'
 import { membershipSyncContext, sendPullRequest, UNKNOWN_PROVIDER, type NodeSyncContext } from '../../shared/sync/node-sync'
 import { parsePastedRows } from './paste'
-import { ORGANIZE_PEER, captureNoteText, requestOrganize, typeAt, type OrganizedResult } from '../../shared/sync/organize'
+import { ORGANIZE_PEER, captureNoteText, requestOrganize, typeAt } from '../../shared/sync/organize'
 import { NOTE_TYPE } from '../../shared/sync/published-types'
 import { microphoneError, recordedType, recordingMimeType, recordingUnsupported } from './recording'
 import { SETTING_LABELS, settingKeyOf } from './settings'
@@ -45,12 +48,14 @@ import { bindLocalRepository, localRepositoryHere } from '../../shared/sync/repo
 import { acceptSubmission } from '../../shared/sync/approvals'
 import { setRefValueAt } from '../../shared/sync/replica'
 import { setTemplateIcon, templateIconAt } from '../../shared/sync/replica'
-import { consume, consumption } from '../../shared/sync/execution-access'
+import { consumeAllocation, handleAt, issueGrant, debitGrant, addRequirement, addAllocation, addBank, supplyRequirement, bindUserAt, contractPin, allocateCapability, ownerContract, edit as editValue, type Allocation } from '../../shared/sync/index'
+import type { StepExecutor } from '../../shared/sync/evaluation'
+import { argumentType, isArgumentInput, type RowInputExtras } from './rows'
 import { addAttachment, attachmentAt } from '../../shared/sync/replica'
 import { readNodeValue, recoverEvaluation, evaluateNode, evaluationRecord, writeEvaluationRecord, writeNodeValue, writeLinkedNodeValue, evaluationSteps } from '../../shared/sync/evaluation'
 import { withMainBranchPolicy, withBranches, scopeBranches, bindRepository, repositoryAt, repositoryPeerId, repositoryPeerAllows, type RepositorySnapshot, type RepositoryPull, readChoice, isBranchChoice, branchSelection, proposalContent, readProposal, proposalView, valueContent, identityCid, rowEdgeAt, nestScope } from '../../shared/sync/index'
 import { checkUserAttestation } from './api'
-import { requestTitle, truncateTitle, handlerResult } from '../../shared/sync/index'
+import { requestTitle, truncateTitle, requirementAnswer } from '../../shared/sync/index'
 import { addTypedRow, cacheUser, cachedUser, publishedKey, rebindUsers, requestVerification, verifiedAt, membershipIdOf, memberEntryPeerAt, peerEntryId, accountContextAbove, syncNodeTree, addRelayMessage, addRelayAck, relayQueues, relayInbox, type RelayDelivery, type UserRecord } from '../../shared/sync/index'
 import { searchFosUsers, evaluateOnServer, createRepositoryBranch, readRepository, proposeRepositoryMerge, decideRepositoryPull } from './api'
 /**
@@ -73,7 +78,7 @@ import { searchFosUsers, evaluateOnServer, createRepositoryBranch, readRepositor
 import { VirtualPeers, type VirtualPeer } from './virtual'
 import { EditHistory } from './history'
 import {
-  HOME_ID, isLibraryRef, ensureDeviceLibrary, linkLocalStore, localStores, findRowByAlias, type LibraryBundle, type ManualHandler, destructureRequirement, linkRequirementOutput, bookkeepingOf, refBranches, updateAtScope, refNodeContent, matchesGraph, isRefNode, libAt, contextBindings, resolveBinding, refValueCid, allocationMatches, capabilityPeers, copyProposalBranch, createBranch, setBranchMergeRequest, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, decideTaskResult, taskWorkContext, workAttempts, type WorkContext,
+  HOME_ID, isLibraryRef, ensureDeviceLibrary, linkLocalStore, localStores, findRowByAlias, type LibraryBundle, type ManualHandler, bookkeepingOf, refBranches, updateAtScope, refNodeContent, matchesGraph, isRefNode, libAt, contextBindings, resolveBinding, refValueCid, capabilityPeers, copyProposalBranch, createBranch, setBranchMergeRequest, selectBranch, mergeBranch, argumentRefs, resolveText, resolveScope, content, workHandler, proposeRefAt, newId, addRefAt, put, addSubtasksTemplate, addPlanningTemplate, decideTaskResult, taskWorkContext, workAttempts, type WorkContext,
   addRef,
   createReplica,
   importNodes,
@@ -83,7 +88,6 @@ import {
   mergeNodes,
   addRow,
   addMemberAt,
-  addSupply,
   addTask,
   capabilityNames,
   copyNode,
@@ -183,7 +187,7 @@ import {
 import { DirectGuest, DirectHost, DirectLink, ManualRelay, isWebRtcAvailable, type ChannelMessage } from './p2p'
 import { inTauri, openExternal, tauriInvoke } from './project'
 import type { ReplicaStorage } from './storage'
-import { TASK_TYPE, PLAIN_TYPE, COMMENT_TYPE, QUERY_TYPE, RESOURCE_TYPE, ALLOCATION_TYPE, MONEY_TYPE, TEMPLATE_TYPE, HOME_TYPE, isAllocationType } from '../../shared/sync/library-types'
+import { TASK_TYPE, PLAIN_TYPE, COMMENT_TYPE, QUERY_TYPE, RESOURCE_TYPE, TEMPLATE_TYPE, HOME_TYPE } from '../../shared/sync/library-types'
 
 export type Connection = 'offline' | 'connecting' | 'online' | 'syncing'
 
@@ -408,7 +412,7 @@ export class App {
       let failure: string | null = null
       try { await this.runOnServer(asked.path) } catch (error) { failure = error instanceof Error ? error.message : String(error) }
       if (this.state.replica.store !== store) return
-      const titled = failure ? null : handlerResult<string>(this.state.replica, asked.path)
+      const titled = failure ? null : requirementAnswer(this.state.replica, asked.path)
       let next = this.state.replica
       if (resolveScope(next.store, headCid(next), asked.path)) next = deleteTask(next, path, asked.path.at(-1)!, this.now())
       if (titled && row()?.title === before) next = renameTask(next, path.slice(0, -1), path.at(-1)!, truncateTitle(titled, 120), this.now())
@@ -446,42 +450,17 @@ export class App {
   private manualPeer: string | null = null
 
   readonly deviceHandlers = createDeviceHandlers({
-    pull: async ({ step }) => {
+    pull: async () => {
       if (this.syncInFlight) throw new Error('Wait for current sync to finish before evaluating Pull.')
       await this.syncNow('evaluate pull', true)
       if (this.state.connection !== 'online') throw new Error('Pull failed; review the sync status.')
-      this.set({ replica: addSupply(this.state.replica, step.path.slice(0, -1), step.path.at(-1)!, { capability: 'tool', by: this.state.replica.meta.peerId, receipt: 'unit' }, this.now()) })
     },
-    agent: async ({ step, operation }) => {
-      await this.saveWorkflowReplica(queueAgentEffect(this.state.replica, step.path, operation, this.now()))
+    agent: async (path, evaluation) => {
+      await this.saveWorkflowReplica(queueAgentEffect(this.state.replica, path, `${evaluation}:${JSON.stringify(path)}`, this.now()))
       this.notify('info', 'Execution queued for the configured desktop. Track its status in the project workflow.')
-      return 'pending'
     },
-    // The response is a submission to the row's `response` ref (one per fetch row: fetching again replaces it).
-    // [fetch, right]: the url and method are the right's assignments (or the fetch node's defaults); the response is
-    // received, so it is submitted to the right's response ref (one submission per fetch row: fetching again replaces it)
-    fetch: async ({ step }) => {
-      let r = this.state.replica
-      const at = step.path, call = compileConstructorCall(r, at)
-      if (!call.canRun) throw new Error('Resolve the fetch inputs before execution.')
-      const value = (name: string) => { const ref = call.args.find(x => x.name === name); return ref ? textOf(r, ref.cid) : null }
-      const url = value('url'), method = value('method') ?? 'GET', response = call.args.find(x => x.received)
-      if (!url) throw new Error('Give the address to fetch.')
-      if (!response) throw new Error('This fetch has no response ref.')
-      const answer = await this.fetchUrl(url, method)
-      if (answer.status >= 400) throw new Error(`${url} answered ${answer.status}.`)
-      r = this.state.replica
-      const alias = call.edits.get(response.cid)!
-      if (!resolveScope(r.store, headCid(r), [...at, alias])) r = assignRefAt(r, at, alias, null, this.now())
-      const body = put(r.store, { data: { description: { content: answer.body } }, children: [] })
-      this.set({ replica: proposeRefAt(r, [...at, alias], body, r.meta.peerId, this.now(), 'fetch').replica })
-    },
-    solve: async ({ step }) => {
-      const { replica, solutions } = solveAt(this.state.replica, step.path, this.state.replica.meta.peerId, this.now())
-      if (!solutions.length) throw new Error('Nothing around this row matches its pattern.')
-      this.set({ replica })
-      this.notify('info', `${solutions.length} solution${solutions.length === 1 ? '' : 's'}: each placeholder lists them as options.`)
-    }
+    // A network request made by this device (the desktop shell natively, the browser with fetch); the native binds the body to the row's `response` output.
+    fetch: (url, method) => this.fetchUrl(url, method)
   })
   /** One request from this device. The desktop shell makes it natively (no browser CORS); the browser uses fetch. */
   async fetchUrl(url: string, method: string): Promise<{ status: number; body: string }> {
@@ -670,7 +649,7 @@ export class App {
         geolocation.getCurrentPosition(position => resolve({ lat: Math.round(position.coords.latitude * 1e5) / 1e5, lng: Math.round(position.coords.longitude * 1e5) / 1e5 }), reject, { timeout: 15_000, maximumAge: 60_000 })
       })
     }
-    const native = nativeRef(r.store, peer, { id: 'location', label: 'This device', type: (store, at) => libAt(store, at).capabilities.allocation! }, reader as never)
+    const native = nativeOffer(r.store, peer, { id: 'location', label: 'This device', type: (store: FosStore, at: Scope) => libAt(store, at).capabilities.allocation! }, reader as never)
     try { return setLibraryArg(r, [], 'deviceLocation', native, 0) } catch { return r }
   }
   /** The native a device fallback runs (what this device passed its library), when the device can run it now. */
@@ -997,11 +976,7 @@ export class App {
     this.together(() => {
       if (id) {
         const first = rows[0]!
-        if (first.extras?.allocation && !this.bankFor(at, first.extras.allocation.type)) {
-          this.edit(setRowContentAt(this.state.replica, [...this.state.view, ...at], id, first.type, first.text, first.extras, this.now()))
-          this.resolveUser(first.extras?.user)
-          if (first.children?.length) this.addParsedChildren([...at, id], first.children, undefined, true)
-        } else this.rewriteRowAt(at, id, first)
+        this.rewriteRowAt(at, id, first)
         rows = rows.slice(1)
       }
       let previous = id
@@ -1578,28 +1553,67 @@ export class App {
    * draws from the parent context (`bankFor`); a task naming a template executes it (its requirements are copied
    * underneath); a task requirement naming a template gets that execution as its child right away.
    */
-  addRowAt(at: Scope, type: string, text: string, options: { done?: boolean; refId?: string; position?: MovePosition; id?: string; extras?: Omit<RowExtras, 'store'>; templateName?: string; replica?: Replica; preserveUnbound?: boolean } = {}): string {
+  addRowAt(at: Scope, type: string, text: string, options: { done?: boolean; refId?: string; position?: MovePosition; id?: string; extras?: RowInputExtras; templateName?: string; replica?: Replica; preserveUnbound?: boolean } = {}): string {
     const author = { id: this.state.replica.meta.peerId, name: this.state.session?.username ?? this.state.deviceName }
     const id = options.id ?? crypto.randomUUID()
-    const { extras, templateName, replica: branch, preserveUnbound, ...rest } = options
+    const { extras, templateName, replica: branch, preserveUnbound: _preserveUnbound, ...rest } = options
     const replica = branch ?? this.state.replica
-    let data: Omit<RowExtras, 'store'> = { ...(extras ?? {}) }
-    if (isAllocationType(type) && data.allocation && !data.requirement && !data.supply) {
-      const resolved = preserveUnbound && data.allocation && !this.bankFor(at, data.allocation.type, data.user?.username, replica) ? { ...data.allocation, resource: '' } : this.allocationWithBank(at, data.allocation, replica, data.user?.username)
-      if (!resolved) return id
-      data = { ...data, allocation: resolved }
+    const data: RowInputExtras = { ...(extras ?? {}) }
+    const { demand, allocation, grant, ...rowExtras } = data
+    let next: Replica, invocation: string | null = null
+    // argument rows (a requirement, an allocation) are made by sync/arguments.ts; every other row by its library type
+    if (demand || allocation) next = this.argumentRowReplica(replica, [...this.state.view, ...at], id, text, data, rest.position)
+    else if (type === RESOURCE_TYPE) {
+      // a bank declares the contract its grants are checked by
+      next = addBank(replica, [...this.state.view, ...at], text, this.now(), rowExtras.resource ?? { type: 'inventory', unit: 'unit' }, id)
+      if (rest.position && 'relativeTo' in rest.position) next = moveNode(next, [...this.state.view, ...at], id, [...this.state.view, ...at], rest.position, this.now())
     }
-    const next = addRow(replica, [...this.state.view, ...at], type, text, this.now(), { ...rest, ...data, author, id })
+    else next = addRow(replica, [...this.state.view, ...at], type, text, this.now(), { ...rest, ...rowExtras, author, id })
+    // The amount typed on a new bank is authority only once its issuing invocation is evaluated by the allocate handler its scope resolves.
+    if (type === RESOURCE_TYPE && grant && grant.amount > 0) {
+      invocation = newId()
+      try { next = issueGrant(next, [...this.state.view, ...at, id], grant, this.now(), undefined, invocation) }
+      catch (error) { invocation = null; this.notify('error', `The bank holds no spendable authority: ${error instanceof Error ? error.message : String(error)}`) }
+    }
     if (!branch) this.edit(next)
+    if (!branch && invocation) this.queueEvaluation([...this.state.view, ...at, invocation])
     if (!branch && text.trim().includes('\n')) this.titleFromText([...this.state.view, ...at, id])
     this.resolveUser(data.user)
     if (templateName && type === TASK_TYPE) this.applyTemplate(at, id, templateName, branch)
-    if (templateName && data.requirement?.capability === 'task') {
+    if (templateName && demand?.capability === 'task') {
       // "-[ ] `name`": the required task is created at once as an execution of the template
       const child = this.addRowAt([...at, id], TASK_TYPE, templateName, { templateName, replica: branch })
       if (!branch) this.set({ collapsed: this.state.collapsed.filter((c) => c !== id && c !== child) })
     }
     return id
+  }
+  /**
+   * The argument row `id` under `parent` (an absolute path) as `extras` say: a requirement asking for `demand`, or an
+   * allocation holding the typed amount (data, not authority: a bank's grants move through `consumeAllocation`). An
+   * existing row of that id is replaced (argument rows have no in-place edit: their pattern is their type).
+   */
+  argumentRowReplica(replica: Replica, parent: Scope, id: string, text: string, extras: RowInputExtras, position?: MovePosition): Replica {
+    const now = this.now()
+    let r = replica
+    const existing = view(r, parent)?.tasks.find(row => row.id === id)
+    if (existing) r = deleteTask(r, parent, id, now)
+    if (extras.demand) r = addRequirement(r, parent, text, now, extras.demand, id)
+    else if (extras.allocation) r = addAllocation(r, parent, text, now, this.allocationWithBank(parent, extras.allocation, r, extras.user?.username), { id })
+    else throw new Error('An argument row asks for or supplies a value.')
+    if (position && 'relativeTo' in position && position.relativeTo !== id) r = moveNode(r, parent, id, parent, position, now)
+    if (extras.user) r = bindUserAt(r, [...parent, id], extras.user, now)
+    return r
+  }
+  /** The row at `path` as a bank: its value declares the allocate contract of its scope (what `addBank` does for a new row). */
+  bankReplica(r: Replica, path: Scope): Replica {
+    const store = r.store
+    return editValue(r, path, this.now(), value => ownerContract(store, value) ? value : { ...value, children: [...value.children, contractPin(store, allocateCapability(store, path.slice(0, -1)))] })
+  }
+  /** Evaluations the UI starts one after another (a bank's issuing invocations); each waits for the one before it. */
+  private evaluationQueue: Promise<void> = Promise.resolve()
+  queueEvaluation(path: Scope): Promise<void> {
+    this.evaluationQueue = this.evaluationQueue.then(() => this.evaluateAt(path)).catch(() => undefined)
+    return this.evaluationQueue
   }
   /** Make the task `taskId` an execution of the template called `name`: its requirement rows are copied underneath, unfilled. */
   applyTemplate(at: Scope, taskId: string, name: string, branch?: Replica): void {
@@ -1628,24 +1642,11 @@ export class App {
    * An allocation with its bank resolved from the parent context (`bankFor`), or null (with a notice) when there is
    * none. A person allocation needs that person's bank only when it holds a window; otherwise it stands on its own.
    */
-  allocationWithBank(at: Scope, allocation: NonNullable<RowExtras['allocation']> | undefined, replica = this.state.replica, person?: string): NonNullable<RowExtras['allocation']> | null {
+  allocationWithBank(parent: Scope, allocation: Allocation, replica = this.state.replica, person?: string): Allocation {
     const by = this.state.session?.username ?? this.state.deviceName
-    const base = allocation ?? { resource: '', type: 'inventory' as ResourceType, amount: 0, unit: 'unit' }
-    const windowed = base.start != null || base.end != null
-    if (base.type === 'person' && !windowed) return { ...base, by }
-    const bank = base.resource
-      ? resourceHandlers(replica, [...this.state.view, ...at]).find(handler => handler.row.id === base.resource && handler.row.resource.type === base.type)?.row ?? null
-      : this.bankFor(at, allocation ? base.type : null, person, replica)
-    if (!bank) {
-      const names: Record<ResourceType, string> = { account: '@money Travel 500', calendar: '@calendar Week 40h', inventory: '@inventory Shelf 12', person: `@person ${person ?? 'name'} 40h`, points: '@points Pool 500', location: '@location Places' }
-      this.notify('error', base.type === 'person' ? `A person allocation with a window needs ${person ?? 'their'}'s calendar: add "${names.person}" at the top level.` : `No ${base.type === 'account' ? 'money' : base.type} bank in this context: declare one in an enclosing scope ("${names[base.type]}"), or above this row.`)
-      return null
-    }
-    if (!resourceWindowContains(bank.resource, base)) {
-      this.notify('error', 'The allocation must stay within the selected resource’s time bounds.')
-      return null
-    }
-    return { ...base, resource: bank.id, type: bank.resource.type, unit: base.unit === 'unit' ? bank.resource.unit : base.unit, by }
+    const at = parent.slice(this.state.view.length)
+    const bank = parent.every((id, i) => this.state.view[i] === id) ? this.bankFor(at, allocation.type, person, replica) : null
+    return { ...allocation, resource: '', by, ...(bank && allocation.unit === 'unit' ? { unit: bank.resource.unit } : {}) }
   }
   /**
    * A row's text was edited in its raw marker form: re-parse it and rewrite the row in place (type, text, data),
@@ -1654,29 +1655,26 @@ export class App {
   dropBlankRow(parent: Scope, id: string, store: Replica['store']): void {
     if (store !== this.state.replica.store) return
     const row = view(this.state.replica, parent)?.tasks.find((t) => t.id === id)
-    if (row && !row.title.trim() && !row.childCount && !row.childChoices) this.edit(deleteTask(this.state.replica, parent, id, this.now()))
+    if (row?.type === PLAIN_TYPE && !row.form && !row.scalar && !this.rowInputs([...parent, id]) && !row.title.trim() && !row.childCount && !row.childChoices) this.edit(deleteTask(this.state.replica, parent, id, this.now()))
   }
   rewriteRowAt(at: Scope, id: string, parsed: import('./rows').ParsedInput, draft?: { store: Replica['store']; head: string; parent: Scope }): void {
     if (this.isHome([...this.state.view, ...at, id])) return
     if ((parsed.children?.length || parsed.peer !== undefined) && !this.groupedEdit) { this.together(() => this.rewriteRowAt(at, id, parsed, draft)); return }
     if (draft && draft.store !== this.state.replica.store) return
-    let extras: Omit<RowExtras, 'store'> = { ...(parsed.extras ?? {}), done: parsed.done }
-    if (parsed.extras?.allocation) {
-      const resolved = this.allocationWithBank(at, parsed.extras?.allocation, undefined, parsed.extras?.user?.username)
-      if (!resolved) return
-      extras = { ...extras, allocation: resolved }
-    }
+    const extras: RowInputExtras = { ...(parsed.extras ?? {}), done: parsed.done }
+    const argument = isArgumentInput(parsed)
     this.resolveUser(parsed.extras?.user)
     const before = this.rowAt([...at, id])
-    // a reference, or a supply, keeps its type and data: its text is all an edit changes
-    const renameOnly = !!before && parsed.type === before.type && (before.refId !== undefined || (!!before.supply && !before.allocation && !parsed.extras))
+    // a reference keeps its type and data: its text is all an edit changes
+    const renameOnly = !!before && parsed.type === before.type && before.refId !== undefined
     const rebasing = !!draft && draft.head !== headCid(this.state.replica)
     if (rebasing) {
       let branch = createReplica(this.state.replica.meta.peerId)
       importNodes(branch.store, reachableNodes(draft.store, [draft.head]))
       commitRoot(branch.store, draft.head, this.now())
       for (const [id, name] of Object.entries(this.branchSelections)) selectBranch(branch.store, id, name)
-      branch = renameOnly ? renameTask(branch, draft.parent, id, parsed.text, this.now()) : setRowContentAt(branch, draft.parent, id, parsed.type, parsed.text, extras, this.now())
+      branch = argument ? this.argumentRowReplica(branch, draft.parent, id, parsed.text, extras) : renameOnly ? renameTask(branch, draft.parent, id, parsed.text, this.now()) : setRowContentAt(branch, draft.parent, id, parsed.type, parsed.text, extras, this.now())
+      if (parsed.type === RESOURCE_TYPE && !renameOnly) branch = this.bankReplica(branch, [...draft.parent, id])
       if (parsed.peer !== undefined || before?.construction?.handler) branch = this.peerRowReplica(branch, [...draft.parent, id], parsed.peer)
       if (parsed.children?.length) this.addParsedChildren([...at, id], parsed.children, branch)
       const current = this.state.replica
@@ -1686,13 +1684,15 @@ export class App {
       this.edit({ ...current })
       if (merged.newChoiceCids.length) { this.notify('info', 'This row changed in two places. Choose which version to keep.'); return }
     } else {
-      this.edit(renameOnly ? renameTask(this.state.replica, [...this.state.view, ...at], id, parsed.text, this.now()) : setRowContentAt(this.state.replica, [...this.state.view, ...at], id, parsed.type, parsed.text, extras, this.now()))
+      let next = argument ? this.argumentRowReplica(this.state.replica, [...this.state.view, ...at], id, parsed.text, extras) : renameOnly ? renameTask(this.state.replica, [...this.state.view, ...at], id, parsed.text, this.now()) : setRowContentAt(this.state.replica, [...this.state.view, ...at], id, parsed.type, parsed.text, extras, this.now())
+      if (parsed.type === RESOURCE_TYPE && !renameOnly) next = this.bankReplica(next, [...this.state.view, ...at, id])
+      this.edit(next)
       if (parsed.text.includes('\n')) this.titleFromText([...this.state.view, ...at, id])
     }
     if ((parsed.peer !== undefined || before?.construction?.handler) && !rebasing) this.setPeerRow([...this.state.view, ...at, id], parsed.peer)
     if (parsed.children?.length && !rebasing) this.addParsedChildren([...at, id], parsed.children)
     if (parsed.templateName && parsed.type === TASK_TYPE && before?.template?.name !== parsed.templateName) this.applyTemplate(at, id, parsed.templateName)
-    if (parsed.templateName && extras.requirement?.capability === 'task') {
+    if (parsed.templateName && extras.demand?.capability === 'task') {
       const inside = view(this.state.replica, [...this.state.view, ...at, id])?.tasks ?? []
       if (!inside.some((t) => t.checkable && t.template?.name === parsed.templateName)) this.addRowAt([...at, id], TASK_TYPE, parsed.templateName, { templateName: parsed.templateName })
     }
@@ -2275,12 +2275,14 @@ export class App {
     this.savePrefs()
     this.set({ selected: null, contextMenu: null, work: undefined })
   }
-  mergeNodeBranch(at: Scope, id: string, target: string): void {
-    if (repositoryAt(this.state.replica, [...this.state.view, ...at, id])) { void this.proposeRepoMerge([...this.state.view, ...at, id], target); return }
-    const row = this.rowAt([...at, id])
+  mergeNodeBranch(at: Scope, id: string, target: string, absolute = false): void {
+    if (this.evaluating || this.state.voice || this.state.work?.busy) return
+    const path = absolute ? [...at, id] : [...this.state.view, ...at, id]
+    if (repositoryAt(this.state.replica, path)) { void this.proposeRepoMerge(path, target); return }
+    const row = view(this.state.replica, path.slice(0, -1))?.tasks.find(row => row.id === id)
     if (!row?.branches) return
     try {
-      const next = mergeBranch(this.state.replica, [...this.state.view, ...at, id], row.branches.selected, target, this.now())
+      const next = mergeBranch(this.state.replica, path, row.branches.selected, target, this.now())
       this.branchSelections[id] = target
       this.edit(next)
       this.savePrefs()
@@ -2431,14 +2433,11 @@ export class App {
         if (before.checkable && parsed.done !== before.done) this.edit(setTaskDone(this.state.replica, parent, id, parsed.done, this.now()))
         return
       }
-      let extras: Omit<RowExtras, 'store'> = { ...(parsed.extras ?? {}), done: parsed.done }
-      if (parsed.extras?.allocation) {
-        const resolved = this.allocationWithBank([], parsed.extras.allocation, undefined, parsed.extras.user?.username)
-        if (!resolved) return
-        extras = { ...extras, allocation: resolved }
-      }
+      const extras: RowInputExtras = { ...(parsed.extras ?? {}), done: parsed.done }
       this.resolveUser(parsed.extras?.user)
-      this.edit(setRowContentAt(this.state.replica, parent, id, parsed.type, parsed.text, extras, this.now()))
+      let next = isArgumentInput(parsed) ? this.argumentRowReplica(this.state.replica, parent, id, parsed.text, extras) : setRowContentAt(this.state.replica, parent, id, parsed.type, parsed.text, extras, this.now())
+      if (parsed.type === RESOURCE_TYPE) next = this.bankReplica(next, [...parent, id])
+      this.edit(next)
       if (parsed.peer !== undefined || before.construction?.handler) this.setPeerRow(draft.path, parsed.peer)
       if (parsed.children?.length) this.addParsedChildren([], parsed.children)
     })
@@ -2449,19 +2448,11 @@ export class App {
     if (!path.length || !this.currentRow()?.checkable) return
     this.edit(setTaskDone(this.state.replica, path.slice(0, -1), path.at(-1)!, done, this.now()))
   }
-  destructure(path: Scope, name: string, amount?: number): void {
-    try { this.edit(destructureRequirement(this.state.replica, path, name, amount, this.now())) }
-    catch (error) { this.notify('error', error instanceof Error ? error.message : String(error)) }
-  }
   bindOutputArgument(at: Scope, id: string, cid: string): void {
     const r = this.state.replica, parent = resolveScope(r.store, headCid(r), [...this.state.view, ...at])
     const arg = parent && argumentRefs(r.store, parent).find(a => content(r.store, a.cid).data.alias?.id === id)
     if (!arg || !r.store.table.has(cid) || !matchesGraph(r.store, arg.type, cid)) { this.notify('error', 'The placeholder has an incompatible type.'); return }
     this.setArgumentValue(at, id, cid)
-  }
-  linkOutput(path: Scope, cid: string): void {
-    try { this.edit(linkRequirementOutput(this.state.replica, path, cid, this.now())) }
-    catch (error) { this.notify('error', error instanceof Error ? error.message : String(error)) }
   }
   /** A template's icon is its presentation; a row made from one shows its template's. */
   templateIcon(path: Scope): string {
@@ -2512,27 +2503,27 @@ export class App {
     const manual = namesInLibrary(r.store, binding.library).byName.get(MANUAL_HANDLERS)
     return childRows(r.store, binding.library)
       .filter(row => row.type === TEMPLATE_TYPE && (!manual || valueCidOf(r.store, row.cid) !== valueCidOf(r.store, manual)) && isTemplateType(r.store, row.cid))
-      .map(row => ({ id: rowView(r.store, row.cid, row.edge).id, cid: row.cid, label: row.value.data.description?.content.trim() ?? '', icon: row.value.data.presentation?.icon || 'template' }))
+      .map(row => ({ id: rowView(r.store, row.cid, row.edge).id, cid: row.cid, label: row.value.data.description?.content.trim() ?? '', icon: capabilityPresentation(r.store, row.cid).icon || 'template', description: capabilityPresentation(r.store, row.cid).description }))
       .filter(row => row.label)
   }
   /**
    * The nearest library's fields a row is made from (its types and the capabilities it declares; its templates are
    * `libraryConstructors`), each the node a row made from it has on its left.
    */
-  libraryNames(path = this.constructorContext()): Array<{ name: string; node: string; label: string }> {
+  libraryNames(path = this.constructorContext()): Array<{ name: string; node: string; label: string; icon?: string; description?: string }> {
     const r = this.state.replica, binding = libraryBindingAt(r.store, path)
     if (!binding) return []
     return [...namesInLibrary(r.store, binding.library).byName].filter(([, node]) => !isTemplateType(r.store, node)).map(([name, node]) => {
       const value = valueContent(r.store, node)
-      return { name, node, label: value.data.capabilityDefinition?.label ?? value.data.description?.content ?? name }
+      return { name, node, label: value.data.capabilityDefinition?.label ?? value.data.description?.content ?? name, ...capabilityPresentation(r.store, node) }
     })
   }
   /** A row made from the node the library names `name` where the row goes (the name resolves in that scope). */
-  insertNamed(name: string, path = this.constructorContext()): Scope {
+  insertNamed(name: string, path = this.constructorContext(), inverted = false): Scope {
     const label = this.libraryNames(path).find(n => n.name === name)?.label ?? ''
-    return this.applyConstructor(path, { type: name, text: label, done: false })
+    return this.applyConstructor(path, { type: name, text: label, done: false }, false, undefined, undefined, undefined, inverted)
   }
-  insertLibraryConstructor(id: string, path = this.constructorContext(), replace = false): Scope {
+  insertLibraryConstructor(id: string, path = this.constructorContext(), replace = false, inverted = false): Scope {
     const template = this.libraryConstructors(path).find(item => item.id === id)
     if (!template) throw new Error('This standard library constructor is unavailable.')
     const queue = [template.cid], seen = new Set<string>()
@@ -2545,7 +2536,7 @@ export class App {
     }
     const current = replace && path.length ? view(this.state.replica, path.slice(0, -1))?.tasks.find(row => row.id === path.at(-1)) : undefined
     const title = current && !current.requirement && current.type !== HOME_TYPE ? current.title || template.label : template.label
-    return this.applyConstructor(path, { type: TASK_TYPE, text: title, done: false }, replace, undefined, undefined, template.cid)
+    return this.applyConstructor(path, { type: TASK_TYPE, text: title, done: false }, replace, undefined, undefined, template.cid, inverted)
   }
   publishCurrentTemplate(market = false): void {
     if (!this.canApprove() || this.currentRow()?.type !== TEMPLATE_TYPE) return
@@ -2596,7 +2587,7 @@ export class App {
   constructorNeeds(path = this.constructorContext()): string[] {
     const row = path.length ? view(this.state.replica, path.slice(0, -1))?.tasks.find(r => r.id === path.at(-1)) : undefined
     const needs: string[] = []
-    if (row?.requirement && !row.requirement.satisfied) needs.push(row.requirement.capability === 'allocation' ? row.requirement.resource ?? 'allocation' : row.requirement.capability)
+    if (row?.requirement && !row.requirement.satisfied) needs.push(row.requirement.capability === 'allocation' ? row.requirement.resource ?? 'allocation' : row.requirement.capability ?? 'requirement')
     const cid = resolveScope(this.state.replica.store, headCid(this.state.replica), path)
     if (cid) for (const arg of argumentRefs(this.state.replica.store, cid)) {
       if (settingOf(this.state.replica.store, content(this.state.replica.store, arg.cid)) || refValueCid(this.state.replica.store, content(this.state.replica.store, arg.cid))) continue
@@ -2607,10 +2598,10 @@ export class App {
   addPullConstructor(path = this.constructorContext()): Scope {
     const peer = this.pullPeers()[0]
     if (!peer) throw new Error('Connect a document peer before adding Pull.')
-    return this.applyConstructor(path, { type: ALLOCATION_TYPE, text: `Pull from ${peer.name}`, done: false, extras: { requirement: { capability: 'tool', tool: 'fos.pull', peer: peer.id } } })
+    return this.applyConstructor(path, { type: argumentType('tool'), text: `Pull from ${peer.name}`, done: false, extras: { demand: { capability: 'tool', inputs: { tool: 'fos.pull', peer: peer.id } } } })
   }
   /** Palette input uses the same row documents as typed input; no separate palette model. */
-  applyConstructor(path: Scope, parsed: import('./rows').ParsedInput, replace = false, repo?: string, localDirectory?: string, templateId?: string): Scope {
+  applyConstructor(path: Scope, parsed: import('./rows').ParsedInput, replace = false, repo?: string, localDirectory?: string, templateId?: string, inverted = false): Scope {
     if (!view(this.state.replica, path)) throw new Error('The destination no longer exists.')
     const template = templateId ? findRowByAlias(this.state.replica.store, headCid(this.state.replica), templateId) : null
     const templateCid = templateId && this.state.replica.store.table.has(templateId) && isTemplateType(this.state.replica.store, templateId) ? templateId : template?.row.type === TEMPLATE_TYPE ? resolveScope(this.state.replica.store, headCid(this.state.replica), [...template.path, template.row.id]) : null
@@ -2623,24 +2614,29 @@ export class App {
       const cid = resolveScope(this.state.replica.store, headCid(this.state.replica), target)
       if (cid && localRepositoryHere(this.state.replica, target)) throw new Error('This node already has a local repository; edit its argument to change the path.')
     }
-    const allocation = parsed.extras?.allocation
-    if (allocation?.resource && !this.contextBanks(parent).some(b => b.row.id === allocation.resource && b.row.resource.type === allocation.type)) throw new Error('The source bank is unavailable in this scope or has a different resource type.')
     const parentCid = path.length && resolveScope(this.state.replica.store, headCid(this.state.replica), path.slice(0, -1))
-    const argument = parentCid && argumentRefs(this.state.replica.store, parentCid).find(a => content(this.state.replica.store, a.cid).data.alias?.id === path.at(-1) && !refValueCid(this.state.replica.store, content(this.state.replica.store, a.cid)))
+    // a requirement is itself an open argument of its parent; a constructor applied to it adds a child, it does not fill it
+    const argument = !current?.requirement && parentCid && argumentRefs(this.state.replica.store, parentCid).find(a => content(this.state.replica.store, a.cid).data.alias?.id === path.at(-1) && !refValueCid(this.state.replica.store, content(this.state.replica.store, a.cid)))
     if (repo && repositoryAt(this.state.replica, target) && repositoryAt(this.state.replica, target) !== repo) throw new Error('Edit the existing repository argument to change its repository.')
     this.together(() => {
       // Construct before checking compatibility, in an isolated draft so a
       // rejected value cannot change the live graph or leave an extra row.
       const live = this.state.replica
-      const isolated = !!argument || !!templateCid
+      const isolated = !!argument || !!templateCid || inverted
       let r = isolated ? loadReplica(serializeReplica(live)) : live
       if (isolated) copyOuterScope(live.store, r.store)
       if (replace && current?.construction?.handler) r = this.peerRowReplica(r, target, undefined)
-      r = replace ? setRowContentAt(r, parent, id, parsed.type, parsed.text, parsed.extras ?? {}, this.now()) : addRow(r, parent, parsed.type, parsed.text, this.now(), { id, done: parsed.done, ...parsed.extras })
+      r = isArgumentInput(parsed) ? this.argumentRowReplica(r, parent, id, parsed.text, parsed.extras ?? {}) : replace ? setRowContentAt(r, parent, id, parsed.type, parsed.text, parsed.extras ?? {}, this.now()) : addRow(r, parent, parsed.type, parsed.text, this.now(), { id, done: parsed.done, ...parsed.extras })
+      if (parsed.type === RESOURCE_TYPE) r = this.bankReplica(r, target)
       this.resolveUser(parsed.extras?.user)
       if (templateCid) r = instantiateTemplateValue(r, parent, id, templateCid, this.now())
       if (parsed.peer !== undefined) r = this.peerRowReplica(r, target, parsed.peer)
       if (parsed.construct) r = constructAt(r, target, libAt(r.store, target.slice(0, -1)).capabilities[parsed.construct.capability]!, parsed.construct.values, this.now())
+      if (inverted) {
+        const constructor = rowConstructor(r, target)
+        if (!constructor) throw new Error('The row has no capability to invert.')
+        r = constructAt(r, target, invertPolarity(r.store, constructor, libAt(r.store, parent).field('negative')), {}, this.now())
+      }
       if (repo) { r = bindRepository(r, target, repo, this.now()); r = this.withIntegrationPeer(r, target, 'github') }
       if (localDirectory) {
         const peer = `git:${r.meta.peerId}:${encodeURIComponent(localDirectory)}`
@@ -2650,10 +2646,10 @@ export class App {
       }
       if (argument) {
         let value = resolveScope(r.store, headCid(r), target)!
-        if (parsed.extras?.requirement) {
+        if (parsed.extras?.demand) {
           // Fill unconstrained property values with the body. Preserve literal
           // constraints (including name rows) so composition keeps its pattern.
-          const constructor = content(r.store, libAt(r.store, target.slice(0, -1)).capabilities[parsed.extras.requirement.capability]!)
+          const constructor = content(r.store, libAt(r.store, target.slice(0, -1)).capabilities[parsed.extras.demand.capability]!)
           value = put(r.store, { data: {}, children: constructor.children.map(([left, right]) => {
             const pattern = content(r.store, right)
             return [left, !pattern.children.length && !Object.keys(pattern.data).length ? value : right]
@@ -2695,18 +2691,14 @@ export class App {
     const target = findRowByAlias(this.state.replica.store, headCid(this.state.replica), id)?.row
     if (!target || destination.includes(id)) return false
     const req = destination.length ? view(this.state.replica, destination.slice(0, -1))?.tasks.find(row => row.id === destination.at(-1))?.requirement : null
-    if (!req) return true
-    const requirement = destination.length ? view(this.state.replica, destination.slice(0, -1))?.tasks.find(row => row.id === destination.at(-1)) : undefined
-    if (req.capability === 'allocation') return !!target.allocation && allocationMatches(req, target.allocation, { required: requirement?.user ?? null, given: target.user })
-    if (req.capability === 'task') return target.checkable && target.done
-    if (req.capability === 'search') return target.type === QUERY_TYPE && !!target.query?.executedAt
-    return false
+    // a requirement takes a reference to any row; whether the bound value satisfies its pattern is what makes it satisfied
+    return !req || !req.satisfied
   }
   linkNode(id: string, destination = this.state.view): void {
     if (!this.canLinkNode(id, destination)) { this.notify('error', 'This value does not match the destination requirement.'); return }
     const req = destination.length ? view(this.state.replica, destination.slice(0, -1))?.tasks.find(row => row.id === destination.at(-1))?.requirement : null
     try {
-      this.edit(req ? addSupply(this.state.replica, destination.slice(0, -1), destination.at(-1)!, { capability: req.capability, by: this.actorName(), ref: id }, this.now()) : addRef(this.state.replica, destination, id, this.now()))
+      this.edit(req ? supplyRequirement(this.state.replica, destination.slice(0, -1), destination.at(-1)!, { by: this.actorName(), ref: id }, this.now()) : addRef(this.state.replica, destination, id, this.now()))
     } catch (error) { this.notify('error', String(error)) }
   }
   private evaluationBranches(path: Scope): Record<string, string> {
@@ -2754,8 +2746,9 @@ export class App {
       r = instantiateTemplate(r, parent, id, row.id, this.now())
       this.edit(r); path = [...parent, id]
     }
-    const compiled = this.executionInstructions(path)
-    if (!compiled.canRun) { this.notify('error', `Fill instruction refs before running: ${compiled.blocking.map(hole => hole.id).join(', ')}`); return }
+    // an open requirement is executed to be filled: its own hole is the execution's output, not an instruction to fill first
+    const compiled = row?.requirement && !row.requirement.satisfied ? null : this.executionInstructions(path)
+    if (compiled && !compiled.canRun) { this.notify('error', `Fill instruction refs before running: ${compiled.blocking.map(hole => hole.id).join(', ')}`); return }
     this.goTo(path)
     this.execution = { path: [...this.state.view], store: this.state.replica.store }
     this.refresh()
@@ -2843,13 +2836,32 @@ export class App {
       this.exitExecution()
     } else await this.evaluateAt(path)
   }
-  consumeExecutionAllocation(path: Scope, amount: number): void {
-    const root = this.executionPath()
-    if (!root || !root.every((id, i) => path[i] === id) || !Number.isFinite(amount) || amount < 0) return
-    const row = view(this.state.replica, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1))
+  /** Issue more authority to the bank at `at` (positive) or retire some of it (negative): a grant row the allocate handler in scope checks. */
+  changeBankHolding(at: Scope, amount: number): void {
+    if (!Number.isFinite(amount) || amount === 0) return
+    const path = [...this.state.view, ...at], row = view(this.state.replica, path.slice(0, -1))?.tasks.find(t => t.id === path.at(-1))
+    if (!row?.resource) return
+    const id = newId()
+    try { this.edit((amount > 0 ? issueGrant : debitGrant)(this.state.replica, path, { type: row.resource.type, unit: row.resource.unit, amount: Math.abs(amount) }, this.now(), undefined, id)) }
+    catch (error) { this.notify('error', error instanceof Error ? error.message : String(error)); return }
+    // the invocation is authored at the bank's parent; the bank holds the grant once it is evaluated
+    void this.queueEvaluation([...path.slice(0, -1), id])
+  }
+  /**
+   * Use part of an allocation during an execution: an allocate invocation under the execution's root, evaluated at
+   * once. `handle` is a row holding a grant (an invocation's output), or a grant a bank holds (`ownerGrants`); `to`
+   * binds the used amount to a requirement row.
+   */
+  consumeExecutionAllocation(handle: Scope | { owner: Scope; grant: string }, amount: number, to?: Scope): void {
+    const root = this.executionPath(), within = Array.isArray(handle) ? handle : handle.owner
+    if (!root || !root.every((id, i) => within[i] === id) || !Number.isFinite(amount) || amount <= 0) return
     const status = this.evaluationStatus(root)?.status
-    if (!row?.allocation || amount > row.allocation.amount || this.evaluating || status && status !== 'idle' && status !== 'rolled-back' && status !== 'awaiting-review' || consumption(this.state.replica, path)) return
-    this.edit(consume(this.state.replica, path, { peer: this.state.replica.meta.peerId, value: { ...row.allocation, amount }, time: this.now() }, this.now()))
+    if (this.evaluating || status && status !== 'idle' && status !== 'rolled-back' && status !== 'awaiting-review' && status !== 'committed') return
+    if (Array.isArray(handle) && !handleAt(this.state.replica, handle)) { this.notify('error', 'This row holds no allocation to use.'); return }
+    const id = newId()
+    try { this.edit(consumeAllocation(this.state.replica, root, handle, amount, this.now(), { id, ...(to ? { to } : {}) })) }
+    catch (error) { this.notify('error', error instanceof Error ? error.message : String(error)); return }
+    void this.evaluateAt([...root, id])
   }
   exitExecution(): void { this.execution = null; this.refresh() }
   evaluating = false
@@ -2874,10 +2886,10 @@ export class App {
     if (step.row?.requirement?.satisfied) return false
     const replica = this.state.replica
     if (this.deviceHandlers.executors(replica, step, replica.meta.peerId).length) return false
-    const patterns = step.row ? requirementHandlerTypes(replica.store, step.row, step.path.slice(0, -1)) : []
+    // the row's left is the capability; the server handles it when it offers a handler of that capability here
     return this.handlerOffers(step.path).some(offer => offer.enabled &&
       (offer.peerId === 'fos' || offer.peerId.startsWith('integration:') || offer.peerId.startsWith('mcp:')) &&
-      (matchesInstructionRef(replica, step, offer) || patterns.some(pattern => sameCapabilityType(replica.store, pattern, offer.type))))
+      matchesInstructionRef(replica, step, offer))
   }
   async evaluateAt(path: Scope, triggered = false): Promise<void> {
     if (!triggered) document.activeElement?.dispatchEvent(new window.Event('commit-edit'))
@@ -2928,15 +2940,8 @@ export class App {
         save: async replica => { valid(); this.set({ replica }); await this.config.storage.flush?.(); valid(); this.scheduleSync() },
         now: () => this.now(), isPeerActive: id => this.isOnline(id),
         check: step => localPull(step) && !this.pullPeers().some(p => p.id === step.row?.requirement?.peer) ? ['The Pull peer is not connected.'] : [],
-        executors: step => this.deviceHandlers.executors(this.state.replica, step, this.state.replica.meta.peerId).map(executor => ({
-          ...(executor.opensRefs ? { opensRefs: true } : {}),
-          effect: async (current, operation) => {
-            valid()
-            const result = await executor.effect!({ step: current, operation })
-            valid()
-            return result
-          }
-        }))
+        // every device native answers values; the evaluator writes them. A native that reads this app does so through its closure, never the tree.
+        executors: step => this.deviceHandlers.executors(this.state.replica, step, this.state.replica.meta.peerId)
       })
       if (record.status !== 'committed' && record.status !== 'awaiting-review') throw new Error(record.error ?? 'Evaluation needs recovery.')
     } catch (error) { if (triggered) throw error; this.notify('error', error instanceof Error ? error.message : String(error)) }
@@ -3310,17 +3315,6 @@ export class App {
     // what this device runs itself needs no account
     if (this.deviceHandlerFor([...this.state.view, ...at, req.id], req)) { await this.evaluateAt([...this.state.view, ...at, req.id]); return }
     if (r.capability === 'tool' && r.tool === 'fos.pull') { await this.evaluateAt([...this.state.view, ...at, req.id]); return }
-    if (r.capability === 'search' && r.satisfied) {
-      // searching again: the server's earlier fill (its supply) goes, so the requirement runs once more
-      const path = [...this.state.view, ...at, req.id], store = this.state.replica.store, cid = resolveScope(store, headCid(this.state.replica), path)
-      let next = this.state.replica
-      // supplies are flow records (the allocation row type); the server's search fill is the one by fos for search
-      for (const row of cid ? rowsOfType(store, cid, ALLOCATION_TYPE) : []) {
-        const s = supplyOf(valueContent(store, row.cid))
-        if (s?.capability === 'search' && s.by === 'fos') next = deleteTask(next, path, row.id, this.now())
-      }
-      this.edit(next)
-    }
     const session = this.state.session
     if (!session || session.kind !== 'user') { this.notify('error', 'Sign in to your account: its peers handle this.'); this.openModal('connect'); return }
     const task = this.rowAt(at)
@@ -3353,11 +3347,14 @@ export class App {
     return out
   }
   /** Supply a requirement: a confirmation by this user, a choice, or a reference to an allocation/query row. */
-  supplyRequirementAt(at: Scope, requirementId: string, supply: { capability: string; ref?: string; choice?: number }, absolute = false): void {
-    if ((supply.capability === 'confirmation' || supply.capability === 'peer') && !this.state.session) { this.notify('error', 'Sign in to confirm: confirmation is a capability of a logged-in person.'); this.openModal('connect'); return }
+  supplyRequirementAt(at: Scope, requirementId: string, supply: { capability?: string; ref?: string; choice?: number }, absolute = false): void {
+    const requirement = this.rowAt(absolute ? [] : [...at, requirementId]) ?? view(this.state.replica, absolute ? at : [...this.state.view, ...at])?.tasks.find(t => t.id === requirementId)
+    const capability = supply.capability ?? requirement?.requirement?.capability
+    if ((capability === 'confirmation' || capability === 'peer') && !this.state.session) { this.notify('error', 'Sign in to confirm: confirmation is a capability of a logged-in person.'); this.openModal('connect'); return }
     const by = this.state.session?.username ?? this.state.deviceName
     const parent = absolute ? at : [...this.state.view, ...at]
-    this.edit(addSupply(this.state.replica, parent, requirementId, { ...supply, by }, this.now()))
+    try { this.edit(supplyRequirement(this.state.replica, parent, requirementId, { by, ...(supply.ref !== undefined ? { ref: supply.ref } : {}), ...(supply.choice !== undefined ? { choice: supply.choice } : {}) }, this.now())) }
+    catch (error) { this.notify('error', error instanceof Error ? error.message : String(error)); return }
     this.set({ collapsed: this.state.collapsed.filter((c) => c !== requirementId) })
   }
   /**
@@ -3371,33 +3368,10 @@ export class App {
     const req = requirement.requirement
     if (!req || req.satisfied) return
     const by = this.actorName(), parent = absolute ? at : [...this.state.view, ...at]
-    if (req.capability !== 'allocation') { this.supplyRequirementAt(at, requirement.id, { capability: req.capability }, absolute); return }
-    let location: { name?: string; lat?: number; lng?: number } | undefined
-    if (req.resource === 'location') {
-      if (handler.device) {
-        // the native this device passed its library does it
-        const native = this.deviceNative(handler)
-        if (!native) { this.notify('error', 'This device does not report its location.'); return }
-        try {
-          location = { ...await native.locate(), ...(req.place ? { name: req.place } : {}) }
-        } catch (error) { this.notify('error', `Location unavailable: ${error instanceof Error ? error.message : (error as { message?: string })?.message ?? String(error)}`); return }
-      } else {
-        const name = (input ?? req.place ?? '').trim()
-        if (!name) { this.notify('error', 'Name the place.'); return }
-        location = { name }
-      }
-    }
-    const id = newId(), label = req.resource === 'location' ? `at ${location?.name ?? `${location?.lat}, ${location?.lng}`}` : `${handler.label} (${by})`
-    const allocation: NonNullable<TaskView['allocation']> = {
-      resource: requirement.id, type: req.resource ?? 'inventory', amount: req.amount ?? 1, unit: req.unit ?? (req.resource === 'account' ? 'USD' : req.resource === 'calendar' || req.resource === 'person' ? 'h' : req.resource === 'points' ? 'ff' : req.resource === 'location' ? 'place' : 'unit'),
-      by, ...(req.start !== undefined ? { start: req.start } : {}), ...(req.end !== undefined ? { end: req.end } : {}), ...(location ? { location } : {})
-    }
-    // a requirement naming a user is filled for that same user object
-    const money = requirement.type === MONEY_TYPE
-    let next = addRow(this.state.replica, [...parent, requirement.id], money ? MONEY_TYPE : ALLOCATION_TYPE, label, this.now(), { id, allocation, ...(requirement.user ? { user: requirement.user } : {}) })
-    if (!money) next = addSupply(next, parent, requirement.id, { capability: 'allocation', by, ref: id }, this.now())
-    this.edit(next)
-    this.set({ collapsed: this.state.collapsed.filter((c) => c !== requirement.id) })
+    if (req.capability !== 'allocation' && !req.linear) { this.supplyRequirementAt(at, requirement.id, {}, absolute); return }
+    // a demand for a resource pins the allocate contract: only a grant a bank issued fills it, through an evaluated allocate invocation
+    void handler; void input; void by; void parent
+    this.notify('error', 'A resource requirement is filled by using a grant from a bank in the execution view, not by hand.')
   }
   /**
    * Run a query row. Search is the account server's `search` effect, which fills `-?` requirements: a query inside one
@@ -3411,7 +3385,7 @@ export class App {
   /** A `-?` requirement at `at` holding the query (its text and `market` option), run by the account server. */
   async searchAt(at: Scope, text: string, market: boolean, replacing?: string): Promise<void> {
     if (!text.trim()) return
-    const id = this.addRowAt(at, ALLOCATION_TYPE, text, { extras: { requirement: { capability: 'search' } }, ...(replacing ? { position: { relativeTo: replacing, position: 'below' as const } } : {}) })
+    const id = this.addRowAt(at, argumentType('search'), text, { extras: { demand: { capability: 'search' } }, ...(replacing ? { position: { relativeTo: replacing, position: 'below' as const } } : {}) })
     this.addRowAt([...at, id], QUERY_TYPE, text, { extras: { query: market ? { market } : {} } })
     if (replacing) this.edit(deleteTask(this.state.replica, [...this.state.view, ...at], replacing, this.now()))
     const req = view(this.state.replica, [...this.state.view, ...at])?.tasks.find(t => t.id === id)
@@ -3444,9 +3418,10 @@ export class App {
         const found = this.allocations().find(({ row }) => row.id === s.allocationId)
         if (!found?.row.allocation) continue
         const copyId = `${s.allocationId}-${me}`.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64), supplyId = `${copyId}-supply`
-        draft = addRow(draft, [], ALLOCATION_TYPE, found.row.title, t, { id: copyId, allocation: { ...found.row.allocation, by: me } })
-        draft = addRow(draft, [], ALLOCATION_TYPE, '', t, { id: supplyId, supply: { capability: 'allocation', by: me, at: t, ref: copyId } })
-        under.set(supplyId, s.requirementId)
+        // the bidder's allocation goes under the requirement; binding it as the requirement's result is the owner's acceptance
+        draft = addAllocation(draft, [], found.row.title, t, { ...found.row.allocation, by: me }, { id: copyId })
+        void supplyId
+        under.set(copyId, s.requirementId)
       }
       return draft
     }, id => under.has(id) ? [under.get(id)!] : [])
@@ -3608,41 +3583,33 @@ export class App {
 
   /**
    * Organize a capture into the subtree of `at` (shared/sync/organize.ts): an `organize` requirement placed there
-   * holding the capture (`requestOrganize`), run on the account server (`runOnServer`), whose `organize` handler
-   * builds the outline, asks its model and submits the plan, with the capture kept as a note, as ONE submission by
-   * `fos` on `at`: nothing lands in the tree until it is accepted (`acceptSubmission`: one local edit, so one undo
-   * takes the whole capture back), right away when `autoAcceptCaptures` is on, else from the node's Branches. The
-   * filled request is removed. When the server cannot organize it the capture is still kept here, unorganized.
+   * holding the capture (`requestOrganize`), run on the account server (`runOnServer`), whose `organize` handler asks
+   * its model and answers the request with the plan's rows inside it; the filled request stays as the row holding
+   * them. When the server cannot organize it the request is removed and the capture kept here, unorganized. (The plan
+   * as one fos submission on `at`, accepted from Branches or by `autoAcceptCaptures`, awaits its replacement: web/CLAUDE.md.)
    */
   private async organizeInto(text: string, at: Scope, label: string): Promise<boolean> {
     const session = this.state.session, generation = this.authGeneration, store = this.state.replica.store
     if (!session) throw new Error('Connect to your account to organize captures.')
     if (!view(this.state.replica, at)) throw new Error('The capture location was removed.')
     this.set({ voice: { phase: 'organizing' } })
-    const earlier = new Set(this.remoteProposalsAt(at).map(p => p.id))
     const asked = requestOrganize(this.state.replica, at, text, label, this.now())
     this.edit(asked.replica)
     let failure: string | null = null
     try { await this.runOnServer(asked.path) } catch (error) { failure = error instanceof Error ? error.message : String(error) }
     if (generation !== this.authGeneration || this.state.session !== session || this.state.replica.store !== store) return false
-    // the result is the fos peer's submission on `at`: it arrives with the node's pending submissions (the
-    // requirement's `fos:organized` value names it, where named values travel; node sync does not carry them)
-    const value = failure ? null : handlerResult<OrganizedResult>(this.state.replica, asked.path)
-    const pending = this.remoteProposalsAt(at).filter(p => p.peerId === ORGANIZE_PEER && p.status === 'open')
-    const submission = failure ? null : pending.find(p => p.id === value?.proposal) ?? pending.find(p => !earlier.has(p.id)) ?? null
+    const answered = failure ? null : requirementAnswer(this.state.replica, asked.path)
+    if (answered !== null) {
+      const count = view(this.state.replica, asked.path)?.tasks.length ?? 0
+      this.notify('info', `${label} organized: ${count} row${count === 1 ? '' : 's'} in “${label}”${answered ? ` (${answered})` : ''}.`)
+      return true
+    }
     let next = this.state.replica
     if (resolveScope(next.store, headCid(next), asked.path)) next = deleteTask(next, at, asked.path.at(-1)!, this.now())
-    if (!submission) {
-      if (!view(next, at)) throw new Error('The capture location was removed while organizing.')
-      next = addTypedRow(next, at, typeAt(next, NOTE_TYPE, at), captureNoteText(label, new Date(this.now()).toLocaleString(), text), this.now())
-    }
+    if (!view(next, at)) throw new Error('The capture location was removed while organizing.')
+    next = addTypedRow(next, at, typeAt(next, NOTE_TYPE, at), captureNoteText(label, new Date(this.now()).toLocaleString(), text), this.now())
     this.edit(next)
-    if (!submission) { this.notify('error', `Kept the ${label.toLowerCase()} unorganized: ${failure ?? 'the server did not organize it'}`); return true }
-    // rows the plan placed (without the kept capture note)
-    const count = value?.rows ?? (submission.additions ?? []).reduce((n, a) => n + a.ids.length, 0) - 1
-    const rows = `${count} row${count === 1 ? '' : 's'}`
-    if (this.autoAcceptCaptures && submission.additions?.length && await this.acceptSubmission(at, submission.id, submission.additions)) this.notify('info', `${label} organized: ${rows} added here, the original kept as a note (undo takes it back).`)
-    else this.notify('info', `${label} organized: ${rows} and the original as a note, waiting for you in Branches (“${submission.name}” from fos).`)
+    this.notify('error', `Kept the ${label.toLowerCase()} unorganized: ${failure ?? 'the server did not organize it'}`)
     return true
   }
 
@@ -3742,7 +3709,7 @@ export class App {
     this.edit(deleteTask(this.state.replica, [...this.state.view, ...at], taskId, this.now()))
   }
   /** A blank/plain row typed with a data prefix (`-` requirement, `?` query, `@calendar` bank, `$ 50` allocation, `` ` `` template) becomes a row of that type in its place. */
-  convertPlainRowAt(at: Scope, id: string, parsed: { type: string; text: string; done: boolean; extras?: Omit<RowExtras, 'store'>; templateName?: string }): void {
+  convertPlainRowAt(at: Scope, id: string, parsed: { type: string; text: string; done: boolean; extras?: RowInputExtras; templateName?: string }): void {
     this.rewriteRowAt(at, id, parsed)
   }
   resolveChoiceAt(at: Scope, choiceId: string, pick: number | null): void {

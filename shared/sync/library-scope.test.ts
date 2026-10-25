@@ -59,7 +59,7 @@ test('nested stores resolve through their enclosing graph and recognize imported
 
 test('native restoration keeps the offered capability version after a library upgrade', () => {
   let r = declareTestCapability(createReplica('host'), 'paint')
-  const effect = async () => {}, definition = { id: 'paint-native', type: (store: FosStore, at: string[]) => libAt(store, at).capabilities.paint!, effect }
+  const native = async () => ({}), definition = { id: 'paint-native', type: (store: FosStore, at: string[]) => libAt(store, at).capabilities.paint!, native }
   const ref = nativeRef(r.store, 'host', definition), original = libAt(r.store).capabilities.paint!
   r = publishNativeRef(r, [], 'host', ref, 1)
   r = addRow(r, [], ref, 'Paint', 2, { id: 'call' })
@@ -69,7 +69,7 @@ test('native restoration keeps the offered capability version after a library up
   r = loadReplica(serializeReplica(r))
   restoreNativeRef(r, [], 'host', definition)
   const step = { path: ['call'], row: { typeCid: ref } } as EvaluationStep
-  expect(primitiveExecutors(r, step).map(value => value.native.effect)).toEqual([effect])
+  expect(primitiveExecutors(r, step).map(value => value.native.native)).toEqual([native])
   expect(discoverHandlers(r, []).find(offer => offer.cid === ref)?.type).toBe(original)
 })
 
@@ -95,7 +95,7 @@ test('library fields are reachable through graph refs with no encoded node ids',
 
 test('a row cannot execute through its own declarations, but its children can', () => {
   let r = createReplica('host')
-  const definition = { id: 'local-effect', type: (store: FosStore) => libAt(store).capabilities.llm!, effect: async () => {} }
+  const definition = { id: 'local-effect', type: (store: FosStore) => libAt(store).capabilities.llm!, native: async () => ({}) }
   const ref = nativeRef(r.store, 'host', definition)
   r = addRefCall(r, [], ref, 1, 'call')
   r = publishNativeRef(r, ['call'], 'host', ref, 2)

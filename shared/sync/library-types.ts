@@ -14,12 +14,8 @@ export const COMMENT_TYPE = 'comment'
 /** A reference: a row standing for another row by alias id (`data.ref`). */
 export const REF_TYPE = 'ref'
 export const QUERY_TYPE = 'query'
-/** A resource bank (calendar, account, inventory, person, points, location): allocations are drawn from it. */
+/** A resource bank (calendar, account, inventory, person, points, location): a ref row whose value holds its grants. */
 export const RESOURCE_TYPE = 'resource'
-/** A signed entry of a resource: negative = what the parent needs (a requirement), positive = what is supplied. */
-export const ALLOCATION_TYPE = 'allocation'
-/** Money: negative = a request for payment, positive = a payment. Told apart by sign alone. */
-export const MONEY_TYPE = 'money'
 /** A template row: the type of the tasks made from it. */
 export const TEMPLATE_TYPE = 'template'
 /** What a type accepts as children (sync/patterns.ts). */
@@ -35,7 +31,3 @@ export const MARKDOWN_TYPE = 'markdown'
 export const NUMBER_TYPE = 'number'
 export const TIME_TYPE = 'time'
 export const PEER_TYPE = 'peer'
-
-/** The allocation type and its sub-types: rows that are signed entries of a resource. */
-export const ALLOCATION_TYPES: readonly string[] = [ALLOCATION_TYPE, MONEY_TYPE]
-export const isAllocationType = (typeId: string | null | undefined): boolean => !!typeId && ALLOCATION_TYPES.includes(typeId)

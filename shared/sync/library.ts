@@ -1,4 +1,5 @@
 /** Library definitions are editable values. Runtime consumers must use explicitly pinned instances. */
+import type { ResourceType } from './graph'
 import { homePath, proposeRefAt, view, type Replica } from './replica'
 import { commitRoot, content, ensureLibraryRow, importNodes, reachableNodes, enclosingScopes, nearestInScope, libraryBindingAt, libraryTypeAt, viewNode, isLibraryDefinition, isPeerReference, libraryInstanceEdge, libraryInstanceOf, libraryRowOf, updateAtScope, put, refValueCid, resolveScope, valueContent, SERVER_MEMBER, type Scope } from './graph'
 import type { FosNodeContent, FosNodesData } from '../types'
@@ -16,7 +17,6 @@ export const MANUAL_HANDLERS = 'manual'
 /** The library's version is the data version (shared/version.ts); the compiler refuses a library graph in another. */
 export const LIBRARY_VERSION: string = FOS_DATA_VERSION
 if (COMPILED_LIBRARY.version !== LIBRARY_VERSION) throw new Error(`shared/sync/library.generated.json is in version ${COMPILED_LIBRARY.version}, this build is ${LIBRARY_VERSION}: run node scripts/compile-library.cjs.`)
-type Requirement = NonNullable<import('../types').FosDataContent['requirement']>
 /** A library as a submission's content: its root (null for none) and the nodes it needs. */
 export type LibraryBundle = { version: string; root: string | null; nodes: FosNodesData }
 
@@ -44,7 +44,7 @@ export function exportLocalLibrary(r: Replica, at: Scope | null = libraryPath(r)
  * A fallback the library offers for a kind of requirement: the row's text is the button, its requirement the kind it
  * fills. `native`: a native the device passed the library (`setLibraryArg`), which does it; else the person does it.
  */
-export type ManualHandler = { id: string; label: string; capability: Requirement['capability']; resource?: Requirement['resource']; device: boolean; native?: string }
+export type ManualHandler = { id: string; label: string; capability?: string; resource?: ResourceType; device: boolean; native?: string }
 
 /**
  * The library definition a row at `at` sees, by nearest ancestor: one referenced in Home (once its content is here)
@@ -144,7 +144,7 @@ export function manualHandlers(r: Replica, at?: Scope): ManualHandler[] {
   return viewNode(r.store, field).tasks.flatMap(row => {
     const req = row.requirement
     if (!req || !row.title.trim()) return []
-    return [{ id: row.id, label: row.title.trim(), capability: req.capability, ...(req.resource ? { resource: req.resource } : {}), device: false }]
+    return [{ id: row.id, label: row.title.trim(), ...(req.capability ? { capability: req.capability } : {}), ...(req.resource ? { resource: req.resource } : {}), device: false }]
   })
 }
 
@@ -158,7 +158,7 @@ export function deviceHandlers(r: Replica, at?: Scope): ManualHandler[] {
 }
 
 /** The library's fallbacks that fit one requirement: same capability and, for allocations, the same resource. */
-export function manualHandlersFor(r: Replica, requirement: { capability: Requirement['capability']; resource?: Requirement['resource'] }, at?: Scope): ManualHandler[] {
+export function manualHandlersFor(r: Replica, requirement: { capability?: string | null; resource?: ResourceType }, at?: Scope): ManualHandler[] {
   return [...manualHandlers(r, at), ...deviceHandlers(r, at)].filter(h => h.capability === requirement.capability && (requirement.capability !== 'allocation' || h.resource === requirement.resource))
 }
 

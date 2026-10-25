@@ -173,14 +173,13 @@ row         [type, rowNode]              rowNode.data: alias{id}, description{co
                                      entry of a resource, read by sign (`flowOf`). Negative = a requirement, what its parent needs ("-"
                                      prefix; capability = task | allocation | search | confirmation | choice | market | mail | peer | …).
                                      Positive with a capability = a supply that satisfies a requirement (`ref` names an allocation/query
-                                     row); positive without = an allocation (": 1h" time, "# 2 widgets" things, "@bob 2h" a person;
-                                     optional window "2026-10-13..2026-10-20" after the amount, start = now / end = forever when absent;
-                                     drawn from the parent context: the bank above, the bank the requirement names, or the type's
-                                     default pool = first top-level bank)
+                                     row); positive without = an amount as data (": 1h" time, "# 2 widgets" things, "@bob 2h" a person;
+                                     an optional window after the amount is recorded, not enforced). Amount rows hold no authority:
+                                     spendable resources are grants inside a bank (see "Resource authority")
               Money       lib.money  the same entry for money, told apart by sign alone: negative = a request for
                                      payment ("-$ 50"), positive = a payment ("$ 50"), which fills the request it sits under
               Query       lib.query       + query{market?}   ("?" prefix; inside a `-?` requirement, which the fos search effect fills)
-              Resource    lib.resource    + resource{type: calendar|account|inventory|person, unit, capacity?}   ("@calendar|@money|@inventory|@person name [capacity]")
+              Resource    lib.resource    + resource{type: calendar|account|inventory|person, unit}   ("@calendar|@money|@inventory|@person name [amount]")
               Template    lib.template    its rows are copied under every task made from it; the template's content is the
                                      type of those tasks ("`name" prefix; "[ ] `name` …" makes the task [Trip's content, taskNode])
 reference error  [missing, rowNode]      the row is pinned to a template this peer has not received; `missing` is a stand-in template
@@ -406,75 +405,87 @@ Still to do: relaying a pull request to an offline holder.
 
 ## Requirements, resource banks, queries and the market
 
-**Requirements** (`-` prefix, under a task) are what the task needs before it
-can be completed. `-` is a modifier: what follows it names the child row that
-fills the requirement (a requirement is a negative allocation entry; money is
-its own row type, `lib.money`, a negative money row a request
-for payment and a positive one a payment). `-[ ] text` needs a task inside it to be done;
-`-$ 50 text` (or `-@account 50`, `-@calendar 1h`, `-@inventory 2 widgets`)
-needs an allocation of that resource and amount inside it; `-? text` needs a
-query inside it to have been run; `- text` needs a confirmation (a signed-in
-person presses Confirm) and `-choice: a | b` a decision; `-market text` and
-`-mail text` are handled by a peer that registered that capability; `-@name
-text` assigns the task to the user `name` (their user object, see "Users"
-below), who confirms it. `taskBlockers`
-lists the unsatisfied ones; `setTaskDone` refuses while any remain and the UI
-disables the checkbox (`needs n` badge). `requirementSatisfied` first looks for
-a child row that fills it (a done task, an allocation whose type and
-amount fit, an executed query), then for a **supply** row (`addSupply`): who
-supplied it, when, and for allocations/search optionally a reference
-(`supply.ref`) to an allocation or query row elsewhere by alias id; a `peer`
-supply counts only when `by` is the named user's peer (`user:<username>`). A reference it cannot resolve
-is trusted (it came through a proposal from another account).
+**Arguments: requirements and allocations are one kind of row** (`shared/sync/arguments.ts`).
+An argument row is `[pattern, ref]`: a declaration whose pattern is a capability
+refined with what is demanded. Its polarity says which way the value goes. A
+pattern carrying a `negative` row *asks*: the row is a **requirement**, and its
+ref is a hole until a value satisfying the pattern is bound to it. A pattern
+without one *supplies*: the row is an **allocation**, and its ref holds the
+value. Nothing else exists: there is no requirement record, no separate result
+ref, no supply record. Supplying a requirement is binding its ref the way any
+ref is bound (a submission the owner accepts, `supplyRequirement`,
+`bindArgument`), and it is satisfied when the resolver finds that the bound
+value satisfies the pattern (`argumentSatisfied`: a reference to a row is
+followed, choices must be resolved). `taskBlockers` lists the unsatisfied
+requirements under a task; `setTaskDone` refuses while any remain.
+
+What the parser (`web/src/rows.ts`) turns `-` syntax into is a **demand**
+(`addRequirement`): `- text` a confirmation, `-choice: a | b` a sum of
+options, `-[ ] text` "a value containing a done task row" (the first row typed
+inside an open requirement starts the container its ref is bound to; completing
+the task satisfies it), `-llm`, `-?`, `-mail to subject`, `-repo owner/name`,
+`-tool name` a value of that capability supplied by its handler (named inputs
+such as the recipient are filled refs on the pattern, `withInputs`, that the
+handler reads and the value carries). `-$ 50 text`, `-: 1h`, `-# 2 widgets`,
+`-@bob 2h`, `-ff 5` are **negative allocations**: a refinement of the
+`allocation` capability with the resource, unit, amount and window, pinned to
+the `allocate` contract, so only a **grant** satisfies them. A typed `$ 50`
+elsewhere is a positive allocation holding plain data: it is not authority and
+does not fill a requirement for authority.
+
+**Values of a pattern.** A pattern's rows other than its polarity rows are
+what a value of it carries (`valueOfPattern`): the capability's name row (the
+string leaf that tells capabilities of equal shape apart), its argument slots
+and its declared inputs. A refinement (an amount, an option, a row the value
+must contain, a contract pin) constrains the value's content and is not
+carried. Two rules keep this honest: a library row type (a bank, a reference)
+is a row's instruction, never its value's predicate (`patternIsValuePredicate`),
+and a pattern with no structure of its own (a bare capability) selects
+candidates by their declared type, not by value.
 
 **Resource banks** (`@calendar`, `@money`, `@inventory`, `@person <name>`,
-`@points`, optional capacity) hold **allocations** and sub-banks as
-children. Each resource type has a marker: `$` money, `:` time, `#` things,
-`@name` a person, `ff` fos points, `at` a place (`-$`, `-:`, `-#`, `-@name`,
-`-ff`, `-at` for the matching requirements; `-at Eiffel Tower` needs a
-location allocation at that place, by name or by a device's position). A
-place at a time is not its own type: it is the product of a location row and
-a time row in one node. Fos points are the account's token balance
-(`GET /tokens/balance`, shown on the fos row); an `ff` allocation with no
-`@points` bank above draws from that balance (`resource: 'fos:points'`). A
-`-ff N` requirement under a task is a **payout**: when the task runs, the fos
-`points` handler moves N points on the server's ledger from the owner to the
-respondent (the signed-in user whose supplies filled the task's other
-requirements, or the user named with `@` on the row, `-ff 5 thanks @carol`, whose
-attestation the server checks first) and records the
-allocation and supply as `fos` (`backend/sync/hostHandlers.ts`). A `-$ N`
-requirement is likewise a **payment**: the fos `send-payment` handler opens one
-with the account's payment provider (Stripe Checkout, paying the respondent's
-connected account; `backend/payments/stripe.ts`), records it on the requirement
-as a `fos:payment` value and leaves the evaluation `awaiting-review`; the
-provider's webhook confirms it later, even with every device offline, and the
-server then writes the payment (a positive money row under the request, which
-fills it) as `fos` and resumes the
-evaluation (`backend/sync/payments.ts`, `shared/sync/payments.ts`). Running
-the task again while a payment is open does not open a second one; an expired
-page marks the record failed and the next run opens a new payment. Payees set
-up payouts from the Stripe peer (Connect onboarding). An allocation is
-*taken from the parent context* (`App.bankFor`): the nearest bank of its type
-above it, or, under an allocation requirement, a bank of the resource the
-requirement names, or the type's **default pool**, the first bank of that type
-at the top level. It may carry a **window** after the amount
-(`$ 50 2026-10-13..2026-10-20`; start is now and end is forever when absent),
-so every resource has its own calendar; a person allocation without a window
-needs no bank, with one it needs that person's bank (`@person bob 40h`).
-`allocatedIn` sums allocations in the subtree, the view shows
-`available = capacity − allocated` (windows are recorded, not yet checked for
-overlap). `requirementProgress` reports how much of an amount is covered by
-the allocations inside a requirement and the ones its supplies reference;
-several smaller allocations add up, and `-@name` is filled when that person
-allocates themself inside it (the same user object on both rows, `sameUser`).
-A requirement that names a user counts only allocations for that user. An allocation row is a normal row: type it
-inside the requirement, drop one onto the requirement (a supply referencing
-it; the allocation stays in its bank), Alt+drag a reference, or pick an
-existing one in the requirement's picker. Dropping a template on a
-requirement executes it inside, so the template's requirements show as rows
-under the original. Allocations under a row show on it as small tags; unmet
-requirements and executions with unmet requirements are marked red, with a
-green bar for the covered part of an amount.
+`@points`, optionally an amount to issue) are ref rows (`addBank`) whose value
+declares the checking contract: a **contract pin**, a row `[allocate
+capability, marker]`. Each resource type has a marker: `$` money, `:` time,
+`#` things, `@name` a person, `ff` fos points, `at` a place. A bank holds its
+**grants** as elements of its value: rows `[allocation pattern, grant]` where
+the grant is a content-addressed value (amount, unit, type, window, who issued
+it, a nonce that tells equal amounts apart, history edges to the grants it was
+issued from) that pins the same contract. A value without the pin is data,
+whatever it says. `ownerGrants` lists them; a bank shows their net
+(`resource.held`), negative grants retire authority, and there is no separate
+capacity. Grants and handles carry their time bounds as data; nothing enforces
+them until time has a graph representation.
+
+**Resource authority is linear** and moves only through an **invocation** of
+the `allocate` handler the scope resolves (`planAllocation`,
+`consumeAllocation`, `issueGrant`, `debitGrant`): a row whose left is that
+handler and whose rows are its arguments: `owner` (a reference to the bank),
+`in0…` (the authority consumed: a reference to a **handle**, an argument row in
+the tree holding a grant, named as the resolver sees it, by id or as a property
+path such as `bank.grant`; or the grant itself when the bank's own), and
+`out0…` (output declarations of the allocation pattern with the amount issued,
+one of them optionally a reference to the row it rebinds: the requirement it
+fills, or the handle the remainder returns to). Credit and debit are invocations
+with no inputs. The handler is the `allocateNative`, one shape for every host
+(`shared/sync/native.ts`): it receives the compiled operands (the bank's state
+and the grants as content; no aliases, refs or scopes), checks the invocation
+whole (inputs consumed exactly once from one bank, outputs conserving the
+amount, no contract change) and answers values: the grants it issues for the
+outputs, a consumed value for each input handle, and the bank's next state.
+It writes nothing. The evaluator submits each answer as a pending write of the
+evaluation to the declaration the compiler named (outputs win over proposals
+for one destination), checks it against that declaration's pattern, and
+publishes every pending write in its final commit, rejecting a destination
+whose accepted value changed in between and discarding the writes when the run
+fails. Nothing is live before commit; binding a grant by hand is refused
+(`bindIssuedAuthority` is the one named exception, for authority a host minted
+outside the graph such as a confirmed payment, until that host is a native
+whose bank is a row). Using an offered allocation in an execution, from the UI
+or the hosted input endpoint, authors the invocation and evaluates it; nothing
+else records consumption. Signing grants, combining several grants into one
+requirement, and consuming within one evaluation what an earlier step issued
+are not implemented yet (see `shared/sync/CLAUDE.md`).
 
 Editing a row shows its raw marker form (`rawRowText`: `-$ 50 lunch`,
 `[x] done`, `> note`) and re-parses it on commit; `setRowContentAt` rewrites
@@ -1072,14 +1083,11 @@ relationship (`refAlternatives`). Repeated names alone denote assignments to
 one ref, not alternatives. Withdrawing one explicit alternative may leave
 others available; it must not expose an outer same-name assignment as fallback.
 
-Spendable requirement slices still need graph-bound reservation results with
-resource provenance and conservation constraints. During declaration
-consolidation, the shortcut that manufactured a bank from a satisfied requirement
-was removed. Amount and choice projections may supply values; an amount alone
-must not authorize spending. Restore that functionality through the explicit
-handler/result relationship, not another special resource lookup. Likewise,
-workflow fulfillment must supply independent evidence, not a circular reference
-to the task whose completion depends on that requirement.
+Amount and choice projections of a requirement may supply values; an amount
+alone must not authorize spending, which is an allocate invocation over a
+bank's grants ("Resource authority"). Workflow fulfillment must supply
+independent evidence, not a circular reference to the task whose completion
+depends on that requirement.
 
 Pinned definitions must survive library upgrades and reloads. Native offers must
 be addressed by their capability node. Restoring a native implementation must
@@ -1283,8 +1291,16 @@ Offline rows keep the unverified object until the next edit online.
 * Fos-point allocations are recorded in the tree but not debited from the
   token balance when a task completes.
 * Choice requirements have no handler registry yet: any signed-in viewer can
-  pick an option. Calendar allocations carry start/end but nothing checks
-  overlaps.
+  pick an option.
+* Time bounds on banks, grants and allocations are data: nothing checks
+  containment or overlap until time is represented in the graph.
+* Grants record issuer, lineage and a signature, but nothing yet redeems a
+  sub-grant against that chain or settles a negative grant with the issuer of
+  its parent; devices hold no signing key.
+* Payments, payouts and calendar events are still dispatched by requirement
+  name and resource (`handles` predicates, `requirementHandlerTypes`, the
+  capability switch in `checkCompiledRequirement`); they are to become
+  ordinary invocations of their capability with declared result contracts.
 
 
 ### Non-replicated provider rows
@@ -1469,11 +1485,12 @@ resume that instance. Public access uses a signed browser credential, while Fos
 access uses the logged-in account. Copying a private URL does not grant access.
 Revoking membership or disabling/reconfiguring the entry revokes instance access.
 
-Hosted execution accepts only declared, visible inputs and checks allocation
-bounds. Consuming an allocation records a graph receipt, not an external payment
-or resource transfer. Graph-only evaluations run after all inputs are supplied;
-external integration effects still require their host-side handler. Hosted
-endpoints require deployment of the updated backend.
+Hosted execution accepts only declared, visible inputs. Using an offered
+allocation authors the same allocate invocation the UI authors, and the host's
+evaluation runs it through the server's allocate handler; the owner's bank
+changes only when that evaluation commits. Graph-only evaluations run after all
+inputs are supplied; external integration effects still require their host-side
+handler.
 
 ### Published nodes as pages, and the embed script
 

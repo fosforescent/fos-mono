@@ -1,4 +1,14 @@
 /** Test helpers. */
+import { supplyValue } from './arguments'
+import type { Native } from './native'
+/** A native that answers the requirement it runs for with a value of its pattern, as `by`. */
+export const answering = (by: string, receipt?: string): Native => async (operands, context) => {
+  const self = operands.outputs.self
+  if (!self) throw new Error('This native fills a requirement row.')
+  return { outputs: { self: supplyValue(context.store, self.pattern, by, receipt) } }
+}
+/** A native that answers nothing (an effect with no graph result). */
+export const silent: Native = async () => ({})
 import { libraryInstanceOf, libraryRowOf, SERVER_TRANSPORT_CAPABILITIES, type NodeView, type Scope } from './graph'
 import { headCid, view, type Replica } from './replica'
 import { accountContextAbove, exchangeNode, nodeTreeSync } from './node-sync'
@@ -6,6 +16,11 @@ import type { NodeBranch, NodeRequest } from './node-provider'
 import { nativeRef, publishNativeRef } from './native-refs'
 import { deviceTriggerDefinitions, cronObserver } from './trigger-primitives'
 import { libAt, libraryBindingAt, libraryInstanceEdge, commitRoot, updateAtScope, content, put, refNodeContent } from './graph'
+import type { Demand } from './arguments'
+import type { FosDataContent } from '../types'
+
+/** A "-[ ] task" demand: the value is a container holding a done task. */
+export const TASK_DEMAND: Demand = { capability: 'task', contains: { data: { todo: { completed: true } } as unknown as FosDataContent, children: [] } }
 
 /** An extension must be declared in a library instance before code can address its field. */
 export function declareTestCapability(r: Replica, name: string, at: Scope = [], data: import('../types').FosDataContent = {}): Replica {

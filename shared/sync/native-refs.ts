@@ -8,16 +8,18 @@ import { sameCapabilityType } from './capabilities'
 import type { EvaluationStep } from './evaluation'
 import { refSubmissions, refValueCompatible } from './scoped-refs'
 import { primitiveConstructor, primitiveRef, primitiveValue, primitiveImplementation, matchesInstructionRef, instructionPrimitives } from './primitives'
+import type { Native } from './native'
 
-export type NativeImplementation<Context> = {
-  authority?: import('./authority').AuthorityChecker
+export type NativeImplementation<Context = unknown> = {
   trigger?: import('./triggers').TriggerObserver
+  /** The one shape of a host implementation (sync/native.ts): compiled operands in, values out. */
+  native?: Native
+  /** Narrows which rows of the capability this native runs, while the library's patterns are not refined enough to say. */
   handles?(step: EvaluationStep, replica: Replica): boolean
-  effect?(context: Context): Promise<void | 'pending'>
-  /** It submits to the step's open refs itself, so they need not be bound before it runs. */
-  opensRefs?: boolean
   /** A peer's node transport: the local meaning of its `provideNode` offer (`nodeTransportAt`). */
   provideNode?: NodeTransport
+  /** Unused; kept so hosts' context types still parameterize definitions. */
+  context?: Context
 }
 /**
  * How node exchange reaches a peer from this device (a connection: the account session, a direct link, another store on
@@ -83,7 +85,7 @@ export function nodeTransportAt(replica: Replica, at: Scope, peer: string): (Nod
 export function primitiveExecutors<Context, Native extends NativeImplementation<Context> = NativeImplementation<Context>>(replica: Replica, step: EvaluationStep, host?: string): Array<{ native: Native; host: string; ref: string }> {
   const parent = step.path.slice(0, -1), offers = discoverHandlers(replica, parent)
   return nativeRefValues<Context, Native>(replica, parent, host).filter(value => {
-    if (!value.native.effect) return false
+    if (!value.native.native) return false
     const offer = offers.find(offer => offer.cid === value.ref && offer.peerId === value.host)!
     return instructionPrimitives(replica, step).length ? matchesInstructionRef(replica, step, offer) : value.native.handles ? value.native.handles(step, replica) : matchesInstructionRef(replica, step, offer)
   }).filter((value, index, values) => values.findIndex(other => other.native === value.native && other.host === value.host) === index)

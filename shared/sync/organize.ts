@@ -28,7 +28,7 @@ import { addRow, addTypedRow, createReplica, headCid, view, type Replica } from 
 import type { Change } from './events'
 
 import { NOTE_TYPE, PLAIN_TYPE } from './published-types'
-import { ALLOCATION_TYPE } from './library-types'
+import { addRequirement } from './arguments'
 /** The library row types a plan may name, with what the model is told each is for. */
 export const ORGANIZE_TYPES: Record<string, string> = {
   [PLAIN_TYPE]: 'a short row: one point, task, decision, question or fact (the default)',
@@ -198,69 +198,20 @@ export function captureNoteText(label: string, stamp: string, text: string, titl
   return `## ${label}${title ? `: ${title}` : ''}\n\n_${stamp}_\n\n${text.trim()}`
 }
 
-/** Apply a plan under the node at `at` of a replica, then keep the raw capture as a note at `at`. */
-export async function applyOrganizePlan(replica: Replica, at: Scope, plan: OrganizePlan, capture: { label: string; stamp: string; text: string }, now: number, makeId: () => string = newId): Promise<{ replica: Replica; rows: PlacedRow[]; captureId: string }> {
-  if (!view(replica, at)) throw new Error('The capture location was removed.')
-  // locate the plan's parents now: rows may have moved while the model worked
-  const outline = await captureOutline(replica, at, { entries: 5000, depth: 32 })
-  const paths = new Map(outline.map(entry => [entry.id, entry.path]))
-  const rows = placePlan(plan, id => paths.get(id) ?? null, makeId)
-  let r = replica
-  for (const row of rows) {
-    const before = r
-    r = addTypedRow(r, [...at, ...row.parent], typeAt(r, row.type, [...at, ...row.parent]), row.text, now, row.id)
-    if (r === before) throw new Error('A row could not be added.')
-  }
-  const captureId = makeId()
-  r = addTypedRow(r, at, typeAt(r, NOTE_TYPE, at), captureNoteText(capture.label, capture.stamp, capture.text, plan.title), now, captureId)
-  return { replica: r, rows, captureId }
-}
-
-/** The peer whose submissions organized captures are: the account server's organizer. */
+/** The peer whose answers organized captures are: the account server's organizer. */
 export const ORGANIZE_PEER = 'fos'
-
-/**
- * Organize a capture as ONE submission by `peer` on the node at `at`, never an edit of main: the plan applied (with the
- * raw capture as a note, `applyOrganizePlan`) to a draft of that node's value, recorded as a proposal on the node
- * (which becomes a mutable ref if it was not one). Main is unchanged until the owner accepts the submission; its
- * rows are one content-addressed subtree per added row. The name is the capture's label and title, made unique among
- * this peer's submissions there so a later capture never replaces a pending one.
- */
-export async function proposeOrganizePlan(replica: Replica, at: Scope, plan: OrganizePlan, capture: { label: string; stamp: string; text: string }, now: number, makeId: () => string = newId, peer = ORGANIZE_PEER): Promise<{ replica: Replica; proposalCid: string; name: string; rows: PlacedRow[]; captureId: string; additions: SubmissionAddition[] }> {
-  const store = replica.store, root = headCid(replica), cid = resolveScope(store, root, at)
-  if (!cid || !view(replica, at)) throw new Error('The capture location was removed.')
-  const base = put(store, valueContent(store, cid)), draftStore = new FosStore()
-  importNodes(draftStore, reachableNodes(store, [base]))
-  commitRoot(draftStore, base, now)
-  nestScope(draftStore, { store, root, at }) // row types resolve by the library above the target
-  const applied = await applyOrganizePlan(createReplica(peer, draftStore), [], plan, capture, now, makeId)
-  importNodes(store, reachableNodes(draftStore, [headCid(applied.replica)]))
-  const taken = new Set(readProposals(store, content(store, cid)).filter(p => p.peerId === peer).map(p => p.name))
-  const title = `${capture.label}${plan.title ? `: ${plan.title}` : ''}`
-  let name = title
-  for (let n = 2; taken.has(name); n++) name = `${title} (${n})`
-  const proposalCid = put(store, proposalContent(store, peer, name, headCid(applied.replica), base, now))
-  commitRoot(store, updateAtScope(store, root, at, current => withProposal(store, makeLink(store, current, now), peer, proposalCid, name), 'node'), now)
-  return { replica: { ...replica }, proposalCid, name, rows: applied.rows, captureId: applied.captureId, additions: submissionAdditions(store, base, headCid(applied.replica)) }
-}
 
 // ---------------------------------------------------------------------------
 // Organize requirements: how a capture reaches the host's organizer
 
-/**
- * What the organizer leaves on the requirement it filled (its handler result): what it placed and where the capture
- * went. What it submitted: `rows` added (titles of existing rows they went `under`), the kept capture's id, the
- * plan's title, and the submission itself: its proposal cid on the target, its name and the rows it adds by node
- * (`additions`, relative to the target), so a device can accept it without loading the rows.
- */
-export type OrganizedResult = { rows: number; under: string[]; captureId: string; title: string; proposal: string; name: string; additions: SubmissionAddition[] }
+/** What organizing a capture came to: how many rows the answer holds and the plan's title. */
+export type OrganizedResult = { rows: number; title: string }
 
 /**
  * Ask the host to organize a capture into the node at `at`: an `organize` requirement placed in that node (its text
- * says what the capture is, e.g. "Voice note"), holding the captured text as a child note. Evaluating it (a
- * `complete` event, the account server's `organize` handler) submits the plan, with the capture kept as a note, as one
- * submission by `fos` on `at` (`proposeOrganizePlan`), records the supply and leaves an `OrganizedResult` as the
- * requirement's handler result. Answers the requirement's path.
+ * says what the capture is, e.g. "Voice note") with the captured text as its `capture` input. Evaluating it (a
+ * `complete` event, the account server's `organize` handler) answers it with the plan's rows inside; the filled
+ * request is the row holding them. Answers the requirement's path.
  */
 export function requestOrganize(replica: Replica, at: Scope, text: string, label: string, now: number, makeId: () => string = newId): { replica: Replica; path: Scope } {
   if (!view(replica, at)) throw new Error('The capture location was removed.')
@@ -268,8 +219,8 @@ export function requestOrganize(replica: Replica, at: Scope, text: string, label
   if (!capture) throw new Error('Nothing to organize.')
   if (capture.length > ORGANIZE_LIMITS.captureChars) throw new Error(`Organize at most ${ORGANIZE_LIMITS.captureChars.toLocaleString('en-US')} characters at a time.`)
   const id = makeId()
-  let r = addRow(replica, at, ALLOCATION_TYPE, label.trim() || 'Capture', now, { id, requirement: { capability: 'organize' } })
-  r = addTypedRow(r, [...at, id], typeAt(r, NOTE_TYPE, [...at, id]), capture, now, makeId())
+  // the capture is the request's input: the handler reads operands, never the tree
+  const r = addRequirement(replica, at, label.trim() || 'Capture', now, { capability: 'organize', inputs: { capture } }, id)
   return { replica: r, path: [...at, id] }
 }
 
@@ -278,9 +229,8 @@ export function organizeRequestAt(replica: Replica, path: Scope): { label: strin
   const parent = view(replica, path.slice(0, -1)), row = parent?.tasks.find(t => t.id === path.at(-1))
   const cid = resolveScope(replica.store, headCid(replica), path)
   if (!row || !cid || row.requirement?.capability !== 'organize') return null
-  // the capture is the requirement's row made from the note type (the edge's left node), not any row inside it
-  const note = rowsOfType(replica.store, cid, NOTE_TYPE)[0]
-  const text = note ? formText(replica.store, valueContent(replica.store, note.cid)).trim() : ''
+  // the capture is the request's `capture` input
+  const text = (row.requirement.inputs.capture ?? '').trim()
   return text ? { label: row.title, text } : null
 }
 
@@ -292,14 +242,6 @@ export function typeAt(replica: Replica, typeId: string, at: Scope): string {
   return found
 }
 
-/** The same edits as `submit` changes for a host acting through events; `at` is the target relative to the attachment. */
-export function organizePlanChanges(plan: OrganizePlan, outline: OutlineEntry[], at: Scope, capture: { label: string; stamp: string; text: string }, makeId: () => string = newId): { changes: Change[]; rows: PlacedRow[] } {
-  const paths = new Map(outline.map(entry => [entry.id, entry.path]))
-  const rows = placePlan(plan, id => paths.get(id) ?? null, makeId)
-  const changes: Change[] = rows.map(row => ({ path: [...at, ...row.parent], operation: 'add_row', type: row.type, text: row.text, id: row.id }))
-  changes.push({ path: at, operation: 'add_row', type: NOTE_TYPE, text: captureNoteText(capture.label, capture.stamp, capture.text, plan.title).slice(0, 16000), id: makeId() })
-  return { changes, rows }
-}
 
 /** The instructions for the host's model (the capture is content, never instructions). */
 export const ORGANIZE_SYSTEM = [

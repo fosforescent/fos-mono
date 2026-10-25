@@ -1,7 +1,7 @@
 import { publishedTemplateId } from '@fosforescent/shared/sync/index'
-import { MARKET_PEER, addRow, addTask, createReplica, makeLinkAt, setMarketAt } from '@fosforescent/shared/sync/index'
+import { MARKET_PEER, addRequirement, addRow, addTask, createReplica, makeLinkAt, setMarketAt } from '@fosforescent/shared/sync/index'
 import { collectRows, indexStore, searchRows, type Embed } from './rowIndex'
-import { COMMENT_TYPE, ALLOCATION_TYPE, TEMPLATE_TYPE } from '@fosforescent/shared/sync/library-types'
+import { COMMENT_TYPE, TEMPLATE_TYPE } from '@fosforescent/shared/sync/library-types'
 
 // a deterministic "embedding": bag of letters, so related texts land close together
 const embed: Embed = async (texts) => texts.map((t) => { const v = new Array(26).fill(0); for (const c of t.toLowerCase()) { const i = c.charCodeAt(0) - 97; if (i >= 0 && i < 26) v[i]++ } const n = Math.hypot(...v) || 1; return v.map((x) => x / n) })
@@ -38,7 +38,7 @@ test('rows are collected with paths and market inheritance; supplies and referen
   r = makeLinkAt(r, ['o'], 3)
   r = setMarketAt(r, ['o'], true, 4)
   r = addTask(r, [], 'private groceries', 5, 'g')
-  r = addRow(r, ['g'], ALLOCATION_TYPE, 'confirmation', 6, { id: 'q', requirement: { capability: 'confirmation' } })
+  r = addRequirement(r, ['g'], 'confirmation', 6, { capability: 'confirmation' }, 'q')
   const rows = collectRows(r.store)
   expect(rows.map((x) => [x.aliasId, x.market, x.path.join('/')])).toEqual([['o', true, ''], ['s', true, 'o'], ['g', false, ''], ['q', false, 'g']])
 })

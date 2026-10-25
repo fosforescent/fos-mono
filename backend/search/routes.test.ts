@@ -1,9 +1,9 @@
 import type { Request, Response } from 'express'
 import { publishedTemplateId } from '@fosforescent/shared/sync/index'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
-import { MARKET_PEER, addMemberAt, addRow, addTask, content, copyBidRow, createReplica, draftBid, readProposals, removeMemberAt, setMarketAt, setMemberCapabilitiesAt, viewNode, resolveScope, rootTargetCid, type Replica } from '@fosforescent/shared/sync/index'
+import { MARKET_PEER, addAllocation, addRequirement, addMemberAt, addRow, addTask, content, copyBidRow, createReplica, draftBid, readProposals, removeMemberAt, setMarketAt, setMemberCapabilitiesAt, viewNode, resolveScope, rootTargetCid, type Replica } from '@fosforescent/shared/sync/index'
 import { createMarketHandlers } from './routes'
-import { COMMENT_TYPE, ALLOCATION_TYPE, TEMPLATE_TYPE, PATTERN_TYPE } from '@fosforescent/shared/sync/library-types'
+import { COMMENT_TYPE, TEMPLATE_TYPE, PATTERN_TYPE } from '@fosforescent/shared/sync/library-types'
 import { TASK_TYPE } from '@fosforescent/shared/sync/library-types'
 
 type Saved = { user: { id: number; username: string }; store: FosStore }
@@ -38,7 +38,7 @@ function call(handler: (req: Request, res: Response) => Promise<Response>, me: s
 function aliceWithListedTask(): Replica {
   let a = createReplica('alice-device')
   a = addTask(a, [], 'design a logo for the bakery', 1, 'job')
-  a = addRow(a, ['job'], ALLOCATION_TYPE, '1h of design time', 2, { id: 'req', requirement: { capability: 'allocation', resource: 'calendar', amount: 1, unit: 'h' } })
+  a = addRequirement(a, ['job'], '1h of design time', 2, { capability: 'allocation', resource: 'calendar', amount: 1, unit: 'h' }, 'req')
   a = addTask(a, ['job'], 'brief', 3, 'brief')
   a = setMarketAt(a, ['job'], true, 4)
   a = addTask(a, [], 'private: dentist', 5, 'dentist')
@@ -57,10 +57,10 @@ test('a bidder proposes on a node the market lists; bidders see only their own p
   expect((await call(d.handlers.marketNode, 'bob', { query: { owner: 'alice', id: 'dentist' } })).status).toBe(403)
   expect((await call(d.handlers.marketNode, 'bob', { query: { owner: 'alice', id: 'brief' } })).status).toBe(200)
 
-  // bob proposes: a comment plus a supply under the requirement (a bid of rows he built, of whatever kind)
+  // bob proposes: a comment plus his offered allocation under the requirement (a bid of rows he built, of whatever kind)
   const bid = draftBid(createReplica('bob'), [], 10, r => {
     r = addRow(r, [], COMMENT_TYPE, 'I can do this Tuesday', 10)
-    return addRow(r, [], ALLOCATION_TYPE, '', 10, { id: 'bob-supply', supply: { capability: 'allocation', by: 'bob', at: 10, ref: 'bob-alloc' } })
+    return addAllocation(r, [], 'Tuesday hour', 10, { resource: '', type: 'calendar', amount: 1, unit: 'h', by: 'bob' }, { id: 'bob-supply' })
   }, id => id === 'bob-supply' ? ['req'] : [])
   const bob = await call(d.handlers.marketProposal, 'bob', { body: { owner: 'alice', aliasId: 'job', bid: wire(bid) } })
   expect(bob.status).toBe(200)
@@ -92,9 +92,10 @@ test('a bidder proposes on a node the market lists; bidders see only their own p
   // the bidder's branch holds the comment and the supply under the requirement
   const bobProposal = readProposals(alice.store, content(alice.store, jobCid)).find((p) => p.peerId === 'user:bob')!
   const branch = viewNode(alice.store, bobProposal.contentCid)
-  expect(branch.tasks.map((t) => [t.type, t.title])).toEqual([[ALLOCATION_TYPE, '1h of design time'], [TASK_TYPE, 'brief'], [COMMENT_TYPE, 'I can do this Tuesday']])
+  expect(branch.tasks.map((t) => [!!t.requirement, t.title])).toEqual([[true, '1h of design time'], [false, 'brief'], [false, 'I can do this Tuesday']])
+  expect(branch.tasks.map((t) => t.type).slice(1)).toEqual([TASK_TYPE, COMMENT_TYPE])
   const reqInBranch = resolveScope(alice.store, bobProposal.contentCid, ['req'])!
-  expect(viewNode(alice.store, reqInBranch).tasks.map((t) => t.supply?.ref)).toEqual(['bob-alloc'])
+  expect(viewNode(alice.store, reqInBranch).tasks.map((t) => t.allocation?.by)).toEqual(['bob'])
 
   // resubmitting replaces bob's proposal instead of adding a second one
   await call(d.handlers.marketProposal, 'bob', { body: { owner: 'alice', aliasId: 'job', bid: comment('bob', 'Wednesday works too', 11) } })
@@ -104,7 +105,7 @@ test('a bidder proposes on a node the market lists; bidders see only their own p
   // bad input: no bid, one's own node, a supply in someone else's name
   expect((await call(d.handlers.marketProposal, 'bob', { body: { owner: 'alice', aliasId: 'job' } })).status).toBe(400)
   expect((await call(d.handlers.marketProposal, 'alice', { body: { owner: 'alice', aliasId: 'job', bid: comment('alice', 'x') } })).status).toBe(400)
-  const forged = draftBid(createReplica('bob'), [], 12, r => addRow(r, [], ALLOCATION_TYPE, '', 12, { supply: { capability: 'allocation', by: 'fos', at: 12 } }))
+  const forged = draftBid(createReplica('bob'), [], 12, r => addAllocation(r, [], 'forged', 12, { resource: '', type: 'calendar', amount: 1, unit: 'h', by: 'fos' }))
   expect((await call(d.handlers.marketProposal, 'bob', { body: { owner: 'alice', aliasId: 'job', bid: wire(forged) } })).status).toBe(400)
 })
 
@@ -123,14 +124,14 @@ test('an account the owner made a member (edit) sends its own row as an allocati
   let alice = addTask(createReplica('alice-device'), [], 'inbox', 1, 'inbox')
   alice = addMemberAt(alice, ['inbox'], 'user:bob', 'bob', ['edit'], 2)
   let bob = addTask(createReplica('bob'), [], 'Deliver the logo', 3, 'bin')
-  bob = addRow(bob, ['bin'], ALLOCATION_TYPE, 'pay 5', 4, { requirement: { capability: 'allocation', resource: 'account', amount: 5, unit: 'USD' } })
+  bob = addRequirement(bob, ['bin'], 'pay 5', 4, { capability: 'allocation', resource: 'account', amount: 5, unit: 'USD' })
   const d = deps({ alice, bob })
   const sent = await call(d.handlers.marketProposal, 'bob', { body: { owner: 'alice', aliasId: 'inbox', bid: wire(copyBidRow(bob, ['bin'], 5, 'bin-bob')) } })
   expect(sent.status).toBe(200)
   const inbox = content(alice.store, resolveScope(alice.store, rootTargetCid(alice.store), ['inbox'])!)
   const proposal = readProposals(alice.store, inbox).find(p => p.peerId === 'user:bob')!
   const bin = resolveScope(alice.store, proposal.contentCid, ['bin-bob'])!
-  expect(viewNode(alice.store, bin).tasks.map(t => [t.type, !!t.requirement, t.title])).toEqual([[ALLOCATION_TYPE, true, 'pay 5']])
+  expect(viewNode(alice.store, bin).tasks.map(t => [!!t.requirement, t.title])).toEqual([[true, 'pay 5']])
   // without the grant (and unlisted) the node takes nothing
   expect((await call(d.handlers.marketProposal, 'carol', { body: { owner: 'alice', aliasId: 'inbox', bid: comment('carol', 'x') } })).status).toBe(403)
 })

@@ -31,9 +31,9 @@ import { FosStore } from '../dag-implementation/store'
 import { NOTE_TYPE, PLAIN_TYPE, TASK_TYPE, TEMPLATE_TYPE } from './library-types'
 import type { FosPathElem } from '../types'
 import {
-  branchSelection, commitRoot, content, contextScope, demandOf, findAliasEdge, findChild, hasCapability, isBranchChoice, importNodes, makeLink,
-  proposalContent, put, reachableNodes, readChoice, readMembers, readProposals, refBranches, requirementSatisfied,
-  requirementSummary, resolveScope, rootTargetCid, isTaskRow, isAllocationRow, isRowOfType,
+  branchSelection, commitRoot, content, contextScope, findAliasEdge, findChild, hasCapability, isBranchChoice, importNodes, makeLink,
+  proposalContent, put, reachableNodes, readChoice, readMembers, readProposals, refBranches, requirementViewOf,
+  resolveScope, rootTargetCid, isTaskRow, isRequirementRow, isRowOfType,
   selectedBranchValue, updateAtScope, valueContent, viewNode, withBranches, withProposal, type Scope,
   nestScope, libraryTypeAt, scopeBranches, newId, taskBlockers,
 } from './graph'
@@ -319,7 +319,7 @@ function dispatch(r: Replica, event: FosEvent, principal: Principal, now: number
           && (!permission(child, 'execute') || !permission(child, 'edit'))) throw new EventError('Claiming this child requires execute and edit capabilities.')
         const parent = resolve(path.slice(0, i - 1)), edge = findAliasEdge(store, valueContent(store, parent), path[i - 1]!)?.edge
         if (edge && (isRowOfType(store, edge, TEMPLATE_TYPE) || (isTaskRow(store, edge) && viewNode(store, child).done))) throw new EventError('Task is no longer outstanding.')
-        if (i === path.length && (!edge || !(isTaskRow(store, edge) || (isAllocationRow(store, edge) && !requirementSatisfied(store, child))))) throw new EventError('Choose an outstanding task or unmet requirement.')
+        if (i === path.length && (!edge || !(isTaskRow(store, edge) || (isRequirementRow(store, edge) && !requirementViewOf(store, edge, child)?.satisfied)))) throw new EventError('Choose an outstanding task or unmet requirement.')
       }
       if (event.expected !== cid) throw new EventError('Task changed. Read it again before claiming.')
       if (event.branches?.some(b => !within(path, b.path))) throw new EventError('Claim branch selections must be on the path to the task.')
@@ -380,7 +380,7 @@ function dispatch(r: Replica, event: FosEvent, principal: Principal, now: number
       let visited = 0
       while (stack.length && visited < 5000 && open.length < 1100) {
         const { at, edge, blockedBy } = stack.pop()!
-        const task = !!edge && isTaskRow(store, edge), requirement = !!edge && isAllocationRow(store, edge)
+        const task = !!edge && isTaskRow(store, edge), requirement = !!edge && isRequirementRow(store, edge)
         let current: string
         try { current = resolve(at) } catch { continue }
         if (seen.has(current)) continue
@@ -389,11 +389,11 @@ function dispatch(r: Replica, event: FosEvent, principal: Principal, now: number
         // a done task's subtree is finished; a template's is a definition, not work
         if ((task && value.data.todo?.completed) || (!!edge && isRowOfType(store, edge, TEMPLATE_TYPE))) continue
         const mask = owner ? null : nodeLinkMaskAt(r, absolute(at), principal.peerId)
-        if (at.length && (task || (requirement && !requirementSatisfied(store, current)))) {
-          const demand = requirement ? demandOf(value) : undefined
+        const demand = requirement && edge ? requirementViewOf(store, edge, current) : undefined
+        if (at.length && (task || (demand && !demand.satisfied))) {
           // assigned to this peer: bound as a member on the row itself, or named by the requirement
           const assigned = readMembers(store, content(store, selectedIdentity(store, current))).some(m => m.peerId === principal.peerId) || (!!demand?.peer && [principal.peerId, principal.name].includes(demand.peer))
-          if (!claims.some(c => workOverlaps(c, absolute(at), { ...branches, ...scopeBranches(store, root, absolute(at)) }))) open.push({ ...describe(at), ...(mask?.fields && !mask.fields.includes('description') ? { title: null } : {}), parent: at.slice(0, -1), assigned, ...(demand ? { requirement: requirementSummary(demand) } : {}), ...(blockedBy?.length ? { blockedBy } : {}) })
+          if (!claims.some(c => workOverlaps(c, absolute(at), { ...branches, ...scopeBranches(store, root, absolute(at)) }))) open.push({ ...describe(at), ...(mask?.fields && !mask.fields.includes('description') ? { title: null } : {}), parent: at.slice(0, -1), assigned, ...(demand ? { requirement: demand.summary } : {}), ...(blockedBy?.length ? { blockedBy } : {}) })
         }
         if (at.length < 32) {
           const rows = viewNode(store, current).tasks.filter(row => !mask?.children || mask.children.includes(row.id))

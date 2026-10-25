@@ -7,4 +7,4 @@
  * `UnsupportedDataVersionError` (reset the data), and a peer in another version is refused by node exchange
  * (`validateNodeShape`, "update the app"). See docs/cid-versioning.md.
  */
-export const FOS_DATA_VERSION = '0.0.4'
+export const FOS_DATA_VERSION = '0.0.5'

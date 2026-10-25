@@ -9,13 +9,12 @@
  *   -<marker>   requirement: the task needs a child row of that type before it can be done
  *               -[ ] subtask · -$ 50 money · -: 1h time · -# 2 widgets things · -@bob a person
  *               -? search · -market · -mail · -choice: a | b · - confirmation
- *   $ : # @     allocation of money / time / things / a person, taken from the parent context (money is the type
- *               lib.money: "$ 50" a payment, "-$ 50" a request for one, told apart by sign)
- *               through a scoped handler declaration. An optional window follows the
+ *   $ : # @     allocation of money / time / things / a person: plain data unless a bank issued it ("-$ 50" asks for
+ *               a grant of money, "$ 50" states an amount). An optional window follows the
  *               amount: "2026-10-13", "2026-10-13T09:00..2026-10-13T11:00", "..2026-12-31";
  *               null start has no lower bound; null end has no upper bound, for every resource.
  *   ?           query (semantic search)
- *   @calendar | @money | @inventory | @person <name> … [capacity]   resource bank
+ *   @calendar | @money | @inventory | @person <name> … [amount]     resource bank; the amount is issued as its first grant
  *   `name       template: its requirement rows are copied under every task that executes it
  *   @name       anywhere in an allocation (or allocation requirement) names a user: shorthand for their user
  *               object (shared/sync/users.ts), bound as the row's `user` field, never stored as text
@@ -25,14 +24,24 @@
  */
 
 import { parseCapabilityName, type CapabilitySyntax } from '../../shared/sync/capabilities'
-import { ALLOCATION_TYPE, MONEY_TYPE, NOTE_TYPE, COMMENT_TYPE, PLAIN_TYPE, QUERY_TYPE, RESOURCE_TYPE, TASK_TYPE, TEMPLATE_TYPE, isAllocationType, unverifiedUser, type ResourceType, type RowExtras, type TaskView, type UserRecord } from '../../shared/sync/index'
+import { NOTE_TYPE, COMMENT_TYPE, PLAIN_TYPE, QUERY_TYPE, RESOURCE_TYPE, TASK_TYPE, TEMPLATE_TYPE, unverifiedUser, type Allocation, type Amount, type Demand, type ResourceType, type RowExtras, type TaskView, type UserRecord } from '../../shared/sync/index'
+
+/**
+ * What a typed line carries besides its text: the library row's extras, or what an argument row asks for (`demand`,
+ * a requirement) or supplies (`allocation`); `grant` is the amount typed on a new bank, issued once the row exists.
+ */
+export type RowInputExtras = Omit<RowExtras, 'store'> & { demand?: Demand; allocation?: Allocation; grant?: Amount }
+/** The `type` of a parsed argument row: the capability it is made of (`capabilities.<name>`, as `TaskView.type` shows it). */
+export const argumentType = (capability: string) => `capabilities.${capability}`
+/** A parsed line that makes an argument row (a requirement or an allocation) rather than a library row. */
+export const isArgumentInput = (p: { extras?: RowInputExtras }) => !!p.extras?.demand || !!p.extras?.allocation
 
 export type ParsedInput = {
-  /** The standard library row type the line makes (`lib.<type>`). */
+  /** The standard library row type the line makes (`lib.<type>`), or `capabilities.<name>` for an argument row. */
   type: string
   text: string
   done: boolean
-  extras?: Omit<RowExtras, 'store'>
+  extras?: RowInputExtras
   /** "[ ] `name` …": the task executes the template called `name`. */
   templateName?: string
   children?: ParsedInput[]
@@ -114,10 +123,10 @@ export function formatWindow(a: { start?: number | null; end?: number | null }):
 }
 
 /** "<amount> [window] text" for a resource type → allocation data (the bank is resolved by App.addRowAt) and the remaining text. */
-function parseAllocation(type: ResourceType, body: string): { allocation: NonNullable<RowExtras['allocation']>; text: string } {
+function parseAllocation(type: ResourceType, body: string): { allocation: Allocation; text: string } {
   const amt = parseAmount(body, type)
   const win = parseWindow(amt ? amt.rest : body.trim())
-  const allocation: NonNullable<RowExtras['allocation']> = { resource: '', type, amount: amt?.amount ?? (type === 'person' || type === 'location' ? 1 : 0), unit: amt?.unit ?? DEFAULT_UNIT[type], ...(win.start !== undefined ? { start: win.start } : {}), ...(win.end !== undefined ? { end: win.end } : {}) }
+  const allocation: Allocation = { resource: '', type, amount: amt?.amount ?? (type === 'person' || type === 'location' ? 1 : 0), unit: amt?.unit ?? DEFAULT_UNIT[type], ...(win.start !== undefined ? { start: win.start } : {}), ...(win.end !== undefined ? { end: win.end } : {}) }
   if (type === 'location' && win.rest) allocation.location = { name: win.rest }
   return { allocation, text: win.rest }
 }
@@ -160,36 +169,38 @@ function markerType(text: string): { type: ResourceType; length: number } | null
  *   "@calendar 1h", "@money 50", "@inventory 2" the same by bank word · "@name text" the person `name` (they allocate themself)
  *   "? text" or "search: text" search · "market text" · "mail text" · "choice: a | b" · anything else is a confirmation
  */
-export function parseRequirement(text: string, declarations?: CapabilitySyntax[]): Omit<RowExtras, 'store'> & { label: string; templateName?: string; construct?: ParsedInput['construct'] } {
+export function parseRequirement(text: string, declarations?: CapabilitySyntax[]): RowInputExtras & { label: string; templateName?: string; construct?: ParsedInput['construct'] } {
   const t = text.trim()
   let m: RegExpMatchArray | null
   if ((m = t.match(/^\[\s?[xX]?\]\s*(.*)$/s))) {
     const rest = (m[1] ?? '').trim()
     const tpl = parseTemplateRef(rest)
-    return { requirement: { capability: 'task' }, label: tpl ? (tpl.rest || tpl.templateName) : rest, ...(tpl ? { templateName: tpl.templateName } : {}) }
+    // the value is a container holding a done task
+    return { demand: { capability: 'task', contains: { data: { todo: { completed: true } as never }, children: [] } }, label: tpl ? (tpl.rest || tpl.templateName) : rest, ...(tpl ? { templateName: tpl.templateName } : {}) }
   }
   // "-$ 50 lunch": money, 50 of it; "-$ lunch": money, any amount (one allocation of the type fills it)
   const allocationRequirement = (resource: ResourceType, body: string) => {
     const hasAmount = parseAmount(body, resource) !== null
     const { allocation, text: rest } = parseAllocation(resource, body)
     const { user, text: label } = namedUser(rest)
-    return { user, requirement: { capability: 'allocation' as const, resource, ...(hasAmount ? { amount: allocation.amount, unit: allocation.unit } : {}), ...(allocation.start !== undefined ? { start: allocation.start } : {}), ...(allocation.end !== undefined ? { end: allocation.end } : {}), ...(resource === 'location' && label ? { place: label } : {}) }, label }
+    // every resource demand is a negative allocation: a grant of the resource fills it
+    return { user, demand: { capability: 'allocation', resource, ...(hasAmount ? { amount: allocation.amount, unit: allocation.unit } : {}), ...(allocation.start !== undefined ? { start: allocation.start } : {}), ...(allocation.end !== undefined ? { end: allocation.end } : {}), ...(resource === 'location' && label ? { inputs: { place: label } } : {}) }, label }
   }
   const typed = markerType(t)
   if (typed) return allocationRequirement(typed.type, t.slice(typed.length))
   if ((m = t.match(/^@(calendar|account|money|inventory|points|ff)\b\s*:?\s*(.*)$/is))) return allocationRequirement(BANK_WORDS[(m[1] as string).toLowerCase()] as ResourceType, m[2] ?? '')
-  if ((m = t.match(/^@(?:person\s+)?([^\s@]+)\s*:?\s*(.*)$/s))) return { requirement: { capability: 'peer' }, user: unverifiedUser(m[1] as string), label: (m[2] ?? '').trim() }
+  if ((m = t.match(/^@(?:person\s+)?([^\s@]+)\s*:?\s*(.*)$/s))) return { demand: { capability: 'peer' }, user: unverifiedUser(m[1] as string), label: (m[2] ?? '').trim() }
   const declared = parseCapabilityName(t, declarations)
   if (declared) {
     const { capability, rest } = declared
     // Standard syntax adapters parse their arguments; declarations determine the capability.
     if (capability === 'repo') {
       const args = /^(?:([\w.-]+\/[\w.-]+)\s*)?(.*)$/s.exec(rest)!
-      return { requirement: { capability, ...(args[1] ? { repo: args[1] } : {}) }, label: args[2] ?? '' }
+      return { demand: { capability, ...(args[1] ? { inputs: { repo: args[1] } } : {}) }, label: args[2] ?? '' }
     }
     if (capability === 'tool') {
       const args = /^(?:([\w.-]+)\s*)?(.*)$/s.exec(rest)!
-      return { requirement: { capability, ...(args[1] ? { tool: args[1] } : {}) }, label: args[2] ?? '' }
+      return { demand: { capability, ...(args[1] ? { inputs: { tool: args[1] } } : {}) }, label: args[2] ?? '' }
     }
     if (capability === 'fetch') {
       const args = /^(?:(GET|POST|PUT|PATCH|DELETE|HEAD)\s+)?(?:(https?:\/\/\S+)\s*)?(.*)$/is.exec(rest)!
@@ -198,24 +209,21 @@ export function parseRequirement(text: string, declarations?: CapabilitySyntax[]
     }
     if (capability === 'solve') return { construct: { capability, values: {} }, label: rest }
     // "verify @bob": the user to verify is the row's user field, as typed
-    if (capability === 'verify') { const { user, text } = namedUser(rest); return { requirement: { capability }, ...(user ? { user } : {}), label: user ? `@${user.username}${text ? ` ${text}` : ''}` : text } }
+    if (capability === 'verify') { const { user, text } = namedUser(rest); return { demand: { capability }, ...(user ? { user } : {}), label: user ? `@${user.username}${text ? ` ${text}` : ''}` : text } }
     // "-mail someone@example.com Subject": the recipient and subject are the mail capability's inputs, as typed
     if (capability === 'mail') {
       const address = rest.match(/[^\s<>,;]+@[^\s<>,;]+\.[^\s<>,;]+/)?.[0]
       const subject = address ? rest.replace(address, '').replace(/^[\s:,-]+|[\s:,-]+$/g, '').trim() : rest.trim()
-      return { requirement: { capability }, ...(address ? { inputs: { to: address, ...(subject ? { subject } : {}) } } : {}), label: rest }
+      return { demand: { capability, ...(address ? { inputs: { to: address, ...(subject ? { subject } : {}) } } : {}) }, label: rest }
     }
     if (capability === 'choice') {
       const options = rest.split('|').map(option => option.trim()).filter(Boolean)
-      return { requirement: { capability, options }, label: `choice: ${options.join(' | ')}` }
+      return { demand: { capability, options }, label: `choice: ${options.join(' | ')}` }
     }
-    return { requirement: { capability }, label: rest || (capability === 'confirmation' ? 'confirmation' : '') }
+    return { demand: { capability }, label: rest || (capability === 'confirmation' ? 'confirmation' : '') }
   }
-  return { requirement: { capability: 'confirmation' }, label: t.replace(/^confirm(?:ation)?\s*:?\s*/i, '') || 'confirmation' }
+  return { demand: { capability: 'confirmation' }, label: t.replace(/^confirm(?:ation)?\s*:?\s*/i, '') || 'confirmation' }
 }
-
-/** Money rows are their own type; every other resource's rows are allocations. */
-const flowType = (resource: ResourceType | undefined) => resource === 'account' ? MONEY_TYPE : ALLOCATION_TYPE
 
 /** A typed row: the marker decides the row type (see the file comment); anything else is a plain row. */
 export function parseRowInput(raw: string, declarations?: CapabilitySyntax[]): ParsedInput {
@@ -246,21 +254,21 @@ export function parseRowInput(raw: string, declarations?: CapabilitySyntax[]): P
   }
   if ((m = text.match(/^>\s?(.*)$/s))) return { type: NOTE_TYPE, text: m[1] ?? '', done: false }
   if ((m = text.match(/^\/\/\s*(.*)$/s))) return { type: COMMENT_TYPE, text: m[1] ?? '', done: false }
-  if ((m = text.match(/^-\s*(.*)$/s))) { const { label, templateName, construct, ...extras } = parseRequirement(m[1] ?? '', declarations); if (construct) return { type: PLAIN_TYPE, text: label, done: false, construct }; return { type: flowType(extras.requirement?.capability === 'allocation' ? extras.requirement.resource : undefined), text: label, done: false, extras: { ...extras, user: extras.user ?? null }, ...(templateName ? { templateName } : {}) } }
+  if ((m = text.match(/^-\s*(.*)$/s))) { const { label, templateName, construct, ...extras } = parseRequirement(m[1] ?? '', declarations); if (construct) return { type: PLAIN_TYPE, text: label, done: false, construct }; return { type: argumentType(extras.demand!.capability), text: label, done: false, extras: { ...extras, user: extras.user ?? null }, ...(templateName ? { templateName } : {}) } }
   if ((m = text.match(/^\?\s*(.*)$/s))) return { type: QUERY_TYPE, text: (m[1] ?? '').trim(), done: false, extras: { query: {} } }
   if ((m = text.match(/^@(calendar|account|money|inventory|person|points|ff|location|place)\b\s*:?\s*(.*)$/is))) {
     const type = BANK_WORDS[(m[1] as string).toLowerCase()] as ResourceType
     const win = parseWindow((m[2] ?? '').trim()), rest = win.rest
-    // optional trailing capacity: "@money Travel 500", "@calendar Week 40h", "@person bob 40h"
+    // optional trailing amount to issue: "@money Travel 500", "@calendar Week 40h", "@person bob 40h"
     const cap = rest.match(/^(.*?)\s+(\d+(?:[.,]\d+)?\s*[A-Za-z€$£]*)$/)
     const amt = cap ? parseAmount(cap[2] ?? '', type) : null
     const unit = amt?.unit ?? DEFAULT_UNIT[type]
-    return { type: RESOURCE_TYPE, text: (cap ? cap[1] : rest) || `${RESOURCE_NAME[type]} bank`, done: false, extras: { resource: { type, unit, start: win.start, end: win.end, ...(amt ? { capacity: amt.amount } : {}) } } }
+    return { type: RESOURCE_TYPE, text: (cap ? cap[1] : rest) || `${RESOURCE_NAME[type]} bank`, done: false, extras: { resource: { type, unit, start: win.start, end: win.end }, ...(amt && amt.amount > 0 ? { grant: { type, unit, amount: amt.amount } } : {}) } }
   }
   const typed = markerType(text)
-  if (typed) { const { allocation, text: rest } = parseAllocation(typed.type, text.slice(typed.length)); const { user, text: label } = typed.type === 'location' ? { user: null, text: rest } : namedUser(rest); return { type: flowType(allocation.type), text: label, done: false, extras: { allocation, user } } }
+  if (typed) { const { allocation, text: rest } = parseAllocation(typed.type, text.slice(typed.length)); const { user, text: label } = typed.type === 'location' ? { user: null, text: rest } : namedUser(rest); return { type: argumentType('allocation'), text: label, done: false, extras: { allocation, user } } }
   if ((m = text.match(/^@\{([^}]*)\}?\s*$/))) return { type: PLAIN_TYPE, text, done: false, peer: (m[1] ?? '').trim() }
-  if ((m = text.match(/^@([^\s@]+)\s*(.*)$/s))) { const { allocation, text: label } = parseAllocation('person', m[2] ?? ''); return { type: ALLOCATION_TYPE, text: label, done: false, extras: { allocation, user: unverifiedUser(m[1] as string) } } }
+  if ((m = text.match(/^@([^\s@]+)\s*(.*)$/s))) { const { allocation, text: label } = parseAllocation('person', m[2] ?? ''); return { type: argumentType('allocation'), text: label, done: false, extras: { allocation, user: unverifiedUser(m[1] as string) } } }
   if ((m = text.match(/^`\s*([^`]*)`?\s*$/s))) return { type: TEMPLATE_TYPE, text: (m[1] ?? '').trim(), done: false }
   return { type: PLAIN_TYPE, text: text.trim(), done: false }
 }
@@ -281,7 +289,8 @@ function amountAndWindow(amount: number | undefined, unit: string | undefined, w
 export function rawRowText(task: TaskView): string {
   const join = (...parts: string[]) => parts.filter((p) => p !== '').join(' ')
   if (task.checkable) return join(task.done ? '[x]' : '[ ]', task.template ? `\`${task.template.name}\`` : '', task.title)
-  if (isAllocationType(task.type)) return task.requirement ? rawRequirementText(task) : rawAllocationText(task)
+  if (task.requirement) return rawRequirementText(task)
+  if (task.allocation) return rawAllocationText(task)
   switch (task.type) {
     case QUERY_TYPE: return `? ${task.title}`
     // a note's text is its title line; its body is a row of its own
@@ -291,7 +300,7 @@ export function rawRowText(task: TaskView): string {
       const r = task.resource
       if (!r) return `@inventory ${task.title}`
       const word = r.type === 'account' ? 'money' : r.type === 'points' ? 'points' : r.type
-      return join(`@${word}`, formatWindow(r), task.title, r.capacity !== undefined ? formatAmount(r.capacity, r.unit) : '')
+      return join(`@${word}`, formatWindow(r), task.title)
     }
     default: return task.title
   }
@@ -301,7 +310,7 @@ export function rawRowText(task: TaskView): string {
 function rawAllocationText(task: TaskView): string {
   const join = (...parts: string[]) => parts.filter((p) => p !== '').join(' ')
   const a = task.allocation
-  if (!a) return task.supply ? task.title : `$ ${task.title}`
+  if (!a) return `$ ${task.title}`
   const marker = a.type === 'person' ? `@${task.user?.username ?? 'someone'}` : RESOURCE_MARKER[a.type]
   return join(marker, amountAndWindow(a.amount, a.unit, a), a.type !== 'person' && task.user ? `@${task.user.username}` : '', task.title)
 }
@@ -322,8 +331,9 @@ function rawRequirementText(task: TaskView): string {
     case 'tool': return join('-tool', r.tool ?? '', task.title)
     case 'choice': return `-choice: ${(r.options ?? []).join(' | ')}`
     case 'confirmation': return join('-', task.title === 'confirmation' ? '' : task.title)
+    case null: return `- ${task.title}`
   }
-  return `- ${task.title}`
+  return join(`-${r.capability}`, task.title)
 }
 
 /** The little tag an allocation shows on the row it sits under: icon, amount, window and who. */
@@ -339,24 +349,24 @@ export function allocationTag(a: NonNullable<TaskView['allocation']>, user?: Use
 export function describeParsed(p: ParsedInput): string {
   if (p.peer !== undefined) return 'peer'
   const amt = (a: { amount?: number; unit?: string } | undefined) => (a && a.amount !== undefined ? ' ' + formatAmount(a.amount, a.unit ?? '') : '')
-  if (isAllocationType(p.type) && p.extras?.requirement) {
-    const r = p.extras.requirement
+  if (p.extras?.demand) {
+    const r = p.extras.demand
     switch (r.capability) {
       case 'allocation': return `requirement · ${RESOURCE_NAME[r.resource ?? 'inventory']}${r.amount !== undefined ? amt(r) : ' (any amount)'}`
       case 'task': return `requirement · a task${p.templateName ? ` executing \`${p.templateName}\`` : ''}`
-      case 'peer': return `requirement · @${p.extras?.user?.username ?? r.peer ?? 'someone'}`
+      case 'peer': return `requirement · @${p.extras?.user?.username ?? r.inputs?.peer ?? 'someone'}`
       case 'choice': return `requirement · choice (${(r.options ?? []).join(' | ')})`
       default: return `requirement · ${r.capability}`
     }
   }
-  if (isAllocationType(p.type)) { const a = p.extras?.allocation; return `${p.type === MONEY_TYPE ? 'payment' : 'allocation'} · ${a ? RESOURCE_NAME[a.type] : ''}${p.extras?.user ? ' @' + p.extras.user.username : ''}${amt(a)}${a && formatWindow(a) ? ' · ' + formatWindow(a) : ''}` }
+  if (p.extras?.allocation) { const a = p.extras.allocation; return `allocation · ${RESOURCE_NAME[a.type]}${p.extras?.user ? ' @' + p.extras.user.username : ''}${amt(a)}${a && formatWindow(a) ? ' · ' + formatWindow(a) : ''}` }
   switch (p.type) {
     case TASK_TYPE: return p.templateName ? `task · executes \`${p.templateName}\`${p.done ? ' · done' : ''}` : `task${p.done ? ' · done' : ''}`
     case NOTE_TYPE: return 'note'
     case COMMENT_TYPE: return 'comment'
     case QUERY_TYPE: return 'query'
     case TEMPLATE_TYPE: return 'template'
-    case RESOURCE_TYPE: return `bank · ${RESOURCE_NAME[p.extras?.resource?.type ?? 'inventory']}${p.extras?.resource?.capacity !== undefined ? ' · ' + formatAmount(p.extras.resource.capacity, p.extras.resource.unit) : ''}`
+    case RESOURCE_TYPE: return `bank · ${RESOURCE_NAME[p.extras?.resource?.type ?? 'inventory']}${p.extras?.grant ? ' · issues ' + formatAmount(p.extras.grant.amount, p.extras.grant.unit) : ''}`
     default: return ''
   }
 }

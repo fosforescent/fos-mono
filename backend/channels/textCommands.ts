@@ -59,10 +59,10 @@ export function createTextCommandInbound(deps: TextCommandDeps) {
     const task = text.match(/^(?:\[\s?\]|todo|task)\s*:?\s+(.+)$/is)
     if (!task && deps.organize && text) {
       try {
-        const done = await deps.organize(account.username, text, `Text message (${message.source})`)
+        const label = `Text message (${message.source})`
+        const done = await deps.organize(account.username, text, label)
         if (done) {
-          const { rows: added, under } = done
-          await reply(`fos: organized for Home, waiting for you to accept it there: ${added} row${added === 1 ? '' : 's'}${under.length ? ` (under ${under.slice(0, 3).map(t => `“${t}”`).join(', ')}${under.length > 3 ? ', …' : ''})` : ''}, and the message kept as a note`)
+          await reply(`fos: organized for Home under “${label}”: ${done.rows} row${done.rows === 1 ? '' : 's'}${done.title ? ` (${done.title})` : ''}`)
           return
         }
       } catch (error) {

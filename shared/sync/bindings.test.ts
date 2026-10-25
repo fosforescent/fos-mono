@@ -1,7 +1,9 @@
+import { valueOfPattern } from './structural'
 import { userView, installTestHandler } from './test-helpers'
 import { setHandlerEnabledAt, discoverHandlers, setMemberCapabilitiesAt, proposeRefAt, applyProposalAt, argumentRefs, renameTask, setRowContentAt, libAt, addMemberAt, addRefAt, addRow, addTask, addSubtasksTemplate, beginTaskWork, content, contextBindings, createReplica, decideTaskResult, headCid, instantiateTemplate, proposeTaskResult, put, refNodeContent, resolveBinding, resolveScope, resolveText, taskWorkContext, view, workAttempts, workHandler, nestScope } from './index'
 import { FosStore } from '../dag-implementation/store'
-import { PLAIN_TYPE, NOTE_TYPE, ALLOCATION_TYPE, TEMPLATE_TYPE } from './library-types'
+import { PLAIN_TYPE, NOTE_TYPE, TEMPLATE_TYPE } from './library-types'
+import { addRequirement } from './arguments'
 
 const literal = (r: ReturnType<typeof createReplica>, text: string) => put(r.store, { data: { description: { content: text } }, children: [] })
 
@@ -100,7 +102,7 @@ test('nested stores bind names through their enclosing scope, like library and h
 
 test('handler requirements participate in readiness without executing anything', () => {
   let r = addRow(createReplica(), [], PLAIN_TYPE, 'handler', 1, { id: 'handler' })
-  r = addRow(r, ['handler'], ALLOCATION_TYPE, 'Approve first', 2, { id: 'approval', requirement: { capability: 'confirmation' } })
+  r = addRequirement(r, ['handler'], 'Approve first', 2, { capability: 'confirmation' }, 'approval')
   const handler = resolveScope(r.store, headCid(r), ['handler'])!
   expect(resolveBinding(r.store, put(r.store, { data: {}, children: [] }), handler).status).toBe('missing')
 })
@@ -116,7 +118,7 @@ test('a disabled or removed Fos binding cannot enable a previously available act
 test('offline peers cannot satisfy explicit or transitive handler dependencies', () => {
   const r = createReplica('device'), store = r.store
   const type = libAt(store).capabilities.llm!
-  const peer = put(store, { data: { peerId: { content: 'fos' }, description: { content: 'llm' } }, children: content(store, type).children })
+  const peer = valueOfPattern(store, type, { peerId: { content: 'fos' }, description: { content: 'llm' } })
   const bound = put(store, refNodeContent(store, { alias: { id: 'handler' } }, peer, []))
   expect(resolveBinding(store, type, bound, [], undefined, { isPeerActive: () => false }).status).toBe('missing')
   expect(resolveBinding(store, type, bound, [], undefined, { isPeerActive: () => true }).status).toBe('ready')

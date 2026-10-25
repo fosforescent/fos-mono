@@ -63,7 +63,7 @@ try {
   app.goTo(parent)
   const custom = app.handlerOffers().find(offer => offer.cid === paint)
   assert(custom?.enabled, 'a device registers a capability that is absent from the standard library')
-  assert.equal(app.parseRowInput('-Paint the wall').extras.requirement.capability, 'extension:paint', 'typed input resolves the scoped declaration')
+  assert.equal(app.parseRowInput('-Paint the wall').extras.demand.capability, 'extension:paint', 'typed input resolves the scoped declaration')
   assert(palette('This device').includes('Paint'), 'custom declarations appear in the capability menu')
   app.insertHandler(custom.cid, parent)
   assert(view(app.state.replica, parent).tasks.some(row => row.typeCid === custom.cid), 'selecting a primitive pins the declared ref as the row instruction')

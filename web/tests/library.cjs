@@ -9,11 +9,9 @@ const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTextAreaElement','Node','Option','navigator','localStorage','sessionStorage','location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export {parseRowInput} from './src/rows'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), external: ['mermaid','katex','katex/*'] })
 const c = require(path.join(dir, 'test.cjs'))
-const MONEY_TYPE = 'money'
 const TASK_TYPE = 'task'
 const PLAIN_TYPE = 'plain'
 const NOTE_TYPE = 'note'
-const ALLOCATION_TYPE = 'allocation'
 const TEMPLATE_TYPE = 'template'
 const PATTERN_TYPE = 'pattern'
 const { parseRowInput } = c
@@ -119,7 +117,7 @@ async function main() {
   const bundlePath = c.libraryPath(fresh.state.replica)
   let edited = c.renameTask(fresh.state.replica, bundlePath, paid, 'Get together', Date.now())
   edited = c.addRow(edited, bundlePath, TEMPLATE_TYPE, 'Custom workflow', Date.now(), { id: 'custom' })
-  edited = c.addRow(edited, [...bundlePath, 'custom'], ALLOCATION_TYPE, 'Check the result', Date.now(), { id: 'custom-check', requirement: { capability: 'confirmation' } })
+  edited = c.addRequirement(edited, [...bundlePath, 'custom'], 'Check the result', Date.now(), { capability: 'confirmation' }, 'custom-check')
   edited = c.setTemplateIcon(edited, [...bundlePath, 'custom'], 'confirm', Date.now())
   fresh.set({ replica: edited })
   assert(constructor('Paid task') && !constructor('Custom workflow'), 'definition edits must not alter the pinned menu')
@@ -157,7 +155,7 @@ async function main() {
   fresh.undo()
   assert.equal(c.view(fresh.state.replica, [HOME]).tasks.find(row => row.id === destination.at(-1)).type, PLAIN_TYPE)
 
-  const needed = fresh.applyConstructor([HOME], { type: ALLOCATION_TYPE, text: 'A workflow', done: false, extras: { requirement: { capability: 'task' } } })
+  const needed = fresh.applyConstructor([HOME], { type: 'capabilities.task', text: 'A workflow', done: false, extras: { demand: { capability: 'task', contains: { data: { todo: { completed: true } }, children: [] } } } })
   fresh.select([needed.at(-1)])
   assert(document.querySelector('.constructor-chip[aria-label="Custom workflow"]'), 'task requirements suggest library constructors')
   drop(document.querySelector(`.tree .task[data-id="${needed.at(-1)}"]`))
@@ -185,37 +183,22 @@ async function main() {
   assert.throws(() => fresh.insertLibraryConstructor('custom'), /unavailable/, 'a stale drag cannot instantiate a deleted definition')
   fresh.select(null)
   const errand = fresh.applyConstructor([HOME], { type: TASK_TYPE, text: 'Errand', done: false })
-  fresh.set({ replica: c.addRow(fresh.state.replica, errand, ALLOCATION_TYPE, 'Tell the client', Date.now(), { id: 'mail', requirement: { capability: 'mail' } }) })
-  fresh.set({ replica: c.addRow(fresh.state.replica, errand, MONEY_TYPE, 'fee', Date.now(), { id: 'fee', requirement: { capability: 'allocation', resource: 'account', amount: 20, unit: 'usd' } }) })
+  fresh.set({ replica: c.addRequirement(fresh.state.replica, errand, 'Tell the client', Date.now(), { capability: 'mail' }, 'mail') })
+  fresh.set({ replica: c.addRequirement(fresh.state.replica, errand, 'fee', Date.now(), { capability: 'allocation', resource: 'account', amount: 20, unit: 'usd' }, 'fee') })
   const parsedPlace = parseRowInput('-at Eiffel Tower')
-  assert.deepEqual(parsedPlace.extras.requirement, { capability: 'allocation', resource: 'location', place: 'Eiffel Tower' }, `"-at <place>" is a location requirement: ${JSON.stringify(parsedPlace)}`)
+  assert.deepEqual(parsedPlace.extras.demand, { capability: 'allocation', resource: 'location', inputs: { place: 'Eiffel Tower' } }, `"-at <place>" is a location requirement: ${JSON.stringify(parsedPlace)}`)
   assert.equal(parseRowInput('at Paris').extras.allocation.location.name, 'Paris', '"at <place>" is a location allocation')
-  fresh.set({ replica: c.addRow(fresh.state.replica, errand, ALLOCATION_TYPE, parsedPlace.text, Date.now(), { id: 'where', requirement: parsedPlace.extras.requirement }) })
-  fresh.set({ replica: c.addRow(fresh.state.replica, errand, ALLOCATION_TYPE, 'Somewhere nearby', Date.now(), { id: 'near', requirement: { capability: 'allocation', resource: 'location' } }) })
+  fresh.set({ replica: c.addRequirement(fresh.state.replica, errand, parsedPlace.text, Date.now(), parsedPlace.extras.demand, 'where') })
+  fresh.set({ replica: c.addRequirement(fresh.state.replica, errand, 'Somewhere nearby', Date.now(), { capability: 'allocation', resource: 'location' }, 'near') })
   fresh.goTo(errand); await tick()
   const handlers = id => [...document.querySelectorAll(`.tree .task[data-id="${id}"] .manual-handler`)]
   assert.deepEqual(handlers('mail').map(b => b.textContent), ['Sent it myself'])
-  assert.deepEqual(handlers('fee').map(b => b.textContent), ['Paid outside Fos'])
-  assert.deepEqual(handlers('where').map(b => b.textContent), ['Enter the location'], 'a place offers manual entry; the device position only once the device reports one')
+  assert.deepEqual(handlers('fee'), [], 'a resource demand has no manual fallback: a grant from a bank fills it')
+  assert.deepEqual(handlers('where'), [], 'a place is a resource demand too')
   handlers('mail')[0].click(); await tick()
   const req = id => fresh.currentView().tasks.find(t => t.id === id)
   assert.equal(req('mail').requirement.satisfied, true, 'a supply by the person fills a mail requirement')
-  assert.deepEqual(c.view(fresh.state.replica, [...errand, 'mail']).tasks.filter(t => t.supply).map(t => [t.type, t.supply.by]), [[ALLOCATION_TYPE, fresh.actorName()]])
-  handlers('fee')[0].click(); await tick()
-  assert.equal(req('fee').requirement.satisfied, true, 'a receipt plus supply fills a money requirement')
-  const receipt = c.view(fresh.state.replica, [...errand, 'fee']).tasks.find(t => (!!t.allocation && !t.requirement))
-  assert.deepEqual([receipt.allocation.type, receipt.allocation.amount, receipt.allocation.unit, receipt.allocation.by, receipt.allocation.resource], ['account', 20, 'usd', fresh.actorName(), 'fee'])
-  document.querySelector('.tree .task[data-id="where"] .manual-place').value = 'Eiffel Tower, Paris'
-  handlers('where')[0].click(); await tick()
-  assert.equal(req('where').requirement.satisfied, true, 'a named place fills a location requirement')
-  assert.equal(c.view(fresh.state.replica, [...errand, 'where']).tasks.find(t => (!!t.allocation && !t.requirement)).allocation.location.name, 'Eiffel Tower, Paris')
-  Object.defineProperty(navigator, 'geolocation', { value: { getCurrentPosition: ok => ok({ coords: { latitude: 48.85837, longitude: 2.294481 } }) }, configurable: true })
-  fresh.refresh(); await tick()
-  const device = handlers('near').find(b => b.dataset.handler === c.deviceHandlers(fresh.state.replica)[0].id)
-  assert(device, 'the device handler shows when the device reports its position')
-  device.click(); await tick(); await tick()
-  assert.equal(req('near').requirement.satisfied, true, 'the device position fills a location requirement')
-  assert.deepEqual(c.view(fresh.state.replica, [...errand, 'near']).tasks.find(t => (!!t.allocation && !t.requirement)).allocation.location, { lat: 48.85837, lng: 2.29448 })
+  assert.equal(c.argumentSupplier(fresh.state.replica, [...errand, 'mail']), fresh.actorName(), 'the supply is the requirement\'s bound value, by the person')
   console.log('PASS: live and bundled library discovery, menu/search, click/drop, typed inputs, undo, library edits, and manual fallbacks')
 }
 main().catch(error => { console.error(error); process.exitCode = 1 }).finally(() => { dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pagehide')); dom.window.close() })

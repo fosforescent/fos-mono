@@ -4,6 +4,7 @@
  * this module keyed by a handle. See desktop/src-tauri/src/core.rs.
  */
 
+import type { FosStore } from '../dag-implementation/store'
 import {
   addRef,
   addRow,
@@ -43,7 +44,7 @@ import { readNodeValue } from './evaluation'
 import { membershipPathAt } from './replica'
 import { LIBRARY_VERSION, ensureDeviceLibrary, exportLocalLibrary } from './library'
 import { libAt, libraryInstanceOf, libraryRowOf, content, importNodes, put, resolveScope, valueContent, valueCidOf } from './graph'
-import { nativeRef, publishNativeRef } from './native-refs'
+import { registerNatives } from './natives'
 import { discoverHandlers } from './handlers'
 import { writeGraphNode, nativeDefaultsApplied, markNativeDefaultsApplied } from './replica'
 import type { FosNodeContent, FosNodesData } from '../types'
@@ -81,10 +82,9 @@ export const api = {
     let loaded = serialized ? loadReplica(JSON.parse(serialized)) : createReplica(peerId)
     loaded = ensureDeviceLibrary(loaded, undefined, Date.now())
     const seeded = nativeDefaultsApplied(loaded, [], `desktop:${peerId}`)
-    for (const name of ['provideNode', 'sync']) {
-      const ref = nativeRef(loaded.store, peerId, { id: `desktop:${name}`, label: name, type: (store, at) => libAt(store, at).capabilities[name]! })
-      if (!seeded) loaded = publishNativeRef(loaded, [], peerId, ref, 0)
-    }
+    // the desktop's own services, registered the one way every host registers natives
+    const definitions = ['provideNode', 'sync'].map(name => ({ id: `desktop:${name}`, label: name, type: (store: FosStore, at: Scope) => libAt(store, at).capabilities[name]! }))
+    if (!seeded) loaded = registerNatives(loaded, [], peerId, definitions, 0)
     loaded = markNativeDefaultsApplied(loaded, [], `desktop:${peerId}`, 0)
     if (home) loaded = ensureHomeContext(loaded, Date.now())
     set(handle, { store: loaded.store, meta: { ...loaded.meta, peerId } })

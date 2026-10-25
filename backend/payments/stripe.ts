@@ -49,7 +49,7 @@ export function stripePayments(deps: StripePaymentDeps): PaymentDeps {
           ...(fee > 0 ? { application_fee_amount: fee } : {}),
           metadata: { type: FOS_PAYMENT, owner: from.username, path: JSON.stringify(path), key }
         },
-        metadata: { type: FOS_PAYMENT, owner: from.username, path: JSON.stringify(path), key, payee: toUsername },
+        metadata: { type: FOS_PAYMENT, owner: from.username, path: JSON.stringify(path), key, payee: toUsername, amount: String(amount), unit },
         success_url: `${deps.webUrl}/?payment=paid`,
         cancel_url: `${deps.webUrl}/?payment=cancelled`
       })
@@ -67,7 +67,9 @@ export function paymentConfirmationOf(session: Pick<Stripe.Checkout.Session, 'id
   if (!Array.isArray(path) || !path.every(id => typeof id === 'string')) return null
   const intent = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id
   const paid = session.payment_status === 'paid' || session.payment_status === 'no_payment_required'
-  return { owner: meta.owner, path, id: session.id, ...(intent ? { intent } : {}), ...(paid ? {} : { failed: session.status === 'expired' ? 'The payment page expired before it was paid.' : `Payment ${session.payment_status}.` }) }
+  const amount = Number(meta.amount)
+  return { owner: meta.owner, path, id: session.id, ...(intent ? { intent } : {}), ...(Number.isFinite(amount) ? { amount } : {}), ...(typeof meta.unit === 'string' ? { unit: meta.unit } : {}), ...(typeof meta.payee === 'string' ? { payee: meta.payee } : {}),
+    ...(paid ? {} : { failed: session.status === 'expired' ? 'The payment page expired before it was paid.' : `Payment ${session.payment_status}.` }) }
 }
 
 // The webhook module is loaded before the services exist, so the settler is registered at startup (index.ts).
