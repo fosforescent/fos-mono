@@ -76,7 +76,7 @@ export function constructNodeValue(
       const data: FosNodeContent['data'] = { ...(fieldId ? { alias: { id: fieldId } } : {}), name: { content: name } }
       // Match form constructors: the row's left edge supplies its type; the right ref owns its value.
       const target = content(store, next.cid)
-      const cid = put(store, { ...target, data: { ...target.data, name: { content: name }, ...(Array.isArray(input) ? { position: { value: Number(name) } } : {}) } })
+      const cid = put(store, { ...target, data: { ...target.data, name: { content: name } } })
       return [next.type, fieldId ? put(store, refNodeContent(store, data, cid)) : cid]
     })
     return { type, cid: put(store, { data: { presentation: scalar === 'sequence' ? { sequence: true } : {} }, children }) }
@@ -113,7 +113,8 @@ export function readGraphValue(store: FosStore, cid: string, depth = 0, active =
         names = new Set<string>()
       for (const [type, child] of node.children) {
         // Literal constraints and links are not mutable record fields.
-        if (type === primitive(store, 'link') || !isRowEdge(store, [type, child])) continue
+        // a record's fields are its named rows (an immutable one's have no identity of their own)
+        if (type === primitive(store, 'link') || (!isRowEdge(store, [type, child]) && !store.table.get(child)?.data.name)) continue
         const field = content(store, child),
           name = field.data.name?.content ?? valueContent(store, child).data.name?.content
         if (name === undefined) return undefined
@@ -124,10 +125,11 @@ export function readGraphValue(store: FosStore, cid: string, depth = 0, active =
         const leaf = primitiveName(store, type)
         if ((leaf === 'null' && value !== null) || (leaf === 'string' && typeof value !== 'string') || ((leaf === 'number' || leaf === 'boolean') && typeof value !== leaf))
           return undefined
-        entries.push([name, value, valueContent(store, child).data.position?.value ?? field.data.position?.value ?? Number(name)])
+        entries.push([name, value, entries.length])
       }
       return node.data.presentation.sequence
-        ? entries.sort((a, b) => a[2] - b[2]).map(([, value]) => value)
+        // a sequence's order is its rows' order
+        ? entries.map(([, value]) => value)
         : Object.fromEntries(entries.map(([name, value]) => [name, value]))
     }
     return undefined

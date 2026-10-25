@@ -74,6 +74,20 @@ export function leafText(store: FosStore, cid: string): string | null {
   return null
 }
 
+/** The leaf a value of the leaf type `type` (string, number, boolean) is, read from text; throws when the text is none. */
+export function leafOfType(store: FosStore, type: string, text: string): string {
+  const name = primitiveName(store, type)
+  if (name === 'number') {
+    const value = Number(text.trim())
+    if (!text.trim() || !Number.isFinite(value)) throw new Error('Enter a number.')
+    return put(store, { data: { scalar: { type: 'number', value } }, children: [] })
+  }
+  if (name === 'boolean') {
+    if (!['true', 'false'].includes(text.trim())) throw new Error('Enter true or false: a boolean.')
+    return put(store, { data: { scalar: { type: 'boolean', value: text.trim() === 'true' } }, children: [] })
+  }
+  return textValue(store, text)
+}
 /** A text value: a string leaf. */
 export function textValue(store: FosStore, text: string): string {
   return put(store, { data: { scalar: { type: 'text', value: text } }, children: [] })

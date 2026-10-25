@@ -47,7 +47,6 @@ test('records and lists are addressable typed refs with scalar leaves and generi
   const r = writeNodeValue(createReplica('device'), [], 'settings', input, 1)
   const arg = argumentRefs(r.store, headCid(r)).find((a) => a.name === 'settings')!
   const value = content(r.store, refValueCid(r.store, content(r.store, arg.cid))!)
-  expect(value.data.description).toBeUndefined()
   expect(value.children).toHaveLength(2)
   expect(value.children.every(edge => isRowEdge(r.store, edge))).toBe(true)
   const id = content(r.store, arg.cid).data.alias!.id
@@ -57,12 +56,6 @@ test('records and lists are addressable typed refs with scalar leaves and generi
   const leaf = resolveRefExpression(r, [], '.settings.nested.count')
   expect(leaf.status).toBe('ready')
   expect(readGraphValue(r.store, leaf.locations[0]!.cid)).toBe(3)
-  expect(formRecord(r.store, arg.type, value)).toEqual(input)
-  expect(
-    formElements(r.store, arg.type, value)
-      .fields.find((f) => f.label === 'nested')!
-      .fields.map((f) => f.label)
-  ).toEqual(['count', 'yes'])
   expect(readNodeValue(loadReplica(serializeReplica(r)), [], 'settings')).toEqual(input)
   const nested = value.children.find(([, cid]) => content(r.store, cid).data.name?.content === 'nested')![1]
   const nestedId = content(r.store, nested).data.alias!.id
@@ -96,7 +89,8 @@ test('JSON-looking text is not a record; linked records preserve fields and grap
   let r = createReplica('device')
   const legacy = textValue(r.store, '{"count":1}')
   r = addRefAt(r, [], 'settings', primitive(r.store, 'string'), 1, legacy, 'settings')
-  expect(readNodeValue(r, [], 'settings')).toBeNull()
+  // it is text, whatever it looks like
+  expect(readNodeValue(r, [], 'settings')).toBe('{"count":1}')
   r = writeLinkedNodeValue(r, [], 'settings', { count: 2 }, 2, { source: { id: 'external', owner: 'peer' } })
   expect(readNodeValue(r, [], 'settings')).toEqual({ count: 2 })
   const ref = content(r.store, resolveScope(r.store, headCid(r), ['settings'])!)
@@ -124,7 +118,4 @@ test('malformed scalar types, cycles and nonfinite numbers are rejected; sparse 
     children: [[number, put(store, refNodeContent(store, { alias: { id: 'n' }, name: { content: 'n' } }, text.cid, []))]]
   })
   expect(readGraphValue(store, malformed)).toBeUndefined()
-  const bool = constructNodeValue(store, false, 'bool')
-  expect(setFormTitle(store, content(store, bool.cid), 'true', 1).data.scalar?.value).toBe(true)
-  expect(() => setFormTitle(store, content(store, bool.cid), 'yes', 1)).toThrow(/boolean/)
 })

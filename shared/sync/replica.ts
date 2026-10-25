@@ -1,4 +1,4 @@
-import { constructPlainRow, constructRow, constructTextRow, fieldEdge, fieldText, fieldValue, fieldValues, isFieldRow, isTextField, rebuildRow, rowRecord, titleField, withFieldValue, withFieldValues, withRowText, labelRow, refTitle, withLabel, withRefTitle, isLeafType, textValue } from './fields'
+import { constructPlainRow, constructRow, constructTextRow, fieldEdge, fieldText, fieldValue, fieldValues, isFieldRow, isTextField, rebuildRow, rowRecord, titleField, withFieldValue, withFieldValues, withRowText, labelRow, refTitle, withLabel, withRefTitle, isLeafType, textValue, leafOfType } from './fields'
 import { createStore, completes, rowTitle, rowVocabulary, withDone } from './graph'
 import { primitive } from './primitives'
 import { sameCapabilityType } from './capabilities'
@@ -445,6 +445,8 @@ export function setRowContentAt(replica: Replica, at: Scope, aliasId: string, ty
     const edge = findChildEdge(replica, value, aliasId)
     if (!edge) return value
     const node = valueContent(replica.store, identityCid(replica.store, edge))
+    // a row of a leaf type (a record's number) holds what the text says, as that type
+    if (isLeafType(replica.store, edge[0])) return replaceEdge(replica.store, value, `a:${aliasId}`, withChildValue(replica.store, edge, content(replica.store, leafOfType(replica.store, edge[0], text)), now))
     const kept = keptRowType(replica.store, edge, type)
     const template = kept ?? resolveRowType(replica.store, type, at)
     const body = text.trim()
@@ -758,7 +760,7 @@ export function renameTask(replica: Replica, at: Scope, taskId: string, title: s
   return updateTask(replica, at, taskId, now, (task) => {
     if (edge && rowTitle(replica.store, identityCid(replica.store, edge), rowTypeOf(replica.store, edge)) === trimmed) return null
     // a row of a leaf type (a string) holds the text itself; one that holds text (a field, or its own) takes it there
-    if (edge && isLeafType(replica.store, edge[0])) return content(replica.store, textValue(replica.store, trimmed))
+    if (edge && isLeafType(replica.store, edge[0])) return content(replica.store, leafOfType(replica.store, edge[0], trimmed))
     // the new text's `{name}` parameters are declared as for a new row
     return withTextParameters(replica.store, withRowText(replica.store, task, trimmed, now) ?? withLabel(replica.store, task, trimmed), trimmed)
   })

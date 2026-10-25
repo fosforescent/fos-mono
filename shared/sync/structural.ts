@@ -102,7 +102,8 @@ export function hasOpenHole(store: FosStore, cid: string): boolean {
 const leaves: Record<string, (scalar: NonNullable<FosNodeContent['data']['scalar']> | undefined) => boolean> = {
   string: scalar => typeof scalar?.value === 'string',
   number: scalar => typeof scalar?.value === 'number',
-  boolean: scalar => typeof scalar?.value === 'boolean'
+  boolean: scalar => typeof scalar?.value === 'boolean',
+  null: scalar => scalar?.type === 'null' && scalar.value === null
 }
 
 /**
@@ -168,6 +169,8 @@ export function match(store: FosStore, pattern: string, value: string, options: 
       }
       const leaf = primitiveName(store, p)
       if (leaf && leaves[leaf]) return leaves[leaf](V.data.scalar) ? state : null
+      // a node value (node-values.ts): a record is marked as one, a sequence as a sequence
+      if (leaf === 'record' || leaf === 'sequence') return !!V.data.presentation && !!V.data.presentation.sequence === (leaf === 'sequence') ? state : null
       if (P.data.scalar && !(V.data.scalar && V.data.scalar.type === P.data.scalar.type && Object.is(V.data.scalar.value, P.data.scalar.value))) return null
       const wanted = rows(P), available = rows(V), used = new Set<number>()
       const assign = (index: number, current: Match): Match | null => {
