@@ -1,6 +1,6 @@
 import { syncWith, userView } from './test-helpers'
 import { FosStore } from '../dag-implementation/store'
-import { addRow, addTask, createBranch, createReplica, headCid, importNodes, loadReplica, mergeNodes, commitRoot, reachableNodes, renameTask, selectBranch, serializeReplica, setTaskDone, view } from './index'
+import { addRow, addTask, createBranch, createReplica, headCid, importNodes, loadReplica, mergeBranch, mergeNodes, commitRoot, reachableNodes, renameTask, selectBranch, serializeReplica, setBranchMergeRequest, setTaskDone, view } from './index'
 import { NOTE_TYPE } from './library-types'
 
 test('branch choices preserve the entire subtree and selection does not edit shared state', () => {
@@ -148,4 +148,26 @@ test('a merge request and a concurrent branch edit are both retained', async () 
     expect(userView(r)!.tasks[0]!.branches?.mergeRequests).toEqual(['feature'])
     expect(view(r, ['p'])!.tasks.map(t => t.title)).toEqual(['Concurrent task'])
   }
+})
+
+test('a merge request names the branch it merges into, and merging there applies it', () => {
+  let r = addTask(createReplica('a'), [], 'Project', 1, 'p')
+  r = createBranch(r, ['p'], 'draft', 2)
+  r = createBranch(r, ['p'], 'review', 3)
+  selectBranch(r.store, 'p', 'draft')
+  r = addTask(r, ['p'], 'Draft only', 4, 'd')
+  expect(() => setBranchMergeRequest(r, ['p'], 'draft', true, 5, 'draft')).toThrow()
+  r = setBranchMergeRequest(r, ['p'], 'draft', true, 5, 'review')
+  expect(userView(r)!.tasks[0]!.branches?.mergeTargets).toEqual({ draft: 'review' })
+  r = setBranchMergeRequest(r, ['p'], 'draft', true, 6)
+  expect(userView(r)!.tasks[0]!.branches?.mergeTargets).toEqual({ draft: 'review' })
+  r = setBranchMergeRequest(r, ['p'], 'draft', true, 7, 'main')
+  expect(userView(r)!.tasks[0]!.branches?.mergeTargets).toEqual({ draft: 'main' })
+  r = mergeBranch(r, ['p'], 'draft', 'main', 8)
+  r = setBranchMergeRequest(r, ['p'], 'draft', false, 9)
+  expect(userView(r)!.tasks[0]!.branches?.mergeRequests).toEqual([])
+  selectBranch(r.store, 'p', 'main')
+  expect(view(r, ['p'])!.tasks.map(t => t.title)).toEqual(['Draft only'])
+  selectBranch(r.store, 'p', 'review')
+  expect(view(r, ['p'])!.tasks).toHaveLength(0)
 })

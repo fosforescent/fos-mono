@@ -57,7 +57,8 @@ export function combobox(label: string, caption: string, options: (query: string
         action.innerHTML = iconSvg(accessory.icon ?? 'pull-request') ?? 'PR'; action.setAttribute('aria-label', accessory.label); action.title = accessory.label
         action.setAttribute('aria-pressed', String(accessory.pressed)); action.disabled = !!accessory.disabled
         if (accessory.tone) action.dataset.tone = accessory.tone
-        action.onclick = event => { event.stopPropagation(); close(); accessory.run() }
+        // like choosing an option, an action leaves the popover: the view re-renders with what it did
+        action.onclick = event => { event.stopPropagation(); close(); if (!editor) input.blur(); accessory.run() }
         row.append(action)
       }
       list.append(row)

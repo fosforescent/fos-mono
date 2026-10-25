@@ -5,21 +5,32 @@
 import { App } from '/src/app.ts'
 import { mountUi } from '/src/ui.ts'
 import { createMemoryStorage } from '/src/storage.ts'
-import { parseRowInput } from '/src/rows.ts'
 import '/src/style.css'
 const app = new App({ baseUrl: 'http://localhost', autoLogin: null, storage: createMemoryStorage() }); app.scheduleSync = () => {}
 mountUi(document.getElementById('app'), app)
 const home = app.state.view
-const trip = app.applyConstructor(home, { kind: 'task', text: 'Plan the group trip', done: false })
-app.applyConstructor(trip, { kind: 'task', text: 'Book flights', done: true })
-app.applyConstructor(trip, { kind: 'note', text: 'Everyone arrives Friday; dinner at 8' })
-const lodging = app.applyConstructor(trip, { kind: 'task', text: 'Reserve lodging', done: false })
-app.applyConstructor(lodging, { kind: 'requirement', text: 'deposit', extras: { requirement: { capability: 'allocation', resource: 'account', amount: 300, unit: '$' } } })
-app.applyConstructor(home, { kind: 'task', text: 'Ship the sync release', done: false })
-app.applyConstructor(home, { kind: 'plain', text: 'Ideas for later' })
-app.applyConstructor(home, { kind: 'template', text: 'Implement and verify' })
+// the design canvas's sample: Q4 offsite / Venue booking
+const add = (at, line) => { try { return app.applyConstructor(at, app.parseRowInput(line)) } catch (error) { console.warn(line, error); return null } }
+const offsite = add(home, '[ ] Q4 offsite')
+const venue = add(offsite, '[ ] Venue booking')
+add(venue, '-$ 2400 Venue deposit')
+add(venue, '-@maya Sign venue contract')
+add(venue, '-choice: Hall A | Rooftop')
+add(venue, '@money Events budget 5000')
+add(venue, '> Venue must seat 40 and be a short walk from transit')
+add(venue, '[x] Shortlist three venues')
+add(offsite, '[ ] Book catering')
+add(home, '[ ] Ship the sync release')
+add(home, 'Ideas for later')
 const params = new URLSearchParams(location.search)
-if (params.has('open')) app.goTo(trip)
+if (params.has('open')) app.goTo(venue)
+if (params.has('branches') || params.has('review')) { await app.createNodeBranch(offsite, venue.at(-1), 'rooftop-option', true); app.goTo(venue) }
+if (params.has('review')) {
+  // the rooftop branch changes the venue rows, asks to be merged into main, and its review is open
+  add(venue, '-# 4 Heaters for the rooftop'); app.selectNodeBranch(offsite, venue.at(-1), 'main', true)
+  app.toggleBranchMergeRequest(venue, 'rooftop-option')
+  const { compareBranches } = await import('/src/branch-compare.ts'); compareBranches(app, venue, 'rooftop-option', 'main', true)
+}
 if (params.has('root')) app.goToRoot()
 if (params.has('account')) app.goToAccountPeer()
 if (params.has('register')) { app.setAuthFlow({ phase: 'register' }); app.goToAccountPeer() }

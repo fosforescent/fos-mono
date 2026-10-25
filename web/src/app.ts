@@ -2191,12 +2191,14 @@ export class App {
       if (JSON.stringify(path.slice(0, this.state.view.length)) === JSON.stringify(this.state.view)) this.select(path.slice(this.state.view.length))
     })
   }
+  /** Ask for `name` to be merged into the branch on screen (the default branch when that is `name`), or withdraw the request. */
   toggleBranchMergeRequest(path: Scope, name: string): void {
     if (this.state.voice || this.state.work?.busy || this.evaluating) return
     const row = view(this.state.replica, path.slice(0, -1))?.tasks.find(r => r.id === path.at(-1))
     if (!row?.branches) return
     const requested = !row.branches.mergeRequests?.includes(name)
-    this.edit(setBranchMergeRequest(this.state.replica, path, name, requested, this.now()))
+    const target = requested && row.branches.selected !== name ? row.branches.selected : undefined
+    try { this.edit(setBranchMergeRequest(this.state.replica, path, name, requested, this.now(), target)) } catch (error) { this.notify('error', String(error)); return }
     // a branch of a row a peer holds goes to that peer as a pull request
     if (requested && this.pullRequestTarget(path)) void this.sendPullRequest(path, name)
   }
@@ -2274,14 +2276,20 @@ export class App {
     this.savePrefs()
     this.set({ selected: null, contextMenu: null, work: undefined })
   }
-  mergeNodeBranch(at: Scope, id: string, target: string, absolute = false): void {
+  /** Merge `source` (the selected branch when omitted) into `target`; a merge request of `source` is settled by it. */
+  mergeNodeBranch(at: Scope, id: string, target: string, absolute = false, source?: string): void {
     if (this.evaluating || this.state.voice || this.state.work?.busy) return
     const path = absolute ? [...at, id] : [...this.state.view, ...at, id]
-    if (repositoryAt(this.state.replica, path)) { void this.proposeRepoMerge(path, target); return }
     const row = view(this.state.replica, path.slice(0, -1))?.tasks.find(row => row.id === id)
+    if (repositoryAt(this.state.replica, path)) {
+      if (source && source !== row?.branches?.selected) { this.notify('info', `Switch to ${source} to merge its repository branch.`); return }
+      void this.proposeRepoMerge(path, target); return
+    }
     if (!row?.branches) return
+    const from = source ?? row.branches.selected
     try {
-      const next = mergeBranch(this.state.replica, path, row.branches.selected, target, this.now())
+      let next = mergeBranch(this.state.replica, path, from, target, this.now())
+      if (row.branches.mergeRequests?.includes(from)) next = setBranchMergeRequest(next, path, from, false, this.now())
       this.branchSelections[id] = target
       this.edit(next)
       this.savePrefs()
@@ -3134,6 +3142,30 @@ export class App {
     }
     this.edit(addRefAt(r, destination, newId(), type, this.now(), null, name))
   }
+  /**
+   * A capability by name, declared here as a named ref with nothing behind it yet (an open hole): rows of it can be
+   * required in this scope, and a handler or a peer can fill it later.
+   */
+  declareCapability(name: string, at: Scope = this.state.view): void {
+    const label = name.trim()
+    if (!label || label.length > 200) { this.notify('error', 'Give the capability a name (at most 200 characters).'); return }
+    if (this.scopeCapabilities(at).some(c => c.name === label)) { this.notify('info', `“${label}” is already declared here.`); return }
+    const type = put(this.state.replica.store, { data: { capabilityDefinition: { name: label, label } }, children: [] })
+    this.edit(addRefAt(this.state.replica, at, newId(), type, this.now(), null, label))
+  }
+  /** Capabilities declared by name in the scope of `at` (not the library's): what `declareCapability` made, here or above. */
+  scopeCapabilities(at: Scope = this.state.view): Array<{ name: string; type: string }> {
+    const store = this.state.replica.store
+    // the library's capabilities have their own constructors: only names declared beside them are new here
+    const seen = new Set<string>([...this.libraryNames(at).map(n => n.node), ...capabilityDeclarations(store, at).map(d => d.cid)])
+    // declarations, filled or not: a capability nothing provides yet is still one rows can ask for
+    return bindingLayers(this.state.replica, at).flatMap(layer => layer.bindings).flatMap(binding => {
+      const definition = binding.store.table.get(binding.pattern)?.data.capabilityDefinition
+      if (!definition || !binding.name || seen.has(binding.pattern)) return []
+      seen.add(binding.pattern)
+      return [{ name: binding.name, type: binding.pattern }]
+    })
+  }
   placeholders(at: Scope = []) {
     const path = [...this.state.view, ...at]
     const r = this.state.replica, cid = resolveScope(r.store, headCid(r), path)
@@ -3720,6 +3752,19 @@ export class App {
   moveTask(fromAt: Scope, id: string, toAt: Scope, position: MovePosition): void {
     const base = this.state.view
     this.edit(moveNode(this.state.replica, [...base, ...fromAt], id, [...base, ...toAt], position, this.now()), this.state.atRoot, [...base, ...fromAt, id])
+  }
+
+  /** A row dragged from `fromAt` (under the view) dropped on the node at the absolute path `target` (a breadcrumb): moved, referenced or copied to its end. */
+  dropRowInto(fromAt: Scope, id: string, target: Scope, mode: 'move' | 'ref' | 'copy'): void {
+    const from = [...this.state.view, ...fromAt], own = [...from, id]
+    if (!target.length) return
+    if (mode === 'move' && target.length >= own.length && own.every((step, i) => target[i] === step)) { this.notify('error', 'A row cannot move into itself.'); return }
+    const into: MovePosition = { into: target.at(-1)! }, parent = target.slice(0, -1), now = this.now()
+    try {
+      if (mode === 'ref') this.edit(addRef(this.state.replica, parent, id, now, into))
+      else if (mode === 'copy') this.edit(copyNode(this.state.replica, from, id, parent, into, now))
+      else this.edit(moveNode(this.state.replica, from, id, parent, into, now), this.state.atRoot, [...target, id])
+    } catch (error) { this.notify('error', String(error)) }
   }
 
   toggleCollapsed(id: string): void {
