@@ -18,8 +18,8 @@ test('opens parent first, commits leaves first, persists the journal and marks t
   const result = await evaluateNode(['parent'], s.driver)
   expect(result.status).toBe('committed')
   expect(s.events).toEqual(['open parent', 'open child', 'commit child', 'commit parent'])
-  expect(userView(s.get())!.tasks[0]!.done).toBe(true)
-  expect(view(s.get(), ['parent'])!.tasks[0]!.done).toBe(true)
+  expect(userView(s.get())!.tasks.find(t => t.id === 'parent')!.done).toBe(true)
+  expect(view(s.get(), ['parent'])!.tasks.find(t => t.id === 'child')!.done).toBe(true)
   expect(evaluationRecord(loadReplica(serializeReplica(s.get())), ['parent'])?.status).toBe('committed')
 })
 test('an unresolved confirmation stops all effects before opening a transaction', async () => {
@@ -35,7 +35,7 @@ test('a primitive that fails leaves nothing behind: its writes were pending, the
   const result = await evaluateNode(['parent'], s.driver)
   expect(result.status).toBe('rolled-back')
   expect(result.error).toMatch(/Response lost/)
-  expect(userView(s.get())!.tasks[0]!.done).toBe(false)
+  expect(userView(s.get())!.tasks.find(t => t.id === 'parent')!.done).toBe(false)
   s.set(loadReplica(serializeReplica(s.get())))
   s.driver.executors = step => step.row?.requirement?.capability === 'repo' ? [{ run: answering('test') }] : []
   expect((await evaluateNode(['parent'], s.driver)).status).toBe('committed')
@@ -49,13 +49,13 @@ test('a failed commit discards every primitive\'s answers: no requirement stays 
   expect(result.status).toBe('rolled-back')
   expect(result.effects.map(e => e.status)).toEqual(['reverted', 'reverted'])
   expect(view(s.get(), ['parent'])!.tasks.filter(t => t.requirement).map(t => t.requirement!.satisfied)).toEqual([false, false])
-  expect(userView(s.get())!.tasks[0]!.done).toBe(false)
+  expect(userView(s.get())!.tasks.find(t => t.id === 'parent')!.done).toBe(false)
 })
 test('refuses instructions changed during open and keeps unrelated edits', async () => {
   const s = setup()
   s.driver.open = async step => { if (step.path.length === 1) s.set(renameTask(s.get(), ['parent'], 'child', 'Changed elsewhere', 5)) }
   expect((await evaluateNode(['parent'], s.driver)).status).toBe('rolled-back')
-  expect(view(s.get(), ['parent'])!.tasks[0]!.title).toBe('Changed elsewhere')
+  expect(view(s.get(), ['parent'])!.tasks.find(t => t.id === 'child')!.title).toBe('Changed elsewhere')
 })
 test('amount rows are data: evaluating them moves no authority and a bank without grants holds none', async () => {
   const s = setup()
@@ -72,7 +72,7 @@ test('completes task requirements bottom up without publishing partial completio
   s.set(addRequirement(s.get(), ['parent'], 'Child task', 1, TASK_DEMAND, 'needs-task'))
   s.set(addRow(s.get(), ['parent', 'needs-task'], TASK_TYPE, 'Nested', 1, { id: 'nested' }))
   expect((await evaluateNode(['parent'], s.driver)).status).toBe('committed')
-  expect(userView(s.get())!.tasks[0]!.done).toBe(true)
+  expect(userView(s.get())!.tasks.find(t => t.id === 'parent')!.done).toBe(true)
 })
 
 test('a new child or changed binding arriving during open aborts the transaction', async () => {
@@ -81,7 +81,7 @@ test('a new child or changed binding arriving during open aborts the transaction
   const result = await evaluateNode(['parent'], s.driver)
   expect(result.status).toBe('rolled-back')
   expect(result.error).toMatch(/child rows changed/)
-  expect(userView(s.get())!.tasks[0]!.done).toBe(false)
+  expect(userView(s.get())!.tasks.find(t => t.id === 'parent')!.done).toBe(false)
 })
 
 test('failure to persist final completion leaves tasks open', async () => {
@@ -93,8 +93,8 @@ test('failure to persist final completion leaves tasks open', async () => {
     return save(next)
   }
   expect((await evaluateNode(['parent'], s.driver)).status).toBe('rolled-back')
-  expect(userView(s.get())!.tasks[0]!.done).toBe(false)
-  expect(view(s.get(), ['parent'])!.tasks[0]!.done).toBe(false)
+  expect(userView(s.get())!.tasks.find(t => t.id === 'parent')!.done).toBe(false)
+  expect(view(s.get(), ['parent'])!.tasks.find(t => t.id === 'child')!.done).toBe(false)
 })
 
 test('a plain amount typed inside a resource requirement is data and does not fulfil it', async () => {

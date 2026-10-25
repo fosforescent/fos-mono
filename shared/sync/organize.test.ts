@@ -1,5 +1,6 @@
 import { addRow, addTask, createReplica, ensureHomeContext, view, type Replica } from './replica'
-import { HOME_ID } from './graph'
+import { HOME_ID, libraryNode } from './graph'
+import { fieldRefId } from './fields'
 import { dispatchEvent, parseEvent } from './events'
 import { NOTE_TYPE, PLAIN_TYPE } from './published-types'
 import { captureOutline, organizeRequestAt, outlineText, parseOrganizePlan, parseOutline, requestOrganize } from './organize'
@@ -18,11 +19,13 @@ const titles = (r: Replica, at: string[]) => (view(r, at)?.tasks ?? []).filter(r
 test('the outline is the target\'s subtree only, breadth first, bounded, one line per row with its id', async () => {
   const r = project()
   const outline = await captureOutline(r, [HOME_ID])
+  // the note's fields (its title, its body) are rows of it like any other
+  const title = fieldRefId(libraryNode(r.store, 'title')!), body = fieldRefId(libraryNode(r.store, 'body')!)
   expect(outline.map(e => [e.id, e.parent, e.title, e.depth])).toEqual([
-    ['garden', null, 'Garden', 0], ['trip', null, 'Trip', 0], ['tomatoes', 'garden', 'Tomatoes', 1], ['stake', 'tomatoes', 'Stake them', 2],
+    ['garden', null, 'Garden', 0], ['trip', null, 'Trip', 0], ['tomatoes', 'garden', 'Tomatoes', 1], [title, 'trip', 'Trip', 1], [body, 'trip', 'Trip', 1], ['stake', 'tomatoes', 'Stake them', 2],
   ])
   expect(outline.find(e => e.id === 'stake')!.path).toEqual(['garden', 'tomatoes', 'stake'])
-  expect(outlineText(outline)).toBe('- [garden] Garden\n  - [tomatoes] Tomatoes\n    - [stake] Stake them\n- [trip] Trip')
+  expect(outlineText(outline)).toBe(`- [garden] Garden\n  - [tomatoes] Tomatoes\n    - [stake] Stake them\n- [trip] Trip\n  - [${title}] Trip\n  - [${body}] Trip`)
   expect((await captureOutline(r, [HOME_ID], { entries: 2 })).map(e => e.id)).toEqual(['garden', 'trip'])
   expect((await captureOutline(r, [HOME_ID], { depth: 2 })).map(e => e.id)).not.toContain('stake')
   // what a client sends is re-validated: unknown parents and duplicates are not a tree
@@ -68,7 +71,7 @@ test('rows added through the grammar without ids behave as before', () => {
   const read = dispatchEvent(r, { kind: 'read', path: [] }, principal, 3).result as { revision: string }
   r = dispatchEvent(r, parseEvent({ kind: 'submit', expected: read.revision, changes: [{ path: [], operation: 'add_plain', text: 'bread' }, { path: ['milk'], operation: 'add_plain', text: 'oat' }] }), principal, 4).replica
   expect(titles(r, [HOME_ID])).toEqual(['milk', 'bread'])
-  expect(titles(r, [HOME_ID, 'milk'])).toEqual(['oat'])
+  expect(titles(r, [HOME_ID, 'milk'])).toEqual(['milk', '', 'oat'])
 })
 
 test('an organize request is a requirement in the target holding the capture as its note, outside the outline', async () => {
@@ -80,7 +83,7 @@ test('an organize request is a requirement in the target holding the capture as 
   expect(row.requirement).toMatchObject({ capability: 'organize', satisfied: false })
   // the capture is the request's input: part of what it asks, read by its handler as an operand
   expect(row.requirement!.inputs).toEqual({ capture: 'water the tomatoes' })
-  expect(view(asked.replica, asked.path)!.tasks).toEqual([])
+  expect(view(asked.replica, asked.path)!.tasks.map(t => [t.type, t.title])).toEqual([['title', 'Voice note']])
   expect(organizeRequestAt(asked.replica, asked.path)).toEqual({ label: 'Voice note', text: 'water the tomatoes' })
   expect(organizeRequestAt(asked.replica, [HOME_ID, 'garden', 'tomatoes'])).toBeNull()
   // the organizer never files into its own request

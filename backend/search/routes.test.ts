@@ -75,7 +75,7 @@ test('a bidder proposes on a node the market lists; bidders see only their own p
   const ownerView = viewNode(alice.store, jobCid)
   expect(ownerView.proposals.map((p) => p.peerId).sort()).toEqual(['user:bob', 'user:carol'])
   expect(ownerView.proposals.find((p) => p.peerId === 'user:bob')!.summary.added).toEqual(['I can do this Tuesday'])
-  expect(ownerView.tasks.map((t) => t.title)).toEqual(['1h of design time', 'brief']) // main content untouched until the owner approves
+  expect(ownerView.tasks.map((t) => [t.type, t.title])).toEqual([['title', 'design a logo for the bakery'], ['done', ''], ['', '1h of design time'], [TASK_TYPE, 'brief']]) // main content untouched until the owner approves
 
   // bob sees his own proposal only; carol hers; alice both. No peers/members leak to bidders.
   const asBob = await call(d.handlers.marketNode, 'bob', { query: { owner: 'alice', id: 'job' } })
@@ -92,10 +92,9 @@ test('a bidder proposes on a node the market lists; bidders see only their own p
   // the bidder's branch holds the comment and the supply under the requirement
   const bobProposal = readProposals(alice.store, content(alice.store, jobCid)).find((p) => p.peerId === 'user:bob')!
   const branch = viewNode(alice.store, bobProposal.contentCid)
-  expect(branch.tasks.map((t) => [!!t.requirement, t.title])).toEqual([[true, '1h of design time'], [false, 'brief'], [false, 'I can do this Tuesday']])
-  expect(branch.tasks.map((t) => t.type).slice(1)).toEqual([TASK_TYPE, COMMENT_TYPE])
+  expect(branch.tasks.map((t) => [t.type, !!t.requirement, t.title])).toEqual([['title', false, 'design a logo for the bakery'], ['done', false, ''], ['', true, '1h of design time'], [TASK_TYPE, false, 'brief'], [COMMENT_TYPE, false, 'I can do this Tuesday']])
   const reqInBranch = resolveScope(alice.store, bobProposal.contentCid, ['req'])!
-  expect(viewNode(alice.store, reqInBranch).tasks.map((t) => t.allocation?.by)).toEqual(['bob'])
+  expect(viewNode(alice.store, reqInBranch).tasks.map((t) => [t.type, t.allocation?.by])).toEqual([['title', undefined], [expect.anything(), 'bob']]) // the requirement's title field, then the supply
 
   // resubmitting replaces bob's proposal instead of adding a second one
   await call(d.handlers.marketProposal, 'bob', { body: { owner: 'alice', aliasId: 'job', bid: comment('bob', 'Wednesday works too', 11) } })
@@ -131,7 +130,7 @@ test('an account the owner made a member (edit) sends its own row as an allocati
   const inbox = content(alice.store, resolveScope(alice.store, rootTargetCid(alice.store), ['inbox'])!)
   const proposal = readProposals(alice.store, inbox).find(p => p.peerId === 'user:bob')!
   const bin = resolveScope(alice.store, proposal.contentCid, ['bin-bob'])!
-  expect(viewNode(alice.store, bin).tasks.map(t => [!!t.requirement, t.title])).toEqual([[true, 'pay 5']])
+  expect(viewNode(alice.store, bin).tasks.map(t => [t.type, !!t.requirement, t.title])).toEqual([['title', false, 'Deliver the logo'], ['done', false, ''], ['', true, 'pay 5']])
   // without the grant (and unlisted) the node takes nothing
   expect((await call(d.handlers.marketProposal, 'carol', { body: { owner: 'alice', aliasId: 'inbox', bid: comment('carol', 'x') } })).status).toBe(403)
 })
@@ -148,7 +147,9 @@ test('published handler snapshots are readable globally, and switching off the m
   expect(opened.status).toBe(200)
   expect(opened.json.capability).toBe(true)
   // the template's rows, besides its pattern rows (what tasks made from it accept)
-  expect(opened.json.view.tasks.filter((t: { type: string }) => t.type !== PATTERN_TYPE).map((t: { title: string }) => t.title)).toEqual(['Draw logo'])
+  const rows = opened.json.view.tasks.filter((t: { type: string }) => t.type !== PATTERN_TYPE) as Array<{ id: string; type: string; title: string }>
+  expect(rows.find(t => t.type === 'title')?.title).toBe('Design') // its own title field row
+  expect(rows.find(t => t.id === 'draw')?.title).toBe('Draw logo')
   expect(JSON.stringify(opened.json)).not.toContain('Private calendar')
   // publishing a capability does not list the context it is published in
   expect((await call(d.handlers.marketNode, 'bob', { query: { owner: 'alice', id: 'private' } })).status).toBe(403)

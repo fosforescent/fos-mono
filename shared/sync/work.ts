@@ -69,7 +69,7 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
   // rows that read as text: plain rows, references, and titled rows that do not complete (notes, not tasks)
   const isText = (edge: [string, string]) => {
     const type = rowTypeOf(store, edge)!
-    if (isFieldRow(store, edge) || isLibraryRef(store, content(store, identityCid(store, edge)))) return false
+    if (isLibraryRef(store, content(store, identityCid(store, edge)))) return false
     return type === libraryNode(store, PLAIN_TYPE) || type === libraryNode(store, REF_TYPE) || (titleField(store, type) !== null && !completes(store, type)) || !typeIdOf(store, type)
   }
   const emit =(cid: string, label: string, depth: number, external = false, ancestorNotes = false, at: Scope = requestPath) => {
@@ -106,13 +106,14 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
       if (resolved.status !== 'ready') resolved.problems.forEach(p => blockers.add(p))
       else emit(resolved.cid!, 'Bound input', depth + 1, true)
     }
-    for (const edge of value.children) {
+    // a ref's own rows (an argument row's title) come first, whether or not it holds a value yet
+    const own = identity !== value ? identity.children.filter(edge => isFieldRow(store, edge)) : []
+    for (const edge of [...own, ...value.children]) {
       if (!isRowEdge(store, edge) || isRowOfType(store, edge, TEMPLATE_TYPE)) continue
       if (ancestorNotes && !isText(edge)) continue
       const child = identityCid(store, edge)
       // Runtime values (`fos:evaluation`, triggers, …) are not task context; they change while the task is worked on.
       if (settingOf(store, content(store, child)) || isHandlerStateLeft(store, edge[0])) continue
-      if (isFieldRow(store, edge)) continue
       // Other work requests are context only once accepted, when explicitly referenced.
       if (!content(store, child).data.ref && requirementViewOf(store, edge, child)?.capability === 'llm' && child !== request.cid && !external) continue
       // the rows a value carries as a value of its pattern have no identity and are no context

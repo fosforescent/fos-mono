@@ -23,8 +23,9 @@ test('a published note is its title line and its whole markdown body row, keyed 
   const node = sharedProjection(r, ['post'], value => { hashed = value; return digest(value) })
   expect(node).toMatchObject({ title: 'Hello world', type: NOTE_TYPE })
   expect(node.body).toBeUndefined()
-  // each note's body is a Markdown row of its own; an empty body is left out
-  expect(node.rows.map(row => row.id)).toEqual(['post:body', 'long', 'long:body', 'plain', 'nested', 'huge', 'huge:body'])
+  // a note's fields are rows like any other: its title, and its body as Markdown; an empty body is left out
+  expect(node.rows.map(row => row.id)).toEqual(['post:title', 'post:body', 'long', 'long:title', 'long:body', 'plain', 'nested', 'nested:title', 'huge', 'huge:title', 'huge:body'])
+  expect(node.rows.find(row => row.id === 'long:title')).toEqual({ id: 'long:title', depth: 1, title: 'title', type: PLAIN_TYPE, body: 'Section' })
   const rows = Object.fromEntries(node.rows.map(row => [row.id, row]))
   expect(rows['post:body']).toEqual({ id: 'post:body', depth: 0, title: '', type: MARKDOWN_TYPE, body: '# Hello world\n\nThe **body** of a post, with $e^{i\\pi} + 1 = 0$.' })
   // bodies are not cut at 8000 characters
@@ -58,7 +59,9 @@ test('empty fields of a published row are inputs of their type; each visitor sub
   const node = sharedProjection(r, ['page'], value => JSON.stringify(value).length.toString())
   expect(node.rows).toEqual([
     { id: 'details', title: 'Your details', depth: 0 },
-    { id: field, title: 'email', depth: 1, type: PLAIN_TYPE, body: '' }
+    // its fields are its rows: the filled label shows its value, the open email is asked for
+    { id: 'details:label', title: 'label', depth: 1, type: PLAIN_TYPE, body: 'Your details' },
+    { id: 'details:email', title: 'email', depth: 1, type: PLAIN_TYPE, body: '' }
   ])
   expect(node.inputs).toEqual([{ key: JSON.stringify(['details', field]), path: ['details', field], name: 'email', kind: 'text' }])
   // two visitors (a visit admits each as a member that may run the node): two submissions; a resubmission replaces only its own

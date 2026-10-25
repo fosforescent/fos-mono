@@ -207,7 +207,7 @@ test('Home sync persists public siblings, never content excluded from Fos', asyn
   client = await sync(createNodeProvider(deps), client)
   expect(JSON.stringify([...stores.get(7)!.table.values()])).not.toContain('Never upload this')
   expect(homeTitles(stores.get(7)!)).toContain('Shared sibling')
-  expect(view(client, [HOME_ID, 'private'])!.tasks[0]!.id).toBe('secret')
+  expect(view(client, [HOME_ID, 'private'])!.tasks.some(t => t.id === 'secret')).toBe(true)
 })
 
 test('a message one device leaves for another waits in that peer\'s queue on the account', async () => {
@@ -224,14 +224,14 @@ test('a message one device leaves for another waits in that peer\'s queue on the
   phone = addTask(phone, [HOME_ID, 'hub', 'job'], 'Review the pull request', 4, 'job:task')
   phone = await sync(handler, phone)
   const stored = createReplica('user:alice', stores.get(7)!)
-  expect(view(stored, [...membershipPathAt(stored, [HOME_ID, 'hub'], 'desktop-agent')!, RELAY_QUEUE_ID, 'job'])!.tasks.map(t => t.title)).toEqual(['Review the pull request'])
+  expect(view(stored, [...membershipPathAt(stored, [HOME_ID, 'hub'], 'desktop-agent')!, RELAY_QUEUE_ID, 'job'])!.tasks.find(t => t.id === 'job:task')?.title).toBe('Review the pull request')
   expect(view(stored, [HOME_ID, 'hub'])!.tasks.some(t => t.id === 'job')).toBe(false)
   phone = await sync(handler, phone)
   expect(view(phone, [HOME_ID, 'hub'])!.tasks.some(t => t.id === 'job')).toBe(false)
   // the queue is ordinary rows of the hub's member entry: another device of the account receives them by syncing
   const desktop = await sync(handler, ensureHomeContext(createReplica('desktop'), 0), { username: 'alice' }, false)
   expect(relayQueues(desktop, 'desktop-agent')).toEqual([[...membershipPathAt(desktop, [HOME_ID, 'hub'], 'desktop-agent')!, RELAY_QUEUE_ID]])
-  expect(relayInbox(desktop, [...membershipPathAt(desktop, [HOME_ID, 'hub'], 'desktop-agent')!, RELAY_QUEUE_ID]).map(m => [m.id, m.rows.map(r => r.title)])).toEqual([['job', ['Review the pull request']]])
+  expect(relayInbox(desktop, [...membershipPathAt(desktop, [HOME_ID, 'hub'], 'desktop-agent')!, RELAY_QUEUE_ID]).map(m => [m.id, m.rows.find(r => r.id === 'job:task')?.title])).toEqual([['job', 'Review the pull request']])
 })
 
 test('member entries travel through provide-node: listings and offers made on a device reach the account and its market index', async () => {

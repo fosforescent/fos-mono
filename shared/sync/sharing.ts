@@ -5,7 +5,7 @@
  * execute view (`sharedProjection`), and their inputs are stored in typed refs on it. A published template is an
  * endpoint: each visitor who starts it gets a private execution, a node of which only that visitor is a member.
  */
-import { textValue, fieldText, isTextField } from './fields'
+import { textValue, fieldText, fieldViews, isFieldRow, isTextField } from './fields'
 import { createStore, findEdge } from './graph'
 import { primitive } from './primitives'
 import { libraryNode, settingOf } from './graph'
@@ -348,35 +348,36 @@ export function sharedProjection(r: Replica, path: Scope, revision: (value: unkn
   }
   const store = r.store
   const page = present(current?.title ?? node.name ?? 'Shared node', libraryType(current), textVisible(path), false)
-  const walk = (at: Scope, depth: number) => {
+  const walk = (at: Scope, depth: number, type: string | undefined) => {
     if (depth > 8 || hashed.length >= 200) return
     const parent = resolveScope(store, headCid(r), at)
+    // the row's own fields are rows like any other: a filled one shows its value, an open one is asked of the visitor
+    const own = new Map(parent && type ? fieldViews(store, type, valueContent(store, parent)).map(field => [field.id, field]) : [])
     for (const row of view(r, at)?.tasks ?? []) {
       if (hashed.length >= 200) break
       const childPath = [...at, row.id]
       // peer rows (who the node is connected to) are the read/edit view's, never the served page's
       if (!visible(childPath) || row.construction) continue
-      const shown = textVisible(childPath), edge = childRowEdge(store, parent, row.id), type = libraryType(row)
+      const shown = textVisible(childPath), edge = childRowEdge(store, parent, row.id)
+      const field = edge && isFieldRow(store, edge) ? own.get(row.id) : undefined
+      if (field) {
+        // a field's id is its field's, the same in every row: on the page it is that row's field
+        const id = `${at.at(-1) ?? ''}:${field.key ?? row.id}`, label = field.key ?? ''
+        if (field.field === libraryNode(store, 'body')) { if (typeof field.value === 'string') rows.push({ id, depth, ...present(field.value, MARKDOWN_TYPE, shown, true) }); continue }
+        rows.push({ id, depth, type: typeof field.value === 'number' ? NUMBER_TYPE : PLAIN_TYPE, title: label, ...(shown ? { body: String(field.value ?? '').slice(0, 8000) } : {}) })
+        if (field.open && shown) { const relative = childPath.slice(path.length); fields.push({ key: JSON.stringify(relative), path: relative, name: label || 'Value', kind: 'text' }) }
+        continue
+      }
       // The execute projection offers declared inputs separately. Their private
       // bindings and runtime state are graph rows, but are not published page content.
       if (edge && content(store, identityCid(store, edge)).data.name) continue
       hashed.push({ id: row.id, title: shown ? row.title.slice(0, 8000) : '', type: row.type, depth })
-      rows.push({ id: row.id, depth, ...present(row.title, type, shown, false) })
-      if (row.body) rows.push({ id: `${row.id}:body`, depth: depth + 1, ...present(row.body, MARKDOWN_TYPE, shown, true) })
-      for (const field of row.fields ?? []) {
-        // a field of the row: a filled one is shown; an open one is asked of the visitor, who submits a candidate value
-        const relative = [...childPath.slice(path.length), field.id], label = field.key ?? ''
-        rows.push({ id: field.id, depth: depth + 1, type: typeof field.value === 'number' ? NUMBER_TYPE : PLAIN_TYPE, title: label, ...(shown ? { body: String(field.value ?? '').slice(0, 8000) } : {}) })
-        if (field.open && shown) fields.push({ key: JSON.stringify(relative), path: relative, name: label || 'Value', kind: 'text' })
-      }
-      const definition = edge && store.table.has(edge[0]) ? content(store, edge[0]) : null
+      rows.push({ id: row.id, depth, ...present(row.title, libraryType(row), shown, false) })
       // Reference targets, arguments, membership, previous versions and private inputs are never exported.
-      if (row.refId === undefined) walk([...at, row.id], depth + 1)
+      if (row.refId === undefined) walk(childPath, depth + 1, row.typeCid)
     }
   }
-  // the page's own body (a note's) is its first row
-  if (current?.body) rows.push({ id: `${current.id}:body`, depth: 0, ...present(current.body, MARKDOWN_TYPE, textVisible(path), true) })
-  walk(path, 0)
+  walk(path, 0, current?.typeCid)
   // what a visitor submits (a member who may run the node but not edit it) is the owner's to review, not an option other visitors vote on
   const identity = content(r.store, resolveScope(r.store, headCid(r), path)!)
   // visitors are explicit members (a visit adds them); a peer the audience covers implicitly is no visitor

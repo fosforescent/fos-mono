@@ -24,9 +24,9 @@ test('a sibling link declares the shared ref in the group, visible from both par
   expect(resolveRefIdentity(r, ['group', 'alice'], 'work').locations[0]?.path).toEqual(['group', 'work'])
   expect(resolveRefIdentity(r, ['group', 'bob'], 'work').locations[0]?.path).toEqual(['group', 'work'])
   expect(resolveRefIdentity(r, ['other'], 'work').status).toBe('missing')
-  expect(view(r, ['group', 'alice'])!.tasks[0]!.refId).toBe('work')
+  expect(view(r, ['group', 'alice'])!.tasks.filter(t => t.refId === 'work').map(t => t.refId)).toEqual(['work'])
   expect(discoverHandlers(r, ['group', 'bob']).some(offer => offer.id === 'work')).toBe(true)
-  const link = view(r, ['group', 'bob'])!.tasks[0]!
+  const link = view(r, ['group', 'bob'])!.tasks.find(t => t.refId === 'work')!
   r = renameTask(r, ['group'], 'work', 'Updated work', 7)
   const compiled = compileRefGraph(r, at(r, ['group', 'bob', link.id]), ['group', 'bob', link.id])
   expect(compiled.complete).toBe(true)
@@ -43,11 +43,15 @@ test('linking refuses to capture private dependencies; copying closes them witho
   expect(() => addRef(r, ['group', 'bob'], 'dependent', 7)).toThrow(/dependencies.*shared scope/)
   expect(headCid(r)).toBe(before)
   r = copyNode(r, ['group', 'alice'], 'dependent', ['group'], { into: 'bob' }, 8)
-  const copy = view(r, ['group', 'bob'])!.tasks[0]!
+  // bob held only its field rows, which are the same rows the empty 'other' task holds
+  const fieldIds = new Set(view(r, ['other'])!.tasks.map(t => t.id))
+  const copied = (r: ReturnType<typeof createReplica>) => view(r, ['group', 'bob'])!.tasks.filter(t => !fieldIds.has(t.id))
+  expect(copied(r)).toHaveLength(1)
+  const copy = copied(r)[0]!
   expect(copy.title).toBe('Private value')
   expect(content(r.store, at(r, ['group', 'bob', copy.id])).data.refExpression).toBeUndefined()
   r = setRefValueAt(r, ['group', 'alice', 'secret'], leaf(r, 'Changed later'), 9)
-  expect(view(r, ['group', 'bob'])!.tasks[0]!.title).toBe('Private value')
+  expect(copied(r).map(t => t.title)).toEqual(['Private value'])
   expect(resolveRefIdentity(r, ['group', 'bob'], 'secret').status).toBe('missing')
 })
 

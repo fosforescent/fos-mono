@@ -159,11 +159,13 @@ test('the public read endpoint serves the projection for embeds without recordin
   }
   const ok = await read({ owner: 'host', path: JSON.stringify(['post']) })
   expect(ok.status).toBe(200)
-  // a note publishes its title line, and its body as a Markdown row of its own
+  // a note publishes its title field and its body field as rows of their own; the body is a Markdown row
   expect(ok.body.node).toMatchObject({ title: 'A post', type: 'note' })
   expect(ok.body.node.rows).toEqual([
+    { id: 'post:title', title: 'title', depth: 0, type: 'string', body: 'A post' },
     { id: 'post:body', title: '', depth: 0, type: 'markdown', body: '# A post\n\nWith a **body**.' },
     { id: 'part', title: 'Part', depth: 0, type: 'note' },
+    { id: 'part:title', title: 'title', depth: 1, type: 'string', body: 'Part' },
     { id: 'part:body', title: '', depth: 1, type: 'markdown', body: '## Part\n\nMore.' }
   ])
   expect(ok.body.node.mine).toBeUndefined()

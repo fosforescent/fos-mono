@@ -3,6 +3,7 @@
  * the request with the model's nested rows in one transaction; the filled request
  * retains the capture. Outline helpers remain available for scoped tree readers.
  */
+import { fieldRefId } from './fields'
 import { libraryTypeAt, newId, resolveScope, rootTargetCid, viewNode, type Scope, type TaskView } from './graph'
 import { headCid, view, type Replica } from './replica'
 import { NOTE_TYPE, PLAIN_TYPE } from './published-types'
@@ -64,15 +65,18 @@ export function outlineTitle(title: string, max = ORGANIZE_LIMITS.titleChars): s
  */
 export async function buildOutline(children: (path: Scope) => Rows[] | null | Promise<Rows[] | null>, limits: { entries?: number; depth?: number } = {}): Promise<OutlineEntry[]> {
   const max = limits.entries ?? ORGANIZE_LIMITS.outlineEntries, depth = limits.depth ?? ORGANIZE_LIMITS.outlineDepth
-  const out: OutlineEntry[] = [], queue: Array<{ path: Scope; depth: number }> = [{ path: [], depth: 0 }]
+  const out: OutlineEntry[] = [], queue: Array<{ path: Scope; depth: number; id: string | null }> = [{ path: [], depth: 0, id: null }], used = new Set<string>()
   while (queue.length && out.length < max) {
     const at = queue.shift()!
     for (const row of (await children(at.path)) ?? []) {
       if (out.length >= max) break
       if (!organizableRow(row) || at.path.includes(row.id)) continue
       const path = [...at.path, row.id]
-      out.push({ id: row.id, parent: at.path.at(-1) ?? null, title: outlineTitle(row.title), depth: at.depth, path })
-      if (row.childCount && at.depth + 1 < depth) queue.push({ path, depth: at.depth + 1 })
+      // an id another row also has (a field's, the same in every row) is named under its row's
+      const id = used.has(row.id) && at.id ? `${at.id}/${row.id}` : row.id
+      used.add(id)
+      out.push({ id, parent: at.id, title: outlineTitle(row.title), depth: at.depth, path })
+      if (row.childCount && at.depth + 1 < depth) queue.push({ path, depth: at.depth + 1, id })
     }
   }
   return out
@@ -110,7 +114,7 @@ export function parseOutline(input: unknown): OutlineEntry[] {
     if (typeof id !== 'string' || !id || id.length > 128 || byId.has(id)) continue
     const above = typeof parent === 'string' && parent ? byId.get(parent) : undefined
     if (typeof parent === 'string' && parent && !above) continue // parents come first; anything else is not a tree
-    const entry: OutlineEntry = { id, parent: above?.id ?? null, title: outlineTitle(typeof title === 'string' ? title : ''), depth: above ? above.depth + 1 : 0, path: [...(above?.path ?? []), id] }
+    const entry: OutlineEntry = { id, parent: above?.id ?? null, title: outlineTitle(typeof title === 'string' ? title : ''), depth: above ? above.depth + 1 : 0, path: [...(above?.path ?? []), id.split('/').at(-1)!] }
     out.push(entry); byId.set(id, entry)
   }
   return out
@@ -167,12 +171,13 @@ export const ORGANIZE_PEER = 'fos'
 /** What organizing a capture came to: how many rows the answer holds and the plan's title. */
 export type OrganizedResult = { rows: number; title: string }
 
-/** Count generated rows, excluding the captured input and each row's scalar fields. */
+/** Count the rows the plan placed: not the captured input, and not any row's own fields (its title, its body). */
 export function organizedRowCount(replica: Replica, path: Scope): number {
   const pattern = view(replica, path.slice(0, -1))?.tasks.find(row => row.id === path.at(-1))?.typeCid
   const inputs = new Set(pattern ? viewNode(replica.store, pattern).tasks.map(row => row.id) : [])
+  const field = (row: { id: string; typeCid?: string }) => !!row.typeCid && row.id === fieldRefId(row.typeCid)
   const count = (at: Scope): number => (view(replica, at)?.tasks ?? [])
-    .reduce((total, row) => inputs.has(row.id) ? total : total + 1 + count([...at, row.id]), 0)
+    .reduce((total, row) => inputs.has(row.id) || field(row) ? total : total + 1 + count([...at, row.id]), 0)
   return count(path)
 }
 

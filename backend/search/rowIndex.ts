@@ -35,12 +35,13 @@ export function collectRows(store: FosStore, limit = 5000): IndexedRow[] {
     for (const edge of valueContent(store, cid).children) {
       if (out.length >= limit) return
       // a device root's shipped library is not the account's content
-      if (!isRowEdge(store, edge) || isFieldRow(store, edge) || isShippedLibrary(store, path, edge)) continue
+      if (!isRowEdge(store, edge) || isShippedLibrary(store, path, edge)) continue
       const type = rowTypeIdOf(store, edge) ?? ''
       const id = identityCid(store, edge)
       const identity = content(store, id)
       const value = valueContent(store, id)
-      const aliasId = identity.data.alias?.id
+      // a field's id is its field's, the same in every row: it is indexed as that row's field
+      const own = identity.data.alias?.id, aliasId = own && isFieldRow(store, edge) ? `${path.at(-1) ?? ''}:${own}` : own
       if (!aliasId) continue
       // listed where the market peer is a member with `read`; a member entry below overrides what its ancestors grant
       const grants = marketGrantsOf(store, id)
@@ -48,7 +49,7 @@ export function collectRows(store: FosStore, limit = 5000): IndexedRow[] {
       const title = rowText(store, id, rowTypeOf(store, edge)).trim()
       // a reference (its row type) stands for a row indexed where it lives
       if (title && !isRowOfType(store, edge, REF_TYPE)) out.push({ aliasId, type, title: title.split('\n')[0]!.slice(0, 200), path, market, text: title.slice(0, 600) })
-      walk(id, [...path, aliasId], market)
+      walk(id, [...path, own!], market)
     }
   }
   withMainBranchPolicy(store, () => walk(rootTargetCid(store), [], false))

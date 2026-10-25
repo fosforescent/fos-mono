@@ -68,7 +68,7 @@ test('a peer gets a masked projection: its own entry and the rows it may read, n
   account = setMemberCapabilitiesAt(account, [...PROJECT, 'salaries'], 'user:bob', ['read'], ['read'], 8)
   const wire: unknown[] = []
   const bob = syncWith(createReplica('user:bob'), account, { invited: PROJECT, wire })
-  expect(userView(bob)!.tasks.map(t => t.id)).toEqual(['plan'])
+  expect(userView(bob)!.tasks.map(t => [t.type, t.id === 'plan' ? 'plan' : t.title])).toEqual([['title', 'Project'], ['done', ''], ['task', 'plan']])
   expect(view(bob, [])!.members.map(m => m.peerId)).toEqual(['user:bob'])
   expect(member(bob, [], 'user:bob')).toMatchObject({ capabilities: ['read', 'edit'] })
   const sent = JSON.stringify(wire)

@@ -1503,7 +1503,7 @@ export function rowView(store: FosStore, nodeCid: string, edge?: FosPathElem): T
     done: task && rowDone(store, nodeCid),
     createdAt: created,
     updatedAt: value.data.updated?.time ?? created,
-    childCount: value.children.filter((e) => isRowEdge(store, e) && !isFieldRow(store, e)).length,
+    childCount: value.children.filter((e) => isRowEdge(store, e)).length,
     childChoices: value.children.filter((e) => isChoiceEdge(store, e)).length,
     subtreeTasks: sub.tasks,
     subtreeDone: sub.done,
@@ -1826,9 +1826,9 @@ export function viewNode(store: FosStore, cid: string, constructors = false): No
       if (peerId && !view.peers.includes(peerId)) view.peers.push(peerId)
     }
   }
-  for (const edge of value.children) {
-    // the node's own fields are part of it, not rows inside it
-    if (isFieldRow(store, edge)) continue
+  // a ref's own rows (an argument row's title) come first, whether or not it holds a value yet
+  const own = identity !== value ? identity.children.filter(edge => isFieldRow(store, edge)) : []
+  for (const edge of [...own, ...value.children]) {
     // a library instance is the library's binding, a container, not one of the node's rows (Settings lists it)
     if (isRowEdge(store, edge) && !constructors && isLibraryInstance(store, content(store, identityCid(store, edge)))) continue
     // a handler's own state rows (the evaluator's journal) and a value's contract pin are not rows of the node either

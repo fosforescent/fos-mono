@@ -19,11 +19,12 @@ test('a task made from a template row is the edge [template, task], pinned to th
   const oslo = userView(r)!.tasks.find(t => t.id === 'oslo')!
   // its type is the template (the edge's left node); a template's instances are tasks
   expect(oslo).toMatchObject({ type: 'trip', checkable: true, template: { id: 'trip', name: 'Trip' } })
-  expect(view(r, ['oslo'])!.tasks.map(t => [t.type, !!t.requirement])).toEqual([['capabilities.confirmation', true]])
+  // the instance keeps its own fields and gets the template's rows, not the template's own fields
+  expect(view(r, ['oslo'])!.tasks.map(t => [t.type, !!t.requirement])).toEqual([['title', false], ['done', false], ['capabilities.confirmation', true]])
   // editing the template does not change what existing instances are made from
   r = addRequirement(r, ['trip'], 'Dates agreed', 5, { capability: 'confirmation' }, 'when')
   expect(edgeOf(r, [], 'oslo')[0]).toBe(templateValue)
-  expect(view(r, ['oslo'])!.tasks).toHaveLength(1)
+  expect(view(r, ['oslo'])!.tasks).toHaveLength(3)
 })
 
 test('copying a subtree pins copied instances to the copied template; outside templates stay pinned', () => {
@@ -31,7 +32,7 @@ test('copying a subtree pins copied instances to the copied template; outside te
   r = withTrip(r, ['plans'])
   r = addTask(r, [], 'Archive', 5, 'archive')
   r = copyNode(r, [], 'plans', [], { into: 'archive' }, 6)
-  const copy = view(r, ['archive'])!.tasks[0]!
+  const copy = view(r, ['archive'])!.tasks.find(t => t.title === 'Plans')!
   const copiedTrip = view(r, ['archive', copy.id])!.tasks.find(t => t.type === TEMPLATE_TYPE)!
   const copiedOslo = view(r, ['archive', copy.id])!.tasks.find(t => t.title === 'Oslo')!
   expect(copiedOslo.template).toEqual({ id: copiedTrip.id, name: 'Trip' })

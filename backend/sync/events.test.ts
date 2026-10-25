@@ -47,7 +47,7 @@ test('MCP initialization handles id zero, notifications and scoped navigation', 
   expect((await s.rpc('notifications/initialized', {}, { body: { jsonrpc: '2.0', method: 'notifications/initialized' } })).status).toBe(202)
   const root = await s.call('fos_read')
   expect(root.title).toBe('Project specification')
-  expect(root.children.map((t: any) => t.title)).toEqual(['UI details'])
+  expect(root.children.map((t: any) => [t.type, t.title])).toEqual([['title', 'Project specification'], ['done', ''], ['task', 'UI details']])
   expect((await s.call('fos_read', { path: ['ui'] })).ancestors[0].title).toBe('Project specification')
   expect((await s.call('fos_read', { path: ['private'] })).error).toBeDefined()
   expect((await s.call('fos_read', { path: ['..'] })).error).toBeDefined()
@@ -58,7 +58,7 @@ test('MCP initialization handles id zero, notifications and scoped navigation', 
 test('revocation and per-child restrictions apply immediately, including search', async () => {
   const s = setup()
   s.set(addMemberAt(s.get(), ['project', 'ui'], 'agent', 'No access', [], 3))
-  expect((await s.call('fos_read')).children).toEqual([])
+  expect((await s.call('fos_read')).children.map((t: any) => t.type)).toEqual(['title', 'done']) // the project's own field rows; ui is withheld
   expect((await s.call('fos_read', { path: ['ui'] })).error).toMatch(/access/)
   expect((await s.call('fos_search', { query: 'UI' })).matches).toEqual([])
   s.set(removeMemberAt(s.get(), ['project'], 'agent', 4))
@@ -71,8 +71,8 @@ test('branch selection is scoped, validated, and does not change subsequent requ
   r = addTask(r, ['project', 'ui'], 'Alternative detail', 4, 'detail')
   selectBranch(r.store, 'ui', 'main'); s.set(r)
   const branches = [{ path: ['ui'], name: 'alternative' }]
-  expect((await s.call('fos_read', { path: ['ui'], branches })).children[0].title).toBe('Alternative detail')
-  expect((await s.call('fos_read', { path: ['ui'] })).children).toEqual([])
+  expect((await s.call('fos_read', { path: ['ui'], branches })).children.find((t: any) => t.id === 'detail').title).toBe('Alternative detail')
+  expect((await s.call('fos_read', { path: ['ui'] })).children.some((t: any) => t.id === 'detail')).toBe(false)
   expect((await s.call('fos_read', { branches: [{ path: ['private'], name: 'alternative' }] })).error).toBeDefined()
   expect((await s.call('fos_read', { branches: [{ path: ['ui'], name: 'typo' }] })).error).toBeDefined()
 })
@@ -81,14 +81,14 @@ test('agent edits are ordinary proposals, stale requests and duplicate names can
   const args = { expected: before.revision, name: 'implementation', changes: [{ path: ['ui'], operation: 'rename', text: 'Detailed UI' }, { path: ['ui'], operation: 'add_note', text: 'Acceptance criteria' }] }
   const result = await s.call('fos_propose', args)
   expect(result.status).toBe('awaiting-review')
-  expect(view(s.get(), ['project'])!.tasks[0]!.title).toBe('UI details')
+  expect(view(s.get(), ['project'])!.tasks.find(t => t.id === 'ui')!.title).toBe('UI details')
   expect((await s.call('fos_propose', args)).error).toMatch(/changed/)
   const after = await s.call('fos_read')
   expect((await s.call('fos_propose', { ...args, expected: after.revision })).error).toMatch(/already exists/)
   expect(s.saves()).toBe(1)
   s.set(applyProposalAt(s.get(), ['project'], result.proposalId, 'owner', 60))
-  expect(view(s.get(), ['project'])!.tasks[0]!.title).toBe('Detailed UI')
-  expect(view(s.get(), ['project', 'ui'])!.tasks[0]!.title).toBe('Acceptance criteria')
+  expect(view(s.get(), ['project'])!.tasks.find(t => t.id === 'ui')!.title).toBe('Detailed UI')
+  expect(view(s.get(), ['project', 'ui'])!.tasks.map(t => t.title)).toContain('Acceptance criteria')
 })
 test('read-only and revoked child edit grants cannot submit changes', async () => {
   const s = setup()
@@ -153,7 +153,7 @@ test('child pagination and bounded search preserve paths without duplicating res
   const first = await s.call('fos_read')
   const second = await s.call('fos_read', { offset: first.nextOffset })
   expect(first.children).toHaveLength(100)
-  expect(second.children).toHaveLength(6)
+  expect(second.children).toHaveLength(8) // 105 criteria, ui, and the project's title and done field rows
   expect(second.nextOffset).toBeNull()
   const a = await s.call('fos_search', { query: 'Criterion' })
   const b = await s.call('fos_search', { query: 'Criterion', offset: a.nextOffset })

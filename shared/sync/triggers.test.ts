@@ -59,7 +59,7 @@ test('template triggers create an independent instance and failed runs do not sp
   r = addTask(r, ['template'], 'Step', 1, 'step')
   r = setNodeTrigger(r, ['template'], { observer: libAt(r.store).capabilities['timer']!, peer: 'device', enabled: true, created: 1, due: 2 }, 1)
   let runs = 0
-  const driver = { get: () => r, save: (next: typeof r) => { r = next }, now: () => 3, available: () => true, evaluate: async (path: string[]) => { runs++; expect(path).not.toEqual(['template']); expect(view(r, path)!.tasks[0]!.title).toBe('Step'); throw new Error('Needs confirmation') } }
+  const driver = { get: () => r, save: (next: typeof r) => { r = next }, now: () => 3, available: () => true, evaluate: async (path: string[]) => { runs++; expect(path).not.toEqual(['template']); expect(view(r, path)!.tasks.map(t => t.title)).toContain('Step'); throw new Error('Needs confirmation') } }
   await runNodeTriggers(driver); await runNodeTriggers(driver)
   expect(runs).toBe(1)
   expect(triggerState(r, ['template'])?.error).toBe('Needs confirmation')

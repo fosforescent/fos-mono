@@ -616,7 +616,9 @@ export function instantiateTemplateValue(replica: Replica, at: Scope, taskId: st
     const edge = findChildEdge(replica, value, taskId)
     if (!edge) return value
     const task = valueContent(replica.store, identityCid(replica.store, edge))
-    const next = withChildValue(replica.store, edge, { ...task, data: { ...task.data, updated: { time: now } }, children: [...task.children, ...copied.children] }, now)
+    // the template's own fields (its title, its tag) are the template's: the task keeps its own
+    const rows = copied.children.filter(child => !isFieldRow(replica.store, child))
+    const next = withChildValue(replica.store, edge, { ...task, data: { ...task.data, updated: { time: now } }, children: [...task.children, ...rows] }, now)
     return replaceEdge(replica.store, value, `a:${taskId}`, withRowTemplate(replica.store, next, valueCidOf(replica.store, templateCid)))
   })
 }

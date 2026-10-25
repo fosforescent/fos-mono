@@ -34,7 +34,7 @@ test('copying a proposed branch preserves main and the peer proposal', () => {
   expect(view(r, ['project'])!.tasks.map(t => t.title)).toEqual(['Proposed child'])
   r = addTask(r, ['project'], 'My edit', 7, 'local-edit')
   selectBranch(r.store, 'project', 'main')
-  expect(view(r, ['project'])!.tasks.map(t => t.title)).toEqual(['Main child'])
+  expect(view(r, ['project'])!.tasks.map(t => t.title)).toEqual(['Project', '', 'Main child'])
   expect(readProposal(r.store, proposal)!.contentCid).toBe(branch)
   expect(readProposal(r.store, proposal)!.status).toBe('open')
   selectBranch(r.store, 'project', 'my-copy')

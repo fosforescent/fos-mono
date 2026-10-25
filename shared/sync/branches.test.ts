@@ -17,12 +17,13 @@ test('branch choices preserve the entire subtree and selection does not edit sha
   selectBranch(r.store, 'project', 'main')
   expect(headCid(r)).toBe(head)
   expect(userView(r)!.tasks[0]!.title).toBe('Project')
-  expect(view(r, ['project'])!.tasks[0]!.title).toBe('Original child')
-  expect(view(r, ['project'])!.tasks[0]!.done).toBe(false)
-  expect(view(r, ['project','child'])!.tasks).toHaveLength(0)
+  expect(view(r, ['project'])!.tasks.find(t => t.id === 'child')!.title).toBe('Original child')
+  expect(view(r, ['project'])!.tasks.find(t => t.id === 'child')!.done).toBe(false)
+  // on main the child holds only its own field rows: its title and its done field
+  expect(view(r, ['project','child'])!.tasks.map(t => t.title)).toEqual(['Original child', ''])
   selectBranch(r.store, 'project', 'test1')
   expect(userView(r)!.tasks[0]!.title).toBe('Alternative project')
-  expect(view(r, ['project','child'])!.tasks[0]!.title).toBe('Only in test1')
+  expect(view(r, ['project','child'])!.tasks.map(t => t.title)).toEqual(['Alternative child', '', 'Only in test1'])
 })
 
 test('devices editing different alternatives merge without changing either branch', () => {
@@ -38,9 +39,9 @@ test('devices editing different alternatives merge without changing either branc
   commitRoot(a.store, result.cid, 5)
   expect(result.newChoiceCids).toEqual([])
   selectBranch(a.store, 'p', 'test')
-  expect(view(a, ['p'])!.tasks.map(t => t.title)).toEqual(['Feature task'])
+  expect(view(a, ['p'])!.tasks.filter(t => ['feature', 'main-task'].includes(t.id)).map(t => t.title)).toEqual(['Feature task'])
   selectBranch(a.store, 'p', 'main')
-  expect(view(a, ['p'])!.tasks.map(t => t.title)).toEqual(['Main task'])
+  expect(view(a, ['p'])!.tasks.filter(t => ['feature', 'main-task'].includes(t.id)).map(t => t.title)).toEqual(['Main task'])
 })
 
 test('scoped desktop sync targets its named branch and refuses an unknown checkout', () => {
@@ -54,9 +55,9 @@ test('scoped desktop sync targets its named branch and refuses an unknown checko
   desktop = renameTask(desktop, [], 'task', 'Desktop feature', 6)
   sync('test1')
   selectBranch(host.store, 'p', 'main')
-  expect(view(host, ['p'])!.tasks[0]!.title).toBe('Main task')
+  expect(view(host, ['p'])!.tasks.find(t => t.id === 'task')!.title).toBe('Main task')
   selectBranch(host.store, 'p', 'test1')
-  expect(view(host, ['p'])!.tasks[0]!.title).toBe('Desktop feature')
+  expect(view(host, ['p'])!.tasks.find(t => t.id === 'task')!.title).toBe('Desktop feature')
   expect(() => sync('missing')).toThrow()
 })
 
@@ -69,14 +70,14 @@ test('copy preserves every alternative and repeated merges keep later target edi
   r = mergeBranch(r, ['p'], 'feature', 'main', 5)
   r = renameTask(r, ['p'], 'child', 'Later on main', 6)
   r = mergeBranch(r, ['p'], 'feature', 'main', 7)
-  expect(view(r, ['p'])!.tasks[0]!.title).toBe('Later on main')
+  expect(view(r, ['p'])!.tasks.find(t => t.id === 'child')!.title).toBe('Later on main')
   r = copyNode(r, [], 'p', [], { relativeTo: 'p', position: 'below' }, 8)
   const copy = userView(r)!.tasks.find(t => t.id !== 'p')!
   expect(copy.branches?.names.sort()).toEqual(['feature', 'main'])
   selectBranch(r.store, copy.id, 'feature')
-  expect(view(r, [copy.id])!.tasks[0]!.title).toBe('Feature')
+  expect(view(r, [copy.id])!.tasks.map(t => t.title)).toEqual(['Project', '', 'Feature'])
   selectBranch(r.store, copy.id, 'main')
-  expect(view(r, [copy.id])!.tasks[0]!.title).toBe('Later on main')
+  expect(view(r, [copy.id])!.tasks.map(t => t.title)).toEqual(['Project', '', 'Later on main'])
 })
 
 test('repository constructors use typed refs and branch files do not collide', async () => {
@@ -106,8 +107,9 @@ test('default branch survives serialization and a scoped attachment pins ancesto
   client = { ...client, meta: { ...client.meta, localScope: ['p', 'child'] } }
   selectBranch(host.store, 'p', 'trunk')
   client = syncWith(client, host, { branches: feature })
-  expect(view(client, ['p', 'child'])!.tasks.map(t => t.title)).toEqual(['Feature grandchild'])
-  expect(view(host, ['p', 'child'])!.tasks).toHaveLength(0)
+  expect(view(client, ['p', 'child'])!.tasks.filter(t => t.id === 'grandchild').map(t => t.title)).toEqual(['Feature grandchild'])
+  // on trunk the child holds only its own field rows: its title and its done field
+  expect(view(host, ['p', 'child'])!.tasks.map(t => t.title)).toEqual(['Child', ''])
 })
 
 test('merge requests are typed children of branch constructors and survive edits, reload and removal', async () => {
@@ -147,7 +149,7 @@ test('a merge request and a concurrent branch edit are both retained', async () 
     const r = { ...a }
     commitRoot(r.store, result.cid, 5)
     expect(userView(r)!.tasks[0]!.branches?.mergeRequests).toEqual(['feature'])
-    expect(view(r, ['p'])!.tasks.map(t => t.title)).toEqual(['Concurrent task'])
+    expect(view(r, ['p'])!.tasks.filter(t => t.id === 'task').map(t => t.title)).toEqual(['Concurrent task'])
   }
 })
 
@@ -168,7 +170,8 @@ test('a merge request names the branch it merges into, and merging there applies
   r = setBranchMergeRequest(r, ['p'], 'draft', false, 9)
   expect(userView(r)!.tasks[0]!.branches?.mergeRequests).toEqual([])
   selectBranch(r.store, 'p', 'main')
-  expect(view(r, ['p'])!.tasks.map(t => t.title)).toEqual(['Draft only'])
+  expect(view(r, ['p'])!.tasks.map(t => t.title)).toEqual(['Project', '', 'Draft only'])
   selectBranch(r.store, 'p', 'review')
-  expect(view(r, ['p'])!.tasks).toHaveLength(0)
+  // review holds only the project's own field rows: its title and its done field
+  expect(view(r, ['p'])!.tasks.map(t => t.title)).toEqual(['Project', ''])
 })

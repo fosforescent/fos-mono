@@ -74,10 +74,10 @@ test('rewriting the row rebinds or drops its user', () => {
   let r = addTask(createReplica('d'), [], 'review', 1, 't')
   r = peerRequirement(r, ['t'], 'read it', 2, 'rq', bob)
   r = bindUserAt(r, ['t', 'rq'], unverifiedUser('carol'), 3)
-  expect(view(r, ['t'])!.tasks[0]!.user).toMatchObject({ username: 'carol', verification: null })
+  expect(view(r, ['t'])!.tasks.find(t => t.id === 'rq')!.user).toMatchObject({ username: 'carol', verification: null })
   r = bindUserAt(r, ['t', 'rq'], null, 4)
-  expect(view(r, ['t'])!.tasks[0]!.user).toBeUndefined()
-  expect(view(r, ['t', 'rq'])!.tasks).toEqual([])
+  expect(view(r, ['t'])!.tasks.find(t => t.id === 'rq')!.user).toBeUndefined()
+  expect(view(r, ['t', 'rq'])!.tasks.map(t => [t.type, t.title])).toEqual([['title', 'read it']])
 })
 
 test('verified objects are cached in Home; typed "@bob" binds the cached one, earlier unverified rows are rebound', () => {

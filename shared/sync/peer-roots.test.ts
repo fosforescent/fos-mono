@@ -61,7 +61,7 @@ test('reattaching to a nested shared node preserves the device root and syncs on
   const wire: unknown[] = []
   a = syncWith(a, server, { wire })
   expect(JSON.stringify(wire)).not.toContain('Outside the node')
-  expect(view(server, [HOME_ID, 'project'])!.tasks.map(t => t.id)).toEqual(['nested', 'inside'])
+  expect(view(server, [HOME_ID, 'project'])!.tasks.map(t => t.type === 'task' ? t.id : t.type)).toEqual(['title', 'done', 'nested', 'inside'])
   expect(view(server, [HOME_ID])!.tasks.map(t => t.id)).toEqual(['project', 'sibling'])
 })
 
