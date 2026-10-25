@@ -251,7 +251,7 @@ export function rowText(store: FosStore, nodeCid: string, type: string | null): 
     const held = fieldValue(store, value, field), text = held ? leafText(store, held) : null
     if (text) return text
   }
-  return type ? '' : leafText(store, nodeCid) ?? ''
+  return type ? '' : textOf(store, nodeCid) ?? ''
 }
 /** The body of a row: its last text field when the type has a title field before it (a note's body), else null. */
 export function rowBody(store: FosStore, nodeCid: string, type: string): string | null {

@@ -423,11 +423,13 @@ export function addRow(replica: Replica, at: Scope, type: string, text: string, 
     children.push(edge)
     return { ...value, children }
   }
-  // The first row typed inside an open requirement starts the value it is bound to: a container the pattern reads,
-  // carrying the capability it is a value of. Until then the hole has no value, and editing it would make the ref its
-  // own content.
+  // The first row typed inside an open requirement starts the value it is bound to: a container the pattern reads.
+  // When the pattern asks for rows of the container (a done task inside), the container carries the capability's tag
+  // and is a value of it once those rows are there; rows typed inside a bare capability's requirement are no answer.
+  // Until then the hole has no value, and editing it would make the ref its own content.
   if (parentEdge && isRequirementRow(store, parentEdge) && !refValueCid(store, content(store, identityCid(store, parentEdge)))) {
-    const capability = content(store, parentEdge[0]).children.filter(([left, right]) => tagName(store, left) !== null && !content(store, right).children.length)
+    const rows = content(store, parentEdge[0]).children, isTag = ([left, right]: FosPathElem) => tagName(store, left) !== null && !content(store, right).children.length
+    const capability = rows.some(edge => !isTag(edge)) ? rows.filter(isTag) : []
     return editNode(replica, at, now, node => refNodeContent(store, { ...node.data, updated: { time: now } }, put(store, place({ data: {}, children: capability })), bookkeepingOf(store, node)))
   }
   return edit(replica, at, now, place)

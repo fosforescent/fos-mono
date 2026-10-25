@@ -1,7 +1,7 @@
 /** A bounded, local planning-agent flow built from rows, refs, templates and proposals. */
 import { primitive } from './primitives'
 import { instantiateLibraryTemplate } from './replica'
-import { settingOf } from './graph'
+import { settingOf, completes, isLibraryRef } from './graph'
 import { isHandlerStateLeft } from './capabilities'
 import { discoverHandlers } from './handlers'
 import { contextBindings, resolveBinding, resolveText, type BindingEnvironment } from './bindings'
@@ -64,9 +64,11 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
   if (view(r, requestPath.slice(0, -1))?.tasks.find(row => row.id === requestPath.at(-1))?.requirement?.capability !== 'llm') throw new Error('Select a language-model requirement.')
   // a row's type is its edge's left node: its name labels the row in the prompt; rows that read as text are context
   const typeLabel = (edge: [string, string]) => typeIdOf(store, rowTypeOf(store, edge)) ?? 'Row'
+  // rows that read as text: plain rows, references, and titled rows that do not complete (notes, not tasks)
   const isText = (edge: [string, string]) => {
     const type = rowTypeOf(store, edge)!
-    return !typeIdOf(store, type) || type === libraryNode(store, PLAIN_TYPE) || type === libraryNode(store, REF_TYPE) || titleField(store, type) !== null
+    if (isFieldRow(store, edge) || isLibraryRef(store, content(store, identityCid(store, edge)))) return false
+    return type === libraryNode(store, PLAIN_TYPE) || type === libraryNode(store, REF_TYPE) || (titleField(store, type) !== null && !completes(store, type)) || !typeIdOf(store, type)
   }
   const emit =(cid: string, label: string, depth: number, external = false, ancestorNotes = false, at: Scope = requestPath) => {
     if (depth > 30) { blockers.add('An input is nested too deeply.'); return }
@@ -142,8 +144,9 @@ export function workAttempts(r: Replica, requestPath: Scope) {
   return (view(r, requestPath)?.tasks ?? []).flatMap((row) => {
     const path = [...requestPath, row.id], { cid } = nodeAt(r, path)
     if (!isAttempt(r, cid)) return []
-    const result = slots(r, cid, primitive(r.store, 'string'))[0]!
-    const snapshot = slots(r, cid, primitive(r.store, 'string'))[0]?.targetCid
+    // an attempt holds its context snapshot first and its return slot last (beginTaskWork)
+    const strings = slots(r, cid, primitive(r.store, 'string')), result = strings.at(-1)!
+    const snapshot = strings.length > 1 ? strings[0]!.targetCid : null
     if (!snapshot) return []
     const saved = valueContent(r.store, snapshot)
     const systemEdge = saved.children.find((edge) => isRowOfType(r.store, edge, NOTE_TYPE))
