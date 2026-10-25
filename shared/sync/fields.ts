@@ -1,7 +1,7 @@
 /**
  * Rows in the pattern-row model. A row is `[type, row]`: the type is a node of rows `[field, value | void]`, and the
  * row's value carries one field ref per row of its type, `[field, ref]`, beside its child rows. A field the type leaves
- * open (`void`) is a hole: a ref holding void until it is filled. A field ref's identity comes from the row and the
+ * open (`void`, or the wildcard `unit`) is a hole: a ref with no submission until it is filled. A field ref's identity comes from the row and the
  * field, so a row's own fields are told apart from child rows with the same left. A plain row is its title: the title
  * field is its type, and its value holds the text.
  */
@@ -30,6 +30,11 @@ function valueOf(store: FosStore, cid: string): string {
   const node = store.table.get(cid)
   return node && isRefNode(store, node) ? refValueCid(store, node) ?? primitive(store, 'void') : cid
 }
+/** The node a value's leaves are read from: none for a primitive (void, string, …), whose own rows are its name. */
+function leafHolder(store: FosStore, cid: string): FosNodeContent | undefined {
+  const value = valueOf(store, cid)
+  return primitiveName(store, value) === null ? store.table.get(value) : undefined
+}
 
 /**
  * A value for a field: the field's rows with its leaf hole filled by `leaf` (text or a number). A field with no leaf
@@ -44,7 +49,7 @@ export function fieldText(store: FosStore, field: string, leaf: string | number)
 }
 /** The leaf a value holds (text or a number, through refs); null when it holds none. */
 export function leafValue(store: FosStore, cid: string): string | number | null {
-  const node = store.table.get(valueOf(store, cid))
+  const node = leafHolder(store, cid)
   for (const [, right] of node?.children ?? []) {
     const value = store.table.get(right)?.data.scalar?.value
     if (typeof value === 'string' || typeof value === 'number') return value
@@ -53,7 +58,7 @@ export function leafValue(store: FosStore, cid: string): string | number | null 
 }
 /** The text a value holds in its leaf row (through refs); null when it holds none (a hole, a tag). */
 export function leafText(store: FosStore, cid: string): string | null {
-  const node = store.table.get(valueOf(store, cid))
+  const node = leafHolder(store, cid)
   for (const [, right] of node?.children ?? []) {
     const scalar = store.table.get(right)?.data.scalar
     if (scalar?.type === 'text' && typeof scalar.value === 'string') return scalar.value
@@ -67,7 +72,7 @@ export function textValue(store: FosStore, text: string): string {
 }
 /** The text a value is (a string leaf) or holds in its leaf row, through refs; null when it holds none. */
 export function textOf(store: FosStore, cid: string): string | null {
-  const scalar = store.table.get(valueOf(store, cid))?.data.scalar
+  const scalar = leafHolder(store, cid)?.data.scalar
   if (scalar?.type === 'text' && typeof scalar.value === 'string') return scalar.value
   return leafText(store, cid)
 }
@@ -102,13 +107,13 @@ export function withRefTitle(store: FosStore, ref: FosNodeContent, text: string)
 
 /**
  * The content of a new row `id` of `type`: a field ref per type row, holding what `values` supplies for that field,
- * void for a field left open, or the type's own value where the type fills it. Child rows come after.
+ * nothing for a field left open (a hole), or the type's own value where the type fills it. Child rows come after.
  */
 export function constructRow(store: FosStore, type: string, id: string, values: ReadonlyMap<string, string>, now: number, children: FosPathElem[] = []): FosNodeContent {
   const never = primitive(store, 'void'), unit = put(store, { data: {}, children: [] })
   const rows = typeRows(store, type).map(([field, value]): FosPathElem => {
     const open = value === never || value === unit
-    const held = values.get(field) ?? (open ? never : value)
+    const held = values.get(field) ?? (open ? null : value)
     return [field, put(store, refNodeContent(store, { alias: { id: fieldRefId(id, field) } }, held))]
   })
   return { data: { alias: { id }, created: { time: now }, updated: { time: now } }, children: [...rows, ...children] }
