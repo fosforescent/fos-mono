@@ -2,7 +2,7 @@ import { primitive } from './primitives'
 import { approvalsOf } from './approvals'
 import type { FosDataContent, FosNodeContent, FosNodesData, FosPathElem } from '../types'
 import { hashContent, isCid } from '../dag-implementation/cid'
-import { content, put, refNodeContent, refValueCid, isRefNode, typeIdOf, libAt, commitRoot, updateAtScope, resolveScope, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, isShippedLibrary, reachableNodes, bookkeepingOf, rootTargetCid, withPeer,
+import { content, put, refNodeContent, refValueCid, isRefNode, libraryNode, libAt, commitRoot, updateAtScope, resolveScope, pinnedRowEdge, pinnedTemplateOf, missingTemplateOf, isShippedLibrary, reachableNodes, bookkeepingOf, rootTargetCid, withPeer,
   membershipOf, valueContent, readMembers, memberFor, memberPeerOf, peerNode, memberEntryPeerAt, isGrantEdge, grantChildId, memberEdgesOf, isMemberEdge, capabilityOf, isHandle, isPeerReference, isBookkeepingEdge, isRowEdge, identityCid, withMainBranchPolicy,
   readProposals, submissionAdditions, capabilityNames, type MemberRecord, type ProposalView, type Capability, type Scope } from './graph'
 import { advertisedRows, importNodes } from './graph'
@@ -278,7 +278,7 @@ export function exchangedMember(store: Replica['store'], edge: FosPathElem): boo
 /** A peer's transport offered here (`offerNodeTransport`): a primitive `provideNode` value, this device's connection to that peer, never exchanged. */
 export function isTransportOffer(store: Replica['store'], edge: FosPathElem): boolean {
   if (edge[0] !== primitive(store, 'accepts')) return false
-  return advertisedRows(store, edge[1]).some(([left, ref]) => typeIdOf(store, left) === 'capabilities.provideNode' && refSubmissions(store, ref).some(value => primitiveValue(store, value)))
+  return advertisedRows(store, edge[1]).some(([left, ref]) => left === libraryNode(store, 'capabilities.provideNode') && refSubmissions(store, ref).some(value => primitiveValue(store, value)))
 }
 export function exchangedChildren(r: Replica, cid: string, path: Scope): Array<{ id: string; edge: FosPathElem; member?: true; grant?: true; literal?: true }> {
   const value = valueContent(r.store, cid), out: Array<{ id: string; edge: FosPathElem; member?: true; grant?: true; literal?: true }> = []

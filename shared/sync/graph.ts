@@ -360,7 +360,7 @@ function isPrimitive(store: FosStore, cid: string): boolean {
  * What the library bound at the store's root calls its nodes, and its `done` field: how rows are labelled and which
  * ones complete. A type is its structure; the name is the library's entry for it, never part of the node.
  */
-type Vocabulary = { library: string; names: Map<string, string>; done: string | null }
+type Vocabulary = { library: string; names: Map<string, string>; nodes: ReadonlyMap<string, string>; done: string | null }
 const vocabularies = new WeakMap<FosStore, Vocabulary>()
 export function rowVocabulary(store: FosStore): Vocabulary | null {
   let binding: ReturnType<typeof libraryBindingAt> = null
@@ -370,11 +370,15 @@ export function rowVocabulary(store: FosStore): Vocabulary | null {
   if (cached?.library === binding.library) return cached
   const byName = namesInLibrary(store, binding.library).byName, names = new Map<string, string>()
   for (const [name, cid] of byName) if (!names.has(cid)) names.set(cid, name)
-  const vocabulary = { library: binding.library, names, done: byName.get('done') ?? null }
+  const vocabulary = { library: binding.library, names, nodes: byName, done: byName.get('done') ?? null }
   vocabularies.set(store, vocabulary)
   return vocabulary
 }
-/** The library's name for a type node (its entry, `task`, `capabilities.mail`, ...), or null. */
+/** The node the bound library's entry `name` (`task`, `capabilities.mail`, ...) is, or null. */
+export function libraryNode(store: FosStore, name: string): string | null {
+  return rowVocabulary(store)?.nodes.get(name) ?? null
+}
+/** The library's name for a type node (its entry, `task`, `capabilities.mail`, ...), or null: a label, never what decides a row's kind. */
 export function typeIdOf(store: FosStore, typeCid: string | null | undefined): string | null {
   if (!typeCid || !store.table.has(typeCid)) return null
   return rowVocabulary(store)?.names.get(typeCid) ?? null
@@ -421,7 +425,7 @@ export function constructorPattern(store: FosStore, name: string): string {
 }
 /** Whether `typeCid` (a row edge's left node) is a version of the library type `typeId`. */
 export function isLibraryType(store: FosStore, typeCid: string, typeId: string): boolean {
-  return typeIdOf(store, typeCid) === typeId
+  return typeCid === libraryNode(store, typeId)
 }
 
 /**
@@ -468,7 +472,8 @@ export function isRowEdge(store: FosStore, edge: FosPathElem): boolean {
 
 /** Is `edge` a row made from the library type `typeId`? Its type is the edge's left node; any version of it counts. */
 export function isRowOfType(store: FosStore, edge: FosPathElem, typeId: string): boolean {
-  return rowTypeIdOf(store, edge) === typeId
+  const type = rowTypeOf(store, edge)
+  return !!type && type === libraryNode(store, typeId)
 }
 
 /** The child rows of `cid` made from the library row type `typeId` (a library field, `task`, ...): their alias ids and identity cids. */
@@ -692,8 +697,7 @@ export function keptRowType(store: FosStore, edge: FosPathElem, type: string): s
   if (isChoiceEdge(store, edge)) { const active = isBranchChoice(store, content(store, edge[1])) ? branchEdge(store, edge[1]) : null; return active ? keptRowType(store, active, type) : null }
   const own = rowTypeOf(store, edge)
   if (!own || missingTemplateOf(store, edge)) return null
-  const id = typeIdOf(store, own)
-  if (id === type) return own
+  if (own === libraryNode(store, type)) return own
   if (type === TASK_TYPE && isTemplateType(store, own)) return own
   return null
 }
@@ -1165,7 +1169,7 @@ export function homeCidOf(store: FosStore, rootCid: string): string | null {
     if (isChoiceEdge(store, edge) && store.table.has(edge[1]) && isBranchChoice(store, content(store, edge[1]))) { const active = branchEdge(store, edge[1]); return active ? active[0] : null }
     return isRowEdge(store, edge) ? edge[0] : null
   }
-  for (const edge of valueContent(store, rootCid).children) { const left = leftOf(edge); if (left && typeIdOf(store, left) === HOME_TYPE) return identityCid(store, edge) }
+  for (const edge of valueContent(store, rootCid).children) { const left = leftOf(edge); if (left && left === libraryNode(store, HOME_TYPE)) return identityCid(store, edge) }
   return null
 }
 /** Home's id among the root's rows (a branched Home's is its choice's). */
@@ -1505,7 +1509,7 @@ export function rowView(store: FosStore, nodeCid: string, edge?: FosPathElem): T
   if (held) { view.refPeer = identity.data.ref!.peer; view.title = identity.data.description?.content ?? 'Peer-held node' }
   const activeEdge = isBranchChoice(store, identity) ? branchEdge(store, nodeCid) : null
   const constructor = activeEdge ? content(store, identityCid(store, activeEdge)) : identity
-  if (typeIdOf(store, typeCid) === 'capabilities.peer' && constructor.data.name) view.construction = { handler: constructor.data.name.content }
+  if (typeCid && typeCid === libraryNode(store, 'capabilities.peer') && constructor.data.name) view.construction = { handler: constructor.data.name.content }
   const setting = settingOf(store, constructor)
   if (setting) view.construction = { name: setting.key, holder: setting.peer }
   // a node's execute row: the evaluator's journal of it
@@ -2497,13 +2501,10 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
     return kept.length ? put(store, { ...node, children: kept }) : null
   }
   const childEdges = (value: FosNodeContent, definition = false, root = false) => value.children.filter((edge) => {
-    const type = rowTypeIdOf(store, edge)
-    const name = content(store, identityCid(store, edge)).data.name?.content
     // an execute row holds what running the row left on it (state, not copied) and what it asks (its request, copied)
     if (isRowEdge(store, edge) && isExecuteLeft(store, edge[0])) return !!executeRequestOnly(identityCid(store, edge))
     // the template's own trigger makes instances; the trigger rows inside it are declarations its instances bind
     if (instantiate && root && isRowEdge(store, edge) && isTriggerLeft(store, edge[0])) return false
-    // an instance is no type: what its template accepts (its pattern rows) stays with the template
     if (isRowEdge(store, edge)) return true
     if (isBookkeepingEdge(store, edge) || edge[0] === primitive(store, 'target') || edge[0] === primitive(store, 'instruction')) return false
     return true // Literal graph constraints must survive copying alongside owned rows.
@@ -2527,7 +2528,7 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
       const left = content(store, edge[0])
       if (isRefNode(store, content(store, child)) && (!rowTypeIdOf(store, edge) || left.data.capabilityDefinition)) argumentsToCopy.add(child)
       // Nested templates remain definitions when their containing workflow is instantiated.
-      if (rowTypeIdOf(store, edge) === TEMPLATE_TYPE) definitions.add(child)
+      if (isRowOfType(store, edge, TEMPLATE_TYPE)) definitions.add(child)
       // a field stays a ref of its own, whose id is its row's: it follows the row's new id
       if (id && isFieldRow(store, id, edge)) {
         argumentsToCopy.add(child)

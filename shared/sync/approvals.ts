@@ -19,7 +19,7 @@
 import type { FosStore } from '../dag-implementation/store'
 import type { FosPathElem } from '../types'
 import { hashContent } from '../dag-implementation/cid'
-import { libAt, typeIdOf, commitRoot, content, memberEdgesOf, memberPeerOf, put, readMembers, readProposal, readProposals, refNodeContent, refValueCid, resolveScope, updateAtScope, valueContent, withProposal, MARKET_PEER, SERVER_MEMBER, type ProposalRecord, type Scope } from './graph'
+import { libAt, libraryNode, commitRoot, content, memberEdgesOf, memberPeerOf, put, readMembers, readProposal, readProposals, refNodeContent, refValueCid, resolveScope, updateAtScope, valueContent, withProposal, MARKET_PEER, SERVER_MEMBER, type ProposalRecord, type Scope } from './graph'
 import { applyProposalAt, headCid, type Replica } from './replica'
 import { isUserType, readUser, type SignatureCheck } from './users'
 import { rowWithLeft } from './row-values'
@@ -28,8 +28,8 @@ export type Approval = { approver: string; signature?: { key: string; value: str
 /** Who attests approvals and how: a peer with a published key (the fos server for now; peers' own keys later). */
 export type Attester = { key: string; sign(payload: string): string }
 
-const isApproval = (store: FosStore, left: string) => typeIdOf(store, left) === 'capabilities.approve'
-const isMergeRule = (store: FosStore, left: string) => typeIdOf(store, left) === 'capabilities.approveMerge'
+const isApproval = (store: FosStore, left: string) => left === libraryNode(store, 'capabilities.approve')
+const isMergeRule = (store: FosStore, left: string) => left === libraryNode(store, 'capabilities.approveMerge')
 /** An approval's identity among the submission's rows: whose it is (approving again replaces it). */
 const approvalId = (approver: string) => hashContent({ data: { peerId: { content: approver }, description: { content: 'approval' } }, children: [] })
 

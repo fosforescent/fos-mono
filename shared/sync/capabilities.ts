@@ -2,7 +2,7 @@
 import type { FosDataContent } from '../types'
 import type { FosStore } from '../dag-implementation/store'
 import { matchesGraph } from './structural'
-import { libAt, typeIdOf, valueContent, type Scope } from './graph'
+import { libAt, libraryNode, valueContent, type Scope } from './graph'
 export { libAt } from './graph'
 
 export { capabilityDeclarations } from './capability-catalog'
@@ -17,7 +17,7 @@ export function capabilityName(store: FosStore, cid: string): string | null {
  * holds its journal as the row's value. This is the one place the evaluator names what it implements.
  */
 export function executeLeft(store: FosStore, at: Scope): string { return libAt(store, at).capabilities.execute! }
-export function isExecuteLeft(store: FosStore, left: string | null | undefined): boolean { return typeIdOf(store, left) === 'capabilities.execute' }
+export function isExecuteLeft(store: FosStore, left: string | null | undefined): boolean { return !!left && left === libraryNode(store, 'capabilities.execute') }
 
 /**
  * The trigger definition a row's left carries: a trigger capability's pattern (`timer`, `ref-change`, …), or one

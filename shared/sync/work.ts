@@ -6,7 +6,7 @@ import { isHandlerStateLeft } from './capabilities'
 import { discoverHandlers } from './handlers'
 import { contextBindings, resolveBinding, resolveText, type BindingEnvironment } from './bindings'
 import { constructRow, fieldValues, isFieldRow, rowText, titleField } from './fields'
-import { rowTitle } from './graph'
+import { libraryNode, rowTitle } from './graph'
 import {
   requirementViewOf, libAt, commitRoot, content, identityCid, newId, put,
   readProposals, refArguments, refNodeContent, refValueCid, resolveScope,
@@ -35,7 +35,7 @@ const nodeAt = (r: Replica, path: Scope) => {
 const slots = (r: Replica, cid: string, type: string) => refArguments(r.store, valueContent(r.store, cid), type)
 /** A saved model attempt has a context snapshot, handler binding and return slot. */
 export function isAttempt(r: Replica, cid: string): boolean {
-  return valueContent(r.store, cid).children.some(([left]) => typeIdOf(r.store, left) === 'capabilities.llm')
+  return valueContent(r.store, cid).children.some(([left]) => left === libraryNode(r.store, 'capabilities.llm'))
     && slots(r, cid, primitive(r.store, 'string')).some(slot => !!slot.targetCid)
     && slots(r, cid, primitive(r.store, 'string')).length > 0
 }
@@ -65,8 +65,8 @@ export function taskWorkContext(r: Replica, requestPath: Scope): WorkContext {
   // a row's type is its edge's left node: its name labels the row in the prompt; rows that read as text are context
   const typeLabel = (edge: [string, string]) => valueContent(store, rowTypeOf(store, edge)!).data.description?.content ?? 'Row'
   const isText = (edge: [string, string]) => {
-    const type = rowTypeOf(store, edge)!, id = typeIdOf(store, type)
-    return !id || id === PLAIN_TYPE || id === REF_TYPE || titleField(store, type) !== null
+    const type = rowTypeOf(store, edge)!
+    return !typeIdOf(store, type) || type === libraryNode(store, PLAIN_TYPE) || type === libraryNode(store, REF_TYPE) || titleField(store, type) !== null
   }
   const emit =(cid: string, label: string, depth: number, external = false, ancestorNotes = false, at: Scope = requestPath) => {
     if (depth > 30) { blockers.add('An input is nested too deeply.'); return }

@@ -7,7 +7,7 @@
  */
 import { createStore } from './graph'
 import { primitive } from './primitives'
-import { settingOf } from './graph'
+import { libraryNode, settingOf } from './graph'
 import { nodeLinkMaskAt } from './node-provider'
 import { handleAt } from './arguments'
 import { instructionPrimitives } from './primitives'
@@ -67,7 +67,7 @@ export function visitorExecution(r: Replica, template: Scope, peer: string): Sco
 }
 /** What the account server's `url` handler records on its member entry: where share pages are, and whose account it is. */
 export type PageBase = { base: string; owner: string }
-const isUrl = (store: Replica['store'], left: string) => typeIdOf(store, left) === 'capabilities.url'
+const isUrl = (store: Replica['store'], left: string) => left === libraryNode(store, 'capabilities.url')
 /** Record where this account's share pages are (the `url` handler, on the server's member entry at `entry`). */
 export function writePageBase(r: Replica, entry: Scope, base: PageBase, now: number): Replica {
   const current = readRowValue<PageBase>(r, entry, isUrl)
