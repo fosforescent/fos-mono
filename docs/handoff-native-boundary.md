@@ -10,6 +10,10 @@ Branch `feature/consistent-scope-resolution`. Work is committed as "WIP: one nat
 
 Rules the user set: no half migrations (finish or stop and explain); no string parsing in semantics (property paths like `capabilities.allocation` are input-time only; tag rows `[capability, unit]` carry identity structurally); tests sit at an interface and test behavior from outside it — rip inner-mechanism tests on re-implementation.
 
+## Design correction from the user (2026-10-24, after handoff)
+
+Natives must be able to read the tree, lazily, the same way the MCP server, CLI and API do: `NativeContext` gets a read handle (resolve a scope, read a node's rows, follow refs) under the evaluating principal's access checks, and natives pull what they need on demand. Compiled operands remain what a step hands over up front, not a wall. Writes still happen only through returned answers (transaction/rollback unchanged). Restore with this: organize's outline (`captureOutline` through the handle), paying whoever answered the task, mail body from the task's rows, search filtering against existing rows, MCP provider choice by scope membership.
+
 ## Kernel fixes made while porting (keep)
 
 - `structural.ts` matchesGraph: a sum's alternatives are its option rows only; its tag/kind rows are not options (a choice hole was satisfied by any container).
