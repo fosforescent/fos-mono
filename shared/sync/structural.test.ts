@@ -13,16 +13,29 @@ const setup = () => {
   return { s, unit, text, number, node, field, sum, string: primitive(s, 'string'), num: primitive(s, 'number'), bool: primitive(s, 'boolean'), never: primitive(s, 'void') }
 }
 
-test('unit is a hole: it matches anything and yields what it met; void matches nothing; a node matches itself', () => {
-  const { s, unit, text, node, field, never } = setup()
+test('unit is the wildcard: it matches anything and yields what it met; a node matches itself', () => {
+  const { s, unit, text, node, field } = setup()
   const comment = field('comment'), title = field('title')
   const pattern = node([title, unit], [comment, unit])
   const value = node([comment, text('looks good')], [title, text('Venue')])
   expect(match(s, pattern, value)?.fillers).toEqual([text('Venue'), text('looks good')])
   expect(match(s, unit, value)?.fillers).toEqual([value])
-  expect(matchesGraph(s, never, value)).toBe(false)
-  expect(matchesGraph(s, never, never)).toBe(true)
   expect(match(s, value, value)?.fillers).toEqual([])
+})
+
+test('void is uninhabited: required in a type, an open hole in a value, until a ref holding it is overwritten', () => {
+  const { s, unit, text, node, field, never } = setup()
+  const title = field('title'), done = field('done')
+  const task = node([title, never], [done, unit])
+  expect(matchesGraph(s, task, node([title, text('Buy milk')], [done, never]))).toBe(true)
+  expect(matchesGraph(s, task, node([title, never], [done, unit]))).toBe(false)
+  expect(matchesGraph(s, task, node([title, never], [done, unit]), { allowHoles: true })).toBe(true)
+  expect(matchesGraph(s, never, never)).toBe(false)
+  // a hole is a ref whose value is void: filling it is overwriting the ref
+  const open = put(s, refNodeContent(s, { alias: { id: 'title' } }, never))
+  const filled = put(s, refNodeContent(s, { alias: { id: 'title' } }, text('Buy milk')))
+  expect(matchesGraph(s, task, node([title, open], [done, unit]))).toBe(false)
+  expect(matchesGraph(s, task, node([title, filled], [done, unit]))).toBe(true)
 })
 
 test('every pattern row needs its own witness row; extra rows are fine', () => {

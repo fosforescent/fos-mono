@@ -81,6 +81,26 @@ export type Bindings = ReadonlyMap<string, string>
 export type Match = { bindings: Bindings; fillers: string[] }
 type MatchOptions = { side?: 'left' | 'right'; allowHoles?: boolean; bindings?: Bindings }
 
+/** Whether `cid` is void or holds it somewhere in its rows or ref values: an open hole, not yet a value. */
+const openCache = new WeakMap<FosStore, Map<string, boolean>>()
+export function hasOpenHole(store: FosStore, cid: string): boolean {
+  let cache = openCache.get(store)
+  if (!cache) openCache.set(store, cache = new Map())
+  const never = primitive(store, 'void')
+  const visit = (at: string, seen: Set<string>): boolean => {
+    if (at === never) return true
+    const known = cache!.get(at)
+    if (known !== undefined) return known
+    if (seen.has(at)) return false
+    seen.add(at)
+    const node = store.table.get(at)
+    const open = !!node && node.children.some(edge => !isBookkeepingEdge(store, edge) && edge[0] !== primitive(store, 'instruction') && visit(edge[1], seen))
+    cache!.set(at, open)
+    return open
+  }
+  return visit(cid, new Set())
+}
+
 /** The leaf values the value primitives accept. */
 const leaves: Record<string, (scalar: NonNullable<FosNodeContent['data']['scalar']> | undefined) => boolean> = {
   string: scalar => typeof scalar?.value === 'string',
@@ -91,8 +111,10 @@ const leaves: Record<string, (scalar: NonNullable<FosNodeContent['data']['scalar
 /**
  * Match `value` against `pattern`. Every row of the pattern needs its own witness row in the value (extra rows are fine):
  * the lefts match as fields (recursively, so a parameterized field matches its constructor) and the rights as values.
- * The empty node (unit) is a hole: it matches anything and yields what it met. A compiled placeholder is a named hole,
- * bound once. Void matches nothing. A ref is read as its current value (fields on the left are compared as they are).
+ * The empty node (unit) is the wildcard: it matches anything and yields what it met. A compiled placeholder (a ref in
+ * the pattern) is a named hole, bound once. Void is uninhabited: as a pattern it requires something supplied (any value
+ * but void); as a value it is an open hole (a ref whose value is still void), which only the wildcard accepts unless
+ * `allowHoles` (a partial check). A ref is read as its current value (fields on the left are compared as they are).
  * A choice is a sum: a pattern choice matches when one of its options does, a value choice when every option does.
  * A primitive checks the leaf value; a filled leaf must be the same. Null when the value does not match.
  */
@@ -109,10 +131,10 @@ export function match(store: FosStore, pattern: string, value: string, options: 
   const options_ = (cid: string) => readChoice(store, cid).options.flatMap(option => option.edge ? [option.edge[1]] : [])
   const go = (p: string, v: string, key: boolean, depth: number, state: Match): Match | null => {
     if (--remaining < 0 || depth > 128) return null
-    if (p === v) return state
+    const never = primitive(store, 'void')
+    if (p === v && (options.allowHoles || !hasOpenHole(store, v))) return state
     const P = store.table.get(p), V = store.table.get(v)
     if (!P || !V || isHandle(V)) return null
-    if (p === primitive(store, 'void')) return null
     if (!Object.keys(P.data).length && !P.children.length) return { bindings: state.bindings, fillers: [...state.fillers, v] }
     if (P.data.refHole) {
       const bound = state.bindings.get(p)
@@ -133,6 +155,8 @@ export function match(store: FosStore, pattern: string, value: string, options: 
         const target = refValueCid(store, P)
         if (target) return go(target, v, key, depth + 1, state)
       }
+      if (v === never) return options.allowHoles ? state : null
+      if (p === never) return state
       if (isBranchChoice(store, V)) {
         const all = options_(v)
         let current: Match | null = all.length ? state : null
