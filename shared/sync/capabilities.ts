@@ -1,10 +1,10 @@
 /** Names are a standard-library/wire adapter. Ref resolution uses pattern identities. */
 import { capabilityDeclarations } from './capability-catalog'
 import { primitiveName } from './primitives'
-import { textOf } from './fields'
+import { textOf, refTitle } from './fields'
 import type { FosStore } from '../dag-implementation/store'
 import { matchesGraph, tagName, capabilityName } from './structural'
-import { libAt, libraryNode, valueContent, type Scope } from './graph'
+import { libAt, libraryNode, valueContent, type Scope, valueCidOf } from './graph'
 export { libAt } from './graph'
 
 export { capabilityDeclarations } from './capability-catalog'
@@ -27,16 +27,19 @@ export type TriggerDefinition = { label: string; icon: string; mode: 'instantiat
  */
 export function triggerDefinitionOf(store: FosStore, left: string | null | undefined): TriggerDefinition | undefined {
   if (!left || !store.table.has(left)) return undefined
+  // an offer (a handler ref) is read through to its value, which carries the capability's rows
+  left = valueCidOf(store, left)
   const name = capabilityName(store, left)
   const declaration = name ? capabilityDeclarations(store).find(d => d.name === name) : undefined
-  const ref = declaration && store.table.get(declaration.ref)
-  if (!ref) return undefined
-  const tagged = (tag: string) => ref.children.some(([key, right]) => tagName(store, key) === tag && !store.table.get(right)?.children.length)
+  // the ref the capability is assigned to says how it is shown; one nothing assigns says it itself
+  const holder = store.table.get(declaration ? declaration.ref : left)
+  if (!holder || !name) return undefined
+  const tagged = (tag: string) => holder.children.some(([key, right]) => tagName(store, key) === tag && !store.table.get(right)?.children.length)
   if (!tagged('trigger')) return undefined
-  const icon = ref.children.find(([key]) => key === libraryNode(store, 'icon'))
-  const input = valueContent(store, declaration.cid).children.find(([type, hole]) => primitiveName(store, type) !== null && !!store.table.get(hole)?.data.name)
+  const icon = holder.children.find(([key]) => key === libraryNode(store, 'icon'))
+  const input = valueContent(store, declaration?.cid ?? left).children.find(([type, hole]) => primitiveName(store, type) !== null && !!store.table.get(hole)?.data.name)
   const field = input && store.table.get(input[1])!.data.name!.content
-  return { label: declaration.label, icon: (icon && textOf(store, icon[1])) ?? 'trigger', mode: tagged('resume') ? 'resume' : 'instantiate', ...(tagged('hidden') ? { hidden: true } : {}),
+  return { label: declaration?.label ?? refTitle(store, holder) ?? name, icon: (icon && textOf(store, icon[1])) ?? 'trigger', mode: tagged('resume') ? 'resume' : 'instantiate', ...(tagged('hidden') ? { hidden: true } : {}),
     ...(input && field ? { schedule: { field, input: primitiveName(store, input[0]) === 'number' ? 'datetime-local' as const : 'text' as const, label: field } } : {}) }
 }
 /** A trigger row: its left is a trigger capability. */

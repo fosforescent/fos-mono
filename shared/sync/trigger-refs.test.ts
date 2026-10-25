@@ -20,21 +20,18 @@ import {
   setHandlerEnabledAt,
   type PrimitiveDefinition
 } from './index'
-import { ensureHomeContext, shareHome, HOME_ID , libAt } from './index'
+import { ensureHomeContext, shareHome, HOME_ID, libAt, tagNode, definitionCapability } from './index'
 import { syncWith } from './test-helpers'
 
 function definition(label = 'A custom event'): PrimitiveDefinition {
   return {
     id: 'user-authored-observer',
     label,
-    capability: (store) =>
-      put(store, {
-        data: {
-          name: { content: 'user:event-pattern' },
-          triggerDefinition: { label, icon: 'clock', mode: 'resume' }
-        },
-        children: []
-      }),
+    // a trigger nothing in the library assigns: its own rows say it is one, and that it resumes
+    capability: (store) => {
+      const unit = put(store, { data: {}, children: [] })
+      return put(store, { data: {}, children: [[tagNode(store, 'user:event-pattern'), unit], [tagNode(store, 'trigger'), unit], [tagNode(store, 'resume'), unit]] })
+    },
     trigger: { observe: ({ config }) => (config.enabled ? { id: 'custom-event' } : null) }
   }
 }
@@ -107,7 +104,7 @@ test('a selected observer never silently switches to another declaration of the 
     two = primitiveRef(r.store, 'host', second)
   r = publishPrimitive(publishPrimitive(r, [], 'host', one, 1), [], 'host', two, 1)
   r = setNodeTrigger(r, ['task'], { handler: one, peer: 'host', enabled: true, created: 1 }, 1)
-  r = setHandlerOffersAt(r, [], 'host', libAt(r.store).capabilities[first.capability as string]!, [two], 2)
+  r = setHandlerOffersAt(r, [], 'host', definitionCapability(first, r.store, []), [two], 2)
   expect(triggerOccurrence(r, ['task'], nodeTrigger(r, ['task'])!, 3)).toBeNull()
 })
 
