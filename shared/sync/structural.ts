@@ -48,8 +48,17 @@ export function capabilityName(store: FosStore, cid: string): string | null {
 export function isTagRow(store: FosStore, edge: FosPathElem): boolean {
   return isUnit(store.table.get(edge[1])) && capabilityName(store, edge[0]) !== null
 }
-/** Whether a declaration `[pattern, ref]` is the row's to fill (an output) rather than an operand it needs first: a capability pattern, which its handler fills. */
-export function isOutputDeclaration(store: FosStore, pattern: string): boolean { return capabilityName(store, pattern) !== null }
+/**
+ * Whether a declaration `[pattern, ref]` is the row's to fill (an output) rather than an operand it needs first: a
+ * capability its ref holds no value of yet (a hole, or rows typed inside it still short of the pattern). One holding a
+ * value of it (a grant passed in) is an input.
+ */
+export function isOutputDeclaration(store: FosStore, pattern: string, ref: string): boolean {
+  const node = store.table.get(ref)
+  if (capabilityName(store, pattern) === null || !node || !isRefNode(store, node)) return false
+  const value = refValueCid(store, node)
+  return !value || !matchesGraph(store, pattern, value)
+}
 export function unit(store: FosStore): string { return put(store, { data: {}, children: [] }) }
 export function tag(store: FosStore, node: string): FosPathElem { return [node, unit(store)] }
 /** The capabilities a value is pinned to, by node. */

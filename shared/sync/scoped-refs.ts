@@ -1,4 +1,5 @@
 /** Lexically scoped declarations and their accepted submissions. No capability vocabulary. */
+import { isFieldRow } from './fields'
 import { primitive, primitiveName } from './primitives'
 import { isHandlerStateLeft } from './capabilities'
 import type { FosStore } from '../dag-implementation/store'
@@ -47,6 +48,8 @@ export function declares(store: FosStore, type: string, cid: string): boolean {
   if (isLibraryRef(store, node)) return false
   // a primitive handler's state rows (an execute row's journal, a trigger row) are no bindings
   if (isHandlerStateLeft(store, type)) return false
+  // a row's own field belongs to the row: it is no binding in scope
+  if (isFieldRow(store, [type, cid])) return false
   if (node.data.name || valueContent(store, cid).data.name) return true
   const pattern = store.table.get(type)
   return isRefNode(store, node) && !isTemplateType(store, type) && (!typeIdOf(store, type) || capabilityName(store, type) !== null || primitiveName(store, type) !== null)

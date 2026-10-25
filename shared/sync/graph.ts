@@ -1559,7 +1559,10 @@ export function capabilityNameOf(store: FosStore, type: string | null | undefine
 export function isRequirementRow(store: FosStore, edge: FosPathElem): boolean {
   const left = isRowEdge(store, edge) ? rowTypeOf(store, edge) : null
   const identity = store.table.get(identityCid(store, edge))
-  return !!left && !!identity && isRefNode(store, identity) && capabilityName(store, left) !== null && !isAllocationRow(store, edge)
+  // an invocation's declared output is the invocation's to fill, not an ask of its own; a row holding an amount its
+  // pattern does not ask for supplies it (an allocation, a handle), while a demand's pattern says how much
+  return !!left && !!identity && isRefNode(store, identity) && identity.data.refRole !== 'output' && capabilityName(store, left) !== null &&
+    !(isAllocationRow(store, edge) && allocationShapeOf(store, left)?.amount === undefined)
 }
 /**
  * An allocation row: a row of an allocation pattern holding an amount. In the tree its right is a ref holding the amount

@@ -1,4 +1,5 @@
 /** Resolve editor references into immutable graph edges. Editor locations belong only to diagnostics. */
+import { isFieldRow } from './fields'
 import { primitive } from './primitives'
 import { settingOf } from './graph'
 import { isHandlerStateLeft } from './capabilities'
@@ -145,12 +146,14 @@ export function compileRefGraph(r: Replica, cid: string, at: Scope = [], options
         if (isTagRow(store, edge)) { children.push(edge); continue }
         const child = store.table.get(edge[1])
         if (child && settingOf(store, child)) continue
+        // a field left open is absent: void, not a hole the row waits for
+        if (child && isFieldRow(store, edge) && !refValueCid(store, child)) { children.push([edge[0], primitive(store, 'void')]); continue }
         if (isRowEdge(store, edge) && isHandlerStateLeft(store, edge[0])) continue
         const childPath = isRowEdge(store, edge) ? [...path, child?.data.alias?.id ?? edge[1]] : path
         // A constructor is kept by identity (a form's field types stay the types its definition names) unless it contains refs of its own to compile.
         const instruction = containsRef(store, edge[0]) ? walk(store, edge[0], childPath, role, depth + 1) : edge[0]
         if (instruction === edge[0]) locations.push({ source: edge[0], path: childPath, cid: instruction })
-        const childRole = isOutputDeclaration(store, edge[0]) ? 'output' : role
+        const childRole = isOutputDeclaration(store, edge[0], edge[1]) ? 'output' : role
         children.push([instruction, walk(store, edge[1], childPath, childRole, depth + 1, isRowEdge(store, edge) ? edge[0] : type)])
       }
       const { alias: _alias, updated: _updated, ref: _ref, refExpression: _expression, refRole: _role, ...data } = node.data

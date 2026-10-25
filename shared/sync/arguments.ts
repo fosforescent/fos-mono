@@ -14,7 +14,7 @@ import { allocationOf, allocationRows, allocationShapeOf, nonceRow, withAllocati
 import { labelRow, textOf, textValue, withRefTitle } from './fields'
 import { primitive } from './primitives'
 import { view as viewRows, headCid as rootCid } from './replica'
-import { resolveScope as scopeCid, rowVocabulary, valueContent as valueAt } from './graph'
+import { resolveScope as scopeCid, rowVocabulary, valueContent as valueAt, isAllocationRow } from './graph'
 import type { FosStore } from '../dag-implementation/store'
 import type { FosDataContent, FosNodeContent, FosPathElem } from '../types'
 import {
@@ -441,7 +441,7 @@ export const allocatePrimitive: PrimitiveFunction = async (operands, context) =>
     result.proposals[name] = grantValue(store, allocationPattern(store, context.step, grant.allocation, true), contract, { ...grant.allocation, amount: 0 }, {}, [cid], 'consumed')
   }
   const remaining = new Set(inputs)
-  result.proposals.owner = context.put({ ...owner, children: [...owner.children.filter(edge => !(isRowEdge(store, edge) && remaining.has(identityCid(store, edge)))), ...rows] })
+  result.proposals.owner = context.put({ ...owner, children: [...owner.children.filter(edge => !(isAllocationRow(store, edge) && remaining.has(edge[1]))), ...rows] })
   return result
 }
 

@@ -4,7 +4,7 @@
  * step's outputs to and what it proposes for the refs it was passed. It never writes the tree; the evaluator submits
  * its answers as the evaluation's pending writes and publishes them when the evaluation commits.
  */
-import { allocationOf, type Allocation } from './allocations'
+import { allocationIn, type Allocation } from './allocations'
 import { isOutputDeclaration } from './structural'
 import { refTitle } from './fields'
 import type { FosStore } from '../dag-implementation/store'
@@ -44,12 +44,12 @@ export function compileOperands(r: Replica, path: Scope, environment: BindingEnv
   const store = r.store, cid = resolveScope(store, headCid(r), path)
   if (!cid) throw new Error('The evaluated row no longer exists.')
   // an output declaration's own rows: its title, and the amount it issues
-  const titled = (ref: FosNodeContent) => { const title = refTitle(store, ref), allocation = allocationOf(store, put(store, ref)); return { ...(title !== null ? { title } : {}), ...(allocation ? { allocation } : {}) } }
+  const titled = (ref: FosNodeContent) => { const title = refTitle(store, ref), allocation = allocationIn(store, ref); return { ...(title !== null ? { title } : {}), ...(allocation ? { allocation } : {}) } }
   const inputs: Record<string, string> = {}, outputs: Record<string, CompiledOutput> = {}, sources: OperandSources = {}
   // A requirement step's own hole is its output `self`: the primitive fills the requirement by answering it.
   const parent = path.length ? resolveScope(store, headCid(r), path.slice(0, -1)) : null
   const own = parent ? bindingProperties({ store, cid: parent, path: path.slice(0, -1) }, environment).bindings.find(binding => binding.id === path.at(-1)) : undefined
-  if (own && isOutputDeclaration(store, own.pattern)) {
+  if (own && isOutputDeclaration(store, own.pattern, own.cid)) {
     const { alias: _alias, ref: _ref, refExpression: _expression, refRole: _role, updated: _updated, ...data } = content(store, own.cid).data
     outputs.self = { pattern: own.pattern, data, ...titled(content(store, own.cid)) }
     sources.self = own
@@ -74,7 +74,7 @@ export function compileOperands(r: Replica, path: Scope, environment: BindingEnv
       source = found.locations[0]
     }
     sources[name] = source
-    if (node.data.refRole === 'output' || isOutputDeclaration(store, binding.pattern)) {
+    if (node.data.refRole === 'output' || isOutputDeclaration(store, binding.pattern, binding.cid)) {
       const { alias: _alias, ref: _ref, refExpression: _expression, refRole: _role, updated: _updated, ...data } = node.data
       outputs[name] = { pattern: binding.pattern, data, ...titled(node) }
       continue

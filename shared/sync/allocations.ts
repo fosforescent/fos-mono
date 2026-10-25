@@ -52,7 +52,10 @@ function holder(store: FosStore, cid: string): FosNodeContent | undefined {
 /** What the rows of `cid` (through a ref) say of an allocation, or null when they name no resource. */
 export function allocationShapeOf(store: FosStore, cid: string): AllocationShape | null {
   const node = holder(store, cid)
-  if (!node) return null
+  return node ? allocationShapeIn(store, node) : null
+}
+/** What a node's own rows say of an allocation (a declaration's: the amount an output issues), or null. */
+export function allocationShapeIn(store: FosStore, node: FosNodeContent): AllocationShape | null {
   const read = (name: string): string | number | null => {
     const field = libraryNode(store, name)
     const edge = field ? node.children.find(([left]) => left === field) : undefined
@@ -76,9 +79,13 @@ export function allocationShapeOf(store: FosStore, cid: string): AllocationShape
 }
 /** The allocation the rows of `cid` hold (an amount of a resource), or null. */
 export function allocationOf(store: FosStore, cid: string): Allocation | null {
-  const shape = allocationShapeOf(store, cid)
-  return shape && shape.amount !== undefined ? { ...shape, amount: shape.amount, resource: shape.resource ?? '' } : null
+  return complete(allocationShapeOf(store, cid))
 }
+/** The allocation a node's own rows hold, or null. */
+export function allocationIn(store: FosStore, node: FosNodeContent): Allocation | null {
+  return complete(allocationShapeIn(store, node))
+}
+const complete = (shape: AllocationShape | null): Allocation | null => shape && shape.amount !== undefined ? { ...shape, amount: shape.amount, resource: shape.resource ?? '' } : null
 /** A node with its allocation rows replaced by those of `allocation`. */
 export function withAllocation(store: FosStore, node: FosNodeContent, allocation: Partial<Allocation>): FosNodeContent {
   const fields = new Set(['resourceType', 'unit', 'amount', 'start', 'end', 'by', 'at', 'bank', 'place', 'lat', 'lng'].map(name => libraryNode(store, name)).filter(Boolean))
