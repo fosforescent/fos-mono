@@ -56,7 +56,7 @@ async function main() {
         const child = ctx.put({ data: { alias: { id: 'bin' }, description: { content: 'Buy a bin' } }, children: [] })
         const group = ctx.put({ data: { alias: { id: 'compost' }, description: { content: 'Compost' } }, children: [[type, child]] })
         return { outputs: { self: c.valueOfPattern(ctx.store, operands.outputs.self.pattern, { description: { content: 'Garden plans' }, peerId: { content: 'fos' } }, [[type, group]]) } }
-      } }]
+      }, primitive: 'organize' }]
     })
     assert.equal(result.status, 'committed', result.error)
     app.set({ replica: r })

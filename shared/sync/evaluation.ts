@@ -139,7 +139,8 @@ export type EvaluationStep = { path: Scope; row: TaskView | null }
  * What runs a step: a primitive, the one shape every host implementation has (sync/operands.ts). It sees compiled operands
  * and answers values, which the evaluator submits as the evaluation's pending writes; discarding them reverts it.
  */
-export type StepExecutor = { run: PrimitiveFunction }
+/** A step's executor: the primitive it runs (whose own submissions its answers are) and how to run it here. */
+export type StepExecutor = { run: PrimitiveFunction; primitive: string }
 /** The one executor that runs a step, or why there is none to run. Every host selects through this. */
 export function selectExecutor<E>(executors: E[]): { executor: E } | { executor: null; problem: string | null } {
   if (executors.length === 1) return { executor: executors[0]! }
@@ -278,7 +279,7 @@ const instruction = (r: Replica, path: Scope) => {
  * writes, each to the declaration the compiler named and checked against that declaration's pattern. Outputs win
  * over proposals for one destination (a remainder rebinding the handle it came from).
  */
-async function runPrimitive(run: PrimitiveFunction, step: EvaluationStep, evaluation: string, driver: EvaluationDriver): Promise<void | 'pending'> {
+async function runPrimitive({ run, primitive: submitter }: StepExecutor, step: EvaluationStep, evaluation: string, driver: EvaluationDriver): Promise<void | 'pending'> {
   const before = driver.get()
   // the compiler sees only the binding environment; the driver's other fields (its `outputs(step)`) are not compile options
   const { compiled, sources } = compileOperands(before, step.path, { ...(driver.canRead ? { canRead: driver.canRead } : {}), ...(driver.isPeerActive ? { isPeerActive: driver.isPeerActive } : {}) })
@@ -295,7 +296,7 @@ async function runPrimitive(run: PrimitiveFunction, step: EvaluationStep, evalua
     writes.set(binding.cid, { binding, value })
   }
   let r = driver.get()
-  for (const { binding, value } of writes.values()) r = proposeTransactionWrite(r, binding, value, evaluation, driver.now())
+  for (const { binding, value } of writes.values()) r = proposeTransactionWrite(r, binding, value, evaluation, driver.now(), submitter)
   await driver.save(r)
   return result.pending ? 'pending' : undefined
 }
@@ -344,7 +345,7 @@ export async function evaluateNode(path: Scope, driver: EvaluationDriver): Promi
       record.effects.push(effect); await save() // persist before sending, including an uncertain failed response
       applied.add(JSON.stringify(step.path))
       // a primitive's answers are this evaluation's pending writes: checked against their declarations now, live at commit
-      const outcome = await runPrimitive(executor.run, step, record.id, driver)
+      const outcome = await runPrimitive(executor, step, record.id, driver)
       if (outcome === 'pending') { effect.status = 'pending-review'; awaiting = true; await save(); continue }
       effect.status = 'applied'; await save()
     }

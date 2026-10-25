@@ -53,7 +53,7 @@ test('a bank inside Home is credited by an invocation evaluated there', async ()
   let r = ensureHomeContext(createReplica('user:owner'), 1, { server: ['allocate'], run: { peers: { fos: [[type, ref]] }, nodes: Object.fromEntries([...catalogue.table.entries()].map(([cid, node]) => [cid, node])) } } as any)
   r = addBank(r, [HOME_ID], 'Budget', 2, { type: 'account', unit: 'USD' }, 'bank')
   r = issueGrant(r, [HOME_ID, 'bank'], { type: 'account', unit: 'USD', amount: 10 }, 3, 'Initial', 'g0')
-  const driver = driverOf(() => r, next => { r = next }, () => [{ run: allocatePrimitive }])
+  const driver = driverOf(() => r, next => { r = next }, () => [{ run: allocatePrimitive, primitive: 'allocate' }])
   const result = await evaluateNode([HOME_ID, 'g0'], driver)
   expect(result.error).toBeUndefined()
   expect(result.status).toBe('committed')
@@ -71,7 +71,7 @@ test('a host offering a legacy handler for the allocation capability runs a poin
     const allocation = { resource: '', type: 'points' as const, amount: 5, unit: 'ff', by: 'fos' }
     const at = context.step.slice(0, -1)
     return { outputs: { self: grantValue(context.store, allocationPattern(context.store, at, allocation, true), allocateCapability(context.store, at), allocation, { description: { content: '5 ff' }, peerId: { content: 'fos' } }) } }
-  } }] : [])
+  }, primitive: 'points' }] : [])
   const result = await evaluateNode([HOME_ID, 'survey'], driver)
   expect(result.error).toBeUndefined()
   expect(result.status).toBe('committed')
@@ -92,7 +92,7 @@ test('a bank inside Home is still credited after the account context is ensured 
   r = addBank(r, [HOME_ID], 'Budget', 2, { type: 'account', unit: 'USD' }, 'bank')
   r = issueGrant(r, [HOME_ID, 'bank'], { type: 'account', unit: 'USD', amount: 10 }, 3, 'Initial', 'g0')
   r = ensureHomeContext(r, 0, offers)
-  const driver = driverOf(() => r, next => { r = next }, () => [{ run: allocatePrimitive }])
+  const driver = driverOf(() => r, next => { r = next }, () => [{ run: allocatePrimitive, primitive: 'allocate' }])
   const result = await evaluateNode([HOME_ID, 'g0'], driver)
   expect(result.error).toBeUndefined()
   expect(result.status).toBe('committed')
@@ -107,7 +107,7 @@ test('a primitive runs under a driver that declares `outputs(step)` (the backend
   let r = ensureHomeContext(createReplica('user:owner'), 1, offers)
   r = addBank(r, [HOME_ID], 'Budget', 2, { type: 'account', unit: 'USD' }, 'bank')
   r = issueGrant(r, [HOME_ID, 'bank'], { type: 'account', unit: 'USD', amount: 10 }, 3, 'Initial', 'g0')
-  const driver: EvaluationDriver = { ...driverOf(() => r, next => { r = next }, () => [{ run: allocatePrimitive }]), isPeerActive: () => true }
+  const driver: EvaluationDriver = { ...driverOf(() => r, next => { r = next }, () => [{ run: allocatePrimitive, primitive: 'allocate' }]), isPeerActive: () => true }
   const result = await evaluateNode([HOME_ID, 'g0'], driver)
   expect(result.error).toBeUndefined()
   expect(result.status).toBe('committed')
@@ -124,7 +124,7 @@ test('a driver whose isPeerActive knows only the host peers (the backend driver)
   let r = ensureHomeContext(createReplica('user:owner'), 1, offers)
   r = addBank(r, [HOME_ID], 'Budget', 2, { type: 'account', unit: 'USD' }, 'bank')
   r = issueGrant(r, [HOME_ID, 'bank'], { type: 'account', unit: 'USD', amount: 10 }, 3, 'Initial', 'g0')
-  const driver: EvaluationDriver = { ...driverOf(() => r, next => { r = next }, () => [{ run: allocatePrimitive }]), isPeerActive: peer => peer === 'fos' }
+  const driver: EvaluationDriver = { ...driverOf(() => r, next => { r = next }, () => [{ run: allocatePrimitive, primitive: 'allocate' }]), isPeerActive: peer => peer === 'fos' }
   const result = await evaluateNode([HOME_ID, 'g0'], driver)
   expect(result.error).toBeUndefined()
   expect(result.status).toBe('committed')

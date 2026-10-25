@@ -22,7 +22,7 @@ test('host primitives are execute-only sub-refs and ordinary rows call them with
   expect(compileRow(r, ['call']).canRun).toBe(true)
   expect(primitiveExecutors(r, step, 'host').map(value => value.implementation)).toEqual([render])
   const completed = await evaluateNode(['call'], { get: () => r, save: next => { r = next }, now: () => 3,
-    check: () => [], executors: current => primitiveExecutors(r, current, 'host').map(value => ({ run: value.implementation.run! })) })
+    check: () => [], executors: current => primitiveExecutors(r, current, 'host').map(value => ({ run: value.implementation.run!, primitive: 'test' })) })
   expect(completed.error).toBeUndefined()
   expect(completed.status).toBe('committed')
   expect(calls).toBe(1)

@@ -24,7 +24,7 @@ function fixture() {
   let clock = 10
   const driver: EvaluationDriver = {
     get: () => r, save: next => { r = next }, now: () => ++clock, check: () => [],
-    executors: step => primitiveExecutors(r, step, 'owner').map(value => ({ run: value.implementation.run! }))
+    executors: step => primitiveExecutors(r, step, 'owner').map(value => ({ run: value.implementation.run!, primitive: 'test' }))
   }
   return { get: () => r, set: (next: Replica) => { r = next }, driver, amounts: () => ownerGrants(r, ['bank']).map(grant => grant.allocation.amount).sort((a, b) => a - b) }
 }

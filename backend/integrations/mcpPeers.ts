@@ -108,7 +108,7 @@ async function runRequirement(deps: McpPeerDeps, replica: Replica, user: Account
       get: () => replica,
       save: async next => { replica = next; await deps.saveStore(user, next.store) },
       now: () => deps.now?.() ?? Date.now(),
-      executors: step => JSON.stringify(step.path) === JSON.stringify(scope) ? [{ run }] : [],
+      executors: step => JSON.stringify(step.path) === JSON.stringify(scope) ? [{ run, primitive: MCP_TOOL_REF.id }] : [],
       check: () => []
     })
     const answer = view(replica, at)?.tasks.find(t => t.id === req.id)

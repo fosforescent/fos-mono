@@ -10,7 +10,7 @@ import { matchesGraph, tag, capabilityName } from './structural'
 import { hashContent } from '../dag-implementation/cid'
 import type { FosPathElem } from '../types'
 import { putNode, type FosStore } from '../dag-implementation/store'
-import { content, enclosingScopes, handlerOfferId, libAt, put, refNodeContent, isRefNode, type Scope } from './graph'
+import { content, enclosingScopes, handlerOfferId, libAt, put, refNodeContent, isRefNode, valueCidOf, type Scope } from './graph'
 import { addMemberAt, addRow, headCid, setHandlerOffersAt, type Replica } from './replica'
 import { contextMemberRefs, discoverHandlers } from './handlers'
 import { sameCapabilityType } from './capabilities'
@@ -181,7 +181,7 @@ export function primitiveExecutors<T extends Pick<PrimitiveImplementation, 'hand
 }
 /** The executors a host offers a step, as the evaluator takes them. */
 export function stepExecutors(r: Replica, step: EvaluationStep, host?: string): StepExecutor[] {
-  return primitiveExecutors(r, step, host).flatMap(value => value.implementation.run ? [{ run: value.implementation.run }] : [])
+  return primitiveExecutors(r, step, host).flatMap(value => value.implementation.run ? [{ run: value.implementation.run, primitive: primitiveValue(r.store, valueCidOf(r.store, value.ref))?.implementation ?? value.host }] : [])
 }
 
 /**
