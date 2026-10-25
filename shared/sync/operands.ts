@@ -4,11 +4,12 @@
  * step's outputs to and what it proposes for the refs it was passed. It never writes the tree; the evaluator submits
  * its answers as the evaluation's pending writes and publishes them when the evaluation commits.
  */
+import { allocationOf, type Allocation } from './allocations'
 import { isOutputDeclaration } from './structural'
 import { refTitle } from './fields'
 import type { FosStore } from '../dag-implementation/store'
 import type { FosDataContent, FosNodeContent } from '../types'
-import { content, resolveScope, type Scope } from './graph'
+import { content, resolveScope, type Scope, put } from './graph'
 import { headCid, type Replica } from './replica'
 import type { BindingEnvironment } from './bindings'
 import { bindingProperties, type BindingLocation } from './scope-bindings'
@@ -16,7 +17,7 @@ import { resolveRefExpression, resolveRefIdentity } from './ref-paths'
 import { assertCompiledGraph, compileInstructions, compileRefGraph } from './ref-compiler'
 
 /** An output the step declares: the pattern its value must satisfy and what the declaration itself says (an amount, a title). */
-export type CompiledOutput = { pattern: string; data: FosDataContent; title?: string }
+export type CompiledOutput = { pattern: string; data: FosDataContent; title?: string; allocation?: Allocation }
 /** The step's operands by name: inputs as the compiled values their declarations resolved to, outputs still to fill (`self`: the step's own requirement). */
 export type Compiled = { inputs: Record<string, string>; outputs: Record<string, CompiledOutput>; left: string }
 export type PrimitiveContext = {
@@ -42,7 +43,8 @@ export type OperandSources = Record<string, BindingLocation>
 export function compileOperands(r: Replica, path: Scope, environment: BindingEnvironment = {}): { compiled: Compiled; sources: OperandSources } {
   const store = r.store, cid = resolveScope(store, headCid(r), path)
   if (!cid) throw new Error('The evaluated row no longer exists.')
-  const titled = (ref: FosNodeContent) => { const title = refTitle(store, ref); return title !== null ? { title } : {} }
+  // an output declaration's own rows: its title, and the amount it issues
+  const titled = (ref: FosNodeContent) => { const title = refTitle(store, ref), allocation = allocationOf(store, put(store, ref)); return { ...(title !== null ? { title } : {}), ...(allocation ? { allocation } : {}) } }
   const inputs: Record<string, string> = {}, outputs: Record<string, CompiledOutput> = {}, sources: OperandSources = {}
   // A requirement step's own hole is its output `self`: the primitive fills the requirement by answering it.
   const parent = path.length ? resolveScope(store, headCid(r), path.slice(0, -1)) : null

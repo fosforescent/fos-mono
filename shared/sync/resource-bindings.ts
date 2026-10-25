@@ -1,4 +1,5 @@
 /** Resource syntax adapts to ordinary scoped capability bindings. It has no bank registry or tree search. */
+import { allocationShapeOf } from './allocations'
 import { contextBindings, type BindingEnvironment } from './bindings'
 import { content, rowView, valueContent, type Scope, type TaskView } from './graph'
 import type { Replica } from './replica'
@@ -6,8 +7,9 @@ import type { Replica } from './replica'
 export function resourceHandlers(r: Replica, at: Scope, environment: BindingEnvironment = {}) {
   // Discovery enumerates accepted handler values. Their prerequisites are checked when compiling an invocation.
   return contextBindings(r, at, environment).flatMap(candidate => (candidate.binding?.submissions ?? []).flatMap(({ cid: value }) => {
-    const resource = valueContent(r.store, value).data.resource
-    if (!resource) return []
+    const shape = allocationShapeOf(r.store, value)
+    if (!shape) return []
+    const resource = { type: shape.type, unit: shape.unit, ...(shape.start !== undefined ? { start: shape.start } : {}), ...(shape.end !== undefined ? { end: shape.end } : {}) }
     const row = rowView(r.store, candidate.cid, [candidate.type, candidate.cid])
     return [{ ...candidate, value, row: { ...row, id: content(r.store, candidate.cid).data.alias?.id ?? candidate.cid,
       resource: { ...resource, held: row.resource?.held ?? 0 } } as TaskView & { resource: NonNullable<TaskView['resource']> } }]

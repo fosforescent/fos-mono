@@ -1,6 +1,7 @@
 export * from './library-types'
 export * from './graph'
 export * from './fields'
+export * from './allocations'
 export * from './structural'
 export * from './merge'
 export * from './replica'

@@ -1,4 +1,5 @@
 /** Library definitions are editable values. Runtime consumers must use explicitly pinned instances. */
+import { allocationShapeOf } from './allocations'
 import { refTitle } from './fields'
 import { primitive } from './primitives'
 import type { ResourceType } from './graph'
@@ -152,7 +153,7 @@ export function manualHandlers(r: Replica, at?: Scope): ManualHandler[] {
 /** The device's fallbacks: the primitives it passed the library for what the library requires, each filling the requirement it declares. */
 export function deviceHandlers(r: Replica, at?: Scope): ManualHandler[] {
   return libraryArgs(r, at ?? homePath(r)).flatMap(({ name, declaration, value }) => {
-    const allocation = declaration.data.allocation
+    const allocation = allocationShapeOf(r.store, put(r.store, declaration))
     if (!allocation) return []
     return [{ id: name, label: refTitle(r.store, declaration) ?? name, capability: 'allocation' as const, resource: allocation.type, device: true, run: value }]
   })

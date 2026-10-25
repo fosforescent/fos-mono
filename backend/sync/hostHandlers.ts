@@ -1,3 +1,4 @@
+import { allocationShapeOf } from '@fosforescent/shared/sync/allocations'
 import { labelRow, textOf as fieldTextOf } from '@fosforescent/shared/sync/fields'
 import { standardHostRef, type HostHandler, type HostUser } from './host-runtime'
 import { cronObserver } from '@fosforescent/shared/sync/trigger-primitives'
@@ -76,7 +77,7 @@ export function calendarHandler(deps: CalendarDeps): HostHandler {
     available: userId => deps.connected(userId),
     run: user => async (operands, ctx) => {
       if (!await deps.connected(user.id)) throw new Error('Google disconnected before the effect.')
-      const self = selfOf(operands), demand = content(ctx.store, self.pattern).data.allocation
+      const self = selfOf(operands), demand = allocationShapeOf(ctx.store, self.pattern)
       const { start, end } = demand ?? {}
       if (!demand || start == null || end == null || !Number.isFinite(start) || !Number.isFinite(end) || end <= start) throw new Error('Choose a concrete start and end before creating a calendar event.')
       const title = self.title || 'fos'
@@ -161,7 +162,7 @@ export function pointsHandler(deps: PointsDeps, identity: VerifyHandler): HostHa
     peerId: 'fos', ref: standardHostRef('fos', 'allocation', 'points'),
     handles: step => step.row?.requirement?.resource === 'points',
     run: user => async (operands, ctx) => {
-      const self = selfOf(operands), demand = content(ctx.store, self.pattern).data.allocation, amount = demand?.amount ?? 0
+      const self = selfOf(operands), demand = allocationShapeOf(ctx.store, self.pattern), amount = demand?.amount ?? 0
       if (!(amount > 0)) throw new Error('Name an amount of fos points to pay.')
       const recipient = payee(ctx, operands, user, 'fos points', identity)
       await deps.transfer(user, recipient.username, amount, `${self.title || 'fos points'} (${ctx.step.slice(0, -1).join('/')})`, `points:${user.username}:${ctx.step.join('/')}`)
@@ -182,7 +183,7 @@ export function paymentHandler(deps: PaymentDeps, identity: VerifyHandler): Host
     peerId: 'fos', ref: standardHostRef('fos', 'allocation', 'send-payment'),
     handles: step => step.row?.requirement?.resource === 'account',
     run: user => async (operands, ctx) => {
-      const self = selfOf(operands), demand = content(ctx.store, self.pattern).data.allocation, amount = demand?.amount ?? 0, unit = demand?.unit || 'usd'
+      const self = selfOf(operands), demand = allocationShapeOf(ctx.store, self.pattern), amount = demand?.amount ?? 0, unit = demand?.unit || 'usd'
       if (!(amount > 0)) throw new Error('Name an amount to pay.')
       const recipient = payee(ctx, operands, user, 'payments', identity)
       const opened = await deps.request({ from: user, toUsername: recipient.username, amount, unit: unit.toLowerCase(), memo: `${self.title || 'payment'} (${ctx.step.slice(0, -1).join('/')})`, key: `payment:${user.username}:${ctx.step.join('/')}`, path: ctx.step })

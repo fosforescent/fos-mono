@@ -64,8 +64,6 @@ export type FosDataContent = {
     previous?: string; // CID of previous node this alias pointed to
   }
   /** On a proposal node (a peer's branch at a link node). */
-  /** On an issued grant: what tells two grants of equal amount apart. Authority is a value, so each issue is a new one. */
-  nonce?: { value: string },
   /** On a member reference: granted capabilities (CAPABILITY edges) the owner has switched off; the member still sees them, as offline. */
   disabledCapabilities?: {
     content: string[]
@@ -104,27 +102,6 @@ export type FosDataContent = {
     market?: boolean
     executedAt?: number
     count?: number
-  },
-  /** A resource bank row (calendar, account, inventory): allocations and sub-banks are its children. */
-  resource?: {
-    type: 'calendar' | 'account' | 'inventory' | 'person' | 'points' | 'location'
-    unit: string
-    start?: number | null
-    end?: number | null
-  },
-  /** An allocation locks `amount` for an optional time window. Compile its editor locator to a declaration CID before accounting. */
-  allocation?: {
-    at?: number
-    resource: string
-    type: 'calendar' | 'account' | 'inventory' | 'person' | 'points' | 'location'
-    amount: number
-    unit: string
-    /** Null means no lower/upper time bound, including money and other non-calendar resources. */
-    start?: number | null
-    end?: number | null
-    by?: string
-    /** Location allocations ("at Paris"): the place, by name and/or coordinates (a device's position). */
-    location?: { name?: string; lat?: number; lng?: number }
   },
   /** A reference row: this node stands for the node whose alias id is `id` (shown by title; follows it on click). */
   ref?: {

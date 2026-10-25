@@ -353,7 +353,7 @@ function newRowContent(store: FosStore, type: string, typeId: string, id: string
   if (typeId === REF_TYPE) return referenceRowContent(store, id, now, extras)
   const values = new Map<string, string>(), done = rowVocabulary(store)?.done
   if (done && extras.done && completes(store, type)) values.set(done, put(store, { data: {}, children: [] }))
-  const row = withTextParameters(store, withKindData(constructTextRow(store, type, id, text, now, values), typeId, text, extras), text)
+  const row = withTextParameters(store, withKindData(store, constructTextRow(store, type, id, text, now, values), typeId, text, extras), text)
   return typeId === RESOURCE_TYPE ? refNodeContent(store, { alias: { id }, updated: { time: now } }, put(store, row)) : row
 }
 
@@ -447,7 +447,7 @@ export function setRowContentAt(replica: Replica, at: Scope, aliasId: string, ty
       if (title && body) values.set(title, fieldText(replica.store, title, body))
       if (done && completes(replica.store, template)) values.set(done, extras.done ? put(replica.store, { data: {}, children: [] }) : primitive(replica.store, 'void'))
       const rebuilt = built ? { ...built, children: [...built.children, ...node.children.filter(e => isRowEdge(replica.store, e) && !isFieldRow(replica.store, aliasId, e))] } : rebuildRow(replica.store, template, aliasId, node, values, now)
-      const next = withChildValue(replica.store, edge, userBound(replica, at, withTextParameters(replica.store, withKindData(rebuilt, type, body, extras), body), extras), now)
+      const next = withChildValue(replica.store, edge, userBound(replica, at, withTextParameters(replica.store, withKindData(replica.store, rebuilt, type, body, extras), body), extras), now)
       return replaceEdge(replica.store, value, `a:${aliasId}`, rowEdge(replica.store, identityCid(replica.store, next), template))
     }
     const next = withChildValue(replica.store, edge, userBound(replica, at, asReferenceRow(node, now), extras), now)
@@ -486,7 +486,7 @@ export function setRowType(replica: Replica, at: Scope, aliasId: string, type: s
     const template = resolveRowType(replica.store, type, at)
     const title = titleField(replica.store, template), text = rowTitle(replica.store, identityCid(replica.store, edge), rowTypeOf(replica.store, edge))
     const next = type === REF_TYPE ? asReferenceRow(node, now)
-      : withKindData(isTextField(replica.store, template) ? constructPlainRow(replica.store, template, aliasId, text, now)
+      : withKindData(replica.store, isTextField(replica.store, template) ? constructPlainRow(replica.store, template, aliasId, text, now)
         : rebuildRow(replica.store, template, aliasId, node, title && text ? new Map([[title, fieldText(replica.store, title, text)]]) : new Map(), now), type, text, extras)
     const converted = withChildValue(replica.store, edge, next, now)
     return replaceEdge(replica.store, value, `a:${aliasId}`, rowEdgeAt(replica.store, template, identityCid(replica.store, converted), at))

@@ -48,6 +48,10 @@ const path = textField('path'), sha256 = textField('sha256'), peer = textField('
 const by = textField('by'), issuedAt = node([stringAliasOf('issuedAt'), number]), attestation = textField('attestation')
 const filename = textField('filename'), data = textField('data'), markdown = textField('markdown'), mediaType = textField('mediaType')
 const size = node([stringAliasOf('size'), number])
+// an allocation's rows: what resource, how much of it, when, from whom, where (a grant also carries its nonce)
+const numberField = (field: string) => node([stringAliasOf(field), number])
+const amount = numberField('amount'), unitField = textField('unit'), resourceType = textField('resourceType'), start = numberField('start'), end = numberField('end')
+const at = numberField('at'), bank = textField('bank'), place = textField('place'), lat = numberField('lat'), lng = numberField('lng'), nonce = textField('nonce')
 
 /** A type the kernel tells apart (Home, Device root, Library, Document root, …): a tag, since the empty node is the wildcard; folder-like types are just `{}`. */
 const tagged = (tagName: string, ...rows: FosPathElem[]) => node([tagOf(tagName), unit], ...rows)
@@ -79,6 +83,7 @@ const types: Record<string, string> = {
   listText: node(),
   // fields and value types, reachable by name
   title, body, label, syntax, done, icon, stringAlias, tag, username, displayName, path, markdown,
+  amount, unit: unitField, resourceType, start, end, by, at, bank, place, lat, lng, nonce,
   text: string, number, time: number, boolean, peer
 }
 

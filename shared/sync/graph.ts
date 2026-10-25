@@ -1,5 +1,6 @@
+import { allocationOf, allocationShapeOf, withAllocation, type Allocation, type BankResource } from './allocations'
 import { primitive, primitiveName } from './primitives'
-import { fieldEdge, fieldValue, fieldViews, isFieldRow, isTextField, leafText, rowBody, titleField, typeRows, type FieldView, fieldRefId, withFieldValue, refTitle, textOf, textValue, withRefTitle, labelRow, withLabel } from './fields'
+import { fieldEdge, fieldValue, fieldViews, isFieldRow, isTextField, leafText, rowBody, titleField, typeRows, type FieldView, fieldRefId, withFieldValue, refTitle, textOf, textValue, withRefTitle, labelRow, withLabel, leafValue, fieldText } from './fields'
 import { capabilityDeclarations } from './capability-catalog'
 import { resolveBinding } from './bindings'
 import { bindingProperties, type ScopedBinding } from './scope-bindings'
@@ -814,7 +815,7 @@ export type RowExtras = {
   targetCid?: string
   store?: FosStore
   query?: NonNullable<FosNodeContent['data']['query']>
-  resource?: NonNullable<FosNodeContent['data']['resource']>
+  resource?: BankResource
   /** The user `@name` names: bound as the row's `user` field (a user object); null removes it. */
   user?: UserRecord | null
 }
@@ -827,12 +828,16 @@ export function referenceRowContent(store: FosStore, id: string, now: number, ex
 }
 
 /** Data a row of the library type `typeId` carries besides its fields: a query's options, a bank's resource and binding name. */
-export function withKindData(value: FosNodeContent, typeId: string, text: string, extra: Omit<RowExtras, 'store'> = {}): FosNodeContent {
-  const { ref: _ref, query: _query, resource: _resource, ...rest } = value.data
+export function withKindData(store: FosStore, value: FosNodeContent, typeId: string, text: string, extra: Omit<RowExtras, 'store'> = {}): FosNodeContent {
+  const { ref: _ref, query: _query, ...rest } = value.data
   const data: FosNodeContent['data'] = rest
   if (typeId === QUERY_TYPE) data.query = { ...(value.data.query ?? {}), ...(extra.query ?? {}) }
-  // a bank supplies an ordinary named binding, like other capability handlers
-  if (typeId === RESOURCE_TYPE) { data.resource = extra.resource ?? value.data.resource ?? { type: 'inventory', unit: 'unit' }; data.name = { content: text } }
+  // a bank supplies an ordinary named binding, like other capability handlers; what it holds is its rows
+  if (typeId === RESOURCE_TYPE) {
+    data.name = { content: text }
+    const held = extra.resource ?? (() => { const shape = allocationShapeOf(store, put(store, value)); return shape ? { type: shape.type, unit: shape.unit, start: shape.start, end: shape.end } : { type: 'inventory' as const, unit: 'unit' } })()
+    return withAllocation(store, { ...value, data }, held)
+  }
   return { ...value, data }
 }
 
@@ -853,7 +858,7 @@ export function rowEdgeAt(store: FosStore, type: string, cid: string, at: Scope,
 
 /** The same node as a reference row: the data of other kinds dropped. */
 export function asReferenceRow(value: FosNodeContent, now: number): FosNodeContent {
-  const { query: _query, resource: _resource, allocation: _allocation, presentation: _presentation, scalar: _scalar, ...data } = value.data
+  const { query: _query, presentation: _presentation, scalar: _scalar, ...data } = value.data
   return { ...value, data: { ...data, ref: value.data.ref ?? { id: '' }, updated: { time: now } } }
 }
 
@@ -1349,8 +1354,8 @@ export type TaskView = {
   requirement?: RequirementView
   query?: NonNullable<FosDataContent['query']>
   /** `held`: the net amount of the bank's grants (negative grants retire authority). */
-  resource?: NonNullable<FosDataContent['resource']> & { held: number }
-  allocation?: NonNullable<FosDataContent['allocation']>
+  resource?: BankResource & { held: number }
+  allocation?: Allocation
   /** Listed on the market: the market peer is a member of this node (`isListed`). */
   market?: boolean
   createdAt: number
@@ -1504,9 +1509,11 @@ export function rowView(store: FosStore, nodeCid: string, edge?: FosPathElem): T
   if (user) view.user = user
   const requirement = !held && edge ? requirementViewOf(store, edge, nodeCid, user) : undefined
   if (requirement) view.requirement = requirement
-  if (!held && edge && isAllocationRow(store, edge) && value.data.allocation) view.allocation = value.data.allocation
+  const allocation = !held && edge && isAllocationRow(store, edge) ? allocationOf(store, nodeCid) : null
+  if (allocation) view.allocation = allocation
   if (type === QUERY_TYPE) view.query = value.data.query ?? {}
-  if (type === RESOURCE_TYPE && value.data.resource) view.resource = { ...value.data.resource, held: grantEntries(store, refValueCid(store, identity) ?? nodeCid).reduce((sum, grant) => sum + grant.allocation.amount, 0) }
+  const bank = type === RESOURCE_TYPE ? allocationShapeOf(store, nodeCid) : null
+  if (bank) view.resource = { type: bank.type, unit: bank.unit, ...(bank.start !== undefined ? { start: bank.start } : {}), ...(bank.end !== undefined ? { end: bank.end } : {}), held: grantEntries(store, refValueCid(store, identity) ?? nodeCid).reduce((sum, grant) => sum + grant.allocation.amount, 0) }
   if (isListed(store, nodeCid)) view.market = true
   return view
 }
@@ -1534,10 +1541,10 @@ export function isRequirementRow(store: FosStore, edge: FosPathElem): boolean {
  * (a grant when a bank issued it: a handle); inside a bank's value its right is the grant itself, an element of the set.
  */
 export function isAllocationRow(store: FosStore, edge: FosPathElem): boolean {
-  const left = store.table.get(edge[0]), right = store.table.get(edge[1])
-  if (!left?.data.allocation || !right) return false
+  const right = store.table.get(edge[1])
+  if (!right || !allocationShapeOf(store, edge[0])) return false
   const held = isRefNode(store, right) ? refValueCid(store, right) : edge[1]
-  return !!held && !!store.table.get(held)?.data.allocation
+  return !!held && allocationOf(store, held) !== null
 }
 
 /** What a requirement demands, read from its pattern, and whether its value satisfies it. */
@@ -1601,7 +1608,7 @@ export function argumentSatisfied(store: FosStore, cid: string, pattern: string)
 /** The requirement row `edge` as the tree shows it; undefined for any other row. */
 export function requirementViewOf(store: FosStore, edge: FosPathElem, cid: string, user?: UserRecord | null): RequirementView | undefined {
   if (!isRequirementRow(store, edge)) return undefined
-  const pattern = rowTypeOf(store, edge)!, node = content(store, pattern), allocation = node.data.allocation, inputs = patternInputs(store, pattern)
+  const pattern = rowTypeOf(store, edge)!, node = content(store, pattern), allocation = allocationShapeOf(store, pattern), inputs = patternInputs(store, pattern)
   // linear: the pattern is tagged with a second capability, the contract that checks the grant it demands
   const view: RequirementView = { capability: capabilityName(store, pattern), satisfied: argumentSatisfied(store, cid, pattern), summary: '', linear: tagsOf(store, node).length > 0, inputs,
     ...(allocation ? { resource: allocation.type, ...(allocation.amount !== undefined ? { amount: allocation.amount } : {}), ...(allocation.unit ? { unit: allocation.unit } : {}),
@@ -1684,7 +1691,7 @@ export function ownerContract(store: FosStore, value: FosNodeContent): string | 
  * The grants a value holds: its allocation rows whose value is a non-zero grant pinned to the contract the value
  * itself declares. A value that declares no contract holds no grants, so a copy of a grant's value elsewhere is data.
  */
-export function grantEntries(store: FosStore, stateCid: string): Array<{ id: string; cid: string; edge: FosPathElem; contract: string; allocation: NonNullable<FosDataContent['allocation']> }> {
+export function grantEntries(store: FosStore, stateCid: string): Array<{ id: string; cid: string; edge: FosPathElem; contract: string; allocation: Allocation }> {
   const state = content(store, stateCid), owner = ownerContract(store, state)
   if (!owner) return []
   return state.children.flatMap(edge => {
@@ -1692,7 +1699,7 @@ export function grantEntries(store: FosStore, stateCid: string): Array<{ id: str
     const identity = identityCid(store, edge), node = content(store, identity)
     const cid = isRefNode(store, node) ? refValueCid(store, node) : identity
     if (!cid || !store.table.has(cid)) return []
-    const value = content(store, cid), allocation = value.data.allocation, contract = allocationContract(store, value, owner)
+    const value = content(store, cid), allocation = allocationOf(store, cid), contract = allocationContract(store, value, owner)
     return allocation && allocation.amount !== 0 && contract ? [{ id: node.data.alias?.id ?? cid, cid, edge, contract, allocation }] : []
   })
 }
@@ -2504,10 +2511,14 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
     const data = { ...value.data, alias: { id: ids.get(aliasIdOf(identity) ?? '') ?? freshId() }, updated: { time: now } }
     if (instantiate && data.query) data.query = { market: data.query.market }
     if (data.ref && !data.ref.owner) data.ref = { ...data.ref, id: ids.get(data.ref.id) ?? data.ref.id }
-    if (data.allocation) data.allocation = { ...data.allocation, resource: ids.get(data.allocation.resource) ?? data.allocation.resource }
     // Typed arguments keep defaults, including ref-to-ref defaults. They get a fresh identity.
     const target = refValueCid(store, identity)
-    const children = type ? [] : childEdges(value, definitions.has(cid), cid === nodeCid).map(copyEdge)
+    // an allocation's bank copied along is the copy's bank
+    const bankField = libraryNode(store, 'bank')
+    const children = type ? [] : childEdges(value, definitions.has(cid), cid === nodeCid).map(copyEdge).map((edge): FosPathElem => {
+      const bank = edge[0] === bankField ? leafValue(store, edge[1]) : null
+      return typeof bank === 'string' && ids.has(bank) ? [edge[0], fieldText(store, edge[0], ids.get(bank)!)] : edge
+    })
     if (!type && isHandle(identity) && target) children.push([primitive(store, 'target'), owned.has(target) ? copy(target) : target])
     let bound = reopened.has(cid) ? primitive(store, 'void') : target && owned.has(target) ? copy(target) : target
     const alternatives = type && refBranches(store, identity)

@@ -4,12 +4,6 @@ import type { FosStore } from '../dag-implementation/store'
 import type { FosNodeContent, FosPathElem } from '../types'
 import { content, isBookkeepingEdge, isBranchChoice, isChoiceEdge, isHandle, isRefNode, libraryNode, put, readChoice, refValueCid, typeIdOf } from './graph'
 
-const incidental = new Set(['alias', 'created', 'updated', 'position', 'presentation'])
-function properties(pattern: unknown, value: unknown): boolean {
-  if (pattern === null || typeof pattern !== 'object') return Object.is(pattern, value)
-  if (!value || typeof value !== 'object' || Array.isArray(pattern) !== Array.isArray(value)) return false
-  return Object.entries(pattern).every(([key, expected]) => Object.hasOwn(value, key) && properties(expected, (value as Record<string, unknown>)[key]))
-}
 
 /** A constructor's name row: a string for people and the library's field index, never part of what a value must be. */
 export function isNameRow(store: FosStore, edge: FosPathElem): boolean { return edge[0] === primitive(store, 'name') }
@@ -164,8 +158,6 @@ export function match(store: FosStore, pattern: string, value: string, options: 
       const leaf = primitiveName(store, p)
       if (leaf && leaves[leaf]) return leaves[leaf](V.data.scalar) ? state : null
       if (P.data.scalar && !(V.data.scalar && V.data.scalar.type === P.data.scalar.type && Object.is(V.data.scalar.value, P.data.scalar.value))) return null
-      const required = Object.fromEntries(Object.entries(P.data).filter(([name]) => name !== 'scalar' && !incidental.has(name)))
-      if (!properties(required, V.data)) return null
       const wanted = rows(P), available = rows(V), used = new Set<number>()
       const assign = (index: number, current: Match): Match | null => {
         if (index === wanted.length) return current
