@@ -1561,9 +1561,10 @@ export function capabilityNameOf(store: FosStore, type: string | null | undefine
 export function isRequirementRow(store: FosStore, edge: FosPathElem): boolean {
   const left = isRowEdge(store, edge) ? rowTypeOf(store, edge) : null
   const identity = store.table.get(identityCid(store, edge))
-  // an invocation's declared output is the invocation's to fill, not an ask of its own; a row holding an amount its
-  // pattern does not ask for supplies it (an allocation, a handle), while a demand's pattern says how much
-  return !!left && !!identity && isRefNode(store, identity) && identity.data.refRole !== 'output' && capabilityName(store, left) !== null &&
+  // an invocation's declared output is the invocation's to fill, not an ask of its own; a named one is a variable its
+  // scope binds; a row holding an amount its pattern does not ask for supplies it (an allocation, a handle), while a
+  // demand's pattern says how much
+  return !!left && !!identity && isRefNode(store, identity) && identity.data.refRole !== 'output' && !identity.data.name && capabilityName(store, left) !== null &&
     !(isAllocationRow(store, edge) && allocationShapeOf(store, left)?.amount === undefined)
 }
 /**
@@ -2502,7 +2503,8 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
     for (const edge of childEdges(stripLink(store, identity), definitions.has(cid), cid === nodeCid)) {
       const child = identityCid(store, edge)
       const left = content(store, edge[0])
-      if (isRefNode(store, content(store, child)) && (!rowTypeIdOf(store, edge) || capabilityName(store, edge[0]) !== null)) argumentsToCopy.add(child)
+      // a declaration (a named ref, an untyped or capability one) is copied as itself, keeping its name
+      if (isRefNode(store, content(store, child)) && (!rowTypeIdOf(store, edge) || capabilityName(store, edge[0]) !== null || !!content(store, child).data.name)) argumentsToCopy.add(child)
       // Nested templates remain definitions when their containing workflow is instantiated.
       if (isRowOfType(store, edge, TEMPLATE_TYPE)) definitions.add(child)
       // a field stays a ref of its own, with the id its field gives it

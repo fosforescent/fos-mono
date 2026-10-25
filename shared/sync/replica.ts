@@ -759,7 +759,8 @@ export function renameTask(replica: Replica, at: Scope, taskId: string, title: s
     if (edge && rowTitle(replica.store, identityCid(replica.store, edge), rowTypeOf(replica.store, edge)) === trimmed) return null
     // a row of a leaf type (a string) holds the text itself; one that holds text (a field, or its own) takes it there
     if (edge && isLeafType(replica.store, edge[0])) return content(replica.store, textValue(replica.store, trimmed))
-    return withRowText(replica.store, task, trimmed, now) ?? withLabel(replica.store, task, trimmed)
+    // the new text's `{name}` parameters are declared as for a new row
+    return withTextParameters(replica.store, withRowText(replica.store, task, trimmed, now) ?? withLabel(replica.store, task, trimmed), trimmed)
   })
 }
 

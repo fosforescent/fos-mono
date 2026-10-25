@@ -5,7 +5,7 @@ import { settingOf, completes, isLibraryRef } from './graph'
 import { isHandlerStateLeft } from './capabilities'
 import { discoverHandlers } from './handlers'
 import { contextBindings, resolveBinding, resolveText, type BindingEnvironment } from './bindings'
-import { constructRow, fieldValues, isFieldRow, rowText, titleField } from './fields'
+import { constructRow, fieldValues, isFieldRow, rowText, titleField, textOf, textValue } from './fields'
 import { libraryNode, rowTitle } from './graph'
 import {
   requirementViewOf, libAt, commitRoot, content, identityCid, newId, put,
@@ -182,8 +182,8 @@ export function beginTaskWork(r: Replica, requestPath: Scope, preview: WorkConte
 
 export function proposeTaskResult(r: Replica, resultPath: Scope, text: string, now: number): Replica {
   if (!text.trim()) throw new Error('The model returned an empty result. Try again.')
-  const note = rowTypeAt(r.store, NOTE_TYPE, resultPath), result = put(r.store, constructRow(r.store, note, newId(), fieldValues(r.store, note, { body: text }), now))
-  return proposeRefAt(r, resultPath, result, 'fos', now).replica
+  // the answer is text, proposed to the attempt's return slot; accepting it makes it a note
+  return proposeRefAt(r, resultPath, textValue(r.store, text), 'fos', now).replica
 }
 
 /** Acceptance is the only operation that supplies the work request. The task remains manually checkable. */
@@ -205,12 +205,12 @@ export function decideTaskResult(r: Replica, requestPath: Scope, resultPath: Sco
   if (!accepted.merged) throw new Error(`Waiting for approval by ${accepted.missing.join(', ')}.`)
   r = accepted.replica
   if (refValueCid(r.store, content(r.store, nodeAt(r, resultPath).cid)) !== proposal.contentCid) throw new Error('The return ref changed. Review the current proposal again.')
-  const result = content(r.store, proposal.contentCid)
-  if (!result.data.alias?.id) throw new Error('Result has no identity.')
-  const next = updateAtScope(r.store, headCid(r), requestPath, (value) => ({ ...value, children: [...value.children, rowEdgeAt(r.store, NOTE_TYPE, proposal.contentCid, requestPath)] }))
+  const note = rowTypeAt(r.store, NOTE_TYPE, requestPath), id = newId()
+  const result = put(r.store, constructRow(r.store, note, id, fieldValues(r.store, note, { body: textOf(r.store, proposal.contentCid) ?? '' }), now))
+  const next = updateAtScope(r.store, headCid(r), requestPath, (value) => ({ ...value, children: [...value.children, rowEdgeAt(r.store, NOTE_TYPE, result, requestPath)] }))
   commitRoot(r.store, next, now)
   for (const title of subtasks) r = addTask(r, requestPath.slice(0, -1), title, now)
-  return supplyRequirement(r, requestPath.slice(0, -1), requestPath.at(-1)!, { by: 'fos', ref: result.data.alias.id }, now)
+  return supplyRequirement(r, requestPath.slice(0, -1), requestPath.at(-1)!, { by: 'fos', ref: id }, now)
 }
 
 /** Whether the request at `path` asks for its answer as subtasks (its row's request, from the Generate subtasks template). */

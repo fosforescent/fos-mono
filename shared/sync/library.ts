@@ -1,4 +1,5 @@
 /** Library definitions are editable values. Runtime consumers must use explicitly pinned instances. */
+import { capabilityName } from './structural'
 import { allocationShapeOf } from './allocations'
 import { refTitle } from './fields'
 import { primitive } from './primitives'
@@ -143,10 +144,12 @@ export function libraryFieldPath(r: Replica, field: string, at?: Scope): Scope |
 export function manualHandlers(r: Replica, at?: Scope): ManualHandler[] {
   const field = libraryTypeAt(r.store, MANUAL_HANDLERS, at ?? homePath(r))
   if (!field) return []
+  // each a declaration of what it stands in for: its capability, and the resource it is for
   return viewNode(r.store, field).tasks.flatMap(row => {
-    const req = row.requirement
-    if (!req || !row.title.trim()) return []
-    return [{ id: row.id, label: row.title.trim(), ...(req.capability ? { capability: req.capability } : {}), ...(req.resource ? { resource: req.resource } : {}), device: false }]
+    const capability = row.typeCid ? capabilityName(r.store, row.typeCid) : null
+    if (!capability || !row.title.trim()) return []
+    const resource = allocationShapeOf(r.store, row.typeCid!)?.type
+    return [{ id: row.id, label: row.title.trim(), capability, ...(resource ? { resource } : {}), device: false }]
   })
 }
 
