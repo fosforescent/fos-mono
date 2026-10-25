@@ -8,7 +8,7 @@ const dir = mkdtempSync(path.join(tmpdir(), 'fos-template-ui-'))
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'FormData', 'Node', 'Option', 'navigator', 'localStorage', 'sessionStorage', 'location', 'FileReader']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export {parsePastedRows} from './src/paste'; export {parseRowInput,rawRowText} from './src/rows'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid', 'katex', 'katex/*'] })
-const { put, content, rowTypeAt, addConstructedRow, parsePastedRows, rawRowText, App, mountUi, createMemoryStorage, parseRowInput, view, HOME_ID, resolveScope, headCid, requirementOutputs, argumentRefs, createReplica, ensureHomeContext, exchangeNode, SERVER_TRANSPORT_CAPABILITIES, addMemberAt } = require(path.join(dir, 'app.cjs'))
+const { libAt, put, content, rowTypeAt, addConstructedRow, parsePastedRows, rawRowText, App, mountUi, createMemoryStorage, parseRowInput, view, HOME_ID, resolveScope, headCid, requirementOutputs, argumentRefs, createReplica, ensureHomeContext, exchangeNode, SERVER_TRANSPORT_CAPABILITIES, addMemberAt } = require(path.join(dir, 'app.cjs'))
 const TASK_TYPE = 'task'
 const PLAIN_TYPE = 'plain'
 const COMMENT_TYPE = 'comment'
@@ -349,7 +349,7 @@ async function main() {
   assert.equal(a.state.modal, 'direct')
   a.closeModal(); a.undo(); await tick()
   document.querySelector('.peer-tabs [aria-label="This device"]').click()
-  a.addPlaceholder('connection', 'peer')
+  a.addPlaceholder('connection', libAt(a.state.replica.store, a.state.view).capabilities.peer)
   const peerArg = a.placeholders().find(p => p.name === 'connection')
   assert.throws(() => a.applyConstructor([...repo, peerArg.id], { type: 'capabilities.allocation', text: '', done: false, extras: { allocation: { type: 'account', amount: 5, unit: 'USD', resource: '' } } }), /matching/)
   a.applyConstructor([...repo, peerArg.id], { type: PLAIN_TYPE, text: '', done: false, peer: 'virtual' })
@@ -383,6 +383,9 @@ async function main() {
   const previousSends = sends
   pullApp.addPullConstructor([...pullApp.state.view, callback.id])
   assert.equal(sends, previousSends, 'composition does not dispatch the effect')
+  assert.equal(pullApp.placeholders().find(p => p.id === callback.id).status, 'missing', 'the composed request still needs its result')
+  await pullApp.evaluateAt([...pullApp.state.view, callback.id])
+  assert(sends > previousSends, 'evaluating the composed value dispatches its nested request')
   assert.equal(pullApp.placeholders().find(p => p.id === callback.id).status, 'ready')
   const count = a.currentView().tasks.length
   a.configureTrigger('request', '', true, [HOME_ID], false)

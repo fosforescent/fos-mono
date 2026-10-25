@@ -206,7 +206,7 @@ export function executionInputs(r: Replica, root: Scope): SharedInput[] {
     const native = nativeRows.has(JSON.stringify(path))
     for (const arg of cid ? argumentRefs(r.store, cid) : []) {
       const ref = content(r.store, arg.cid), id = ref.data.alias?.id
-      if (!id || settingOf(r.store, ref) || ref.data.ref || ref.data.refExpression || native && ref.data.refRole === 'output') continue
+      if (!id || settingOf(r.store, ref) || ref.data.ref || ref.data.refExpression || native && ref.data.refRole === 'output' && !refValueCid(r.store, ref)) continue
       // Requirement refs have their own input controls below; do not also expose them as generic reference slots.
       if (rows.some(row => row.id === id && row.requirement)) continue
       const relative = [...path.slice(root.length), id]
@@ -222,7 +222,10 @@ export function executionInputs(r: Replica, root: Scope): SharedInput[] {
     for (const row of rows) {
       if (result.length >= 32) break
       const child = resolveScope(r.store, headCid(r), [...path, row.id])
-      if (native && child && content(r.store, child).data.refRole === 'output') continue
+      if (native && child) {
+        const ref = content(r.store, child)
+        if (ref.data.refRole === 'output' && !refValueCid(r.store, ref)) continue
+      }
       const req = row.requirement, relative = [...path.slice(root.length), row.id]
       const held = row.allocation || row.refId !== undefined ? offered([...path, row.id], row.id) : null
       if (held) result.push({ key: JSON.stringify(relative), path: relative, name: row.title, kind: 'allocation', direction: 'consume', type: held.allocation.type, unit: held.allocation.unit, amount: held.allocation.amount, start: held.allocation.start, end: held.allocation.end })

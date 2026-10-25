@@ -34,7 +34,8 @@ import { NODE_PERMISSION_DEFAULT, isNodeProjection, nodeBranches, nodeBranchBase
 import { requestPeerNode } from './api'
 import { membershipSyncContext, sendPullRequest, UNKNOWN_PROVIDER, type NodeSyncContext } from '../../shared/sync/node-sync'
 import { parsePastedRows } from './paste'
-import { ORGANIZE_PEER, captureNoteText, requestOrganize, typeAt } from '../../shared/sync/organize'
+import { ORGANIZE_PEER, captureNoteText, requestOrganize, organizedRowCount, typeAt } from '../../shared/sync/organize'
+import { valueOfPattern } from '../../shared/sync/structural'
 import { NOTE_TYPE } from '../../shared/sync/published-types'
 import { microphoneError, recordedType, recordingMimeType, recordingUnsupported } from './recording'
 import { SETTING_LABELS, settingKeyOf } from './settings'
@@ -450,6 +451,7 @@ export class App {
   private manualPeer: string | null = null
 
   readonly deviceHandlers = createDeviceHandlers({
+    peerId: () => this.state.replica.meta.peerId,
     pull: async () => {
       if (this.syncInFlight) throw new Error('Wait for current sync to finish before evaluating Pull.')
       await this.syncNow('evaluate pull', true)
@@ -526,16 +528,12 @@ export class App {
     this.observedHead = headCid(replica)
     this.pendingSession = session
     this.connectDismissed = prefs.connectDismissed === true
-    this.autoAcceptCaptures = (prefs as { autoAcceptCaptures?: unknown }).autoAcceptCaptures === true
   }
 
   private pendingSession: Session | null
   private connectDismissed: boolean
   /** The default settings this device already made (a deleted setting row is not made again). */
   private installedSettings: string[] = []
-  /** Accept the account's organized captures on this device as soon as they arrive (still one local, undoable edit). */
-  autoAcceptCaptures = false
-  setAutoAcceptCaptures(on: boolean): void { this.autoAcceptCaptures = on; this.savePrefs(); this.set({}) }
 
   now(): number {
     return this.config.now ? this.config.now() : Date.now()
@@ -578,7 +576,7 @@ export class App {
   }
 
   private savePrefs(): void {
-    this.config.storage.savePrefs({ installedSettings: this.installedSettings, repositories: [...this.repositories], branches: this.branchSelections, connectDismissed: this.connectDismissed, autoAcceptCaptures: this.autoAcceptCaptures, deviceName: this.state.deviceName, collapsed: this.state.collapsed, ...(this.state.policyLocked ? {} : { policy: this.state.policy }) })
+    this.config.storage.savePrefs({ installedSettings: this.installedSettings, repositories: [...this.repositories], branches: this.branchSelections, connectDismissed: this.connectDismissed, deviceName: this.state.deviceName, collapsed: this.state.collapsed, ...(this.state.policyLocked ? {} : { policy: this.state.policy }) })
   }
 
   notify(kind: Notice['kind'], text: string): void {
@@ -1601,7 +1599,7 @@ export class App {
     else if (extras.allocation) r = addAllocation(r, parent, text, now, this.allocationWithBank(parent, extras.allocation, r, extras.user?.username), { id })
     else throw new Error('An argument row asks for or supplies a value.')
     if (position && 'relativeTo' in position && position.relativeTo !== id) r = moveNode(r, parent, id, parent, position, now)
-    if (extras.user) r = bindUserAt(r, [...parent, id], extras.user, now)
+    if (extras.user) r = bindUserAt(r, [...parent, id], cachedUser(r, extras.user.username) ?? extras.user, now)
     return r
   }
   /** The row at `path` as a bank: its value declares the allocate contract of its scope (what `addBank` does for a new row). */
@@ -2169,8 +2167,9 @@ export class App {
     const next = updateAtScope(r.store, headCid(r), path, identity => {
       const cid = put(r.store, identity), value = valueContent(r.store, cid)
       const { name: _name, ...data } = identity.data
+      const typed = content(r.store, valueOfPattern(r.store, pattern, value.data))
       return refNodeContent(r.store, { ...data, ...(handler !== undefined ? { name: { content: handler || 'peer' } } : {}) },
-        put(r.store, { ...value, children: handler === undefined ? value.children : [...value.children, ...content(r.store, pattern).children.filter(row => !value.children.some(edge => edge[0] === row[0]))] }), [...bookkeepingOf(r.store, identity), [r.store.primitive.previousVersion.getId(), cid]])
+        put(r.store, handler === undefined ? value : { ...typed, children: [...typed.children, ...value.children.filter(edge => !typed.children.some(row => row[0] === edge[0] && row[1] === edge[1]))] }), [...bookkeepingOf(r.store, identity), [r.store.primitive.previousVersion.getId(), cid]])
     }, 'node')
     const root = handler !== undefined && path.length ? updateAtScope(r.store, next, path.slice(0, -1), node => ({ ...node, children: node.children.map(edge => content(r.store, edge[1]).data.alias?.id === path.at(-1) ? [pattern, edge[1]] : edge) })) : next
     commitRoot(r.store, root, this.now()); return { ...r }
@@ -2647,13 +2646,10 @@ export class App {
       if (argument) {
         let value = resolveScope(r.store, headCid(r), target)!
         if (parsed.extras?.demand) {
-          // Fill unconstrained property values with the body. Preserve literal
-          // constraints (including name rows) so composition keeps its pattern.
-          const constructor = content(r.store, libAt(r.store, target.slice(0, -1)).capabilities[parsed.extras.demand.capability]!)
-          value = put(r.store, { data: {}, children: constructor.children.map(([left, right]) => {
-            const pattern = content(r.store, right)
-            return [left, !pattern.children.length && !Object.keys(pattern.data).length ? value : right]
-          }) })
+          // A callable value carries the invocation as a child, with its declaration intact.
+          const constructor = libAt(r.store, target.slice(0, -1)).capabilities[parsed.extras.demand.capability]!
+          const instruction = view(r, target.slice(0, -1))!.tasks.find(row => row.id === target.at(-1))!.typeCid!
+          value = valueOfPattern(r.store, constructor, {}, [[instruction, value]])
         }
         if (!matchesGraph(r.store, argument.type, value)) throw new Error('Choose a constructor matching this input pattern.')
         r = setRefValueAt(r, path, value, this.now())
@@ -2688,11 +2684,13 @@ export class App {
     walk([]); return found.slice(0, 50)
   }
   canLinkNode(id: string, destination = this.state.view): boolean {
-    const target = findRowByAlias(this.state.replica.store, headCid(this.state.replica), id)?.row
+    const r = this.state.replica, target = findRowByAlias(r.store, headCid(r), id)
     if (!target || destination.includes(id)) return false
-    const req = destination.length ? view(this.state.replica, destination.slice(0, -1))?.tasks.find(row => row.id === destination.at(-1))?.requirement : null
-    // a requirement takes a reference to any row; whether the bound value satisfies its pattern is what makes it satisfied
-    return !req || !req.satisfied
+    const row = destination.length ? view(r, destination.slice(0, -1))?.tasks.find(row => row.id === destination.at(-1)) : null
+    if (!row?.requirement) return true
+    if (row.requirement.satisfied) return false
+    const cid = resolveScope(r.store, headCid(r), [...target.path, id])
+    return !!cid && !!row.typeCid && resolveBinding(r.store, row.typeCid, cid, contextBindings(r, destination), undefined, { scope: { replica: r, path: destination } }).status === 'ready'
   }
   linkNode(id: string, destination = this.state.view): void {
     if (!this.canLinkNode(id, destination)) { this.notify('error', 'This value does not match the destination requirement.'); return }
@@ -3116,7 +3114,8 @@ export class App {
     if (!/^[A-Za-z_][\w.-]*$/.test(name) || !typeName.trim()) { this.notify('error', 'Give the placeholder a name and type.'); return }
     const r = this.state.replica
     let type: string
-    if (typeName.startsWith('template:')) {
+    if (r.store.table.has(typeName)) type = typeName
+    else if (typeName.startsWith('template:')) {
       const id = typeName.slice(9), library = this.libraryConstructors(destination).find(item => item.id === id)
       const local = library ? null : resolveRef(r, id, destination)
       const cid = library?.cid ?? (local && resolveScope(r.store, headCid(r), [...local.path, local.row.id]))
@@ -3586,7 +3585,7 @@ export class App {
    * holding the capture (`requestOrganize`), run on the account server (`runOnServer`), whose `organize` handler asks
    * its model and answers the request with the plan's rows inside it; the filled request stays as the row holding
    * them. When the server cannot organize it the request is removed and the capture kept here, unorganized. (The plan
-   * as one fos submission on `at`, accepted from Branches or by `autoAcceptCaptures`, awaits its replacement: web/CLAUDE.md.)
+   * as one fos submission on `at` awaits its replacement: web/CLAUDE.md.)
    */
   private async organizeInto(text: string, at: Scope, label: string): Promise<boolean> {
     const session = this.state.session, generation = this.authGeneration, store = this.state.replica.store
@@ -3600,7 +3599,7 @@ export class App {
     if (generation !== this.authGeneration || this.state.session !== session || this.state.replica.store !== store) return false
     const answered = failure ? null : requirementAnswer(this.state.replica, asked.path)
     if (answered !== null) {
-      const count = view(this.state.replica, asked.path)?.tasks.length ?? 0
+      const count = organizedRowCount(this.state.replica, asked.path)
       this.notify('info', `${label} organized: ${count} row${count === 1 ? '' : 's'} in “${label}”${answered ? ` (${answered})` : ''}.`)
       return true
     }

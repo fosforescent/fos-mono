@@ -12,6 +12,7 @@ function operandText(store: import('../../shared/dag-implementation/store').FosS
 }
 
 export function createDeviceHandlers(effects: {
+  peerId(): string
   /** Sync with the account now; throws when it fails. */
   pull(): Promise<void>
   /** Queue the coding agent for the step at `path`; the result arrives through the workflow. */
@@ -31,7 +32,7 @@ export function createDeviceHandlers(effects: {
     return { outputs: { self: supplyValue(context.store, self.pattern, by, receipt) } }
   }
   declarations.push({ id: 'device:pull', label: 'Pull', type: (store, at) => libAt(store, at).capabilities.tool!,
-    handles: step => step.row?.requirement?.tool === 'fos.pull', native: async (operands, context) => { await effects.pull(); return answering('device', 'pulled')(operands, context) } })
+    handles: step => step.row?.requirement?.tool === 'fos.pull', native: async (operands, context) => { await effects.pull(); return answering(effects.peerId(), 'pulled')(operands, context) } })
   declarations.push({ id: 'device:agent', label: 'Coding agent', type: (store, at) => libAt(store, at).capabilities.tool!,
     handles: step => step.row?.requirement?.tool === AGENT_TOOL, native: async (_operands, context) => { await effects.agent(context.step, context.evaluation); return { pending: true } } })
   // A network request: [fetch, right], the url and method its compiled inputs, the body bound to its `response` output.

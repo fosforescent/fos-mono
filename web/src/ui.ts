@@ -16,6 +16,7 @@ import { SETTING_LABELS, settingKeyOf } from './settings'
 import { combobox } from './combobox'
 import { iconSvg } from './icons'
 import { isNegative } from '../../shared/sync/parameters'
+import { libAt } from '../../shared/sync/graph'
 import { capabilityPresentation } from './capability-presentation'
 import { openTimeBlockPicker, type TimeBank } from './timeblocks'
 import { alternativePicker, proposalPreview, clearProposal } from './alternatives'
@@ -1598,7 +1599,7 @@ function placeholderForm(app: App): HTMLElement {
   } })
   const box = combobox('Placeholder template', 'Choose a placeholder template…', query => [
     option('Text', 'text', 'Types'),
-    ...app.allCapabilities().map(cap => option(capabilityLabels(app.state.replica.store, app.state.view)[cap] ?? cap, cap, 'Types')),
+    ...app.allCapabilities().map(cap => option(capabilityLabels(app.state.replica.store, app.state.view)[cap] ?? cap, app.state.replica.store.table.has(cap) ? cap : libAt(app.state.replica.store, app.state.view).capabilities[cap]!, 'Types')),
     ...app.searchLocalNodes(query, TEMPLATE_TYPE).map(found => option(found.row.title, 'template:' + found.row.id, 'Templates'))
   ], () => [], 'Search template types, then drag…')
   box.addEventListener('dragstart', event => { if (!selected) return; event.stopPropagation(); event.dataTransfer?.setData('application/x-fos-placeholder', selected); if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy' })
@@ -1714,16 +1715,10 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
       event.stopPropagation()
       if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && !send.disabled) { event.preventDefault(); send.click() }
     })
-    // what the account organizes is a submission by fos; accepting it right away is still one local, undoable edit
-    const autoAccept = document.createElement('label'); autoAccept.className = 'muted small auto-accept-captures'
-    const autoAcceptBox = document.createElement('input'); autoAcceptBox.type = 'checkbox'
-    autoAcceptBox.addEventListener('change', () => app.setAutoAcceptCaptures(autoAcceptBox.checked))
-    autoAccept.title = 'Otherwise each organized capture waits as a submission from fos in this node\'s Branches until you accept it'
-    autoAccept.append(autoAcceptBox, ' Accept right away')
     capture.append(captureText, send)
     const inputMenu = document.createElement('details'); inputMenu.className = 'input-menu'
     const inputSummary = document.createElement('summary'); inputSummary.innerHTML = iconSvg('+') ?? '+'; inputSummary.setAttribute('aria-label', 'More input options'); inputSummary.title = 'Images, videos, text and files'
-    const inputOptions = div('input-menu-options', ''); inputOptions.append(div('input-controls', ''), organize, autoAccept)
+    const inputOptions = div('input-menu-options', ''); inputOptions.append(div('input-controls', ''), organize)
     inputMenu.append(inputSummary, inputOptions)
     const edit = div('node-input', ''); edit.setAttribute('aria-label', 'Input'); edit.append(inputMenu, div('node-input-fields', ''), capture, voice)
     composerObservers.get(el)?.disconnect()
@@ -1900,7 +1895,6 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   inputFields.hidden = !declaredInputs || !!preview
   edit.classList.toggle('has-declared-inputs', !!declaredInputs)
   capture.hidden = !!preview || !!row?.refPeer || !!declaredInputs
-  edit.querySelector<HTMLInputElement>('.auto-accept-captures input')!.checked = app.autoAcceptCaptures
   const organize = edit.querySelector<HTMLButtonElement>('.organize-capture')!
   organize.disabled = !capture.querySelector<HTMLTextAreaElement>('.capture-text')!.value.trim() || !!state.voice || !app.canOrganize()
   organize.title = app.canOrganize() ? ORGANIZE_TITLE : state.session?.kind === 'user' ? 'Organizing needs a Fos peer with a language model' : 'Connect to your account to organize text'
@@ -1959,7 +1953,7 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
   let rows = renderRows(filtered, [], 0, state, app)
   // Schema fields are already ordinary rows. Legacy text is shown in the same list,
   // never in a separate title editor, and absent text does not invent a title input.
-  const detailElement = el.closest('#app')?.querySelector<HTMLElement>('[data-region="node"]')
+  const detailElement = el.parentElement?.parentElement?.querySelector<HTMLElement>('[data-region="node"]')
   const detail = detailElement && details.get(detailElement), current = app.currentRow()
   if (detail && current && current.type !== HOME_TYPE && !current.form && (current.title || current.scalar) && !proposalPreview(app)) rows.unshift(detail.titleRow)
   const preview = proposalPreview(app)
@@ -1990,7 +1984,7 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
       })
     }
     const entries = renderReadOnly(preview.cid, 0)
-    el.replaceChildren(...entries); ghostRows.delete(el); focusGhost = false; return
+    el.replaceChildren(...(detail && preview.node.name ? [detail.titleRow] : []), ...entries); ghostRows.delete(el); focusGhost = false; return
   }
   if (reuse) {
     // Keep the actual draft input attached: replacing it loses focus, text undo and the caret on sync.
@@ -2358,7 +2352,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   else if (fileReference) { body = span('title', fileReference.path.split('/').at(-1)!); body.append(renderFileReference(app, [...state.view, ...at, task.id], fileReference)) }
   else if (task.type === HOME_TYPE) { body = span('title home-node', ''); body.innerHTML = iconSvg('⌂')!; body.setAttribute('aria-label', 'Home'); body.title = 'Home' }
   else if (task.construction && !(task.construction.handler && selected)) { body = constructorBody(task, state, app, [...state.view, ...at, task.id]) }
-  else if ((inputs = app.rowInputs([...state.view, ...at, task.id]))) { body = constructedRowBody(task, inputs, [...state.view, ...at, task.id], app, 'right') }
+  else if ((inputs = app.rowInputs([...state.view, ...at, task.id])) && !task.requirement) { body = constructedRowBody(task, inputs, [...state.view, ...at, task.id], app, 'right') }
   else if (task.form && !task.text && !task.headline) { body = renderForm(task, at, state, app) }
   else if (selected && task.refId === undefined && (!hasControls(task) || editingSpecial === task.id)) {
     body = renderEditor(task, at, state, app)
@@ -2703,26 +2697,20 @@ function insideTemplate(state: AppState, fullPath: Scope): boolean {
 function paymentControls(app: App, _state: AppState, path: Scope, pay: () => void): HTMLElement[] {
   if (!app.capabilityAvailable('send-payment', path)) return [span('muted req-hint', ' the account server pays this when the task runs')]
   const open = button('secondary small', 'Pay', pay)
-  open.title = 'Opens a payment to the respondent through the account server (Stripe); the task continues when it is confirmed'
+  open.title = 'Opens a payment to the named payee through the account server (Stripe); the task continues when it is confirmed'
   return [open]
 }
 
 /**
  * The standard library's fallbacks for a requirement nobody's peer handles (or handles yet): a button per handler
- * that records the person did it by hand; the manual place handler also takes the place's name.
+ * that records the person did it by hand. Resource demands require issued authority.
  */
 function manualControls(app: App, state: AppState, at: Scope, task: TaskView, absolute = false): HTMLElement[] {
   const req = task.requirement
-  if (!req || req.satisfied) return []
+  if (!req || req.satisfied || req.linear || req.capability === 'allocation') return []
   const controls: HTMLElement[] = []
   // the library this requirement sees: Home's linked one under Home, the root's shipped one elsewhere
   for (const handler of manualHandlersFor(state.replica, req, absolute ? at : [...state.view, ...at])) {
-    if (handler.capability === 'allocation' && handler.resource === 'location' && !handler.device) {
-      const place = document.createElement('input'); place.className = 'small manual-place'; place.placeholder = req.place ?? 'Where?'; place.setAttribute('aria-label', 'Place')
-      const record = button('secondary small manual-handler', handler.label, () => void app.applyManualHandler(at, task, handler, place.value || undefined, absolute)); record.dataset.handler = handler.id
-      controls.push(place, record)
-      continue
-    }
     if (handler.device && !app.deviceNative(handler)) continue
     const record = button('secondary small manual-handler', handler.label, () => void app.applyManualHandler(at, task, handler, undefined, absolute)); record.dataset.handler = handler.id
     record.title = handler.device ? 'Records this device\'s position as the place' : 'Records that you did this by hand; no peer is involved'

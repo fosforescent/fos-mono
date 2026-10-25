@@ -1,3 +1,4 @@
+const drag = require('./helpers/drag.cjs')
 // The MCP servers are sub-peers: the device's loopback endpoint for a node (`mcp:local`) and the account server's
 // hosted one (`mcp:server`). Their read / write / execute toggles decide which tools they expose; with everything
 // off they accept no connections. Credentials never enter the graph.
@@ -42,7 +43,7 @@ async function main() {
   assert(local && local.classList.contains('peer-status-disabled'), 'the local MCP server is a grey sub-peer of the device until granted')
   local.click(); await tick()
   // its constructor makes its row on this node, which holds the grants and the configuration
-  grid().querySelector('[aria-label="Local MCP server"]').click(); await tick()
+  drag(grid().querySelector('[aria-label="Local MCP server"]')); await tick()
   const row = () => document.querySelector('.tree .constructor-body')
   assert(row().textContent.includes('accepts no connections'), 'all toggles off: disabled')
   assert.equal(stopped, 0)
@@ -135,7 +136,7 @@ async function main() {
   document.querySelector('.peer-tabs [aria-label="Fos server"]').click(); await tick()
   const hostedIcon = grid().querySelector('button.sub-peer[aria-label="Fos MCP server"]')
   assert(hostedIcon, 'the hosted MCP server is a sub-peer of the server'); hostedIcon.click(); await tick()
-  grid().querySelector('[aria-label="Fos MCP server"]').click(); await tick()
+  drag(grid().querySelector('[aria-label="Fos MCP server"]')); await tick()
   const hostedRow = () => [...document.querySelectorAll('.tree .constructor-body')].find(b => b.querySelector('[aria-label^="Fos MCP server:"]'))
   const hosted = label => document.querySelector(`.peer-grants input[aria-label="Fos MCP server: ${label}"]`)
   hosted('read').checked = true; hosted('read').dispatchEvent(new window.Event('change')); await tick()

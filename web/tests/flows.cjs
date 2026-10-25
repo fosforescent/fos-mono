@@ -1,3 +1,4 @@
+const drag = require('./helpers/drag.cjs')
 // One story through the UI, two accounts and the account server between them (the server runs the shared core on
 // alice's account, as the backend does): alice writes a note with LaTeX in its body row and publishes it, shares the
 // node with her friend bob, bob opens it, adds a task and a comment, and his changes reach alice as one submission
@@ -71,7 +72,7 @@ async function main() {
   ghost().focus(); ghost().value = 'Math notes'; key(ghost(), 'Enter'); await tick()
   const notesId = c.view(account(), [HOME]).tasks.find(t => t.title === 'Math notes').id
   alice.zoomTo([notesId]); await tick()
-  assert.equal($(aliceRoot, '.node-title-input').value, 'Math notes', 'the title is the node’s own row editor')
+  assert.equal($(aliceRoot, '.current-node-row textarea').value, 'Math notes', 'the title is the node’s own row editor')
   ghost().focus(); ghost().value = "> Euler's identity"; key(ghost(), 'Enter'); await tick()
   const note = alice.currentView().tasks.find(t => t.type === c.NOTE_TYPE)
   assert.equal(note.title, "Euler's identity")
@@ -93,7 +94,7 @@ async function main() {
   alice.select(null); await tick() // constructors add inside the selected row, else into the node
   $(aliceRoot, '.children-toolbar .constructors-toggle').click(); await tick()
   $(aliceRoot, '.peer-tabs [aria-label="Fos server"]').click(); await tick()
-  $(aliceRoot, '.constructor-grid [aria-label="Publish publicly"]').click(); await tick()
+  drag($(aliceRoot, '.constructor-grid [aria-label="Publish publicly"]'), $(aliceRoot, '.tree .ghost')); await tick()
   const publishRow = () => $$(aliceRoot, '.tree .constructor-body').find(b => b.querySelector('.sharing-controls'))
   assert(publishRow(), 'the audience row holds its switches')
   const execute = $(publishRow(), '.peer-grants input[aria-label$=": execute"]')
@@ -115,7 +116,7 @@ async function main() {
 
   // 3. add a friend: the Fos server's "Share with a Fos user" row searches and invites
   $(aliceRoot, '.peer-tabs [aria-label="Fos server"]').click(); await tick()
-  $(aliceRoot, '.constructor-grid [aria-label="Share with a Fos user"]').click(); await tick()
+  drag($(aliceRoot, '.constructor-grid [aria-label="Share with a Fos user"]'), $(aliceRoot, '.tree .ghost')); await tick()
   const search = $(aliceRoot, '.tree .constructor-body [aria-label="Search Fos users"]')
   assert(search, 'the sharing row has the user search')
   search.value = 'bob'; search.closest('form').dispatchEvent(new window.Event('submit', { cancelable: true }))
@@ -157,7 +158,7 @@ async function main() {
   const option = $$(aliceRoot, '.node-choices [role="option"]').find(o => o.textContent.includes('user:bob'))
   assert(option, 'the submission is offered among the branches')
   option.click(); await tick()
-  assert(alice.state.view.length && $(aliceRoot, '.node-title-input').readOnly, 'the submission previews read-only')
+  assert(alice.state.view.length && $(aliceRoot, '.current-node-row textarea').readOnly, 'the submission previews read-only')
   for (let i = 0; i < 20 && !$(aliceRoot, '.tree').textContent.includes('Prove it'); i++) await tick()
   assert($(aliceRoot, '.tree').textContent.includes('Prove it for complex x'), 'the preview shows bob’s task')
   const approve = $$(aliceRoot, 'button').find(b => b.textContent === 'Approve and merge')

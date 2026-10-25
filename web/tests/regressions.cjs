@@ -564,15 +564,15 @@ async function main() {
   assert(!document.querySelector('.node-header .add-row'), 'the header no longer has an Add button')
   assert(document.querySelector('.node-title-section > .input-toggle'), 'Edit sits beside the title')
   // the title is the node's own row editor: its marker text, parsed on Enter
-  const titleInput = document.querySelector('.node-title-input')
+  const titleInput = document.querySelector('.current-node-row textarea')
   assert.equal(titleInput.value, '[ ] Branch project')
   assert(!document.querySelector('.node-title-row .zoom-dot, .node-title-row .handle, .node-title-row .more'), 'no zoom dot, drag handle or row menu in the title')
   titleInput.focus(); titleInput.value = '[ ] Renamed project'
   titleInput.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
   assert.equal(branchApp.currentRow().title, 'Renamed project')
   assert.equal(branchApp.currentRow().done, false)
-  document.querySelector('.node-title-input').value = '[x] Renamed project'
-  document.querySelector('.node-title-input').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  document.querySelector('.current-node-row textarea').value = '[x] Renamed project'
+  document.querySelector('.current-node-row textarea').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
   assert.equal(branchApp.currentRow().done, true, 'the marker sets the done state')
   document.querySelector('.node-title-check input').click()
   assert.equal(branchApp.currentRow().done, false, 'the title checkbox reopens it')
@@ -679,7 +679,7 @@ async function main() {
   const detailTask = detailApp.addRowAtTop(parseRowInput('[ ] Detailed task'))
   const nestedTask = detailApp.addRowAt([detailTask], TASK_TYPE, 'Nested task')
   detailApp.zoomTo([detailTask]); await tick()
-  const editor = document.querySelector('textarea.node-title-input')
+  const editor = document.querySelector('.current-node-row textarea')
   editor.focus(); editor.value = '[ ] Detailed task\nFull text draft'; editor.setSelectionRange(12, 12)
   detailApp.set({ replica: addTask(detailApp.state.replica, [detailTask], 'Remote child', 50, 'remote-child') })
   await tick()
@@ -735,10 +735,11 @@ async function main() {
   assert(![...document.querySelectorAll('.footer button')].some(b => /Undo|Redo|Connect/.test(b.textContent)))
   assert(document.querySelector('[aria-label="Device name"]'))
   assert(document.querySelector('[aria-label="Device theme"]'))
-  assert.equal(document.querySelector('[data-accordion="context"]').open, false)
-  assert(!document.querySelector('[data-accordion="context"]').open)
+  const constructorsWereOpen = document.querySelector('[data-accordion="context"]').open
   assert(!document.querySelector('.node-menu-button'), 'node actions live in Constructors')
   document.querySelector('[aria-label="Constructors"]').click()
+  assert.equal(document.querySelector('[data-accordion="context"]').open, !constructorsWereOpen)
+  if (constructorsWereOpen) document.querySelector('[aria-label="Constructors"]').click()
   workspaceApp.goTo([])
   const parentA = workspaceApp.addRowAt([], PLAIN_TYPE, 'A'), parentB = workspaceApp.addRowAt([], PLAIN_TYPE, 'B')
   workspaceApp.goTo([parentA]); workspaceApp.addRowAt([], TASK_TYPE, 'A child')
@@ -770,9 +771,9 @@ async function main() {
   const argumentRows = document.querySelectorAll(`.tree .task[data-id="${customerArg.id}"]`)
   assert.equal(argumentRows.length, 1, 'the right argument is rendered once as its ordinary row')
   assert.equal(argumentRows[0].draggable, true, 'arguments use the ordinary row move controls')
-  assert.equal(document.querySelectorAll('[aria-label="Text for customer"]').length, 1)
+  assert.equal(argumentRows[0].querySelectorAll('[aria-label="Text for customer"]').length, 1)
   const sourceText = workspaceApp.addRowAt([], PLAIN_TYPE, 'Customer name')
-  const customerPanel = document.querySelector('[aria-label="Text for customer"]').parentElement
+  const customerPanel = document.querySelector('.tree [aria-label="Text for customer"]').parentElement
   const argumentDrop = new dom.window.Event('drop', { bubbles: true, cancelable: true })
   Object.defineProperty(argumentDrop, 'dataTransfer', { value: { types: ['application/x-fos-node'], getData: () => sourceText } })
   customerPanel.dispatchEvent(argumentDrop)

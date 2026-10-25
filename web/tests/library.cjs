@@ -1,3 +1,4 @@
+const drag = require('./helpers/drag.cjs')
 /* Shared definitions must materialize offline; consumers must explicitly pin and upgrade their library instances. */
 const assert = require('node:assert/strict')
 const { buildSync } = require('esbuild')
@@ -50,7 +51,6 @@ async function main() {
   let materialized
   const materialize = app.materializeSharedTree.bind(app)
   app.materializeSharedTree = (...args) => (materialized = materialize(...args))
-  c.mountUi(document.getElementById('app'), app)
   let me = c.ensureHomeContext(c.createReplica('user:me'), 1)
   me = { ...me, meta: { ...me.meta, peerId: 'user:me', serverPeerId: 'user:me' } }
   me = c.addRow(me, [HOME], c.REF_TYPE, 'Team library', 2, { id: TEAM, refOwner: 'alice', refId: TEAM, refScope: [HOME, TEAM] })
@@ -106,7 +106,7 @@ async function main() {
   assert(constructor('Paid task') && constructor('Invoice'), 'the menu discovers bundled library templates offline')
   assert(!constructor('Manual handlers'), 'the fallback-handler group is not an executable workflow')
   const initialHead = c.headCid(fresh.state.replica)
-  constructor('Paid task').click()
+  drag(constructor('Paid task'))
   const paid = fresh.libraryConstructors().find(item => item.label === 'Paid task').id
   const fromMenu = c.view(fresh.state.replica, [HOME]).tasks.find(row => row.template?.id === paid)
   assert(fromMenu, 'click instantiates the selected library definition by identity')
@@ -171,7 +171,7 @@ async function main() {
   // The pattern belongs to the enclosing row, never to the argument node.
   assert.equal(c.content(fresh.state.replica.store, c.argumentRefs(fresh.state.replica.store, c.resolveScope(fresh.state.replica.store, c.headCid(fresh.state.replica), [HOME])).find(arg => arg.cid === boundArgument).type).data.alias.id, 'custom')
   assert.equal(fresh.placeholders().find(arg => arg.id === workflow.id).status, 'missing', 'its confirmation remains unresolved until the workflow is completed')
-  fresh.addPlaceholder('peer_only', 'peer', [HOME])
+  fresh.addPlaceholder('peer_only', c.libAt(fresh.state.replica.store, [HOME]).capabilities.peer, [HOME])
   const peerOnly = fresh.placeholders().find(arg => arg.name === 'peer_only')
   const incompatibleHead = c.headCid(fresh.state.replica)
   assert.throws(() => fresh.insertLibraryConstructor('custom', [HOME, peerOnly.id]), /matching/, 'a workflow without a peer property cannot fill a peer pattern')
@@ -186,7 +186,7 @@ async function main() {
   fresh.set({ replica: c.addRequirement(fresh.state.replica, errand, 'Tell the client', Date.now(), { capability: 'mail' }, 'mail') })
   fresh.set({ replica: c.addRequirement(fresh.state.replica, errand, 'fee', Date.now(), { capability: 'allocation', resource: 'account', amount: 20, unit: 'usd' }, 'fee') })
   const parsedPlace = parseRowInput('-at Eiffel Tower')
-  assert.deepEqual(parsedPlace.extras.demand, { capability: 'allocation', resource: 'location', inputs: { place: 'Eiffel Tower' } }, `"-at <place>" is a location requirement: ${JSON.stringify(parsedPlace)}`)
+  assert.deepEqual(parsedPlace.extras.demand, { capability: 'allocation', resource: 'location', start: null, end: null, inputs: { place: 'Eiffel Tower' } }, `"-at <place>" is a location requirement: ${JSON.stringify(parsedPlace)}`)
   assert.equal(parseRowInput('at Paris').extras.allocation.location.name, 'Paris', '"at <place>" is a location allocation')
   fresh.set({ replica: c.addRequirement(fresh.state.replica, errand, parsedPlace.text, Date.now(), parsedPlace.extras.demand, 'where') })
   fresh.set({ replica: c.addRequirement(fresh.state.replica, errand, 'Somewhere nearby', Date.now(), { capability: 'allocation', resource: 'location' }, 'near') })

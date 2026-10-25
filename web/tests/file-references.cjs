@@ -103,7 +103,7 @@ async function main() {
   assert.equal(root.querySelectorAll('.filesystem-row').length, 0, 'no file rows without the desktop shell')
   const away = [...root.querySelectorAll('.file-reference')].find(box => box.textContent.includes('README.md'))
   assert.equal(away.dataset.state, 'unavailable')
-  assert(away.textContent.includes('not available on this device'))
+  assert(away.closest('.task').textContent.includes('not available on this device'))
   assert.equal(filesystemRows(other), null)
   other.logout()
 

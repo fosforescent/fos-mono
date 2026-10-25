@@ -20,7 +20,7 @@ async function main() {
   const parse = text => c.parseRowInput(text, c.capabilityDeclarations(app.state.replica.store, app.state.view))
   const me = app.state.replica.meta.peerId
   const offers = app.handlerOffers([]).filter(offer => offer.peerId === me)
-  assert(offers.some(offer => offer.capability === 'fetch') && offers.some(offer => offer.capability === 'solve'), 'this device offers fetch and solve')
+  assert(offers.some(offer => offer.capability === 'fetch') && !offers.some(offer => offer.capability === 'solve'), 'fetch is a native; solve awaits an explicit scope operand')
   const parsed = parse('-fetch POST https://example.com/hook ping')
   assert.deepEqual(parsed.construct, { capability: 'fetch', values: { url: 'https://example.com/hook', method: 'POST' } })
   assert.equal(parsed.extras, undefined, 'nothing about the request is row data')
@@ -54,28 +54,13 @@ async function main() {
   assert.deepEqual(requests, [['https://example.com/data', 'GET']])
   const response = c.resolveScope(app.state.replica.store, c.headCid(app.state.replica), [...fetchRow, refAlias(fetchRow, 'response')])
   assert(response, 'the right has the response ref')
-  const submitted = c.readProposals(app.state.replica.store, c.content(app.state.replica.store, response)).filter(p => p.status === 'open')
-  assert.equal(submitted.length, 1)
-  assert.equal(c.content(app.state.replica.store, submitted[0].contentCid).data.description.content, 'hello from the network')
-  assert.equal(c.refValueCid(app.state.replica.store, c.content(app.state.replica.store, response)), null, 'nothing is bound until it is chosen')
-  const responsePick = document.querySelector(`.task[data-id="${fetchRow.at(-1)}"] select[aria-label="Choose response"]`)
-  responsePick.value = submitted[0].cid; responsePick.dispatchEvent(new window.Event("change")); await tick()
-  assert.equal(c.textOf(app.state.replica, c.assignedValue(app.state.replica, fetchRow, refAlias(fetchRow, 'response'))), 'hello from the network')
-
-  // solve: every person under Trip with a city row is a solution; the placeholder lists them as options
+  assert.equal(c.evaluationRecord(app.state.replica, fetchRow).status, 'committed')
+  assert.equal(c.textOf(app.state.replica, c.assignedValue(app.state.replica, fetchRow, refAlias(fetchRow, 'response'))), 'hello from the network', 'the native answer is bound at transaction commit')
   let r = c.addTask(app.state.replica, home, 'Trip', 1, 'trip')
   const trip = [...home, 'trip']
-  for (const [id, city] of [['alice', 'Paris'], ['bob', 'Rome']]) { r = c.addTask(r, trip, id, 1, id); r = c.addRow(r, [...trip, id], c.PLAIN_TYPE, city, 2, { id: `${id}-city` }) }
-  app.set({ replica: r, view: trip }); await tick()
-  const solveRow = app.applyConstructor(trip, parse('-solve where can we go'))
-  r = c.addRefAt(app.state.replica, solveRow, 'city', app.state.replica.store.primitive.documentField.getId(), 3, null, 'city')
-  app.set({ replica: r }); await tick()
-  assert.equal(c.findEdge(app.state.replica.store, c.valueContent(app.state.replica.store, c.resolveScope(app.state.replica.store, c.headCid(app.state.replica), trip)), `a:${solveRow.at(-1)}`)[0], c.libAt(app.state.replica.store, trip).capabilities.solve)
-  await app.evaluateAt(solveRow); await tick()
-  const city = c.content(app.state.replica.store, c.resolveScope(app.state.replica.store, c.headCid(app.state.replica), [...solveRow, 'city']))
-  const options = c.readProposals(app.state.replica.store, city).filter(p => p.status === 'open').map(p => c.valueContent(app.state.replica.store, p.contentCid).data.description?.content).sort()
-  // nearest first: Trip's people, then rows further out (the scope includes ancestors)
-  assert.deepEqual(options.filter(o => ['Paris', 'Rome'].includes(o)), ['Paris', 'Rome'])
+  r = c.addTask(r, trip, 'alice', 1, 'alice')
+  r = c.addRow(r, [...trip, 'alice'], c.PLAIN_TYPE, 'Paris', 2, { id: 'alice-city' })
+  app.set({ replica: r, view: trip })
 
   // a template used as a pattern: the row's values are submitted to the template's refs, and its view lists them
   r = c.addRow(app.state.replica, home, c.TEMPLATE_TYPE, 'Destination', 4, { id: 'destination' })
@@ -90,6 +75,6 @@ async function main() {
   assert(pick, 'the node shows the pattern ref with its submitted values')
   pick.value = binding.options[0].proposal; pick.dispatchEvent(new window.Event('change')); await tick()
   assert.equal(app.valueLabel(app.patternBindingsAt()[0].value), 'Paris')
-  console.log('PASS: fetch and solve as device primitives, responses and solutions as submissions, templates used as patterns')
+  console.log('PASS: fetch commits its response and templates bind submitted values')
 }
 main().catch(error => { console.error(error); process.exitCode = 1 }).finally(() => { dom.window.close(); rmSync(dir, { recursive: true, force: true }) })

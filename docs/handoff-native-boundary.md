@@ -74,3 +74,18 @@ Run the suites one file at a time (state in "State at handoff" below), regenerat
 - MCP: provider pinning on failure, needs-recovery journal, explicit handler ref, per-tool disabling and scope-based provider choice are gone; the tool is chosen among the account's servers (several offering it = refuse).
 - Evaluator: a thrown native rolls the run back (effects `reverted`) instead of needs-recovery + a manual rollback task.
 - `solve` native; the device-side verify half (node exchange carrying the requirement's @user); allocation pickers / drag-to-supply / Pick time / manual money & location fallbacks in the web UI.
+
+
+## Usability checkpoint (2026-10-24)
+
+The usability port is now green. The original failure counts above describe the starting point, not the current checkout. The user asked to finish this port before addressing A-C; typed results, pattern-selected handlers and scoped lazy native reads remain deferred.
+
+- The checked-in library now uses argument rows, with its generated artifact rebuilt in data version `0.0.6`. Existing stores were not reset; older formats are still rejected under the repository's version policy.
+- Instruction compilation preserves constructor identity and source locations, opens output holes, and carries access checks. Calls materialize default input and output refs. Native writes follow forwarded references to their actual declarations, rejecting cycles and unavailable targets.
+- Organize keeps the original capture and nested generated rows inside the filled request, counts only generated rows, and falls back to a note on failure. Removed proposal-plan helpers and the obsolete auto-accept capture setting stay removed.
+- Browser workflows now cover typed peer placeholders, deferred Pull composition, real device identity on Pull answers, requirement controls alongside declared inputs, verified-user reuse, title editing and read-only proposal previews. Hosted forms distinguish visitor inputs from empty native outputs while keeping issued grants available for use.
+- Browser fixtures use the actual drag/drop interface. Library loading is verified through the controller before the separate palette UI scenario, avoiding repeated JSDOM rendering during remote materialization.
+
+Validation: 358 shared tests across 55 suites; 137 backend tests across 28 suites; the 21 affected backend sharing/event tests rerun after the final input-filtering correction; all 42 browser test files completed (the suite was resumed after fixing its allocation case). Web, embedded web, backend and desktop embedded-core builds pass. Kernel-boundary allowlists were not expanded. No payment-record implementation or `prepare()` effect path remains in the checked runtime directories; low-level native registration wrappers remain part of the deferred cleanup. `current_tasks.md` was not changed.
+
+Core/backend checkpoint: `7f5d970`. The subsequent browser checkpoint also contains the final correction that keeps filled native-output grants available to the execution UI.

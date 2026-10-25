@@ -42,8 +42,9 @@ async function main() {
       const name = row.title.replace(/^@/, '')
       if (name !== 'bob') return json(400, { error: `No Fos user is named @${name}.` })
       const user = attest({ account: '42', username: 'bob', name: 'Bob Builder', publicKey: '' }, signer)
-      let next = c.bindUserAt(r, at, tamper ? { ...user, name: 'Mallory' } : user, 10)
-      next = c.supplyRequirement(next, at.slice(0, -1), at.at(-1), { by: 'fos', receipt: '42' }, 10)
+      const pattern = c.rowConstructor(r, at), type = c.userType(r.store, at)
+      const answer = c.valueOfPattern(r.store, pattern, { description: { content: '@bob' }, peerId: { content: 'fos' } }, [[type, c.put(r.store, c.userObjectContent(r.store, type, tamper ? { ...user, name: 'Mallory' } : user))]])
+      const next = c.bindArgument(r, at, answer, 'fos', 10)
       app.set({ replica: next })
       return json(200, { evaluation: { status: 'committed' } })
     }

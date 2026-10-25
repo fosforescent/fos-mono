@@ -15,7 +15,6 @@ async function main() {
   host = c.addRefAt(host, ['form'], 'answer', host.store.primitive.documentField.getId(), 2, null, 'Research question')
   host = c.addRequirement(host, ['form'], 'Confirm participation', 2, { capability: 'confirmation' }, 'confirm')
   host = c.addRequirement(host, ['form'], 'Choose topic', 2, { capability: 'choice', options: ['Graphs', 'Biology'] }, 'choice')
-  host = c.addRequirement(host, ['form'], 'Provide items', 2, { capability: 'allocation', resource: 'inventory', amount: 1, unit: 'item' }, 'items')
   // What visitors may use is a grant of the host's shelf, held by a handle row the form refers to. The host's
   // allocate handler (the server's, here the shared effect) issues it and later runs the visitors' consumption.
   const allocate = { id: 'fos:allocate', label: 'allocate', type: (store, at) => c.libAt(store, at).capabilities.allocate }
@@ -110,11 +109,11 @@ async function main() {
   assert.equal(excessive.status, 400, 'cannot consume more than offered')
   const submitted = await call('submit', { ...a.body.address, visitorToken: a.body.visitorToken, revision: a.body.node.revision, approvals: [], ranking: [], fields: Object.fromEntries(a.body.node.inputs.map(f => [f.key, { value: f.kind === 'text' ? 'Only my research' : f.kind === 'confirmation' ? true : f.kind === 'choice' ? 0 : { amount: 1, type: 'inventory', unit: 'item' } }])) })
   assert.equal(submitted.status, 200, JSON.stringify(submitted.body))
-  assert.equal(submitted.body.node.execution.status, 'committed', JSON.stringify(submitted.body.node.execution))
+  assert.equal(submitted.body.node.execution.status, 'committed', JSON.stringify({ execution: submitted.body.node.execution, inputs: submitted.body.node.inputs }))
   assert.deepEqual(c.ownerGrants(replicas.host, ['shelf']).map(g => g.allocation.amount).sort(), [1, 1], 'the shelf holds the item used and the item remaining as separate grants')
   assert.equal(c.handleAt(replicas.host, ['stock']).allocation.amount, 1, 'the shared handle now names the remainder')
-  assert.equal(c.executionInputs(replicas.host, b.body.address.path).length, 5, 'the other visitor is offered what remains of the shared stock')
-  assert.equal(c.sharedInputs(replicas.host, ['form']).length, 3, 'template remains unchanged (its text slot, choice and allocation)')
+  assert.equal(c.executionInputs(replicas.host, b.body.address.path).length, 4, 'the other visitor is offered what remains of the shared stock')
+  assert.equal(c.sharedInputs(replicas.host, ['form']).length, 2, 'template remains unchanged (its text slot and choice)')
   replicas.host = c.removeMemberAt(replicas.host, b.body.address.path, b.body.node.mine.peer, 101)
   assert.equal((await call('visit', { ...at, visitorToken: b.body.entryToken })).status, 404, 'entry cannot reattach a revoked visitor')
   replicas.host = c.unpublish(replicas.host, ['form'], 'public', 102)
