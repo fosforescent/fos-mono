@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express'
-import { LIBRARY_ID, addMemberAt, setMemberCapabilitiesAt, addRow, addTask, createReplica, evaluationRecord, headCid, put, resolveScope, valueContent, view, nativeRef, setNodeTrigger, triggerState, serializeReplica, loadReplica, removeMemberAt } from '@fosforescent/shared/sync/index'
+import { LIBRARY_ID, addMemberAt, setMemberCapabilitiesAt, addRequirement, addTask, createReplica, evaluationRecord, headCid, put, resolveScope, valueContent, view, nativeRef, setNodeTrigger, triggerState, serializeReplica, loadReplica, removeMemberAt } from '@fosforescent/shared/sync/index'
 jest.mock('../prismaClient', () => ({ prisma: {} }))
 jest.mock('../promptNotifications', () => ({ sendToUser: jest.fn() }))
 jest.mock('../util', () => ({ dbToStore: jest.fn(), storeToDb: jest.fn() }))
@@ -7,7 +7,6 @@ import { createEvaluationService } from './evaluation'
 import { createEventService } from './events'
 import { createHostRuntime } from './host-runtime'
 import { githubRepoHandler } from './hostHandlers'
-import { ALLOCATION_TYPE } from '@fosforescent/shared/sync/library-types'
 
 test('the scheduler discovers custom observer refs in nested scopes after reload and respects removal', async () => {
   let r = addTask(addTask(createReplica('owner'), [], 'Container', 1, 'container'), ['container'], 'Listen', 1, 'listener')
@@ -29,7 +28,7 @@ test('the scheduler discovers custom observer refs in nested scopes after reload
 
 function setup() {
   let r = addTask(createReplica('owner'), [], 'Project', 1, 'project')
-  r = addRow(r, ['project'], ALLOCATION_TYPE, 'File issue', 1, { id: 'req', requirement: { capability: 'repo', repo: 'owner/repo' } })
+  r = addRequirement(r, ['project'], 'File issue', 1, { capability: 'repo', inputs: { repo: 'owner/repo' } }, 'req')
   r = addMemberAt(r, [], 'integration:github', 'GitHub', [], 1)
   r = setMemberCapabilitiesAt(r, [], 'integration:github', [], [], 1, ['repo'])
   let calls = 0
@@ -67,12 +66,14 @@ test('strangers cannot execute an account integration and stale content cannot r
   expect((await s.call('user', 'changed')).status).toBe(400)
   expect(s.calls()).toBe(0)
 })
-test('lost effect response creates a recovery task, with no automatic retry', async () => {
+test('a lost effect response rolls the evaluation back: nothing is published, nothing is retried by itself', async () => {
   const s = setup()
   s.effects.createIssue = async () => { throw new Error('Response lost') }
   expect((await s.call()).status).toBe(400)
-  expect(evaluationRecord(s.get(), ['project'])?.status).toBe('needs-recovery')
-  expect(view(s.get(), ['project'])!.tasks.some(t => t.title.startsWith('Manually roll back'))).toBe(true)
+  const record = evaluationRecord(s.get(), ['project'])!
+  expect(record.status).toBe('rolled-back')
+  expect(record.effects.every(effect => effect.status === 'reverted')).toBe(true)
+  expect(view(s.get(), ['project'])!.tasks.every(t => !t.done)).toBe(true)
 })
 test('a disconnected provider blocks the step instead of running it', async () => {
   const s = setup()
@@ -85,7 +86,7 @@ test('a disconnected provider blocks the step instead of running it', async () =
 
 test('a rejected persistent claim stops before invoking any integration', async () => {
   let r = addTask(createReplica('owner'), [], 'Project', 1, 'project')
-  r = addRow(r, ['project'], ALLOCATION_TYPE, 'File issue', 1, { id: 'req', requirement: { capability: 'repo', repo: 'owner/repo' } })
+  r = addRequirement(r, ['project'], 'File issue', 1, { capability: 'repo', inputs: { repo: 'owner/repo' } }, 'req')
   r = addMemberAt(r, [], 'integration:github', 'GitHub', [], 1)
   r = setMemberCapabilitiesAt(r, [], 'integration:github', [], [], 1, ['repo'])
   const issue = jest.fn()

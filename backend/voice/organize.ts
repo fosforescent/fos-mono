@@ -1,26 +1,23 @@
 import { standardHostRef } from '../sync/host-runtime'
 /**
- * Organizing a capture into one node's subtree is an effect of this server: the `organize` handler fills an
- * `organize` requirement placed in the target node (shared/sync/organize.ts `requestOrganize`: its text is what the
- * capture is, its note child the captured text). Reached like every other effect, through a `complete` event on the
- * requirement (sync/events.ts → sync/evaluation.ts); there is no route. The handler
- *
- *   1. builds the outline of the target's subtree from the account's own store (`captureOutline`),
- *   2. asks the model for a plan (retried once when the answer is not JSON), validated against that outline,
- *   3. submits the plan, with the raw capture kept as a note, as ONE submission by `fos` on the target
- *      (`proposeOrganizePlan`: a proposal on the target's mutable ref; no row is written into main), and
- *   4. records the supply, with what it submitted as the requirement's `fos:organized` value.
- *
- * The owner accepts the submission on a device as one local edit (web: `App.acceptSubmission`) or rejects it; until
- * then nothing of the capture is on main.
+ * Organizing a capture is an effect of this server: the `organize` handler fills an `organize` requirement placed in
+ * the target node (shared/sync/organize.ts `requestOrganize`: its text is what the capture is, its `capture` input
+ * the captured text). Reached like every other effect, through a `complete` event on the requirement
+ * (sync/events.ts → sync/evaluation.ts); there is no route. The handler is a native: it asks the model for a plan
+ * (retried once when the answer is not JSON) and answers the request with the plan's rows inside it. Natives see no
+ * tree, so the model gets the capture alone; the target's outline, and the plan as one submission on the target the
+ * owner accepts or rejects, await their replacement (current_tasks.md).
  *
  * The same model plumbing and free budget as voice notes (voiceNotes.ts): spend is metered and recorded as voice
- * usage; a non-paying account over the budget is refused before the evaluation opens. Texted messages use the same
- * handler (`createAccountOrganizer`, for channels/textCommands.ts); their submission waits in Home.
+ * usage; a non-paying account over the budget is refused. Texted messages use the same handler
+ * (`createAccountOrganizer`, for channels/textCommands.ts); their filled request waits in Home.
  */
-import { handlerResult, writeHandlerResult, proposeOrganizePlan, captureOutline, deleteTask, headCid, homePath, organizeRequestAt, organizePrompt, parseOrganizePlan, ORGANIZE_SYSTEM, put, readNodeValue, requestOrganize, resolveScope, valueContent, view, writeNodeValue, addSupply, createReplica, type OrganizedResult, type OrganizePlan, type OutlineEntry, type Scope } from '@fosforescent/shared/sync/index'
+import { deleteTask, headCid, homePath, organizePrompt, parseOrganizePlan, ORGANIZE_SYSTEM, put, requestOrganize, requirementAnswer, resolveScope, valueContent, view, createReplica, type OrganizedResult, type OrganizePlan, type OutlineEntry, type Scope } from '@fosforescent/shared/sync/index'
 import { withUserLock, type AccountStoreDeps } from '../sync/accountStore'
 import type { HostHandler } from '../sync/host-runtime'
+import { valueOfPattern } from '@fosforescent/shared/sync/structural'
+import { patternInputs, rowTypeAt, newId, organizedRowCount, content } from '@fosforescent/shared/sync/index'
+import { constructForm } from '@fosforescent/shared/sync/forms'
 import { budgetRefusal, recordSafely, type VoiceDeps, type VoiceUsage } from './voiceNotes'
 
 export type OrganizeInput = { text: string; title: string; outline: OutlineEntry[] }
@@ -36,47 +33,40 @@ export async function organizeCapture(deps: Pick<VoiceDeps, 'complete'>, input: 
   }
 }
 
-const utcStamp = (now: number) => new Date(now).toISOString().replace('T', ' ').slice(0, 16) + ' UTC'
 
 /**
  * The `organize` handler. `model` makes one provider instance per capture (its `drain` meters that capture alone);
  * `usage` is the voice budget.
  */
 export function organizeHandler(model: () => VoiceDeps, usage?: VoiceUsage): HostHandler {
-  const payer = async (username: string) => usage?.userNamed ? await usage.userNamed(username) : null
   return {
     peerId: 'fos', ref: standardHostRef('fos', 'organize'),
-    async prepare(ctx) {
-      // refusals come before the evaluation opens, so nothing is journaled for them
-      if (!organizeRequestAt(ctx.replica(), ctx.step.path)) throw new Error('Put the captured text in the organize requirement as a note.')
-      const user = usage ? await payer(ctx.username) : null
-      const refusal = usage && user ? await budgetRefusal(usage, user) : null
+    // the capture is the request's input; the plan's rows are the answer. Natives see no tree, so the outline is the request's own text.
+    native: user => async (operands, ctx) => {
+      const self = operands.outputs.self
+      if (!self) throw new Error('This handler fills an organize requirement.')
+      const text = (patternInputs(ctx.store, self.pattern).capture ?? '').trim()
+      if (!text) throw new Error('Put the captured text in the organize request.')
+      const payer = usage?.userNamed ? await usage.userNamed(user.username) : null
+      const refusal = usage && payer ? await budgetRefusal(usage, payer) : null
       if (refusal) throw new Error(refusal.error)
-    },
-    async effect(ctx) {
-      const path = ctx.step.path, target = path.slice(0, -1), r = ctx.replica()
-      const request = organizeRequestAt(r, path)
-      if (!request) throw new Error('The capture is missing from the organize requirement.')
-      const title = target.length ? view(r, target.slice(0, -1))?.tasks.find(t => t.id === target.at(-1))?.title ?? '' : 'Home'
-      const outline = await captureOutline(r, target)
-      const deps = model(), started = Date.now(), user = usage ? await payer(ctx.username) : null
+      const deps = model(), started = Date.now()
       deps.drain?.()
       let plan: OrganizePlan
-      try {
-        plan = await organizeCapture(deps, { text: request.text, title, outline })
-      } finally {
+      try { plan = await organizeCapture(deps, { text, title: self.data.description?.content ?? '', outline: [] }) }
+      finally {
         const cost = deps.drain?.() ?? { usd: 0, tokens: 0 }
-        if (usage && user) await recordSafely(usage, user.id, { usd: cost.usd, tokens: cost.tokens, seconds: (Date.now() - started) / 1000, bytes: request.text.length, clusters: 0 })
+        if (usage && payer) await recordSafely(usage, payer.id, { usd: cost.usd, tokens: cost.tokens, seconds: (Date.now() - started) / 1000, bytes: text.length, clusters: 0 })
       }
-      // one submission by fos on the target: main gets the proposal (bookkeeping), never the rows
-      const submitted = await proposeOrganizePlan(ctx.replica(), target, plan, { label: request.label, stamp: utcStamp(ctx.now()), text: request.text }, ctx.now())
-      const titles = new Map(outline.map(entry => [entry.id, entry.title]))
-      const result: OrganizedResult = { rows: submitted.rows.length, captureId: submitted.captureId, title: plan.title, under: [...new Set(plan.items.flatMap(item => item.parent && titles.has(item.parent) ? [titles.get(item.parent)!] : []))],
-        proposal: submitted.proposalCid, name: submitted.name, additions: submitted.additions }
-      let next = writeHandlerResult(submitted.replica, path, result, ctx.now())
-      // Completion attests the submission. Its proposed rows remain in the recorded result until accepted.
-      next = addSupply(next, target, path.at(-1)!, { capability: 'organize', by: 'fos' }, ctx.now())
-      await ctx.update(next)
+      const rowsAt = (parent: string | null): Array<[string, string]> => plan.items.filter(item => item.parent === parent).map(item => {
+        const type = rowTypeAt(ctx.store, item.type, ctx.step), id = newId()
+        const node = content(ctx.store, type).data.form
+          ? constructForm(ctx.store, type, id, { text: item.text }, ctx.now)
+          : { data: { alias: { id }, description: { content: item.text } }, children: [] }
+        return [type, ctx.put({ ...node, children: [...node.children, ...rowsAt(item.ref)] })]
+      })
+      const rows = rowsAt(null)
+      return { outputs: { self: valueOfPattern(ctx.store, self.pattern, { description: { content: plan.title || 'Organized' }, peerId: { content: 'fos' } }, rows) } }
     }
   }
 }
@@ -85,10 +75,9 @@ type RunNode = (username: string, request: { path: Scope; branches: Record<strin
 
 /**
  * Organizing on an account's behalf without a device (texted messages): the organize requirement is placed in Home
- * under the account's lock, evaluated like a device's (`runNode`, the same handler and budget), and removed once
- * filled; the submission (the plan's rows and the kept capture) waits on Home for the owner to accept it on a device.
- * Null when it could not be organized (no handler, over budget,
- * the model failed): the requirement is removed again and the caller files the text unorganized.
+ * under the account's lock and evaluated like a device's (`runNode`, the same handler and budget); filled, it stays
+ * in Home as the row holding the plan's rows. Null when it could not be organized (no handler, over budget, the model
+ * failed): the requirement is removed again and the caller files the text unorganized.
  */
 export function createAccountOrganizer(deps: AccountStoreDeps, runNode: RunNode) {
   const edit = <T>(username: string, change: (r: ReturnType<typeof createReplica>) => { replica: ReturnType<typeof createReplica>; value: T }) => withUserLock(`user:${username}`, async () => {
@@ -109,10 +98,12 @@ export function createAccountOrganizer(deps: AccountStoreDeps, runNode: RunNode)
     let failure: unknown = null
     try { await runNode(username, { path: placed.path, branches: {}, expected: placed.expected }) } catch (error) { failure = error }
     return edit(username, r => {
-      const result = failure ? null : handlerResult<OrganizedResult>(r, placed.path)
+      // the answer is the request's value: the plan's rows, inside the filled request, which stays in Home holding them
+      const title = failure ? null : requirementAnswer(r, placed.path)
+      if (title !== null) return { replica: r, value: { rows: organizedRowCount(r, placed.path), title } as OrganizedResult }
       if (failure) console.error('organizing failed:', failure instanceof Error ? failure.message : failure)
       const exists = !!resolveScope(r.store, headCid(r), placed.path)
-      return { replica: exists ? deleteTask(r, placed.path.slice(0, -1), placed.path.at(-1)!, deps.now?.() ?? Date.now()) : r, value: result }
+      return { replica: exists ? deleteTask(r, placed.path.slice(0, -1), placed.path.at(-1)!, deps.now?.() ?? Date.now()) : r, value: null }
     })
   }
 }

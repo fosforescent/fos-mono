@@ -1,5 +1,5 @@
 /** Owner-initiated and scheduled evaluation share the same graph evaluator, user-store lock and handler runtime. */
-import { INTEGRATION_PEERS, evaluationRecord, recoverEvaluation, capabilityPeers, createReplica, evaluateNode, evaluationSteps, selectExecutor, headCid, put, resolveScope, runNodeTriggers, configuredTriggers, selectBranch, valueContent, type EvaluationStep, type Scope } from '@fosforescent/shared/sync/index'
+import { INTEGRATION_PEERS, evaluationRecord, recoverEvaluation, capabilityPeers, createReplica, evaluateNode, evaluationSteps, selectExecutor, headCid, put, resolveScope, runNodeTriggers, configuredTriggers, selectBranch, valueContent, type EvaluationStep, type Scope, type StepExecutor } from '@fosforescent/shared/sync/index'
 import { withUserLock, type AccountStoreDeps } from './accountStore'
 import type { HostRuntime, HostHandler } from './host-runtime'
 
@@ -30,21 +30,12 @@ export function createEvaluationService(deps: AccountStoreDeps, runtime: HostRun
         // An interrupted run is reviewed before anything new is bound or called (the evaluator checks this too).
         const prior = evaluationRecord(r, path)
         if (prior && !['idle', 'committed', 'rolled-back', 'awaiting-review'].includes(prior.status)) throw new Error('This evaluation needs recovery. Review its effects before running again.')
-        // Handlers bind what they need before the evaluator pins instructions; the return slots they name are theirs to fill.
-        const outputs = new Map<string, string[]>()
-        for (const step of evaluationSteps(r, path)) {
-          const handler = selectExecutor(available(step)).executor
-          if (!handler?.prepare || step.row?.requirement?.satisfied) continue
-          const prepared = await handler.prepare({ userId: user.id, username: user.username, step, replica: () => r, update: save, now })
-          if (prepared?.outputs?.length) outputs.set(JSON.stringify(step.path), prepared.outputs)
-        }
         const result = await evaluateNode(path, {
           get: () => r, save, now,
-          // a return slot a handler fills is excluded from the change check of its step and of every step below it (whose context includes it)
-          outputs: step => [...outputs.entries()].filter(([at]) => { const prefix = JSON.parse(at) as Scope; return prefix.length <= step.path.length && prefix.every((id, i) => step.path[i] === id) }).flatMap(([, ids]) => ids),
-          isPeerActive: peer => peer === 'fos' || active.get(peer) === true,
+          // the account's own rows are always reachable here; the host and the providers checked above are live when they said so
+          isPeerActive: peer => peer === 'fos' || peer === r.meta.peerId || active.get(peer) === true,
           check: step => runtime.executors(step, r).length && !available(step).length ? [`${[...new Set(runtime.executors(step, r).map(h => peerLabel(h.peerId)))].join(' or ')} is not active in this context.`] : [],
-          executors: step => available(step).map(handler => ({ effect: async (current: EvaluationStep) => handler.effect!({ userId: user.id, username: user.username, step: current, replica: () => r, update: save, now }) }))
+          executors: step => available(step).flatMap((handler): StepExecutor[] => handler.native ? [{ native: handler.native({ id: user.id, username: user.username }) }] : [])
         })
         if (result.status !== 'committed' && result.status !== 'awaiting-review') throw new Error(result.error ?? 'Evaluation needs recovery.')
         return result

@@ -93,7 +93,7 @@ export function solveAt(replica: Replica, at: Scope, peerId: string, now: number
   const rows = patternRows(store, valueContent(store, rowCid)).filter(edge => {
     if (!isRowEdge(store, edge)) return false
     const identity = content(store, identityCid(store, edge))
-    return !settingOf(store, identity) && !isHandlerStateLeft(store, edge[0]) && !valueContent(store, identityCid(store, edge)).data.supply
+    return !settingOf(store, identity) && !isHandlerStateLeft(store, edge[0])
   })
   const compiled = compileRefGraph(replica, put(store, { data: {}, children: rows }), at, { selected: true })
   if (compiled.holes.some(hole => hole.reason !== 'unbound')) throw new Error('Resolve the pattern references before solving.')

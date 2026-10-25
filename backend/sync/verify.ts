@@ -21,8 +21,10 @@ import { standardHostRef } from './host-runtime'
  * object (read from the account's profile when it has one) and `ed25519-self` verifications are signed by it.
  */
 import { createPrivateKey, createPublicKey, hkdfSync, randomBytes, sign, verify, type KeyObject } from 'node:crypto'
-import { USER_SERVER_ATTESTATION, userFieldEdge, content, identityCid, plainEdge, addSupply, bindUserAt, userAttestationPayload, verifyUser, headCid, resolveScope, valueContent, type UserRecord } from '@fosforescent/shared/sync/index'
-import type { EffectContext, HostHandler } from './host-runtime'
+import { USER_SERVER_ATTESTATION, userFieldEdge, content, identityCid, plainEdge, supplyRequirement, bindUserAt, userAttestationPayload, verifyUser, headCid, resolveScope, valueContent, type UserRecord } from '@fosforescent/shared/sync/index'
+import type { HostHandler } from './host-runtime'
+import { readUser, userObjectContent, userType } from '@fosforescent/shared/sync/users'
+import { valueOfPattern } from '@fosforescent/shared/sync/structural'
 
 export type IdentityKey = { privateKey: KeyObject; publicKey: string }
 
@@ -67,13 +69,6 @@ export type VerifyHandler = HostHandler & {
   verify(user: UserRecord): boolean
 }
 
-/** The username a verify requirement asks about: its user field (the user as typed, `requestVerification`). */
-function wanted(ctx: EffectContext): string {
-  const name = (ctx.step.row?.user?.username ?? '').trim()
-  if (!name) throw new Error('Name the user to verify: "@name".')
-  return name
-}
-
 /** The fos `verify` service: a `verify` requirement is filled with the attested user object and the server's supply. */
 export function verifyHandler(deps: VerifyDeps, key: IdentityKey, peer = 'fos'): VerifyHandler {
   const now = () => deps.now?.() ?? Date.now()
@@ -91,23 +86,18 @@ export function verifyHandler(deps: VerifyDeps, key: IdentityKey, peer = 'fos'):
     verify(user) {
       return user.verification?.method === USER_SERVER_ATTESTATION && verifyUser(user, { servers: { [peer]: key.publicKey }, verify: verifyEd25519 }).ok
     },
-    async prepare(ctx) {
-      // an unknown name fails before the evaluation opens, so nothing is journaled for it
-      const name = wanted(ctx)
-      if (!await deps.findUser(name)) throw new Error(`No Fos user is named @${name}.`)
-      // the handler fills the request's user field (the user as typed becomes the attested object): that field is its output
-      const r = ctx.replica(), cid = resolveScope(r.store, headCid(r), ctx.step.path)!
-      const field = userFieldEdge(r.store, valueContent(r.store, cid))
-      const id = field && content(r.store, identityCid(r.store, plainEdge(r.store, field))).data.alias?.id
-      return { outputs: id ? [id] : [] }
-    },
-    async effect(ctx) {
-      const name = wanted(ctx), path = ctx.step.path
+    // the request's user field (the user as typed) is an operand; the answer carries the attested object as its user field
+    native: () => async (operands, ctx) => {
+      const self = operands.outputs.self
+      if (!self) throw new Error('This handler fills a verify requirement.')
+      const type = userType(ctx.store, ctx.step)
+      const asked = operands.inputs.user ? readUser(ctx.store, type, content(ctx.store, operands.inputs.user)) : null
+      const name = asked?.username.trim()
+      if (!name) throw new Error('Name the user to verify: "@name".')
       const user = await resolve(name)
       if (!user) throw new Error(`No Fos user is named @${name}.`)
-      let next = bindUserAt(ctx.replica(), path, user, ctx.now())
-      next = addSupply(next, path.slice(0, -1), path.at(-1)!, { capability: 'verify', by: peer, receipt: user.account }, ctx.now())
-      await ctx.update(next)
+      const field: [string, string] = [type, ctx.put(userObjectContent(ctx.store, type, user))]
+      return { outputs: { self: valueOfPattern(ctx.store, self.pattern, { description: { content: `@${user.username}` }, peerId: { content: peer } }, [field]) } }
     }
   }
 }

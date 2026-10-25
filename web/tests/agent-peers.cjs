@@ -1,3 +1,4 @@
+const drag = require('./helpers/drag.cjs')
 // Agents found on this computer are sub-peers of the device: discovered at startup (a filesystem query, never a graph
 // row), shown as icons in the device's constructor grid, opened for their own constructors and grants, draggable into
 // a row as a select of their actions, and maskable like any peer. The launch is a button on the agent's own panel: a
@@ -63,7 +64,7 @@ async function main() {
   assert.equal(document.querySelector('.peer-tabs [aria-label="This device"]').getAttribute('aria-selected'), 'true', 'the device tab stays selected inside its sub-peer')
   assert(!document.querySelector('.constructor-grid [aria-label="Open Claude Code CLI"]') && !document.querySelector('.constructor-grid [aria-label="Run Claude Code…"]'), 'no SDK run or dialog launcher')
   // launching makes the agent's row on this node: its grants, Launch, and the sessions it runs
-  document.querySelector('.constructor-grid [aria-label="Launch Claude Code on this task"]').click(); await tick()
+  drag(document.querySelector('.constructor-grid [aria-label="Launch Claude Code on this task"]')); await tick()
   let agentName = 'Claude Code'
   const agentRow = () => [...document.querySelectorAll('.tree .constructor-body')].find(b => b.textContent.includes(`@{${agentName}}`))
   assert(agentRow(), 'the launch constructor makes the agent row')
@@ -111,7 +112,7 @@ async function main() {
   // Claude Desktop: its own icon and panel; Open starts a chat with the prompt
   document.querySelector('.peer-crumb .link').click(); await tick()
   document.querySelector('.constructor-grid button.sub-peer[aria-label="Claude Desktop"]').click(); await tick()
-  document.querySelector('.constructor-grid [aria-label="Open in Claude Desktop"]').click(); await tick()
+  drag(document.querySelector('.constructor-grid [aria-label="Open in Claude Desktop"]')); await tick()
   agentName = 'Claude Desktop'
   panelButton('Open in Claude Desktop').click(); await tick()
   const desktop = invokes.filter(i => i.command === 'open_agent_link').at(-1)

@@ -86,7 +86,9 @@ export function constructAt(r: Replica, row: Scope, constructor: string, values:
   r = { ...r }
   for (const ref of openRefs(r.store, constructor)) {
     const text = values[ref.name]
-    if (text !== undefined) r = assignRefAt(r, row, ref.alias, put(r.store, { data: { description: { content: text } }, children: [] }), now)
+    // Each call owns its argument refs, including defaulted inputs and initially empty outputs.
+    // Native results must bind this call's output, never the shared constructor definition.
+    r = assignRefAt(r, row, ref.alias, text !== undefined ? put(r.store, { data: { description: { content: text } }, children: [] }) : ref.defaultValue, now)
   }
   return r
 }

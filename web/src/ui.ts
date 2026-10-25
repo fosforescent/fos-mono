@@ -16,6 +16,7 @@ import { SETTING_LABELS, settingKeyOf } from './settings'
 import { combobox } from './combobox'
 import { iconSvg } from './icons'
 import { isNegative } from '../../shared/sync/parameters'
+import { libAt } from '../../shared/sync/graph'
 import { capabilityPresentation } from './capability-presentation'
 import { openTimeBlockPicker, type TimeBank } from './timeblocks'
 import { alternativePicker, proposalPreview, clearProposal } from './alternatives'
@@ -27,13 +28,13 @@ import { alternativePicker, proposalPreview, clearProposal } from './alternative
 
 import QRCode from 'qrcode'
 import { sharingControls } from './sharing'
-import { readNodeValue, nodeShape, NODE_PERMISSION_DEFAULT, requirementOutputs, resolveRequirementOutput, resolveScope, resolveText, put, content, valueContent, headCid, viewNode, findChild, WORK_SYSTEM, isDirty, view as viewAt, type ChoiceView, homePath, type MovePosition, type NodeView, type Scope, type TaskView } from '../../shared/sync/index'
+import { readNodeValue, nodeShape, NODE_PERMISSION_DEFAULT, resolveScope, resolveText, put, content, valueContent, headCid, viewNode, findChild, WORK_SYSTEM, isDirty, view as viewAt, type ChoiceView, homePath, type MovePosition, type NodeView, type Scope, type TaskView } from '../../shared/sync/index'
 import type { App, AppState, ContextPeer } from './app'
 import { hydrateDiagrams, renderMarkdown } from './markdown'
-import { RESOURCE_NAME, SYNTAX_HELP, allocationTag, describeParsed, downloadText, formatAmount, rawRowText, renderInlineText } from './rows'
-import { consumption } from '../../shared/sync/execution-access'
-import { capabilityLabels, manualHandlersFor, paymentRecord, type Capability, type PeerPolicy, type RowExtras } from '../../shared/sync/index'
-import { TASK_TYPE, PLAIN_TYPE, NOTE_TYPE, COMMENT_TYPE, QUERY_TYPE, RESOURCE_TYPE, ALLOCATION_TYPE, MONEY_TYPE, TEMPLATE_TYPE, HOME_TYPE, isAllocationType } from '../../shared/sync/library-types'
+import { RESOURCE_NAME, SYNTAX_HELP, allocationTag, argumentType, describeParsed, downloadText, formatAmount, rawRowText, renderInlineText } from './rows'
+import { handleAt, ownerGrants } from '../../shared/sync/index'
+import { capabilityLabels, manualHandlersFor, type Capability, type PeerPolicy, type RowExtras } from '../../shared/sync/index'
+import { TASK_TYPE, PLAIN_TYPE, NOTE_TYPE, COMMENT_TYPE, QUERY_TYPE, RESOURCE_TYPE, TEMPLATE_TYPE, HOME_TYPE } from '../../shared/sync/library-types'
 
 type Regions = {
   context: HTMLElement
@@ -146,7 +147,6 @@ export function mountUi(root: HTMLElement, app: App): void {
   regions.list.addEventListener('drop', event => {
     if (app.executionPath()) return
     if (dropTrigger(event, app, app.state.view) || (event.target as HTMLElement).closest('[data-id], [data-argument]')) return
-    if (event.dataTransfer?.types.includes(OUTPUT_DRAG_TYPE)) { event.preventDefault(); app.linkOutput(app.state.view, event.dataTransfer.getData(OUTPUT_DRAG_TYPE)) }
     else if (event.dataTransfer?.types.includes(NODE_DRAG_TYPE)) { event.preventDefault(); app.linkNode(event.dataTransfer.getData(NODE_DRAG_TYPE)) }
   })
   installRowClipboard(regions.list, app)
@@ -262,8 +262,9 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
     fullscreen.setAttribute('aria-pressed', String(!!document.fullscreenElement))
     toolbar.append(fullscreen)
   }
-  if (current?.allocation && !consumption(state.replica, root)) {
-    const amount = document.createElement('input'); amount.type = 'number'; amount.min = '0'; amount.max = String(current.allocation.amount); amount.value = String(current.allocation.amount); amount.setAttribute('aria-label', 'Amount to consume'); amount.disabled = locked
+  const rootHeld = current ? handleAt(state.replica, root) : null
+  if (rootHeld) {
+    const amount = document.createElement('input'); amount.type = 'number'; amount.min = '0'; amount.max = String(rootHeld.allocation.amount); amount.value = String(rootHeld.allocation.amount); amount.setAttribute('aria-label', 'Amount to consume'); amount.disabled = locked
     const consume = button('secondary', 'Use allocation', () => app.consumeExecutionAllocation(root, Number(amount.value))); consume.disabled = locked
     regions.node.append(amount, consume)
   }
@@ -271,20 +272,16 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
     const requirement = current.requirement, controls = div('execution-root-input', '')
     const supply = (value: any) => app.supplyRequirementAt(root.slice(0, -1), current.id, value, true)
     if (requirement.capability === 'confirmation') controls.append(button('secondary', 'Confirm', () => supply({ capability: 'confirmation' })))
-    if (requirement.capability === 'allocation' && requirement.resource === 'account') controls.append(...paymentControls(app, state, root, () => void app.evaluateAt(root)))
+    if (requirement.resource === 'account') controls.append(...paymentControls(app, state, root, () => void app.evaluateAt(root)))
     controls.append(...manualControls(app, state, root.slice(0, -1), current, true))
     if (requirement.capability === 'choice') for (const [choice, label] of (requirement.options ?? []).entries()) controls.append(button('secondary', label, () => supply({ capability: 'choice', choice })))
-    if (requirement.capability === 'allocation') {
-      const select = document.createElement('select'); select.setAttribute('aria-label', `Provide ${current.title}`); select.append(new Option('Choose an allocation', ''))
-      for (const allocation of app.allocations()) if (allocation.row.allocation?.type === requirement.resource && allocation.row.allocation?.unit === requirement.unit) select.append(new Option(allocation.row.title, allocation.row.id))
-      select.onchange = () => { if (select.value) supply({ capability: 'allocation', ref: select.value }) }; controls.append(select)
-    }
+    if (requirement.linear) controls.append(span('muted req-hint', 'Filled by using a grant from a bank above'))
     for (const control of controls.querySelectorAll<HTMLButtonElement | HTMLSelectElement>('button,select')) control.disabled = locked
     regions.node.append(controls)
   }
   // Whether this node is work that gets completed (inputs, requirements or allocations anywhere beneath it),
   // as opposed to content such as a note that is only viewed or interacted with.
-  let work = !!current?.requirement || !!current?.allocation || (!!record && record.status !== 'committed')
+  let work = !!current?.requirement || !!current?.allocation || !!rootHeld || (!!record && record.status !== 'committed')
   for (const field of app.executionRefFields(root)) {
     const li = document.createElement('li'); li.className = 'task argument-row'
     const input = document.createElement('input'); input.setAttribute('aria-label', field.name); input.disabled = locked
@@ -297,16 +294,22 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
     if (depth > 32 || rows.length > 1000) return
     for (const row of viewAt(state.replica, path)?.tasks ?? []) {
       if (row.construction || fields.includes(row.id)) continue
-      if (row.requirement || row.allocation) work = true
+      const held = handleAt(state.replica, [...path, row.id])
+      if (row.requirement || row.allocation || held) work = true
       const li = document.createElement('li'); li.className = 'task'; li.style.setProperty('--depth', String(depth))
       const body = row.text?.mediaType === 'text/markdown'
         ? renderNoteBody(row, [], { ...state, view: path }, app)
         : span('title', resolveText(state.replica, [...path, row.id], row.title).text)
       body.title = ''
       li.append(span('constructor-label', row.typeName ?? 'Row'), body)
-      if (row.allocation && !consumption(state.replica, [...path, row.id]) && !viewAt(state.replica, path)?.tasks.some(t => t.supply?.ref === row.id)) {
-        const amount = document.createElement('input'); amount.type = 'number'; amount.min = '0'; amount.max = String(row.allocation.amount); amount.step = 'any'; amount.value = String(row.allocation.amount); amount.setAttribute('aria-label', `Use ${row.title}`); amount.disabled = locked
+      if (held) {
+        const amount = document.createElement('input'); amount.type = 'number'; amount.min = '0'; amount.max = String(held.allocation.amount); amount.step = 'any'; amount.value = String(held.allocation.amount); amount.setAttribute('aria-label', `Use ${row.title}`); amount.disabled = locked
         li.append(amount, button('secondary small', 'Use allocation', () => app.consumeExecutionAllocation([...path, row.id], Number(amount.value))))
+      }
+      // a bank's grants are elements of its value, not rows: each is offered for use here
+      if (row.resource) for (const grant of ownerGrants(state.replica, [...path, row.id]).filter(grant => grant.allocation.amount > 0)) {
+        const amount = document.createElement('input'); amount.type = 'number'; amount.min = '0'; amount.max = String(grant.allocation.amount); amount.step = 'any'; amount.value = String(grant.allocation.amount); amount.setAttribute('aria-label', `Use ${formatAmount(grant.allocation.amount, grant.allocation.unit)} of ${row.title}`); amount.disabled = locked
+        li.append(amount, button('secondary small', 'Use allocation', () => app.consumeExecutionAllocation({ owner: [...path, row.id], grant: grant.cid }, Number(amount.value))))
       }
       if (row.checkable && !row.done) {
         const complete = button('secondary small', 'Complete', () => void app.evaluateAt([...path, row.id])); complete.disabled = locked; li.append(complete)
@@ -318,11 +321,7 @@ function renderExecution(regions: Regions, state: AppState, app: App): void {
         const supply = (value: { capability: Capability; choice?: number; ref?: string }) => app.supplyRequirementAt(path, row.id, value as Parameters<App['supplyRequirementAt']>[2], true)
         if (req.capability === 'confirmation') li.append(button('secondary small', 'Confirm', () => supply({ capability: 'confirmation' as Capability })))
         else if (req.capability === 'choice') for (const [choice, label] of (req.options ?? []).entries()) li.append(button('secondary small', label, () => supply({ capability: 'choice' as Capability, choice })))
-        else if (req.capability === 'allocation') {
-          const input = document.createElement('select'); input.setAttribute('aria-label', `Provide ${row.title}`); input.append(new Option('Choose an allocation', ''))
-          for (const allocation of app.allocations()) if (allocation.row.allocation?.type === req.resource && allocation.row.allocation?.unit === req.unit) input.append(new Option(allocation.row.title, allocation.row.id))
-          input.onchange = () => { if (input.value) supply({ capability: 'allocation' as Capability, ref: input.value }) }; li.append(input)
-        }
+        else if (req.linear) li.append(span('muted req-hint', 'Filled by using a grant from a bank above'))
       }
       for (const control of li.querySelectorAll<HTMLButtonElement | HTMLSelectElement>('button,select')) control.disabled = locked
       rows.push(li)
@@ -575,7 +574,7 @@ let focusGhost = true
 /** Rows whose body carries controls (requirements, supplies, queries, banks, allocations) keep it while selected; this is the one being text-edited (double-click / Enter). */
 let editingSpecial: string | null = null
 /** Rows of these types carry controls in their body (requirements, supplies, payments, allocations, queries, banks). */
-const hasControls = (task: TaskView) => isAllocationType(task.type) || task.type === QUERY_TYPE || task.type === RESOURCE_TYPE
+const hasControls = (task: TaskView) => !!task.requirement || !!task.allocation || task.type === QUERY_TYPE || task.type === RESOURCE_TYPE
 /**
  * A row's type as a short style name (classes `type-…`, glyphs, `type:` search terms): its library type's id without
  * a library field; what a row does on top of its type (a task made from a template, a requirement, a reference) wins.
@@ -583,6 +582,7 @@ const hasControls = (task: TaskView) => isAllocationType(task.type) || task.type
 function typeClass(task: TaskView): string {
   if (task.refId !== undefined) return 'ref'
   if (task.requirement) return 'requirement'
+  if (task.allocation) return 'allocation'
   if (task.checkable) return 'task'
   // a library type's field name (`money` → `type-money`); a row of a template is a task, handled above
   return task.type && !task.template ? task.type.replace(/[A-Z]/g, c => '-' + c.toLowerCase()) : 'plain'
@@ -722,7 +722,7 @@ function patternMatches(app: App, row: TaskView): boolean {
     const seed = id.startsWith('seed:') ? id.slice(5) : ({ account: '$ ', calendar: ': ', inventory: '# ' } as Record<string, string>)[id]
     if (seed) {
       const parsed = app.parseRowInput(seed)
-      if (parsed.extras?.requirement) return row.requirement?.capability === parsed.extras.requirement.capability && (!parsed.extras.requirement.resource || row.requirement?.resource === parsed.extras.requirement.resource)
+      if (parsed.extras?.demand) return row.requirement?.capability === parsed.extras.demand.capability && (!parsed.extras.demand.resource || row.requirement?.resource === parsed.extras.demand.resource)
       if (parsed.extras?.allocation) return !row.requirement && row.allocation?.type === parsed.extras.allocation.type
       return row.type === parsed.type && !row.requirement
     }
@@ -960,7 +960,7 @@ function insertConstructor(app: App, id: string, path = app.constructorContext()
   if (id.startsWith('action:')) {
     const cap = id.slice(7) as 'search' | 'llm' | 'market'
     if (!['search','llm','market'].includes(cap) || !app.capabilityAvailable(cap, path)) { app.notify('error', 'This action has no active handler here.'); return }
-    try { app.applyConstructor(path, { type: ALLOCATION_TYPE, text: capabilityLabels(app.state.replica.store, app.state.view)[cap] ?? cap, done: false, extras: { requirement: { capability: cap } } }) } catch (error) { app.notify('error', String(error)) }
+    try { app.applyConstructor(path, { type: argumentType(cap), text: capabilityLabels(app.state.replica.store, app.state.view)[cap] ?? cap, done: false, extras: { demand: { capability: cap } } }) } catch (error) { app.notify('error', String(error)) }
     return
   }
   if (!id.startsWith('trigger:')) { openConstructor(app, id, path, replace); return }
@@ -1044,23 +1044,11 @@ function timeBanks(app: App, at: Scope = app.state.view): TimeBank[] {
   const allocations = app.allocations()
   return app.contextBanks(at).filter(({ row }) => row.resource.type === 'calendar').map(({ row }) => ({
     id: row.id, name: row.title,
-    busy: allocations.filter(a => a.row.allocation?.resource === row.id).map(a => ({
+    busy: allocations.filter(a => a.row.allocation?.type === 'calendar' && a.path.length && a.path.at(-1) === row.id).map(a => ({
       start: a.row.allocation!.start ?? -Infinity, end: a.row.allocation!.end ?? Infinity,
       label: a.row.title || formatAmount(a.row.allocation!.amount, a.row.allocation!.unit), open: () => app.goTo(a.path)
     }))
   }))
-}
-/** "Pick time…" on an unmet time requirement: place the block, then an allocation is created inside the requirement. */
-async function pickTimeForRequirement(app: App, path: Scope, task: TaskView): Promise<void> {
-  const r = task.requirement; if (!r) return
-  const store = app.state.replica.store
-  const candidates = app.contextBanks(path).filter(({ row }) => row.resource.type === 'calendar')
-  const bank = candidates.length === 1 ? candidates[0].row : null
-  const picked = await openTimeBlockPicker({ title: task.title || 'Time requirement', text: task.title, amount: r.amount, start: r.start, end: r.end, banks: timeBanks(app, path), bank: bank?.id ?? '', requirement: true, cta: 'Create allocation' })
-  if (!picked || picked.start === undefined) return
-  if (app.state.replica.store !== store) { app.notify('error', 'The data session changed. Pick the time again.'); return }
-  try { app.applyConstructor(path, { type: ALLOCATION_TYPE, text: task.title, done: false, extras: { allocation: { type: 'calendar', amount: picked.amount, unit: 'h', resource: picked.bank, start: picked.start, end: picked.end } } }, true) }
-  catch (error) { app.notify('error', String(error)) }
 }
 /** A millisecond time as the value of a datetime-local input (local time, minutes). */
 function localInputValue(t: number): string {
@@ -1107,7 +1095,7 @@ function openConstructor(app: App, kind: string, path: Scope = [...app.state.vie
   const error = div('error', ''), submit = button('primary', replace && !row?.requirement && row?.type !== HOME_TYPE ? 'Apply constructor' : 'Add child', () => undefined); submit.type = 'submit'
   const field = (text: string, input: HTMLElement) => { const label = document.createElement('label'); label.append(span('', text), input); return label }
   form.append(h4(CONSTRUCTORS.find(c => c.id === kind)!.label), title, field(resource ? 'Resource' : 'Handler', select))
-  if (resource) { form.append(field(kind === 'bank' ? 'Capacity' : 'Amount', amount), field('Unit', unit)); if (kind !== 'bank') form.append(field('Source bank', bank), pickTime, start, end) }
+  if (resource) { form.append(field(kind === 'bank' ? 'Capacity' : 'Amount', amount), field('Unit', unit)); if (kind !== 'bank') form.append(pickTime, start, end) }
   if (kind === 'repository') form.append(field('Repository', repository))
   form.append(error, submit, button('secondary', 'Cancel', () => dialog.close()))
   form.onsubmit = async event => {
@@ -1120,8 +1108,8 @@ function openConstructor(app: App, kind: string, path: Scope = [...app.state.vie
       if ((begins !== undefined && !Number.isFinite(begins)) || (ends !== undefined && !Number.isFinite(ends)) || (begins !== undefined && ends !== undefined && ends <= begins)) throw new Error('The allocation end must be after its start.')
       if (kind === 'repository' && !['github', 'filesystem'].includes(select.value)) throw new Error('This repository handler is unavailable.')
       const parsed = kind === 'peer' || kind === 'integration' ? { type: PLAIN_TYPE, text: title.value, done: false, peer: select.value }
-        : kind === 'bank' ? { type: RESOURCE_TYPE, text: title.value || 'Resource bank', done: false, extras: { resource: { type, capacity: value, unit: unit.value } } }
-        : resource ? { type: type === 'account' ? MONEY_TYPE : ALLOCATION_TYPE, text: title.value, done: false, extras: { allocation: { type, amount: value, unit: unit.value, resource: bank.value, ...(begins !== undefined ? { start: begins } : {}), ...(ends !== undefined ? { end: ends } : {}) } } }
+        : kind === 'bank' ? { type: RESOURCE_TYPE, text: title.value || 'Resource bank', done: false, extras: { resource: { type, unit: unit.value }, ...(value > 0 ? { grant: { type, unit: unit.value, amount: value } } : {}) } }
+        : resource ? { type: argumentType('allocation'), text: title.value, done: false, extras: { allocation: { type, amount: value, unit: unit.value, resource: '', ...(begins !== undefined ? { start: begins } : {}), ...(ends !== undefined ? { end: ends } : {}) } } }
         : { type: PLAIN_TYPE, text: title.value || repository.value, done: false }
       if (kind === 'repository' && select.value === 'filesystem') {
         submit.disabled = true
@@ -1611,7 +1599,7 @@ function placeholderForm(app: App): HTMLElement {
   } })
   const box = combobox('Placeholder template', 'Choose a placeholder template…', query => [
     option('Text', 'text', 'Types'),
-    ...app.allCapabilities().map(cap => option(capabilityLabels(app.state.replica.store, app.state.view)[cap] ?? cap, cap, 'Types')),
+    ...app.allCapabilities().map(cap => option(capabilityLabels(app.state.replica.store, app.state.view)[cap] ?? cap, app.state.replica.store.table.has(cap) ? cap : libAt(app.state.replica.store, app.state.view).capabilities[cap]!, 'Types')),
     ...app.searchLocalNodes(query, TEMPLATE_TYPE).map(found => option(found.row.title, 'template:' + found.row.id, 'Templates'))
   ], () => [], 'Search template types, then drag…')
   box.addEventListener('dragstart', event => { if (!selected) return; event.stopPropagation(); event.dataTransfer?.setData('application/x-fos-placeholder', selected); if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy' })
@@ -1619,7 +1607,6 @@ function placeholderForm(app: App): HTMLElement {
 }
 
 const OUTPUT_DRAG_TYPE = 'application/x-fos-output'
-const destructuring = new WeakMap<App, Set<string>>()
 const NODE_DRAG_TYPE = 'application/x-fos-node'
 const details = new WeakMap<HTMLElement, { key: string; store: AppState['replica']['store']; input: HTMLTextAreaElement; baseline: string; draft: { store: AppState['replica']['store']; head: string; path: Scope }; controls: HTMLElement; titleRow: HTMLElement; check: HTMLElement; after: HTMLElement }>()
 const ORGANIZE_TITLE = 'The account\'s model files each point under the row it belongs to here (or new rows grouped here), keeping the text as a note: one submission from fos you accept or reject here'
@@ -1660,7 +1647,7 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
     const save = () => {
       if (entry.input.readOnly || entry.input.value === entry.baseline) return
       const text = entry.input.value, current = app.currentRow(); entry.baseline = text
-      if (!current || current.text || current.scalar || current.refId !== undefined || current.supply) app.editCurrentText(text, entry.draft)
+      if (!current || current.text || current.scalar || current.refId !== undefined) app.editCurrentText(text, entry.draft)
       else app.rewriteCurrentRow(app.parseRowInput(text), entry.draft)
       entry.draft = { ...entry.draft, head: headCid(app.state.replica) }
     }
@@ -1728,16 +1715,10 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
       event.stopPropagation()
       if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && !send.disabled) { event.preventDefault(); send.click() }
     })
-    // what the account organizes is a submission by fos; accepting it right away is still one local, undoable edit
-    const autoAccept = document.createElement('label'); autoAccept.className = 'muted small auto-accept-captures'
-    const autoAcceptBox = document.createElement('input'); autoAcceptBox.type = 'checkbox'
-    autoAcceptBox.addEventListener('change', () => app.setAutoAcceptCaptures(autoAcceptBox.checked))
-    autoAccept.title = 'Otherwise each organized capture waits as a submission from fos in this node\'s Branches until you accept it'
-    autoAccept.append(autoAcceptBox, ' Accept right away')
     capture.append(captureText, send)
     const inputMenu = document.createElement('details'); inputMenu.className = 'input-menu'
     const inputSummary = document.createElement('summary'); inputSummary.innerHTML = iconSvg('+') ?? '+'; inputSummary.setAttribute('aria-label', 'More input options'); inputSummary.title = 'Images, videos, text and files'
-    const inputOptions = div('input-menu-options', ''); inputOptions.append(div('input-controls', ''), organize, autoAccept)
+    const inputOptions = div('input-menu-options', ''); inputOptions.append(div('input-controls', ''), organize)
     inputMenu.append(inputSummary, inputOptions)
     const edit = div('node-input', ''); edit.setAttribute('aria-label', 'Input'); edit.append(inputMenu, div('node-input-fields', ''), capture, voice)
     composerObservers.get(el)?.disconnect()
@@ -1914,7 +1895,6 @@ function renderNodeDetail(el: HTMLElement, state: AppState, app: App): void {
   inputFields.hidden = !declaredInputs || !!preview
   edit.classList.toggle('has-declared-inputs', !!declaredInputs)
   capture.hidden = !!preview || !!row?.refPeer || !!declaredInputs
-  edit.querySelector<HTMLInputElement>('.auto-accept-captures input')!.checked = app.autoAcceptCaptures
   const organize = edit.querySelector<HTMLButtonElement>('.organize-capture')!
   organize.disabled = !capture.querySelector<HTMLTextAreaElement>('.capture-text')!.value.trim() || !!state.voice || !app.canOrganize()
   organize.title = app.canOrganize() ? ORGANIZE_TITLE : state.session?.kind === 'user' ? 'Organizing needs a Fos peer with a language model' : 'Connect to your account to organize text'
@@ -1973,7 +1953,7 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
   let rows = renderRows(filtered, [], 0, state, app)
   // Schema fields are already ordinary rows. Legacy text is shown in the same list,
   // never in a separate title editor, and absent text does not invent a title input.
-  const detailElement = el.closest('#app')?.querySelector<HTMLElement>('[data-region="node"]')
+  const detailElement = el.parentElement?.parentElement?.querySelector<HTMLElement>('[data-region="node"]')
   const detail = detailElement && details.get(detailElement), current = app.currentRow()
   if (detail && current && current.type !== HOME_TYPE && !current.form && (current.title || current.scalar) && !proposalPreview(app)) rows.unshift(detail.titleRow)
   const preview = proposalPreview(app)
@@ -2004,7 +1984,7 @@ function renderTree(el: HTMLElement, node: NodeView, state: AppState, app: App):
       })
     }
     const entries = renderReadOnly(preview.cid, 0)
-    el.replaceChildren(...entries); ghostRows.delete(el); focusGhost = false; return
+    el.replaceChildren(...(detail && preview.node.name ? [detail.titleRow] : []), ...entries); ghostRows.delete(el); focusGhost = false; return
   }
   if (reuse) {
     // Keep the actual draft input attached: replacing it loses focus, text undo and the caret on sync.
@@ -2306,7 +2286,6 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   })
   li.addEventListener('dragleave', () => clearDropMarks(li))
   li.addEventListener('drop', (event) => {
-    if (event.dataTransfer?.types.includes(OUTPUT_DRAG_TYPE)) { event.preventDefault(); event.stopPropagation(); clearDropMarks(li); app.linkOutput([...state.view, ...at, task.id], event.dataTransfer.getData(OUTPUT_DRAG_TYPE)); return }
     if (dropTrigger(event, app, [...app.state.view, ...at, task.id], true)) { clearDropMarks(li); return }
     event.preventDefault()
     clearDropMarks(li)
@@ -2321,7 +2300,6 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
     if (!!task.requirement && dragged) {
       // onto a requirement: an allocation is supplied to it (it stays in its bank), a template is executed inside it
       // (its requirements show as rows under this one), anything else is moved inside
-      if (dragged.allocation && !dragged.requirement) { app.supplyRequirementAt(at, task.id, { capability: 'allocation', ref: dragged.id }); drag = null; return }
       if (dragged.type === TEMPLATE_TYPE) { app.addRowAt([...at, task.id], TASK_TYPE, dragged.title, { templateName: dragged.title }); drag = null; return }
     }
     const position = !!task.requirement ? 'into' : dropPosition(li, event.clientY)
@@ -2374,7 +2352,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
   else if (fileReference) { body = span('title', fileReference.path.split('/').at(-1)!); body.append(renderFileReference(app, [...state.view, ...at, task.id], fileReference)) }
   else if (task.type === HOME_TYPE) { body = span('title home-node', ''); body.innerHTML = iconSvg('⌂')!; body.setAttribute('aria-label', 'Home'); body.title = 'Home' }
   else if (task.construction && !(task.construction.handler && selected)) { body = constructorBody(task, state, app, [...state.view, ...at, task.id]) }
-  else if ((inputs = app.rowInputs([...state.view, ...at, task.id]))) { body = constructedRowBody(task, inputs, [...state.view, ...at, task.id], app, 'right') }
+  else if ((inputs = app.rowInputs([...state.view, ...at, task.id])) && !task.requirement) { body = constructedRowBody(task, inputs, [...state.view, ...at, task.id], app, 'right') }
   else if (task.form && !task.text && !task.headline) { body = renderForm(task, at, state, app) }
   else if (selected && task.refId === undefined && (!hasControls(task) || editingSpecial === task.id)) {
     body = renderEditor(task, at, state, app)
@@ -2555,7 +2533,7 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
   input.className = 'edit'
   // the editor shows the row in its raw marker form ("-$ 50 lunch", "[x] done", "> note"), exactly as it was typed
   const draft = { store: state.replica.store, head: headCid(state.replica), parent: [...state.view, ...at] }
-  const raw = task.text || task.refId !== undefined || !!task.supply ? task.title : rawRowText(task)
+  const raw = task.text || task.refId !== undefined ? task.title : rawRowText(task)
   input.value = raw
   input.placeholder = multiline ? 'Markdown…' : task.type === COMMENT_TYPE ? '// Comment…' : 'Row text…'
   let committed = false
@@ -2564,7 +2542,7 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
     committed = true
     if (editingSpecial === task.id) editingSpecial = null
     if (input.value === raw) { if (!task.scalar && !input.value.trim()) app.dropBlankRow(draft.parent, task.id, draft.store); return }
-    if (task.text || task.scalar || task.refId !== undefined || !!task.supply) { app.rewriteRowAt(at, task.id, { type: task.type, text: input.value, done: task.done }, draft); return }
+    if (task.text || task.scalar || task.refId !== undefined) { app.rewriteRowAt(at, task.id, { type: task.type, text: input.value, done: task.done }, draft); return }
     // the text is re-parsed whole: the marker decides the kind, the rest its text and data; the row keeps its id and children
     const parsed = app.parseRowInput(input.value)
     if (parsed.type === PLAIN_TYPE && !parsed.text) { if (!task.title.trim() && !task.childCount && !task.childChoices) app.dropBlankRow(draft.parent, task.id, draft.store); else app.rewriteRowAt(at, task.id, { ...parsed, text: ' ' }, draft); return }
@@ -2619,7 +2597,7 @@ function renderEditor(task: TaskView, at: Scope, state: AppState, app: App): HTM
 
 /** What the title row's editor shows: a row's marker text, or the text alone for rows whose text is all there is to edit. */
 function titleText(row: TaskView): string {
-  return row.text || row.scalar || row.refId !== undefined || row.supply ? row.title : rawRowText(row)
+  return row.text || row.scalar || row.refId !== undefined ? row.title : rawRowText(row)
 }
 
 function firstLine(text: string): string {
@@ -2710,72 +2688,29 @@ function insideTemplate(state: AppState, fullPath: Scope): boolean {
   return fullPath.some((id, i) => viewAt(state.replica, fullPath.slice(0, i))?.tasks.some(row => row.id === id && row.type === TEMPLATE_TYPE))
 }
 
-/** Requirement, supply, query, resource-bank and allocation rows: a kind badge, the text, and a status/balance. */
-function outputChips(cid: string, state: AppState, app: App): HTMLElement {
-  const box = span('output-chips', '')
-  for (const output of requirementOutputs(state.replica.store, cid)) {
-    const resolved = resolveRequirementOutput(state.replica.store, output.cid)
-    const label = `${output.name}${output.amount !== undefined ? ` · ${output.amount}` : ''}`
-    const chip = span('chip output-placeholder', label); chip.draggable = true; chip.tabIndex = 0
-    chip.title = resolved?.error ?? 'Drag this placeholder into a constructor or argument'
-    chip.setAttribute('aria-label', `${label}: ${resolved?.error ? 'waiting for requirement' : 'ready'}`)
-    chip.addEventListener('dragstart', event => { event.stopPropagation(); event.dataTransfer?.setData(OUTPUT_DRAG_TYPE, output.cid); if (event.dataTransfer) event.dataTransfer.effectAllowed = 'link' })
-    chip.addEventListener('click', event => event.stopPropagation()); box.append(chip)
-  }
-  return box
-}
-function destructurePanel(task: TaskView, at: Scope, state: AppState, app: App): HTMLElement {
-  const panel = div('destructure-panel', ''), path = [...state.view, ...at, task.id], req = task.requirement!
-  panel.addEventListener('click', event => event.stopPropagation()); panel.addEventListener('keydown', event => event.stopPropagation())
-  const cid = resolveScope(state.replica.store, headCid(state.replica), path)!
-  if (req.capability === 'choice') panel.append(combobox('Requirement constructors (read-only)', 'Choice constructors', () => (req.options ?? []).map(label => ({ label, group: 'Constructors', disabled: true, run: () => {} })), () => [], 'Inspect constructors…'))
-  else { const used = requirementOutputs(state.replica.store, cid).reduce((sum, output) => sum + (output.amount ?? 0), 0); panel.append(span('muted', `${used} / ${req.amount ?? 0} ${req.unit ?? ''} planned · usable after fulfillment`)) }
-  const form = document.createElement('form')
-  const name = document.createElement('input'); name.placeholder = 'Placeholder name'; name.required = true; name.setAttribute('aria-label', 'Output name')
-  const amount = document.createElement('input'); amount.type = 'number'; amount.step = 'any'; amount.min = '0'; amount.placeholder = 'Amount'; amount.setAttribute('aria-label', 'Split amount'); amount.required = req.capability === 'allocation'; amount.hidden = !amount.required
-  const add = button('secondary small', req.capability === 'allocation' ? 'Split amount' : 'Expose selected value', () => undefined); add.type = 'submit'
-  form.append(name, amount, add); form.onsubmit = event => { event.preventDefault(); app.destructure(path, name.value, req.capability === 'allocation' ? Number(amount.value) : undefined) }
-  panel.append(form, outputChips(cid, state, app), button('secondary small', 'Done inspecting', () => { destructuring.get(app)?.delete(task.id); app.refresh() }))
-  return panel
-}
 
 /**
- * Controls for a money requirement: the payment page while the server's payment is open, the reason when it failed,
- * and "Pay" when the fos peer offers payments here. Confirmation arrives through the server (its payment provider's
- * webhook), so the device never records a payment itself.
+ * Controls for an open money requirement: "Pay" when the fos peer offers payments here. The open payment lives with
+ * the provider, not in the graph: its confirmation (the server's webhook) fills the requirement, so the row shows
+ * only open or filled. (Gutted: the pending payment page link and the failure reason; see current_tasks.md.)
  */
-function paymentControls(app: App, state: AppState, path: Scope, pay: () => void): HTMLElement[] {
-  const record = paymentRecord(state.replica, path), controls: HTMLElement[] = []
-  const amount = formatAmount(record?.amount ?? 0, (record?.unit ?? '').toUpperCase())
-  if (record?.status === 'pending') {
-    if (record.url) { const open = button('secondary small', `Pay ${amount}`, () => { const external = openExternal(record.url!); if (!external) window.open(record.url!, '_blank', 'noopener') }); open.title = `Opens the payment page for @${record.payee}; the task continues once the payment is confirmed`; controls.push(open) }
-    controls.push(span('muted req-hint', ` awaiting payment confirmation for @${record.payee}`))
-    return controls
-  }
-  if (record?.status === 'failed') controls.push(span('error req-hint', ` ${record.error ?? 'Payment failed.'}`))
-  if (!app.capabilityAvailable('send-payment', path)) { if (!record) controls.push(span('muted req-hint', ' the account server pays this when the task runs')); return controls }
-  const open = button('secondary small', record?.status === 'failed' ? 'Pay again' : 'Pay', pay)
-  open.title = 'Opens a payment to the respondent through the account server (Stripe); the task continues when it is confirmed'
-  controls.push(open)
-  return controls
+function paymentControls(app: App, _state: AppState, path: Scope, pay: () => void): HTMLElement[] {
+  if (!app.capabilityAvailable('send-payment', path)) return [span('muted req-hint', ' the account server pays this when the task runs')]
+  const open = button('secondary small', 'Pay', pay)
+  open.title = 'Opens a payment to the named payee through the account server (Stripe); the task continues when it is confirmed'
+  return [open]
 }
 
 /**
  * The standard library's fallbacks for a requirement nobody's peer handles (or handles yet): a button per handler
- * that records the person did it by hand; the manual place handler also takes the place's name.
+ * that records the person did it by hand. Resource demands require issued authority.
  */
 function manualControls(app: App, state: AppState, at: Scope, task: TaskView, absolute = false): HTMLElement[] {
   const req = task.requirement
-  if (!req || req.satisfied) return []
+  if (!req || req.satisfied || req.linear || req.capability === 'allocation') return []
   const controls: HTMLElement[] = []
   // the library this requirement sees: Home's linked one under Home, the root's shipped one elsewhere
   for (const handler of manualHandlersFor(state.replica, req, absolute ? at : [...state.view, ...at])) {
-    if (handler.capability === 'allocation' && handler.resource === 'location' && !handler.device) {
-      const place = document.createElement('input'); place.className = 'small manual-place'; place.placeholder = req.place ?? 'Where?'; place.setAttribute('aria-label', 'Place')
-      const record = button('secondary small manual-handler', handler.label, () => void app.applyManualHandler(at, task, handler, place.value || undefined, absolute)); record.dataset.handler = handler.id
-      controls.push(place, record)
-      continue
-    }
     if (handler.device && !app.deviceNative(handler)) continue
     const record = button('secondary small manual-handler', handler.label, () => void app.applyManualHandler(at, task, handler, undefined, absolute)); record.dataset.handler = handler.id
     record.title = handler.device ? 'Records this device\'s position as the place' : 'Records that you did this by hand; no peer is involved'
@@ -2795,34 +2730,15 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
     const what = r.capability === 'peer' ? (task.user ? `@${task.user.username}` : r.peer ? `@${r.peer}` : 'person') : r.capability === 'allocation' ? (RESOURCE_NAME[r.resource ?? 'inventory'] ?? r.resource ?? 'allocation') : r.capability === 'task' ? 'task' : r.capability === 'choice' ? 'decision' : r.capability === 'llm' ? 'answer' : r.capability
     const chip = r.satisfied ? (r.capability === 'choice' ? 'Decided' : r.capability === 'confirmation' ? 'Confirmed' : 'Filled') : `Needs ${what}`
     badge(chip, r.satisfied ? 'ok' : insideTemplate(state, [...state.view, ...at, task.id]) ? 'tpl' : 'needs')
-    if (r.capability === 'allocation' && r.amount !== undefined) { const amt = span('req-amount', `${marker[r.resource ?? ''] ?? '$'} ${formatAmount(r.amount, r.unit ?? '')}`); amt.title = `${formatAmount(r.amount, r.unit ?? '')} of ${what}`; body.append(amt) }
-    if (r.capability === 'allocation' || r.capability === 'choice') {
-      const trigger = body.lastElementChild as HTMLElement
-      trigger.classList.add('destructure-trigger'); trigger.tabIndex = 0; trigger.setAttribute('role', 'button'); trigger.title = 'Double-click to destructure'; trigger.setAttribute('aria-label', 'Destructure requirement')
-      const open = () => { const set = destructuring.get(app) ?? new Set<string>(); set.add(task.id); destructuring.set(app, set); app.refresh() }
-      trigger.addEventListener('click', event => event.stopPropagation()); trigger.addEventListener('dblclick', event => { event.stopPropagation(); open() })
-      trigger.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); open() } })
-      if (destructuring.get(app)?.has(task.id)) { body.append(destructurePanel(task, at, state, app)); return body }
-      const cid = resolveScope(state.replica.store, headCid(state.replica), [...state.view, ...at, task.id])
-      if (cid) body.append(outputChips(cid, state, app))
-    }
+    if (r.resource && r.amount !== undefined) { const amt = span('req-amount', `${marker[r.resource ?? ''] ?? '$'} ${formatAmount(r.amount, r.unit ?? '')}`); amt.title = `${formatAmount(r.amount, r.unit ?? '')} of ${what}`; body.append(amt) }
     body.append(document.createTextNode(' ' + task.title))
-    if (r.have !== undefined && r.need !== undefined && r.need > 0) {
-      // how much of the amount is covered: the green part of the bar
-      const bar = span('req-progress', '')
-      const fill = span('req-progress-fill', '')
-      fill.style.width = `${Math.min(100, Math.round((r.have / r.need) * 100))}%`
-      bar.append(fill)
-      bar.title = `${formatAmount(r.have, r.unit ?? '')} of ${formatAmount(r.need, r.unit ?? '')} allocated`
-      body.append(bar, span('muted req-have', ` ${formatAmount(r.have, r.unit ?? '')} / ${formatAmount(r.need, r.unit ?? '')}`))
-    }
     if (r.capability === 'llm') body.append(stop(button('secondary small', 'Context & results', () => app.openWork(at, task.id))))
     if (!r.satisfied) {
       const peers = app.contextPeers()
       const handler = (cap: 'search' | 'market' | 'mail') => app.capabilityAvailable(cap, [...state.view, ...at, task.id]) ? peers.find((p) => p.online && p.capabilities.includes(cap)) : undefined
       const hint = (text: string) => body.append(span('muted req-hint', ' ' + text))
       if (r.capability === 'confirmation') body.append(stop(button('secondary small', state.session ? 'Confirm' : 'Sign in to confirm', () => app.supplyRequirementAt(at, task.id, { capability: 'confirmation' }))))
-      if (task.type === MONEY_TYPE) for (const control of paymentControls(app, state, [...state.view, ...at, task.id], () => void app.askPeerAt(at, task))) body.append(stop(control))
+      if (r.resource === 'account') for (const control of paymentControls(app, state, [...state.view, ...at, task.id], () => void app.askPeerAt(at, task))) body.append(stop(control))
       // the standard library's manual fallbacks for this kind of requirement
       for (const control of manualControls(app, state, at, task)) body.append(stop(control))
       if (r.capability === 'choice') (r.options ?? []).forEach((opt, i) => body.append(stop(choiceButton(app, at, task.id, i, opt))))
@@ -2858,10 +2774,6 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
         } else if (app.capabilityAvailable('tool', [...state.view, ...at, task.id])) body.append(stop(completeButton(`Run${r.tool ? ' ' + r.tool : ''}`, () => void app.askPeerAt(at, task))))
         else hint('sign in: an MCP peer attached above runs it')
       }
-      if (r.capability === 'allocation' && r.resource === 'calendar') {
-        // The time-block picker places the needed time on a calendar's timeline and creates the allocation inside this requirement.
-        body.append(stop(button('secondary small pick-time', 'Pick time…', () => void pickTimeForRequirement(app, [...state.view, ...at, task.id], task))))
-      }
       if (r.capability === 'allocation' && (r.resource === 'calendar' || r.resource === 'person') && r.start != null && r.end != null) {
         const google = state.integrations.find((p) => p.id === 'google')
         if (google?.connected && app.capabilityAvailable('calendar', [...state.view, ...at, task.id])) body.append(stop(button('secondary small', 'Add to Google Calendar', () => void app.askPeerAt(at, task))))
@@ -2871,21 +2783,8 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
         if (assignee && assignee === app.actorName()) body.append(stop(button('secondary small', 'Done (confirm)', () => app.supplyRequirementAt(at, task.id, { capability: 'peer' }))))
         else hint(`waiting for ${assignee ? '@' + assignee : 'a peer'}`)
       }
-      if (r.capability === 'allocation') {
-        const options = app.allocations().filter(({ row }) => !r.resource || row.allocation?.type === r.resource)
-        const select = document.createElement('select')
-        select.className = 'small'
-        select.append(new Option(options.length ? 'Supply an existing allocation…' : 'No matching allocation yet', ''))
-        for (const { row } of options) select.append(new Option(`${formatAmount(row.allocation!.amount, row.allocation!.unit)} ${row.title}`.trim(), row.id))
-        select.addEventListener('change', () => { if (select.value) app.supplyRequirementAt(at, task.id, { capability: 'allocation', ref: select.value }) })
-        body.append(stop(select))
-        hint(`or type "${marker[r.resource ?? ''] ?? '$'} ${r.amount ?? 'amount'}" inside, or drop an allocation here`)
-      }
+      if (r.linear) hint('filled by using a grant from a bank above, in the execution view')
     }
-  } else if (!!task.supply && task.supply) {
-    badge('Supplied', 'ok')
-    body.append(document.createTextNode(` ${task.title}${task.title.includes(task.supply.by) ? '' : ` · ${task.supply.by}`}`))
-    if (task.supply.ref) { const t = app.refTarget(task.supply.ref); if (t) body.append(stop(button('link small', firstLine(t.row.title) || t.row.typeName || 'row', () => app.followRef(task.supply!.ref!)))) }
   } else if (task.type === QUERY_TYPE) {
     badge('Query' + (task.query?.market ? ' · market' : ''), 'query')
     body.append(document.createTextNode(' ' + task.title + ' '))
@@ -2894,13 +2793,10 @@ function renderSpecialBody(task: TaskView, at: Scope, state: AppState, app: App)
     badge(`Bank · ${RESOURCE_NAME[task.resource.type] ?? task.resource.type}`, 'bank')
     body.append(document.createTextNode(' ' + task.title + ' '))
     const r = task.resource
-    const balance = span('mono muted', r.capacity === undefined ? `${formatAmount(r.allocated, r.unit)} allocated` : `${formatAmount(r.available ?? 0, r.unit)} of ${formatAmount(r.capacity, r.unit)} free`)
-    body.append(balance)
-    if (r.capacity !== undefined && r.capacity > 0) {
-      const bar = span('req-progress', ''), fill = span('req-progress-fill bank-fill', '')
-      fill.style.width = `${Math.min(100, Math.round(((r.available ?? 0) / r.capacity) * 100))}%`; fill.style.background = 'var(--bank)'
-      bar.append(fill); bar.title = balance.textContent ?? ''; body.append(bar)
-    }
+    body.append(span('mono muted', `${formatAmount(r.held, r.unit)} held`))
+    // issuing and retiring are grant rows the allocate handler in scope checks; nothing else changes what a bank holds
+    const amount = document.createElement('input'); amount.type = 'number'; amount.min = '0'; amount.step = 'any'; amount.setAttribute('aria-label', `Amount for ${task.title}`)
+    body.append(amount, stop(button('secondary small', 'Credit', () => app.changeBankHolding([...at, task.id], Number(amount.value)))), stop(button('secondary small', 'Debit', () => app.changeBankHolding([...at, task.id], -Number(amount.value)))))
   } else if (task.allocation) {
     const a = task.allocation
     const marker: Record<string, string> = { account: '$', calendar: ':', inventory: '#', person: '@', points: 'ff' }
@@ -3301,7 +3197,7 @@ function renderModal(el: HTMLElement, state: AppState, app: App): void {
 
 function renderTemplatePicker(body: HTMLElement, state: AppState, app: App): void {
   const common = div('template-buttons', '')
-  const types: Array<[string, string, string, Omit<RowExtras, 'store'>?]> = [[PLAIN_TYPE, '≡', 'Record'], [TASK_TYPE, '☑', 'Task'], [NOTE_TYPE, 'note', 'Note'], [COMMENT_TYPE, 'comment', 'Comment'], [ALLOCATION_TYPE, '⑂', 'Requirement', { requirement: { capability: 'confirmation' } }], [ALLOCATION_TYPE, 'money', 'Allocation'], [RESOURCE_TYPE, 'inventory', 'Resource bank'], [TEMPLATE_TYPE, '✦', 'Template']]
+  const types: Array<[string, string, string, Omit<RowExtras, 'store'>?]> = [[PLAIN_TYPE, '≡', 'Record'], [TASK_TYPE, '☑', 'Task'], [NOTE_TYPE, 'note', 'Note'], [COMMENT_TYPE, 'comment', 'Comment'], [RESOURCE_TYPE, 'inventory', 'Resource bank'], [TEMPLATE_TYPE, '✦', 'Template']]
   for (const [type, icon, label, extras] of types) {
     common.append(iconButton(icon, label, () => app.changeTemplate(type, undefined, extras)))
   }

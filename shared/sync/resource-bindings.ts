@@ -10,7 +10,7 @@ export function resourceHandlers(r: Replica, at: Scope, environment: BindingEnvi
     if (!resource) return []
     const row = rowView(r.store, candidate.cid, [candidate.type, candidate.cid])
     return [{ ...candidate, value, row: { ...row, id: content(r.store, candidate.cid).data.alias?.id ?? candidate.cid,
-      resource: { ...resource, allocated: row.resource?.allocated ?? 0, available: row.resource?.available ?? resource.capacity ?? null } } as TaskView & { resource: NonNullable<TaskView['resource']> } }]
+      resource: { ...resource, held: row.resource?.held ?? 0 } } as TaskView & { resource: NonNullable<TaskView['resource']> } }]
   })).filter((handler, index, handlers) => handlers.findIndex(other =>
     other.cid === handler.cid || !!handler.name && !!handler.scope && other.name === handler.name &&
     other.scope?.store === handler.scope.store && JSON.stringify(other.scope.path) === JSON.stringify(handler.scope.path) &&

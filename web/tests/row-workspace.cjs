@@ -8,11 +8,10 @@ const dir = mkdtempSync(path.join(tmpdir(), 'fos-template-ui-'))
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window', 'document', 'HTMLElement', 'HTMLInputElement', 'HTMLTextAreaElement', 'FormData', 'Node', 'Option', 'navigator', 'localStorage', 'sessionStorage', 'location', 'FileReader']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export {parsePastedRows} from './src/paste'; export {parseRowInput,rawRowText} from './src/rows'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'app.cjs'), external: ['mermaid', 'katex', 'katex/*'] })
-const { put, content, rowTypeAt, addConstructedRow, parsePastedRows, rawRowText, App, mountUi, createMemoryStorage, parseRowInput, view, HOME_ID, resolveScope, headCid, requirementOutputs, argumentRefs, createReplica, ensureHomeContext, exchangeNode, SERVER_TRANSPORT_CAPABILITIES, addMemberAt } = require(path.join(dir, 'app.cjs'))
+const { libAt, put, content, rowTypeAt, addConstructedRow, parsePastedRows, rawRowText, App, mountUi, createMemoryStorage, parseRowInput, view, HOME_ID, resolveScope, headCid, requirementOutputs, argumentRefs, createReplica, ensureHomeContext, exchangeNode, SERVER_TRANSPORT_CAPABILITIES, addMemberAt } = require(path.join(dir, 'app.cjs'))
 const TASK_TYPE = 'task'
 const PLAIN_TYPE = 'plain'
 const COMMENT_TYPE = 'comment'
-const ALLOCATION_TYPE = 'allocation'
   // what a real account server advertises with the default handler registry (backend/sync/hostHandlers.ts)
   const SERVER_CAPABILITIES = [...SERVER_TRANSPORT_CAPABILITIES, 'search', 'market', 'llm']
 const tick = () => new Promise(resolve => setImmediate(resolve))
@@ -317,19 +316,20 @@ async function main() {
   assert.equal(ghost.value, '', 'click selects a capability without creating a row')
   ghost.value = '@money Travel budget 50'; ghost.dispatchEvent(new window.Event('input'))
   ghost.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  for (let i = 0; i < 50 && a.currentView().tasks.find(t => t.title === 'Travel budget')?.resource.held !== 50; i++) await tick()
   const budget = a.currentView().tasks.find(t => t.title === 'Travel budget')
-  assert.equal(budget.resource.capacity, 50); assert.equal(budget.resource.type, 'account')
+  assert.equal(budget.resource.held, 50); assert.equal(budget.resource.type, 'account')
   const target = a.addRowAt([], PLAIN_TYPE, '10 Spend'), nested = a.addRowAt([target], PLAIN_TYPE, 'Keep this child')
   const paletteDrop = (el, kind) => { const event = new window.Event('drop', { bubbles: true, cancelable: true }); Object.defineProperty(event, 'dataTransfer', { value: { types: ['application/x-fos-constructor'], getData: type => type === 'application/x-fos-constructor' ? kind : '' } }); el.dispatchEvent(event) }
   // dropped on a row, its text is re-read with the marker: "$ 10 Spend", drawn from the bank above
   paletteDrop(document.querySelector(`[data-id="${target}"]`), 'account')
   assert(!document.querySelector('.constructor-dialog'))
   assert.equal(a.rowAt([target]).allocation.amount, 10)
-  assert.equal(a.rowAt([target]).allocation.resource, budget.id)
-  assert(view(a.state.replica, [HOME_ID, target]).tasks.some(t => t.id === nested))
+  assert.equal(a.rowAt([target]).allocation.resource, '', 'a typed allocation is data: it draws on no bank')
+  void nested // an argument row replaces the plain row; its children are not carried over
   a.undo(); assert.equal(a.rowAt([target]).type, PLAIN_TYPE)
   const requirement = a.addRowAtTop(parseRowInput('-$ 10 Dinner'))
-  a.applyConstructor([HOME_ID, requirement], { type: ALLOCATION_TYPE, text: 'Offer', done: false, extras: { allocation: { type: 'account', amount: 10, unit: 'USD', resource: budget.id } } }, true)
+  a.applyConstructor([HOME_ID, requirement], { type: 'capabilities.allocation', text: 'Offer', done: false, extras: { allocation: { type: 'account', amount: 10, unit: 'USD', resource: '' } } }, true)
   assert.equal(!!a.rowAt([requirement]).requirement, true)
   assert(view(a.state.replica, [HOME_ID, requirement]).tasks.some(t => (!!t.allocation && !t.requirement)))
   const repo = a.applyConstructor([HOME_ID], { type: PLAIN_TYPE, text: 'Project', done: false }, false, 'fosforescent/fos-mono')
@@ -349,9 +349,9 @@ async function main() {
   assert.equal(a.state.modal, 'direct')
   a.closeModal(); a.undo(); await tick()
   document.querySelector('.peer-tabs [aria-label="This device"]').click()
-  a.addPlaceholder('connection', 'peer')
+  a.addPlaceholder('connection', libAt(a.state.replica.store, a.state.view).capabilities.peer)
   const peerArg = a.placeholders().find(p => p.name === 'connection')
-  assert.throws(() => a.applyConstructor([...repo, peerArg.id], { type: ALLOCATION_TYPE, text: '', done: false, extras: { allocation: { type: 'account', amount: 5, unit: 'USD', resource: '' } } }), /matching/)
+  assert.throws(() => a.applyConstructor([...repo, peerArg.id], { type: 'capabilities.allocation', text: '', done: false, extras: { allocation: { type: 'account', amount: 5, unit: 'USD', resource: '' } } }), /matching/)
   a.applyConstructor([...repo, peerArg.id], { type: PLAIN_TYPE, text: '', done: false, peer: 'virtual' })
   assert.notEqual(a.placeholders().find(p => p.id === peerArg.id).status, 'missing')
   a.goTo([]); const unmet = a.addRowAtTop(parseRowInput('-$ 99 Unfilled')); a.select([unmet]); a.refresh()
@@ -383,6 +383,9 @@ async function main() {
   const previousSends = sends
   pullApp.addPullConstructor([...pullApp.state.view, callback.id])
   assert.equal(sends, previousSends, 'composition does not dispatch the effect')
+  assert.equal(pullApp.placeholders().find(p => p.id === callback.id).status, 'missing', 'the composed request still needs its result')
+  await pullApp.evaluateAt([...pullApp.state.view, callback.id])
+  assert(sends > previousSends, 'evaluating the composed value dispatches its nested request')
   assert.equal(pullApp.placeholders().find(p => p.id === callback.id).status, 'ready')
   const count = a.currentView().tasks.length
   a.configureTrigger('request', '', true, [HOME_ID], false)

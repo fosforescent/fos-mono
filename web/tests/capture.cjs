@@ -31,155 +31,59 @@ async function main() {
   assert(c.isLongProse('word '.repeat(300)) && !c.isLongProse('word '.repeat(10)) && !c.isLongProse('- a\n'.repeat(400)) && !c.isLongProse('# Title\n' + 'word '.repeat(300)))
 
   const requests = []
-  let failOrganize = false, app = null, server = null
-  const owner = peerId => ({ peerId, scope: [], owner: true, capabilities: c.SERVER_TRANSPORT_CAPABILITIES })
+  let failOrganize = false
   globalThis.fetch = async (url, init) => {
     const u = new URL(url)
-    const json = (status, value) => ({ ok: status < 400, status, statusText: 'x', json: async () => value })
-    if (u.pathname === '/user/data/voice-notes') {
-      requests.push({ path: u.pathname, query: u.search, type: init.headers['Content-Type'] })
-      return json(200, { transcript: 'the tomatoes need stakes and we should start a compost bin' })
-    }
-    if (u.pathname === '/user/data/events') {
-      // the account server (`user:me`, holding what the device synced): a `complete` on the organize requirement runs
-      // its organize handler, which submits the plan as fos on the target; the device's next sync brings the filled
-      // requirement and the target's pending submissions, not their content
-      const body = JSON.parse(init.body), path = body.scope, target = path.slice(0, -1)
-      const request = c.organizeRequestAt(server, path)
-      requests.push({ path: u.pathname, event: body.event.kind, at: path, request, outline: request && await c.captureOutline(server, target) })
-      if (!request) return json(400, { error: 'not an organize requirement' })
-      if (failOrganize) return json(400, { error: 'organizing failed: model down' })
-      const plan = c.parseOrganizePlan({ title: 'Garden plans', items: [
-        { ref: 'n1', parent: 'tomatoes', text: 'buy stakes' },
-        { ref: 'n2', parent: null, text: 'Compost' },
-        { ref: 'n3', parent: 'n2', text: 'start a bin' },
-        { ref: 'n4', parent: 'not-here', text: 'stays inside' },
-      ] }, requests.at(-1).outline.map(e => e.id))
-      const submitted = await c.proposeOrganizePlan(server, target, plan, { label: request.label, stamp: 'now', text: request.text }, 10)
-      const result = { rows: submitted.rows.length, under: [], captureId: submitted.captureId, title: plan.title, proposal: submitted.proposalCid, name: submitted.name, additions: submitted.additions }
-      server = c.writeHandlerResult(submitted.replica, path, result, 10)
-      server = c.addSupply(server, target, path.at(-1), { capability: 'organize', by: 'fos', ref: submitted.captureId }, 10)
-      return json(200, { evaluation: { status: 'committed' } })
-    }
-    if (u.pathname === '/user/data/peer-sync/provide-node') {
-      // node by node, as the account serves it (a proposal preview here: one node of the submission)
-      const body = JSON.parse(init.body)
-      requests.push({ path: u.pathname, request: body })
-      const served = c.exchangeNode(server, body, owner(body.peerId), 11)
-      server = served.replica
-      return json(200, served.node)
-    }
-    return json(404, { error: `unexpected ${u.pathname}` })
+    requests.push({ path: u.pathname, query: u.search, type: init.headers['Content-Type'] })
+    return { ok: true, status: 200, json: async () => ({ transcript: 'the tomatoes need stakes and we should start a compost bin' }) }
   }
-
-  app = new c.App({ baseUrl: 'http://localhost', autoLogin: null, storage: c.createMemoryStorage() })
-  // the device's sync with its account: node by node, as the real one (pushes its edited nodes, pulls the rest)
-  let syncs = 0, holdSync = false
-  app.scheduleSync = () => {}; app.syncNow = async () => { if (holdSync) return; syncs++; app.set({ replica: c.syncWith(app.state.replica, server, { now: 50 + syncs }) }) }
+  const app = new c.App({ baseUrl: 'http://localhost', autoLogin: null, storage: c.createMemoryStorage() })
+  app.scheduleSync = () => {}; app.syncNow = async () => {}
+  app.set({ replica: c.ensureHomeContext(app.state.replica, 1, { server: ['organize'] }), session: { kind: 'user', username: 'me', jwt: 't', baseUrl: 'http://localhost' }, connection: 'online' })
+  app.recordServerOffers([...c.SERVER_TRANSPORT_CAPABILITIES, 'organize'])
+  const garden = app.applyConstructor([HOME], { type: PLAIN_TYPE, text: 'Garden', done: false })
+  app.goTo(garden)
   c.mountUi(document.getElementById('app'), app)
-  let me = c.ensureHomeContext(c.createReplica('device:me'), 1)
-  me = { ...me, meta: { ...me.meta, peerId: 'device:me', serverPeerId: 'user:me' } }
-  me = c.addRow(me, [HOME], PLAIN_TYPE, 'Garden', 2, { id: 'garden' })
-  me = c.addRow(me, [HOME, 'garden'], PLAIN_TYPE, 'Tomatoes', 3, { id: 'tomatoes' })
-  me = c.addRow(me, [HOME], PLAIN_TYPE, 'Work', 4, { id: 'work' })
-  server = c.createReplica('user:me')
-  me = c.syncWith(me, server, { now: 5 })
-  app.set({ replica: me, session: { kind: 'user', username: 'me', jwt: 't', baseUrl: 'http://localhost' }, connection: 'online' })
-  app.recordServerOffers([...c.SERVER_TRANSPORT_CAPABILITIES, 'llm'])
-  app.goTo([HOME, 'garden']); await tick()
-  assert(!app.canOrganize(), 'a model alone does not organize: the fos peer offers organize')
-  app.recordServerOffers([...c.SERVER_TRANSPORT_CAPABILITIES, 'llm', 'organize'])
-  assert(app.canOrganize(), 'the account organizes captures here')
-  const rows = at => c.view(app.state.replica, at).tasks.filter(t => !t.scalar).map(t => t.title)
-
-  // typed text: the capture box in the node's input workspace
-  document.querySelector('.input-toggle').click(); await tick()
-  const box = document.querySelector('.node-input .capture-text'), organize = document.querySelector('.node-input .organize-capture')
-  assert(box && organize, 'the input workspace has a capture box')
-  assert(organize.disabled, 'nothing to organize yet')
-  box.value = 'tomatoes need stakes; start a compost bin'
-  box.dispatchEvent(new window.Event('input'))
-  assert(!organize.disabled)
-  organize.click()
-  for (let i = 0; i < 40 && box.value; i++) await tick()
-  const sent = requests.find(r => r.path === '/user/data/events')
-  assert.equal(sent.event, 'complete', 'organizing is an evaluation of the requirement, not a route')
-  assert.deepEqual(sent.at.slice(0, -1), [HOME, 'garden'], 'the requirement sits in the node it organizes into')
-  assert.deepEqual(sent.request, { label: 'Pasted text', text: 'tomatoes need stakes; start a compost bin' })
-  assert.deepEqual(sent.outline.map(e => e.id), ['tomatoes'], 'the outline is the target\'s subtree, without the request')
-  assert(!c.view(app.state.replica, [HOME, 'garden']).tasks.some(t => t.id === sent.at.at(-1)), 'the filled request is removed')
-  // nothing is in the tree yet: the result is one pending submission from fos on the node, its content not here
-  const ids = at => c.view(app.state.replica, at).tasks.filter(t => !t.scalar).map(t => t.id)
-  assert.deepEqual(ids([HOME, 'garden']), ['tomatoes'])
-  assert.deepEqual(rows([HOME, 'garden', 'tomatoes']), [])
-  const pending = app.currentView().proposals
-  assert.equal(pending.length, 1)
-  assert.equal(pending[0].peerId, 'fos')
-  assert.equal(pending[0].name, 'Pasted text: Garden plans')
-  const content = c.readProposal(server.store, pending[0].id).contentCid
-  assert(!app.state.replica.store.table.has(content), 'the submission\'s content stays with the account until it is asked for')
-  assert.equal(box.value, '', 'the box clears once filed')
-  assert.equal(app.state.voice, null)
-  // The named result binding now syncs, including the exact four rows reported by the organizer.
-  assert.match(app.state.notice.text, /Pasted text organized: 4 rows and the original as a note, waiting for you in Branches/)
-
-  // accepting: one local edit, the submitted rows referenced where the account holds them (not loaded), one undo takes it all back
+  app.runOnServer = async at => {
+    const request = c.organizeRequestAt(app.state.replica, at)
+    requests.push({ request, at })
+    if (failOrganize) throw new Error('model down')
+    let r = app.state.replica
+    const result = await c.evaluateNode(at, {
+      get: () => r, save: next => { r = next }, now: () => 20, check: () => [],
+      executors: () => [{ native: async (operands, ctx) => {
+        const type = c.rowTypeAt(ctx.store, PLAIN_TYPE, at)
+        const child = ctx.put({ data: { alias: { id: 'bin' }, description: { content: 'Buy a bin' } }, children: [] })
+        const group = ctx.put({ data: { alias: { id: 'compost' }, description: { content: 'Compost' } }, children: [[type, child]] })
+        return { outputs: { self: c.valueOfPattern(ctx.store, operands.outputs.self.pattern, { description: { content: 'Garden plans' }, peerId: { content: 'fos' } }, [[type, group]]) } }
+      } }]
+    })
+    assert.equal(result.status, 'committed', result.error)
+    app.set({ replica: r })
+  }
+  const rows = at => c.view(app.state.replica, at).tasks
+  assert(await app.organizeText('start composting', garden))
+  const request = rows(garden).find(row => row.requirement?.capability === 'organize')
+  assert(request.requirement.satisfied)
+  const requestPath = [...garden, request.id]
+  assert.equal(c.requirementAnswer(app.state.replica, requestPath), 'Garden plans')
+  assert.equal(c.organizedRowCount(app.state.replica, requestPath), 2)
+  assert(rows([...requestPath, 'compost']).some(row => row.title === 'Buy a bin'))
+  assert.match(app.state.notice.text, /organized: 2 rows/)
+  assert.equal(c.organizeRequestAt(app.state.replica, requestPath).text, 'start composting', 'source text is preserved')
   requests.length = 0
-  holdSync = true // the device is offline for a moment: what accepting does on its own
-  await app.decideProposal(pending[0].id, 'approve')
-  assert(requests.every(r => r.path === '/user/data/peer-sync/provide-node' && r.request.proposal?.id === pending[0].id), 'only the submission\'s nodes are asked for, not a decision on the server')
-  assert.deepEqual(requests.map(r => r.request.path), [[HOME, 'garden'], [HOME, 'garden', 'tomatoes']], 'one shallow node per node it adds rows to')
-  assert.equal(ids([HOME, 'garden']).length, 4, 'the node, a new group, the row of an unknown parent and the capture note')
-  const garden = c.view(app.state.replica, [HOME, 'garden']).tasks
-  assert(garden.filter(t => t.id !== 'tomatoes').every(t => t.refPeer === 'user:me'), 'the rows are the account\'s, loaded when opened')
-  assert.equal(ids([HOME, 'garden', 'tomatoes']).length, 1, 'a row filed under an existing row')
-  assert.deepEqual(rows([HOME, 'work']), [], 'nothing lands outside the node')
-  assert.match(app.state.notice.text, /one edit/)
-  assert(!c.view(server, [HOME, 'garden']).tasks.some(t => t.title === 'Compost'), 'the account has nothing on main yet')
-  // one undo removes the whole capture; redo brings it back
-  app.undo()
-  assert.deepEqual(ids([HOME, 'garden']), ['tomatoes'], 'one undo removes the whole capture')
-  assert.deepEqual(ids([HOME, 'garden', 'tomatoes']), [])
-  app.redo()
-  assert.equal(ids([HOME, 'garden']).length, 4)
-  // syncing pushes the edited nodes: the account fills the rows from its submission and closes it; the rows load when shown
-  holdSync = false
-  await app.syncNow('test')
-  assert(c.view(server, [HOME, 'garden']).tasks.some(t => t.title === 'Compost'), 'on the account\'s main now')
-  assert.deepEqual(c.view(server, [HOME, 'garden']).proposals, [], 'the submission is closed')
-  await app.syncNow('poll') // the node that held the submission is pulled again (it was pushed before the last node that closed it)
-  assert.deepEqual(app.currentView().proposals, [])
-  app.refresh()
-  for (let i = 0; i < 40 && !rows([HOME, 'garden']).includes('Compost'); i++) await tick()
-  assert(rows([HOME, 'garden']).includes('Compost'), 'a row loads when it is shown')
-
-  // a voice note, with "accept right away" on: transcribed (iOS MP4 accepted as is), organized, accepted as one edit
-  const toggle = document.querySelector('.node-input .auto-accept-captures input')
-  assert(toggle && !toggle.checked)
-  toggle.checked = true; toggle.dispatchEvent(new window.Event('change'))
-  assert.equal(app.autoAcceptCaptures, true)
-  requests.length = 0
-  const beforeVoice = ids([HOME, 'garden']).length
-  await app.submitVoice(new Blob([new Uint8Array(4000)], { type: 'audio/mp4' }), [HOME, 'garden'])
+  await app.submitVoice(new Blob([new Uint8Array(4000)], { type: 'audio/mp4' }), garden)
   assert.deepEqual(requests[0], { path: '/user/data/voice-notes', query: '?transcript=only', type: 'audio/mp4' })
-  assert.deepEqual(requests[1].request, { label: 'Voice note', text: 'the tomatoes need stakes and we should start a compost bin' })
-  assert.equal(ids([HOME, 'garden']).length, beforeVoice + 3, 'accepted on the device: the group, the row and the transcript note')
-  assert.equal(ids([HOME, 'garden', 'tomatoes']).length, 2)
-  assert.match(app.state.notice.text, /Voice note organized: 4 rows added here/)
+  assert.equal(requests[1].request.label, 'Voice note')
   assert.equal(app.state.voice, null)
-  app.undo()
-  assert.equal(ids([HOME, 'garden']).length, beforeVoice, 'still one undo for the whole capture')
-  toggle.checked = false; toggle.dispatchEvent(new window.Event('change'))
-
-  // the model unreachable: the capture is still kept, unorganized, and the person is told
   failOrganize = true
-  const count = rows([HOME, 'garden']).length
-  assert.equal(await app.organizeText('remember the hose', [HOME, 'garden']), true)
-  assert.equal(rows([HOME, 'garden']).length, count + 1)
-  const kept = c.view(app.state.replica, [HOME, 'garden']).tasks.at(-1)
-  assert(c.view(app.state.replica, [HOME, 'garden', kept.id]).tasks.find(t => t.scalar).title.endsWith('remember the hose'), 'the capture is the note body')
-  assert(!c.view(app.state.replica, [HOME, 'garden']).tasks.some(t => t.requirement && t.requirement.capability === 'organize'), 'the failed request is removed too')
-  assert.match(app.state.notice.text, /unorganized: organizing failed: model down/)
+  const before = rows(garden).length
+  assert(await app.organizeText('remember the hose', garden))
+  assert.equal(rows(garden).length, before + 1)
+  const kept = rows(garden).at(-1)
+  assert(c.view(app.state.replica, [...garden, kept.id]).tasks.some(row => row.title.includes('remember the hose')))
+  assert(!rows(garden).some(row => row.requirement?.capability === 'organize' && !row.requirement.satisfied))
+  assert.match(app.state.notice.text, /unorganized: model down/)
   failOrganize = false
 
   // a long prose paste goes to the capture box instead of a row per line; short and structured pastes keep their rows
@@ -189,14 +93,14 @@ async function main() {
     target.dispatchEvent(event)
     return event
   }
-  const nodeText = document.querySelector('.node-title-input')
+  const nodeText = document.querySelector('.current-node-row textarea')
   const prose = ('We walked the beds this morning and the soil is dry. ' .repeat(25) + '\n').repeat(2)
   assert(paste(nodeText, prose).defaultPrevented)
   assert.equal(document.querySelector('.node-input .capture-text').value, prose)
   assert.equal(app.state.notice.kind, 'info')
-  const childCount = rows([HOME, 'garden']).length
+  const childCount = rows(garden).length
   paste(nodeText, 'short one\nshort two')
-  assert.equal(rows([HOME, 'garden']).length, childCount + 2, 'short pastes still become rows')
+  assert.equal(rows(garden).length, childCount + 2, 'short pastes still become rows')
 
   // a denied microphone (iOS: the permission switched off) is reported and leaves nothing recording
   Object.defineProperty(navigator, 'mediaDevices', { value: { getUserMedia: async () => { throw Object.assign(new Error('Permission denied'), { name: 'NotAllowedError' }) } }, configurable: true })

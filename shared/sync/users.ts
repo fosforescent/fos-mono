@@ -27,7 +27,7 @@ import { constructForm, formRecord, type FormInput } from './forms'
 import { plainEdge } from './patterns'
 import { addRow, bindUserAt, deleteTask, headCid, homePath, view, writeGraphNode, type Replica } from './replica'
 import { PLAIN_TYPE } from './library-types'
-import { ALLOCATION_TYPE } from './library-types'
+import { addRequirement } from './arguments'
 
 export const USER_TYPE_ID = 'user'
 /** The field of a row that names a user (`-@bob`, `@bob 2h`, `-ff 5 reward @bob`). */
@@ -299,13 +299,14 @@ export function requestVerification(r: Replica, username: string, now: number): 
   const open = verifyRequestAt(r, name)
   if (open) r = deleteTask(r, path, open.at(-1)!, now)
   const id = newId()
-  r = addRow(r, path, ALLOCATION_TYPE, `@${name}`, now, { id, requirement: { capability: 'verify' }, user: unverifiedUser(name) })
+  r = addRequirement(r, path, `@${name}`, now, { capability: 'verify' }, id)
+  r = bindUserAt(r, [...path, id], unverifiedUser(name), now)
   return { replica: r, path: [...path, id] }
 }
 
 /** The attested user object a filled verify requirement at `path` holds (its `user` field), or null. */
 export function verifiedAt(r: Replica, path: Scope): UserRecord | null {
   const cid = resolveScope(r.store, headCid(r), path)
-  const user = cid ? userOf(r.store, valueContent(r.store, cid)) : null
+  const user = cid ? userOf(r.store, valueContent(r.store, cid)) ?? userOf(r.store, content(r.store, cid)) : null
   return user?.verification ? user : null
 }

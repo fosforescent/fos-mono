@@ -5,14 +5,17 @@
  */
 import { formText } from './forms'
 import { newId, resolveScope, valueContent, type Scope } from './graph'
-import { ALLOCATION_TYPE } from './library-types'
+import { addRequirement } from './arguments'
 import { addRow, headCid, view, type Replica } from './replica'
 
 
 export function requestTitle(replica: Replica, at: Scope, now: number, makeId: () => string = newId): { replica: Replica; path: Scope } {
   if (!at.length || !view(replica, at)) throw new Error('The row to title was removed.')
   const id = makeId()
-  return { replica: addRow(replica, at, ALLOCATION_TYPE, 'Title', now, { id, requirement: { capability: 'title' } }), path: [...at, id] }
+  // the text to title travels with the request as its input: the handler reads operands, never the tree
+  const cid = resolveScope(replica.store, headCid(replica), at)!, text = formText(replica.store, valueContent(replica.store, cid)).trim()
+  if (!text) throw new Error('There is no text to title here.')
+  return { replica: addRequirement(replica, at, 'Title', now, { capability: 'title', inputs: { text } }, id), path: [...at, id] }
 }
 
 /** The text a `title` requirement at `path` asks a title for: the whole text of the row it is in, or null. */

@@ -6,18 +6,20 @@ import type { FosStore } from '../dag-implementation/store'
 import { importNodes, reachableNodes, content, findAliasEdge, identityCid, isBranchChoice, isMemberEdge, isProposalEdge, isRowEdge, put, putBranches, readChoice, isRefNode, refValueCid, resolveScope, selectedBranchValue, valueContent, type Scope } from './graph'
 import { addRefAt, headCid, type Replica } from './replica'
 import { argumentRefs } from './bindings'
-import { matchesGraph } from './structural'
-import { isNegative, primitiveOf } from './parameters'
+import { isTagRow, matchesGraph } from './structural'
+import { isOutputPattern } from './parameters'
 import { resolveRefExpression, resolveRefIdentity, type RefAccess, type RefLocation } from './ref-paths'
-import { resolveRequirementOutput } from './destructure'
 import { bindingAssignments, type ScopedBinding } from './scope-bindings'
-import { compileAuthorityInvocation } from './authority-compilation'
 
 export type RefHole = { cid: string; id: string; type?: string; path: Scope; reason: 'unbound' | 'unavailable' | 'denied' | 'cycle' | 'ambiguous' | 'type'; role: 'input' | 'output' }
 export type CompiledRef = { cid: string; holes: RefHole[]; complete: boolean; sources: string[]; locations: Array<{ source: string; path: Scope; cid: string }> }
 export type CompileRefOptions = RefAccess & { outputs?: string[]; bindings?: RefLocation[]; selected?: boolean; openOutputs?: boolean }
 
-/** Evaluation may traverse only content-addressed operands, never consult the editor's alias namespace. */
+/**
+ * Evaluation may traverse only content-addressed operands, never consult the editor's alias namespace. Constructors
+ * (the left of an edge) are kept by identity: a definition's parameter rows carry their names as aliases, and a type
+ * that was renamed by compiling would no longer be the type its readers name.
+ */
 export function assertCompiledGraph(store: FosStore, roots: string[]): void {
   const seen = new Set<string>(), pending = [...roots]
   while (pending.length) {
@@ -28,8 +30,30 @@ export function assertCompiledGraph(store: FosStore, roots: string[]): void {
     const node = store.table.get(cid)
     if (!node) throw new Error('Compiled graph content is unavailable.')
     if (node.data.alias || node.data.ref || node.data.refExpression) throw new Error('Compile editor references before evaluation.')
+    for (const edge of node.children) pending.push(edge[1])
+  }
+}
+
+/** Does any node reachable from `cid` refer to another (a ref or a ref expression; a bare alias is only a name)? Memoized per store. */
+const editorRefs = new WeakMap<FosStore, Map<string, boolean>>()
+function containsRef(store: FosStore, cid: string): boolean {
+  let memo = editorRefs.get(store)
+  if (!memo) { memo = new Map(); editorRefs.set(store, memo) }
+  const seen = new Set<string>(), pending = [cid]
+  while (pending.length) {
+    const current = pending.pop()!
+    if (seen.has(current)) continue
+    seen.add(current)
+    const known = memo.get(current)
+    if (known === true) { memo.set(cid, true); return true }
+    if (known === false) continue
+    const node = store.table.get(current)
+    if (!node) continue
+    if (node.data.ref || node.data.refExpression) { memo.set(cid, true); return true }
     for (const edge of node.children) pending.push(...edge)
   }
+  for (const c of seen) memo.set(c, false)
+  return false
 }
 
 export function compileRefGraph(r: Replica, cid: string, at: Scope = [], options: CompileRefOptions = {}): CompiledRef {
@@ -59,7 +83,8 @@ export function compileRefGraph(r: Replica, cid: string, at: Scope = [], options
     visiting.add(current)
     try {
       const previousHoleCount = holes.length
-      if (node.data.refAlternatives && options.selected) {
+      // a sum of options on a refined capability (a choice pattern) is a pattern, not a ref with alternative handlers
+      if (node.data.refAlternatives && options.selected && !node.data.capabilityDefinition) {
         const values = [...new Set(node.children.map(([, value]) => value))]
         return values.length === 1 ? walk(store, values[0]!, path, role, depth + 1, type) : hole(id, type, path, values.length ? 'ambiguous' : 'unbound', role)
       }
@@ -69,15 +94,6 @@ export function compileRefGraph(r: Replica, cid: string, at: Scope = [], options
         return put(r.store, node)
       }
       if (node.data.ref?.peer || node.data.ref?.owner) return hole(node.data.ref.id || id, type, path, 'unavailable', role)
-      if (node.data.ref && node.data.name) {
-        const output = resolveRequirementOutput(store, current, path.slice(0, -1), options)
-        if (output) {
-          if (output.source) sources.add(output.source.cid)
-          if (!output.cid) return hole(id, type, path, 'unbound', role)
-          if (store !== r.store) importNodes(r.store, reachableNodes(store, [output.cid]))
-          return output.cid
-        }
-      }
       if (node.data.refExpression) {
         const context = { ...r, store }
         const resolved = resolveRefExpression(context, path.slice(0, -1), node.data.refExpression, options)
@@ -130,13 +146,16 @@ export function compileRefGraph(r: Replica, cid: string, at: Scope = [], options
       const children: FosPathElem[] = []
       for (const edge of node.children) {
         if (edge[0] === store.primitive.previousVersion.getId() || isProposalEdge(store, edge) || isMemberEdge(store, edge)) continue
+        // a tag names a capability by identity; the capability's own declarations are not this node's to fill
+        if (isTagRow(store, edge)) { children.push(edge); continue }
         const child = store.table.get(edge[1])
         if (child && settingOf(store, child)) continue
         if (isRowEdge(store, edge) && isHandlerStateLeft(store, edge[0])) continue
         const childPath = isRowEdge(store, edge) ? [...path, child?.data.alias?.id ?? edge[1]] : path
-        // Constructor identities are immutable graph nodes too, and may contain refs.
-        const instruction = walk(store, edge[0], childPath, role, depth + 1)
-        const childRole = primitiveOf(store, edge[0]) !== null && !isNegative(store, edge[0]) ? 'output' : role
+        // A constructor is kept by identity (a form's field types stay the types its definition names) unless it contains refs of its own to compile.
+        const instruction = containsRef(store, edge[0]) ? walk(store, edge[0], childPath, role, depth + 1) : edge[0]
+        if (instruction === edge[0]) locations.push({ source: edge[0], path: childPath, cid: instruction })
+        const childRole = isOutputPattern(store, edge[0]) ? 'output' : role
         children.push([instruction, walk(store, edge[1], childPath, childRole, depth + 1, isRowEdge(store, edge) ? edge[0] : type)])
       }
       const { alias: _alias, updated: _updated, ref: _ref, refExpression: _expression, refRole: _role, ...data } = node.data
@@ -166,17 +185,9 @@ export function compileInstructions(r: Replica, path: Scope, options: CompileRef
   const parent = path.length ? resolveScope(r.store, headCid(r), path.slice(0, -1)) : null
   const edge = parent ? findAliasEdge(r.store, valueContent(r.store, parent), path.at(-1)!)?.edge : null
   const type = edge?.[0]
-  // Authority invocation operands retain declaration identity: outputs are ref destinations,
-  // not values to substitute. Its native compiler uses the same scoped binding resolver.
-  if (type && content(r.store, type).data.authorityFrame?.role === 'invocation') {
-    const compiled = compileAuthorityInvocation(r, type, path, options)
-    return { cid: compiled.cid, holes: [] as RefHole[], complete: true,
-      sources: compiled.locations.map(location => location.binding.cid), locations: [] as CompiledRef['locations'],
-      blocking: [] as RefHole[], canRun: true }
-  }
   const bindings = argumentRefs(r.store, cid).map(arg => ({ store: r.store, cid: arg.cid, path: [...path, content(r.store, arg.cid).data.alias!.id] }))
   const empty = put(r.store, { data: {}, children: [] })
-  const compiled = compileRefGraph(r, type ?? empty, path, { ...options, bindings, selected: true })
+  const compiled = compileRefGraph(r, type ?? empty, path, { openOutputs: true, ...options, bindings, selected: true })
   const blocking = compiled.holes.filter(hole => hole.role !== 'output' || hole.reason !== 'unbound')
   return { ...compiled, blocking, canRun: blocking.length === 0 }
 }

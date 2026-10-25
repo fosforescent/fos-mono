@@ -26,6 +26,18 @@ export function isNegative(store: FosStore, node: string): boolean {
   return parameter(store, node, 'negative') !== null
 }
 
+/**
+ * Whether a declaration `[pattern, ref]` is the row's to fill (an output) rather than an operand it needs first. A
+ * capability pattern asks when it is negative (a requirement). A primitive parameter keeps the library's reading:
+ * negative is a value the row sends (an input); a received primitive is filled at run time.
+ */
+export function isOutputPattern(store: FosStore, pattern: string): boolean {
+  const node = store.table.get(pattern)
+  if (!node) return false
+  if (node.data.capabilityDefinition) return isNegative(store, pattern)
+  return primitiveOf(store, pattern) !== null && !isNegative(store, pattern)
+}
+
 /** Flip a node's direction using the existing negative parameter, preserving its definition. */
 export function invertPolarity(store: FosStore, node: string, negativeKey: string): string {
   const definition = store.table.get(node)

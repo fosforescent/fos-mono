@@ -1,3 +1,4 @@
+const drag = require('./helpers/drag.cjs')
 const assert = require('node:assert/strict')
 const { mkdtempSync, rmSync } = require('node:fs')
 const { tmpdir } = require('node:os')
@@ -38,7 +39,7 @@ async function main() {
     const action = document.querySelector(`.constructor-grid [aria-label="${caption}"]`)
     assert(action?.querySelector('svg')); assert(action.draggable)
     global.fetch = async () => { throw new Error('publishing is a local member edge, not a request') }
-    action.click(); await tick()
+    drag(action); await tick()
     // publishing is a row of this node: its controls are in the row, not a dialog
     assert(!document.querySelector('.publish-dialog'), 'no publishing dialog')
     const dialog = document.querySelector('.tree .constructor-body .sharing-controls')?.closest('.constructor-body'); assert(dialog, 'the publishing row holds its controls')

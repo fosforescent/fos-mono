@@ -123,6 +123,9 @@ function collectAssignments(layer: BindingLayer): BindingLayer {
 
 /** Direct declarations and member advertisements occupy the same enclosing graph frame. */
 export function bindingLayers(r: Context, at: Scope, access: BindingAccess = {}): BindingLayer[] {
+  // a replica's own declarations are always reachable in it: liveness is a question about other peers
+  const local = r.meta?.peerId
+  if (access.isPeerActive && local) { const other = access.isPeerActive; access = { ...access, isPeerActive: peer => peer === local || other(peer) } }
   const members = memberLayers(r, at), nearestMembers = new Map<string, MemberLayer>()
   for (const member of members) if (!nearestMembers.has(member.peer)) nearestMembers.set(member.peer, member)
   const policy = new Map([...nearestMembers].map(([peer, member]) => [peer, content(member.store, member.cid).data.disabledCapabilities?.content ?? []]))

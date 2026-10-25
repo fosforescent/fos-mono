@@ -8,10 +8,9 @@ const dir = mkdtempSync(path.join(require('node:os').tmpdir(), 'fos-navigation-'
 const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost/' })
 for (const key of ['window','document','HTMLElement','HTMLInputElement','HTMLTextAreaElement','Node','Option','navigator','localStorage','sessionStorage','location']) Object.defineProperty(globalThis, key, { value: dom.window[key], configurable: true })
 buildSync({ stdin: { contents: `export {App} from './src/app'; export {mountUi} from './src/ui'; export {createMemoryStorage} from './src/storage'; export * from '../shared/sync/index'`, resolveDir: path.resolve(__dirname, '..') }, bundle: true, platform: 'node', format: 'cjs', outfile: path.join(dir, 'test.cjs'), external: ['mermaid','katex','katex/*'] })
-const { App, mountUi, createMemoryStorage, addRow, readNodeValue, HOME_ID } = require(path.join(dir, 'test.cjs'))
+const { App, mountUi, createMemoryStorage, addRequirement, addAllocation, readNodeValue, HOME_ID } = require(path.join(dir, 'test.cjs'))
 const TASK_TYPE = 'task'
 const NOTE_TYPE = 'note'
-const ALLOCATION_TYPE = 'allocation'
 const tick = () => new Promise(resolve => setTimeout(resolve, 20))
 
 async function main() {
@@ -60,14 +59,14 @@ async function main() {
   const buttons = () => [...document.querySelectorAll('.execution-rows button')].map(b => b.textContent)
   assert(!buttons().includes('Complete') && !buttons().includes('Continue execution'), `a note offers no completion: ${buttons()}`)
   app.exitExecution()
-  app.set({ replica: addRow(app.state.replica, [HOME_ID], ALLOCATION_TYPE, 'Choose a date', Date.now(), { id: 'choose-date', requirement: { capability: 'choice', options: ['May', 'June'] } }) })
+  app.set({ replica: addRequirement(app.state.replica, [HOME_ID], 'Choose a date', Date.now(), { capability: 'choice', options: ['May', 'June'] }, 'choose-date') })
   await app.startExecution([HOME_ID, 'choose-date'])
   assert(buttons().includes('Complete'), `a requirement can be completed: ${buttons()}`)
   app.exitExecution()
   const bank = app.applyConstructor([HOME_ID], { type: TASK_TYPE, text: 'Budget', done: false })
-  app.set({ replica: addRow(app.state.replica, bank, ALLOCATION_TYPE, 'Cash', Date.now(), { id: 'cash', allocation: { type: 'money', unit: 'usd', amount: 10 } }) })
+  app.set({ replica: addAllocation(app.state.replica, bank, 'Cash', Date.now(), { resource: '', type: 'account', unit: 'usd', amount: 10 }, { id: 'cash' }) })
   const holder = app.applyConstructor([HOME_ID], { type: NOTE_TYPE, text: 'Funds' })
-  app.set({ replica: addRow(app.state.replica, holder, ALLOCATION_TYPE, 'Petty cash', Date.now(), { id: 'petty', allocation: { type: 'money', unit: 'usd', amount: 5 } }) })
+  app.set({ replica: addAllocation(app.state.replica, holder, 'Petty cash', Date.now(), { resource: '', type: 'account', unit: 'usd', amount: 5 }, { id: 'petty' }) })
   await app.startExecution(holder)
   assert(buttons().includes('Complete'), `a note holding allocations can be completed: ${buttons()}`)
   app.exitExecution()

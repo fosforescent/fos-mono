@@ -18,6 +18,7 @@
  * projection of the node, node-provider.ts), so the queue rows reach the recipient by ordinary sync (`relayQueues`,
  * `relayInbox`); it acknowledges with an ack row (`addRelayAck`).
  */
+import { tag } from './structural'
 import type { FosPathElem } from '../types'
 import type { FosStore } from '../dag-implementation/store'
 import { hashContent } from '../dag-implementation/cid'
@@ -242,7 +243,8 @@ export function offerRelay(r: Replica, at: Scope, now: number): Replica {
   if (!contextMemberRefs(r, at).has(peerId)) r = addMemberAt(r, at, peerId, peerId, [], now)
   const type = libAt(r.store, at).capabilities.relay!
   const template = valueContent(r.store, relayTemplate(r, at))
-  const value = put(r.store, { ...template, children: [...template.children, ...content(r.store, type).children] })
+  // the offer is a value of the relay capability: it carries the capability's tag
+  const value = put(r.store, { ...template, children: [...template.children, ...content(r.store, type).children, tag(r.store, type)] })
   const handler = put(r.store, refNodeContent(r.store, { alias: { id: handlerOfferId(peerId, type) }, name: { content: 'Relay' } }, value, []))
   return setHandlerOffersAt(r, at, peerId, type, [handler], now)
 }

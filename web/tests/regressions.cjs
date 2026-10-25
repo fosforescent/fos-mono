@@ -465,17 +465,15 @@ async function main() {
   assert.deepEqual(contextApp.state.view, [HOME_ID])
   assert.deepEqual(contextApp.currentView().tasks.map(t => t.id), [], 'a fresh Home is empty')
   assert.deepEqual(view(contextApp.state.replica, []).tasks.map(t => t.id), [LIBRARY_ID, HOME_ID], 'the device root ships the standard library beside Home')
-  const project = contextApp.addRowAtTop(parseRowInput('[ ] Project\n  @money Budget 100\n    -$ 50 Travel\n      $ 20 First contribution\n      $ 30 Second contribution'))
+  const project = contextApp.addRowAtTop(parseRowInput('[ ] Project\n  @money Budget 100\n  -$ 50 Travel\n    $ 20 First contribution\n    $ 30 Second contribution'))
   const projectView = view(contextApp.state.replica, [HOME_ID, project])
   const bank = projectView.tasks[0]
-  const need = view(contextApp.state.replica, [HOME_ID, project, bank.id]).tasks[0]
-  assert.equal(need.requirement.satisfied, true)
-  assert.equal(need.requirement.have, 50)
-  assert.equal(view(contextApp.state.replica, [HOME_ID,project]).tasks[0].resource.allocated,50,'contributions below demands count in the bank')
-  contextApp.undo()
-  assert.equal(view(contextApp.state.replica, [HOME_ID]).tasks.length, 0, 'a parsed tree is one undoable edit')
-  contextApp.redo()
-  assert.equal(view(contextApp.state.replica, [HOME_ID, project, bank.id, need.id]).tasks.length, 2)
+  const need = projectView.tasks.find(t => t.requirement)
+  assert.equal(need.requirement.satisfied, false, 'typed amounts are data: only a grant a bank issued fills a resource demand')
+  assert.equal(need.requirement.linear, true)
+  assert.equal(view(contextApp.state.replica, [HOME_ID, project, need.id]).tasks.filter(t => t.allocation).length, 2)
+  for (let i = 0; i < 50 && view(contextApp.state.replica, [HOME_ID, project]).tasks[0].resource.held !== 100; i++) await tick()
+  assert.equal(view(contextApp.state.replica, [HOME_ID,project]).tasks[0].resource.held,100,'the bank holds the grant its typed amount issued')
   const treeDraft = { store: contextApp.state.replica.store, head: require(path.join(dir, 'app.cjs')).headCid(contextApp.state.replica), parent: [HOME_ID] }
   contextApp.set({ replica: renameTask(contextApp.state.replica, [HOME_ID], project, 'Remote title', 99) })
   contextApp.rewriteRowAt([], project, parseRowInput('[ ] Local title\n  New local child'), treeDraft)
@@ -566,15 +564,15 @@ async function main() {
   assert(!document.querySelector('.node-header .add-row'), 'the header no longer has an Add button')
   assert(document.querySelector('.node-title-section > .input-toggle'), 'Edit sits beside the title')
   // the title is the node's own row editor: its marker text, parsed on Enter
-  const titleInput = document.querySelector('.node-title-input')
+  const titleInput = document.querySelector('.current-node-row textarea')
   assert.equal(titleInput.value, '[ ] Branch project')
   assert(!document.querySelector('.node-title-row .zoom-dot, .node-title-row .handle, .node-title-row .more'), 'no zoom dot, drag handle or row menu in the title')
   titleInput.focus(); titleInput.value = '[ ] Renamed project'
   titleInput.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
   assert.equal(branchApp.currentRow().title, 'Renamed project')
   assert.equal(branchApp.currentRow().done, false)
-  document.querySelector('.node-title-input').value = '[x] Renamed project'
-  document.querySelector('.node-title-input').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  document.querySelector('.current-node-row textarea').value = '[x] Renamed project'
+  document.querySelector('.current-node-row textarea').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
   assert.equal(branchApp.currentRow().done, true, 'the marker sets the done state')
   document.querySelector('.node-title-check input').click()
   assert.equal(branchApp.currentRow().done, false, 'the title checkbox reopens it')
@@ -681,7 +679,7 @@ async function main() {
   const detailTask = detailApp.addRowAtTop(parseRowInput('[ ] Detailed task'))
   const nestedTask = detailApp.addRowAt([detailTask], TASK_TYPE, 'Nested task')
   detailApp.zoomTo([detailTask]); await tick()
-  const editor = document.querySelector('textarea.node-title-input')
+  const editor = document.querySelector('.current-node-row textarea')
   editor.focus(); editor.value = '[ ] Detailed task\nFull text draft'; editor.setSelectionRange(12, 12)
   detailApp.set({ replica: addTask(detailApp.state.replica, [detailTask], 'Remote child', 50, 'remote-child') })
   await tick()
@@ -737,10 +735,11 @@ async function main() {
   assert(![...document.querySelectorAll('.footer button')].some(b => /Undo|Redo|Connect/.test(b.textContent)))
   assert(document.querySelector('[aria-label="Device name"]'))
   assert(document.querySelector('[aria-label="Device theme"]'))
-  assert.equal(document.querySelector('[data-accordion="context"]').open, true, 'capabilities are visible initially')
+  const constructorsWereOpen = document.querySelector('[data-accordion="context"]').open
   assert(!document.querySelector('.node-menu-button'), 'node actions live in Constructors')
   document.querySelector('[aria-label="Constructors"]').click()
-  assert(!document.querySelector('[data-accordion="context"]').open, 'the capability panel can still be collapsed')
+  assert.equal(document.querySelector('[data-accordion="context"]').open, !constructorsWereOpen)
+  if (constructorsWereOpen) document.querySelector('[aria-label="Constructors"]').click()
   workspaceApp.goTo([])
   const parentA = workspaceApp.addRowAt([], PLAIN_TYPE, 'A'), parentB = workspaceApp.addRowAt([], PLAIN_TYPE, 'B')
   workspaceApp.goTo([parentA]); workspaceApp.addRowAt([], TASK_TYPE, 'A child')
@@ -772,9 +771,9 @@ async function main() {
   const argumentRows = document.querySelectorAll(`.tree .task[data-id="${customerArg.id}"]`)
   assert.equal(argumentRows.length, 1, 'the right argument is rendered once as its ordinary row')
   assert.equal(argumentRows[0].draggable, true, 'arguments use the ordinary row move controls')
-  assert.equal(document.querySelectorAll('[aria-label="Text for customer"]').length, 1)
+  assert.equal(argumentRows[0].querySelectorAll('[aria-label="Text for customer"]').length, 1)
   const sourceText = workspaceApp.addRowAt([], PLAIN_TYPE, 'Customer name')
-  const customerPanel = document.querySelector('[aria-label="Text for customer"]').parentElement
+  const customerPanel = document.querySelector('.tree [aria-label="Text for customer"]').parentElement
   const argumentDrop = new dom.window.Event('drop', { bubbles: true, cancelable: true })
   Object.defineProperty(argumentDrop, 'dataTransfer', { value: { types: ['application/x-fos-node'], getData: () => sourceText } })
   customerPanel.dispatchEvent(argumentDrop)

@@ -1,9 +1,9 @@
 import { declareTestCapability } from './test-helpers'
 import {
-  addMemberAt, addRefAt, addRow, addSupply, ALLOCATION_TYPE, addTask, applyProposalAt, libAt, content, contextBindings, nativeRef, publishNativeRef, primitiveExecutors,
+  addMemberAt, addRefAt, addRequirement, supplyRequirement, addTask, applyProposalAt, libAt, content, contextBindings, nativeRef, publishNativeRef, primitiveExecutors,
   createReplica, discoverHandlers, headCid, matchesRefPattern, parsePolicy, proposeRefAt, put,
-  refNodeContent, refSubmissions, requirementSatisfied, resolveBinding, resolveScope, resolveText, visibleBindings,
-  serializeReplica, loadReplica, nestScope, setHandlerEnabledAt, type EvaluationStep
+  refNodeContent, refSubmissions, argumentSatisfied, resolveBinding, resolveScope, resolveText, visibleBindings,
+  serializeReplica, loadReplica, nestScope, setHandlerEnabledAt, valueContent, evaluationSteps
 } from './index'
 
 const leaf = (r: ReturnType<typeof createReplica>, name: string) => put(r.store, { data: { description: { content: name } }, children: [] })
@@ -40,7 +40,7 @@ test('submissions reveal sub-refs only after acceptance and keep alternatives se
   const child = put(r.store, refNodeContent(r.store, { alias: { id: 'child' } }, leaf(r, 'child value'), []))
   const first = put(r.store, { data: { peerId: { content: 'remote' } }, children: [[childType, child]] })
   r = addRefAt(r, [], 'parent', type, 1)
-  expect(requirementSatisfied(r.store, at(r, ['parent']))).toBe(false)
+  expect(argumentSatisfied(r.store, at(r, ['parent']), type)).toBe(false)
   const pending = proposeRefAt(r, ['parent'], first, 'remote', 2)
   r = pending.replica
   expect(discoverHandlers(r, []).some(offer => offer.id === 'child')).toBe(false)
@@ -86,11 +86,12 @@ test('patterns recurse through rows and submitted refs without node type declara
 
 test('device and host native implementations are selected through published refs and respect disabled offers', async () => {
   let r = declareTestCapability(createReplica('device'), 'extension:paint'), calls = 0
-  const ref = nativeRef<void>(r.store, 'device', { id: 'custom:executor', type: store => libAt(store).capabilities['extension:paint']!, effect: async () => { calls++ } })
-  const step = { path: [], row: { requirement: { capability: 'extension:paint' } } } as unknown as EvaluationStep
+  const ref = nativeRef<void>(r.store, 'device', { id: 'custom:executor', type: store => libAt(store).capabilities['extension:paint']!, native: async () => { calls++; return {} } })
+  r = addRequirement(r, [], 'Paint', 1, { capability: 'extension:paint' }, 'req')
+  const step = evaluationSteps(r, ['req'])[0]!
   expect(primitiveExecutors(r, step, 'device')).toEqual([])
   r = publishNativeRef(r, [], 'device', ref, 1)
-  await primitiveExecutors<void>(r, step, 'device')[0]!.native.effect!()
+  await primitiveExecutors<void>(r, step, 'device')[0]!.native.native!({ inputs: {}, outputs: {}, left: '' }, { evaluation: 'e', step: step.path, now: 0, store: r.store, put: () => '' })
   expect(calls).toBe(1)
   r = setHandlerEnabledAt(r, [], 'device', content(r.store, ref).data.alias!.id, false, 2)
   expect(primitiveExecutors(r, step, 'device')).toEqual([])
@@ -98,20 +99,24 @@ test('device and host native implementations are selected through published refs
 
 test('a native implementation is reached through an assigned ref rather than the declaration name', () => {
   let r = declareTestCapability(createReplica('device'), 'paint')
-  const reference = nativeRef<void>(r.store, 'device', { id: 'native:paint', type: store => libAt(store).capabilities.paint!, effect: async () => {} })
+  const reference = nativeRef<void>(r.store, 'device', { id: 'native:paint', type: store => libAt(store).capabilities.paint!, native: async () => ({}) })
   r = addRefAt(r, [], 'my-handler', libAt(r.store).capabilities.paint!, 1, reference)
-  const step = { path: [], row: { requirement: { capability: 'paint' } } } as unknown as EvaluationStep
+  r = addRequirement(r, [], 'Paint', 1, { capability: 'paint' }, 'req')
+  const step = evaluationSteps(r, ['req'])[0]!
   expect(primitiveExecutors(r, step, 'device')).toHaveLength(1)
   r = setHandlerEnabledAt(r, [], 'device', 'my-handler', false, 2)
   expect(primitiveExecutors(r, step, 'device')).toEqual([])
 })
 
 test('arbitrary extension names do not accidentally invoke Object prototype properties', () => {
-  let r = addRow(createReplica(), [], ALLOCATION_TYPE, 'Custom requirement', 1, { id: 'req', requirement: { capability: 'constructor' } })
+  // an undeclared capability is refused rather than read off Object.prototype
+  expect(() => addRequirement(createReplica(), [], 'Custom requirement', 1, { capability: 'constructor' }, 'req')).toThrow()
+  let r = addRequirement(declareTestCapability(createReplica(), 'constructor'), [], 'Custom requirement', 1, { capability: 'constructor' }, 'req')
+  const pattern = () => valueContent(r.store, headCid(r)).children.find(e => content(r.store, e[1]).data.alias?.id === 'req')![0]
   r = addTask(r, ['req'], 'Unrelated', 2)
-  expect(requirementSatisfied(r.store, at(r, ['req']))).toBe(false)
-  r = addSupply(r, [], 'req', { capability: 'constructor', by: 'device' }, 3)
-  expect(requirementSatisfied(r.store, at(r, ['req']))).toBe(true)
+  expect(argumentSatisfied(r.store, at(r, ['req']), pattern())).toBe(false)
+  r = supplyRequirement(r, [], 'req', { by: 'device' }, 3)
+  expect(argumentSatisfied(r.store, at(r, ['req']), pattern())).toBe(true)
 })
 
 test('an old nominal annotation cannot satisfy a structural pattern', () => {

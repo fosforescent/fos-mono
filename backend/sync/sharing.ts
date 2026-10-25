@@ -2,13 +2,11 @@ import { createHash, createHmac, randomUUID } from 'node:crypto'
 import * as jsonwebtoken from 'jsonwebtoken'
 import type { Request, Response } from 'express'
 import { executionInput, servedTo } from '@fosforescent/shared/sync/index'
-import { resourceWindow, resourceWindowContains, resourceWindowSatisfies } from '@fosforescent/shared/sync/index'
 import { findRowByAlias } from '@fosforescent/shared/sync/index'
-import { setRefValueAt, visitorExecution, consume, proposeVisitorValues, nodeAuthorityAt, nodeLinkMaskAt, evaluationSteps, addMemberAt, ensureHomeContext, evaluateNode, evaluationRecord, writeEvaluationRecord, executionInputs, addRow, addSupply, proposeRefAt, applyProposalAt, addTask, instantiateTemplate, ensureSharedLink, sharedLinkAt, sharedProposalCid, writeParticipation, handlerResult, writeHandlerResult, acceptSubmission, approvalsOf, withdrawApproval, argumentRefs, content, createReplica, readNodeValue, headCid, participation, put, resolveRef, resolveScope, sharedProjection, publication, publishedTo, markExecution, mayParticipate, valueContent, view, writeNodeValue, audiencePeer, type Participation, type Replica, type Scope, type SharedInput, type SharedAddress } from '@fosforescent/shared/sync/index'
+import { setRefValueAt, visitorExecution, consumeAllocation, proposeVisitorValues, nodeAuthorityAt, nodeLinkMaskAt, evaluationSteps, addMemberAt, ensureHomeContext, evaluateNode, evaluationRecord, writeEvaluationRecord, executionInputs, addRow, addAllocation, supplyRequirement, proposeRefAt, applyProposalAt, addTask, instantiateTemplate, ensureSharedLink, sharedLinkAt, sharedProposalCid, writeParticipation, handlerResult, writeHandlerResult, acceptSubmission, approvalsOf, withdrawApproval, argumentRefs, content, createReplica, readNodeValue, headCid, participation, put, resolveRef, resolveScope, sharedProjection, publication, publishedTo, markExecution, mayParticipate, valueContent, view, writeNodeValue, audiencePeer, type Participation, type Replica, type Scope, type SharedInput, type SharedAddress, type Allocation } from '@fosforescent/shared/sync/index'
 import { withUserLock, type AccountStoreDeps } from './accountStore'
-import { ALLOCATION_TYPE, TEMPLATE_TYPE } from '@fosforescent/shared/sync/library-types'
+import { TEMPLATE_TYPE } from '@fosforescent/shared/sync/library-types'
 void TEMPLATE_TYPE
-import { MONEY_TYPE } from '@fosforescent/shared/sync/library-types'
 const sign = jsonwebtoken.sign ?? (jsonwebtoken as unknown as { default: typeof jsonwebtoken }).default.sign
 const verify = jsonwebtoken.verify ?? (jsonwebtoken as unknown as { default: typeof jsonwebtoken }).default.verify
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
@@ -74,10 +72,9 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
       if (typeof value !== 'string' || value.length > 8000) throw new Failure(400, `Invalid text for ${field.name}.`)
       return value
     }
-    if (!value || typeof value.amount !== 'number' || !Number.isFinite(value.amount) || value.amount < 0 || value.type !== field.type || value.unit !== field.unit ||
-      !(field.direction === 'consume' ? resourceWindowContains(field, value) : resourceWindowSatisfies(value, field))) throw new Failure(400, `The supplied allocation does not match ${field.name}.`)
+    if (!value || typeof value.amount !== 'number' || !Number.isFinite(value.amount) || value.amount < 0 || value.type !== field.type || value.unit !== field.unit) throw new Failure(400, `The supplied allocation does not match ${field.name}.`)
     if (field.direction === 'consume' && value.amount > (field.amount ?? 0)) throw new Failure(400, 'The requested amount exceeds this allocation.')
-    return { amount: value.amount, type: field.type!, unit: field.unit!, ...resourceWindow(value) }
+    return { amount: value.amount, type: field.type!, unit: field.unit!, ...(value.start !== undefined ? { start: value.start } : {}), ...(value.end !== undefined ? { end: value.end } : {}) }
   }
   return {
     visit: run(async (req, res) => {
@@ -225,16 +222,12 @@ export function createSharingHandlers(deps: AccountStoreDeps, secret: string, ev
               })
             } else if (field.kind === 'text') {
               r = setRefValueAt(r, target, put(r.store, { data: { description: { content: value as string } }, children: [] }), now())
-            } else if (field.direction === 'consume') r = consume(r, target, { peer, value, time: now() }, now())
-            else if (field.kind === 'confirmation' || field.kind === 'choice') r = addSupply(r, target.slice(0, -1), target.at(-1)!, { capability: field.kind, by: peer, ...(field.kind === 'choice' ? { choice: value as number } : {}) }, now())
+            } else if (field.direction === 'consume') r = consumeAllocation(r, at.path, target, (value as { amount: number }).amount, now())
+            else if (field.kind === 'confirmation' || field.kind === 'choice') r = supplyRequirement(r, target.slice(0, -1), target.at(-1)!, { by: peer, ...(field.kind === 'choice' ? { choice: value as number } : {}) }, now())
             else {
+              // a typed amount is data, not authority: it is recorded under the request and does not satisfy a linear requirement
               const amount = value as { amount: number; type: string; unit: string; start?: number; end?: number }, id = randomUUID()
-              // money is a payment: the positive money row under the request fills it
-              if (amount.type === 'account') r = addRow(r, target, MONEY_TYPE, field.name, now(), { id, allocation: { ...amount, by: peer } as any })
-              else {
-                r = addRow(r, target, ALLOCATION_TYPE, field.name, now(), { id, allocation: amount as any })
-                r = addSupply(r, target.slice(0, -1), target.at(-1)!, { capability: 'allocation', by: peer, ref: id }, now())
-              }
+              r = addAllocation(r, target, field.name, now(), { resource: '', ...amount, by: peer } as Allocation, { id })
             }
           }
         } else {

@@ -10,15 +10,14 @@ test('a host registers and discovers a custom ref pattern without a capability n
   let calls = 0
   const runtime = createHostRuntime([{ peerId: 'fos', ref: {
     id: 'extension:render', type: store => put(store, { data: { name: { content: 'Rendering pattern' } }, children: [] }),
-    effect: async () => { calls++ }
-  } }])
+  }, native: () => async () => { calls++; return {} } }])
   let replica = ensureHomeContext(createReplica('owner'), 1, runtime.hostOffers())
   replica = await runtime.onLoad({ userId: 1, replica, path: [], branches: [], now: 2 })
   const handler = runtime.handlers[0]!, type = handler.ref!.type(replica.store, [])
   const step = { path: [], row: { typeCid: type } } as unknown as EvaluationStep
   expect(runtime.executors(step, replica)).toEqual([handler])
   expect(runtime.providers(step, replica, handler)).toEqual(['fos'])
-  await handler.effect!({ userId: 1, username: 'owner', step, replica: () => replica, update: async next => { replica = next }, now: () => 3 })
+  await handler.native!({ id: 1, username: 'owner' })({ inputs: {}, outputs: {}, left: type }, { evaluation: 'e', step: [], now: 3, store: replica.store, put: () => '' })
   expect(calls).toBe(1)
   replica = setHandlerEnabledAt(replica, [], 'fos', handlerOfferId('fos', type, 'extension:render'), false, 4)
   expect(runtime.providers(step, replica, handler)).toEqual([])
@@ -27,7 +26,7 @@ test('a host registers and discovers a custom ref pattern without a capability n
 test('advertised capabilities are exactly transport facts plus registered handlers', () => {
   const runtime = createHostRuntime([
     { peerId: 'fos', ref: standardHostRef('fos', 'search') }, { peerId: 'fos', ref: standardHostRef('fos', 'llm') }, { peerId: 'fos', ref: standardHostRef('fos', 'search', 'alternate-search') },
-    { peerId: 'integration:github', ref: standardHostRef('integration:github', 'repo'), effect: async () => undefined },
+    { peerId: 'integration:github', ref: standardHostRef('integration:github', 'repo'), native: () => async () => ({}) },
     { peerId: 'integration:phone', ref: standardHostRef('integration:phone', 'notify'), available: async () => false }
   ])
   expect(runtime.serverCapabilities()).toEqual([...new Set([...SERVER_TRANSPORT_CAPABILITIES, 'search', 'llm'])].sort())
@@ -43,7 +42,7 @@ test('a ref row is the registration: an empty host catalogue discovers it and re
   const runtime = createHostRuntime([])
   let r = createReplica('host'), calls = 0
   const definition = { id: 'direct:render', label: 'render', type: (store: typeof r.store) => put(store, { data: {}, children: [] }) }
-  const native = { peerId: 'host', ref: definition, effect: async () => { calls++ } }
+  const native = { peerId: 'host', ref: definition, native: () => async () => { calls++; return {} } }
   const value = nativeRef(r.store, 'host', definition, native)
   r = addRefCall(r, [], value, 1, 'call')
   const step = evaluationSteps(r, ['call'])[0]!
@@ -52,7 +51,7 @@ test('a ref row is the registration: an empty host catalogue discovers it and re
   expect(runtime.executors(step, r)).toEqual([native])
   expect(runtime.providers(step, r, native)).toEqual(['host'])
   expect(await runtime.active('host', 1, r, ['call'])).toBe(true)
-  await runtime.executors(step, r)[0]!.effect!({ userId: 1, username: 'owner', step, replica: () => r, update: async next => { r = next }, now: () => 3 })
+  await runtime.executors(step, r)[0]!.native!({ id: 1, username: 'owner' })({ inputs: {}, outputs: {}, left: '' }, { evaluation: 'e', step: ['call'], now: 3, store: r.store, put: () => '' })
   expect(calls).toBe(1)
   commitRoot(r.store, updateAtScope(r.store, headCid(r), [], node => ({ ...node, children: node.children.filter(edge => content(r.store, edge[1]).data.alias?.id !== 'registration') })), 4)
   expect(runtime.executors(step, r)).toEqual([])
@@ -71,7 +70,7 @@ test('availability follows the handler, and every advertised capability is a kno
 })
 
 test('reloading and applying host defaults never resurrects a withdrawn declaration', () => {
-  const runtime = createHostRuntime([{ peerId: 'fos', ref: standardHostRef('fos', 'search'), effect: async () => {} }])
+  const runtime = createHostRuntime([{ peerId: 'fos', ref: standardHostRef('fos', 'search'), native: () => async () => ({}) }])
   let r = ensureHomeContext(createReplica('owner'), 1, runtime.hostOffers())
   const offer = discoverHandlers(r, []).find(value => value.id === handlerOfferId('fos', libAt(r.store).capabilities.search!, 'search'))!
   expect(offer).toBeDefined()

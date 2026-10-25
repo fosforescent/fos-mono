@@ -1,7 +1,8 @@
 import { memberEdgesOf } from './graph'
 import { syncWith, userView } from './test-helpers'
-import { contextMembers, createBranch, selectBranch, addSupply, addMemberAt, addRow, addTask, content, createReplica, moveNode, ensureHomeContext, findChild, headCid, HOME_ID, homePath, resetHomeContent, isRowOfType, rowTypeAt, valueContent, view } from './index'
-import { ALLOCATION_TYPE, TEMPLATE_TYPE } from './library-types'
+import { contextMembers, createBranch, selectBranch, addMemberAt, addRow, addTask, createReplica, moveNode, ensureHomeContext, findChild, headCid, HOME_ID, homePath, resetHomeContent, view } from './index'
+import { addRequirement, argumentSupplier, supplyRequirement } from './arguments'
+import { TEMPLATE_TYPE } from './library-types'
 import { HOME_TYPE } from './library-types'
 
 test('legacy rows move into Home, constructors and peers remain at root, and migration is idempotent', () => {
@@ -34,22 +35,6 @@ test('scoped documents are already instances and never receive an extra Home wra
   expect(homePath(r)).toEqual([])
 })
 
-test('resource demands and contributions use the same signed allocation representation and match', () => {
-  let r = addTask(createReplica(), [], 'Trip', 1, 'trip')
-  r = addRow(r, ['trip'], ALLOCATION_TYPE, 'Budget', 2, { id: 'need', requirement: { capability: 'allocation', resource: 'account', amount: 50, unit: 'USD' } })
-  const task = findChild(r.store, headCid(r), 'trip')!
-  const demand = findChild(r.store, task, 'need')!
-  expect(valueContent(r.store, demand).data.requirement).toBeUndefined()
-  expect(valueContent(r.store, demand).data.allocation?.amount).toBe(-50)
-  const edge = valueContent(r.store, task).children.find(e => isRowOfType(r.store, e, ALLOCATION_TYPE))!
-  expect(edge[0]).toBe(rowTypeAt(r.store, ALLOCATION_TYPE))
-  r = addRow(r, ['trip', 'need'], ALLOCATION_TYPE, 'Contribution', 3, { id: 'give', allocation: { resource: 'bank', type: 'account', amount: 50, unit: 'USD' } })
-  expect(view(r, ['trip', 'need'])!.tasks[0]!.allocation?.amount).toBe(50)
-  expect(view(r, ['trip'])!.tasks[0]!.requirement?.satisfied).toBe(true)
-  expect(userView(r)!.tasks[0]!.blockedBy).toBeUndefined()
-})
-
-
 test('legacy scoped attachment paths still update the same node beneath Home', () => {
   let server = addTask(createReplica('server'), [], 'Project', 1, 'project')
   server = addMemberAt(server, ['project'], 'attached', 'Attached', ['edit'], 0)
@@ -76,18 +61,17 @@ test('moving rows inside the Home constructor follows its mutable value', () => 
 })
 
 
-test('handler demands and their supplied values share the same flow primitive', () => {
+test('a handler demand is an argument row; supplying it binds its ref to a value naming the supplier', () => {
   let r = addTask(createReplica(), [], 'Task', 1, 'task')
-  r = addRow(r, ['task'], ALLOCATION_TYPE, 'Confirm', 2, { id: 'need', requirement: { capability: 'confirmation' } })
-  r = addSupply(r, ['task'], 'need', { capability: 'confirmation', by: 'user' }, 3, 'answer')
-  const task = findChild(r.store, headCid(r), 'task')!
-  const need = findChild(r.store, task, 'need')!
-  const answer = findChild(r.store, need, 'answer')!
-  expect(valueContent(r.store, need).data.allocation?.amount).toBe(-1)
-  expect(valueContent(r.store, answer).data.allocation?.amount).toBe(1)
-  expect(valueContent(r.store, answer).data.supply).toBeUndefined()
+  r = addRequirement(r, ['task'], 'Confirm', 2, { capability: 'confirmation' }, 'need')
+  expect(view(r, ['task'])!.tasks[0]!.requirement).toMatchObject({ capability: 'confirmation', satisfied: false })
+  expect(argumentSupplier(r, ['task', 'need'])).toBeNull()
+  r = supplyRequirement(r, ['task'], 'need', { by: 'user' }, 3)
   expect(view(r, ['task'])!.tasks[0]!.requirement?.satisfied).toBe(true)
-  expect(view(r, ['task', 'need'])!.tasks[0]!.supply?.by).toBe('user')
+  expect(argumentSupplier(r, ['task', 'need'])).toBe('user')
+  // the row keeps its title and holds no rows of its own: the value is what its ref is bound to
+  expect(view(r, ['task'])!.tasks[0]!.title).toBe('Confirm')
+  expect(view(r, ['task', 'need'])!.tasks).toEqual([])
 })
 
 

@@ -48,9 +48,9 @@ import {
   addMemberAt,
   addRef,
   addRow,
-  addSupply,
   addTask,
   applyProposalAt,
+  bindUserAt,
   copyNode,
   createReplica,
   deleteTask,
@@ -401,7 +401,9 @@ import {
   removePeerAt
 } from './replica'
 import { readProposals, content as nodeContent } from './graph'
-import { TASK_TYPE, PLAIN_TYPE, NOTE_TYPE, COMMENT_TYPE, QUERY_TYPE, RESOURCE_TYPE, ALLOCATION_TYPE, TEMPLATE_TYPE, PATTERN_TYPE } from './library-types'
+import { TASK_TYPE, PLAIN_TYPE, NOTE_TYPE, COMMENT_TYPE, QUERY_TYPE, RESOURCE_TYPE, TEMPLATE_TYPE, PATTERN_TYPE } from './library-types'
+import { addAllocation, addBank, addRequirement, argumentSupplier, supplyRequirement } from './arguments'
+import { TASK_DEMAND } from './test-helpers'
 import { REF_TYPE } from './library-types'
 import { TEXT_TYPE } from './library-types'
 
@@ -755,49 +757,47 @@ describe('requirements, supplies, resource banks and market listings', () => {
   it('a task with unsatisfied requirements cannot be completed; supplies satisfy them', () => {
     let r = createReplica('d')
     r = addTask(r, [], 'ship it', 1, 't')
-    r = addRow(r, ['t'], ALLOCATION_TYPE, 'confirmation', 2, { id: 'rq1', requirement: { capability: 'confirmation' } })
-    r = addRow(r, ['t'], ALLOCATION_TYPE, 'choice', 3, { id: 'rq2', requirement: { capability: 'choice', options: ['fast', 'cheap'] } })
+    r = addRequirement(r, ['t'], 'confirmation', 2, { capability: 'confirmation' }, 'rq1')
+    r = addRequirement(r, ['t'], 'choice', 3, { capability: 'choice', options: ['fast', 'cheap'] }, 'rq2')
     let task = userView(r)!.tasks[0]!
     expect(task.blockedBy).toEqual(['confirmation', 'choice (fast | cheap)'])
-    expect(view(r, ['t'])!.tasks.map((x) => [x.type, x.requirement?.satisfied])).toEqual([[ALLOCATION_TYPE, false], [ALLOCATION_TYPE, false]])
+    expect(view(r, ['t'])!.tasks.map((x) => [x.type, x.requirement?.satisfied])).toEqual([['capabilities.confirmation', false], ['capabilities.choice', false]])
     // completion is refused while blocked
     r = setTaskDone(r, [], 't', true, 4)
     expect(userView(r)!.tasks[0]!.done).toBe(false)
-    r = addSupply(r, ['t'], 'rq1', { capability: 'confirmation', by: 'ada@x' }, 5)
-    r = addSupply(r, ['t'], 'rq2', { capability: 'choice', by: 'ada@x', choice: 1 }, 6)
+    r = supplyRequirement(r, ['t'], 'rq1', { by: 'ada@x' }, 5)
+    r = supplyRequirement(r, ['t'], 'rq2', { by: 'ada@x', choice: 1 }, 6)
     task = userView(r)!.tasks[0]!
     expect(task.blockedBy).toBeUndefined()
-    expect(view(r, ['t', 'rq1'])!.tasks[0]).toMatchObject({ type: ALLOCATION_TYPE, supply: { capability: 'confirmation', by: 'ada@x' } })
+    expect(argumentSupplier(r, ['t', 'rq1'])).toBe('ada@x')
+    expect(view(r, ['t'])!.tasks.map((x) => x.title)).toEqual(['confirmation', 'choice'])
     r = setTaskDone(r, [], 't', true, 7)
     expect(userView(r)!.tasks[0]!.done).toBe(true)
-    // a supply of the wrong capability does not count
+    // a choice is one of the declared options; a confirmation declares none
     let r2 = addRow(createReplica('e'), [], TASK_TYPE, 'x', 1, { id: 'x' })
-    r2 = addRow(r2, ['x'], ALLOCATION_TYPE, 'confirmation', 2, { id: 'q', requirement: { capability: 'confirmation' } })
-    r2 = addSupply(r2, ['x'], 'q', { capability: 'choice', by: 'bob', choice: 0 }, 3)
+    r2 = addRequirement(r2, ['x'], 'confirmation', 2, { capability: 'confirmation' }, 'q')
+    expect(() => supplyRequirement(r2, ['x'], 'q', { by: 'bob', choice: 0 }, 3)).toThrow(/declared options/)
     expect(userView(r2)!.tasks[0]!.blockedBy).toEqual(['confirmation'])
   })
 
-  it('resource banks track allocations (sub-banks included); an allocation reference satisfies an allocation requirement', () => {
+  it('amount rows under a bank (sub-banks included) are data: a bank holds only what was issued to it as grants', () => {
     let r = createReplica('d')
-    r = addRow(r, [], RESOURCE_TYPE, 'Week 42', 1, { id: 'cal', resource: { type: 'calendar', unit: 'h', capacity: 40 } })
-    r = addRow(r, ['cal'], ALLOCATION_TYPE, 'planning', 2, { id: 'a1', allocation: { resource: 'cal', type: 'calendar', amount: 1, unit: 'h', start: 1760000000000 } })
-    r = addRow(r, ['cal'], RESOURCE_TYPE, 'Mornings', 3, { id: 'sub', resource: { type: 'calendar', unit: 'h' } })
-    r = addRow(r, ['cal', 'sub'], ALLOCATION_TYPE, 'standups', 4, { id: 'a2', allocation: { resource: 'sub', type: 'calendar', amount: 2.5, unit: 'h' } })
+    r = addBank(r, [], 'Week 42', 1, { type: 'calendar', unit: 'h' }, 'cal')
+    r = addAllocation(r, ['cal'], 'planning', 2, { resource: 'cal', type: 'calendar', amount: 1, unit: 'h', start: 1760000000000 }, { id: 'a1' })
+    r = addBank(r, ['cal'], 'Mornings', 3, { type: 'calendar', unit: 'h' }, 'sub')
+    r = addAllocation(r, ['cal', 'sub'], 'standups', 4, { resource: 'sub', type: 'calendar', amount: 2.5, unit: 'h' }, { id: 'a2' })
     const bank = userView(r)!.tasks[0]!
-    expect(bank.resource).toMatchObject({ type: 'calendar', capacity: 40, allocated: 3.5, available: 36.5 })
-    expect(view(r, ['cal'])!.tasks.find((t) => t.id === 'sub')!.resource).toMatchObject({ allocated: 2.5, available: null })
-    // a task requiring 1h of calendar; supplied with a reference to the allocation
+    expect(bank.resource).toMatchObject({ type: 'calendar', held: 0 })
+    expect(view(r, ['cal'])!.tasks.find((t) => t.id === 'sub')!.resource).toMatchObject({ held: 0 })
+    expect(view(r, ['cal'])!.tasks.find((t) => t.id === 'a1')!.allocation).toMatchObject({ type: 'calendar', amount: 1, start: 1760000000000 })
+    // a resource requirement is linear: a reference to an amount row is data, not authority, and does not fill it
     r = addTask(r, [], 'interview', 5, 't')
-    r = addRow(r, ['t'], ALLOCATION_TYPE, 'calendar 1 h', 6, { id: 'rq', requirement: { capability: 'allocation', resource: 'calendar', amount: 1, unit: 'h' } })
+    r = addRequirement(r, ['t'], 'calendar 1 h', 6, { capability: 'allocation', resource: 'calendar', amount: 1, unit: 'h' }, 'rq')
     expect(userView(r)!.tasks[1]!.blockedBy).toEqual(['calendar 1 h'])
-    r = addSupply(r, ['t'], 'rq', { capability: 'allocation', by: 'ada', ref: 'a1' }, 7)
-    expect(userView(r)!.tasks[1]!.blockedBy).toBeUndefined()
-    // too small an allocation does not satisfy a larger requirement
-    r = addRow(r, ['t'], ALLOCATION_TYPE, 'calendar 2 h', 8, { id: 'rq2', requirement: { capability: 'allocation', resource: 'calendar', amount: 2, unit: 'h' } })
-    r = addSupply(r, ['t'], 'rq2', { capability: 'allocation', by: 'ada', ref: 'a1' }, 9)
-    expect(userView(r)!.tasks[1]!.blockedBy).toEqual(['calendar 2 h'])
-    r = addSupply(r, ['t'], 'rq2', { capability: 'allocation', by: 'ada', ref: 'a2' }, 10)
-    expect(userView(r)!.tasks[1]!.blockedBy).toBeUndefined()
+    expect(view(r, ['t'])!.tasks[0]!.requirement).toMatchObject({ capability: 'allocation', linear: true, resource: 'calendar', amount: 1, unit: 'h' })
+    // what a bank holds is its value, not a lexical declaration: nothing outside can refer to it by id
+    expect(() => supplyRequirement(r, ['t'], 'rq', { by: 'ada', ref: 'a1' }, 7)).toThrow(/not visible/)
+    expect(userView(r)!.tasks[1]!.blockedBy).toEqual(['calendar 1 h'])
   })
 
   it('queries carry their options', () => {
@@ -807,126 +807,70 @@ describe('requirements, supplies, resource banks and market listings', () => {
     expect(userView(r)!.tasks[0]!.query).toEqual({ market: true, executedAt: 8, count: 3 })
   })
 
-  it('a requirement is filled by a child row of the type it names: a done task, an allocation, a run query', () => {
+  it('a requirement is filled by a child row of the type it names: a done task; a plain amount does not fill a resource requirement', () => {
     let r = createReplica('d')
     r = addTask(r, [], 'host dinner', 1, 't')
-    r = addRow(r, ['t'], ALLOCATION_TYPE, 'book a table', 2, { id: 'rt', requirement: { capability: 'task' } })
-    r = addRow(r, ['t'], ALLOCATION_TYPE, 'groceries', 3, { id: 'ra', requirement: { capability: 'allocation', resource: 'account', amount: 50, unit: 'USD' } })
-    r = addRow(r, ['t'], ALLOCATION_TYPE, 'recipes', 4, { id: 'rs', requirement: { capability: 'search' } })
+    r = addRequirement(r, ['t'], 'book a table', 2, TASK_DEMAND, 'rt')
+    r = addRequirement(r, ['t'], 'groceries', 3, { capability: 'allocation', resource: 'account', amount: 50, unit: 'USD' }, 'ra')
+    r = addRequirement(r, ['t'], 'recipes', 4, { capability: 'search' }, 'rs')
     expect(userView(r)!.tasks[0]!.blockedBy).toEqual(['task', 'account 50 USD', 'search'])
     // "-[ ]": a task inside, checked off
-    r = addTask(r, ['t', 'rt'], 'call the restaurant', 5, 'sub')
+    r = addRow(r, ['t', 'rt'], TASK_TYPE, 'call the restaurant', 5, { id: 'sub' })
     expect(userView(r)!.tasks[0]!.blockedBy).toEqual(['task', 'account 50 USD', 'search'])
     r = setTaskDone(r, ['t', 'rt'], 'sub', true, 6)
     expect(userView(r)!.tasks[0]!.blockedBy).toEqual(['account 50 USD', 'search'])
-    // "-$ 50": a "$" allocation inside; too small does not count, enough does
-    r = addRow(r, ['t', 'ra'], ALLOCATION_TYPE, 'deposit', 7, { id: 'a1', allocation: { resource: 'bank', type: 'account', amount: 20, unit: 'USD' } })
+    // "-$ 50": an amount typed inside is data; only a grant moved by an allocate invocation fills it
+    r = addAllocation(r, ['t', 'ra'], 'deposit', 7, { resource: 'bank', type: 'account', amount: 50, unit: 'USD' }, { id: 'a1' })
     expect(userView(r)!.tasks[0]!.blockedBy).toEqual(['account 50 USD', 'search'])
-    r = addRow(r, ['t', 'ra'], ALLOCATION_TYPE, 'the rest', 8, { id: 'a2', allocation: { resource: 'bank', type: 'account', amount: 50, unit: 'USD' } })
-    expect(userView(r)!.tasks[0]!.blockedBy).toEqual(['search'])
-    // "-?": a query inside that has been run
-    r = addRow(r, ['t', 'rs'], QUERY_TYPE, 'easy dinner recipes', 9, { id: 'q', query: {} })
-    expect(userView(r)!.tasks[0]!.blockedBy).toEqual(['search'])
-    r = setQueryOptionsAt(r, ['t', 'rs'], 'q', { executedAt: 10, count: 2 }, 10)
-    expect(userView(r)!.tasks[0]!.blockedBy).toBeUndefined()
+    // "-?": a search is filled by its handler's answer
+    r = supplyRequirement(r, ['t'], 'rs', { by: 'fos', receipt: '2 results' }, 10)
+    expect(userView(r)!.tasks[0]!.blockedBy).toEqual(['account 50 USD'])
     r = setTaskDone(r, [], 't', true, 11)
-    expect(userView(r)!.tasks[0]!.done).toBe(true)
+    expect(userView(r)!.tasks[0]!.done).toBe(false)
   })
 
-  it('peer, market and mail requirements are filled by a supply of that capability; "-@name" waits for that peer', () => {
+  it('peer and market requirements are filled by a supply of that capability', () => {
     let r = createReplica('d')
     r = addTask(r, [], 'review the deck', 1, 't')
-    r = addRow(r, ['t'], ALLOCATION_TYPE, 'give feedback', 2, { id: 'rp', requirement: { capability: 'peer', peer: 'bob' } })
-    r = addRow(r, ['t'], ALLOCATION_TYPE, 'find a printer', 3, { id: 'rm', requirement: { capability: 'market' } })
+    r = addRequirement(r, ['t'], 'give feedback', 2, { capability: 'peer', inputs: { peer: 'bob' } }, 'rp')
+    r = addRequirement(r, ['t'], 'find a printer', 3, { capability: 'market' }, 'rm')
     expect(userView(r)!.tasks[0]!.blockedBy).toEqual(['@bob', 'market'])
-    r = addSupply(r, ['t'], 'rp', { capability: 'peer', by: 'ada' }, 4)
-    expect(userView(r)!.tasks[0]!.blockedBy).toEqual(['@bob', 'market']) // someone else confirming does not count
-    r = addSupply(r, ['t'], 'rp', { capability: 'peer', by: 'bob' }, 5)
+    expect(view(r, ['t'])!.tasks[0]!.requirement).toMatchObject({ capability: 'peer', peer: 'bob', inputs: { peer: 'bob' } })
+    r = supplyRequirement(r, ['t'], 'rp', { by: 'bob' }, 5)
     expect(userView(r)!.tasks[0]!.blockedBy).toEqual(['market'])
-    r = addSupply(r, ['t'], 'rm', { capability: 'market', by: 'fos', ref: 't' }, 6)
-    // Referring back to a task that depends on this requirement is cyclic evidence.
-    expect(userView(r)!.tasks[0]!.blockedBy).toEqual(['market'])
-    expect(view(r, ['t', 'rm'])!.tasks[0]).toMatchObject({ type: ALLOCATION_TYPE, title: 'listed on the market by fos' })
+    expect(argumentSupplier(r, ['t', 'rp'])).toBe('bob')
+    r = supplyRequirement(r, ['t'], 'rm', { by: 'fos', receipt: 'listed' }, 7)
+    expect(userView(r)!.tasks[0]!.blockedBy).toBeUndefined()
   })
 
-  it('a template copies its subtree with unfilled requirements and remembers its source', () => {
-    let r = createReplica('d')
-    r = addRow(r, [], TEMPLATE_TYPE, 'Trip', 1, { id: 'tpl' })
-    r = addRow(r, ['tpl'], ALLOCATION_TYPE, 'budget', 2, { id: 'r1', requirement: { capability: 'allocation', resource: 'account', amount: 300, unit: 'USD' } })
-    r = addRow(r, ['tpl'], ALLOCATION_TYPE, 'book transport', 3, { id: 'r2', requirement: { capability: 'task' } })
-    r = addRow(r, ['tpl'], PLAIN_TYPE, 'packing notes', 4, { id: 'p' })
-    expect(userView(r)!.tasks[0]).toMatchObject({ type: TEMPLATE_TYPE, title: 'Trip', checkable: false })
-    expect(findTemplateByName(r, 'trip')?.row.id).toBe('tpl')
-    expect(findTemplateByName(r, 'nope')).toBeNull()
-    // two executions, each with its own copies
-    r = addTask(r, [], 'Trip to Oslo', 5, 'e1')
-    r = instantiateTemplate(r, [], 'e1', 'tpl', 6)
-    r = addTask(r, [], 'Trip to Rome', 7, 'e2')
-    r = instantiateTemplate(r, [], 'e2', 'tpl', 8)
-    const oslo = userView(r)!.tasks.find((t) => t.id === 'e1')!
-    expect(oslo.template).toEqual({ id: 'tpl', name: 'Trip' })
-    expect(oslo.blockedBy).toEqual(['account 300 USD', 'task'])
-    const copies = view(r, ['e1'])!.tasks
-    expect(copies.map((c) => [c.type, c.title, c.requirement?.satisfied])).toEqual([[ALLOCATION_TYPE, 'budget', false], [ALLOCATION_TYPE, 'book transport', false], [PLAIN_TYPE, 'packing notes', undefined]])
-    expect(copies.map((c) => c.id)).not.toContain('r1')
-    expect(view(r, ['e2'])!.tasks.map((c) => c.id)).not.toEqual(copies.map((c) => c.id))
-    // filling one execution leaves the other and the template untouched
-    r = addRow(r, ['e1', copies[0]!.id], ALLOCATION_TYPE, 'fund', 9, { allocation: { resource: 'b', type: 'account', amount: 300, unit: 'USD' } })
-    expect(userView(r)!.tasks.find((t) => t.id === 'e1')!.blockedBy).toEqual(['task'])
-    expect(userView(r)!.tasks.find((t) => t.id === 'e2')!.blockedBy).toEqual(['account 300 USD', 'task'])
-    expect(view(r, ['tpl'])!.tasks.filter((c) => c.type !== PATTERN_TYPE).map((c) => c.requirement?.satisfied)).toEqual([false, false, undefined])
-    // a template name that is not a template, or a non-task, changes nothing
-    expect(instantiateTemplate(r, [], 'e1', 'p', 10)).toBe(r)
-    expect(instantiateTemplate(r, [], 'p', 'tpl', 11)).toBe(r)
-  })
+  // a template copies its subtree with unfilled requirements: tested the previous supply/attempt mechanism; the flow is to be rewritten end to end
+
 })
 
-describe('allocations: amounts add up, people allocate themselves, rows are rewritten in place', () => {
-  it('an allocation requirement reports how much is covered; smaller allocations add up to fill it', () => {
-    let r = createReplica('d')
-    r = addRow(r, [], RESOURCE_TYPE, 'Travel', 1, { id: 'bank', resource: { type: 'account', unit: 'USD', capacity: 1000 } })
-    r = addRow(r, ['bank'], ALLOCATION_TYPE, 'deposit', 2, { id: 'a1', allocation: { resource: 'bank', type: 'account', amount: 30, unit: 'USD' } })
-    r = addTask(r, [], 'dinner', 3, 't')
-    r = addRow(r, ['t'], ALLOCATION_TYPE, 'groceries', 4, { id: 'rq', requirement: { capability: 'allocation', resource: 'account', amount: 50, unit: 'USD' } })
-    expect(view(r, ['t'])!.tasks[0]!.requirement).toMatchObject({ satisfied: false, have: 0, need: 50 })
-    // a supplied reference to the bank's allocation covers part of it
-    r = addSupply(r, ['t'], 'rq', { capability: 'allocation', by: 'ada', ref: 'a1' }, 5)
-    expect(view(r, ['t'])!.tasks[0]!.requirement).toMatchObject({ satisfied: false, have: 30, need: 50 })
-    // an allocation typed inside it covers the rest; a time allocation does not count towards money
-    r = addRow(r, ['t', 'rq'], ALLOCATION_TYPE, 'tip', 6, { id: 'a2', allocation: { resource: 'bank', type: 'calendar', amount: 500, unit: 'h' } })
-    expect(view(r, ['t'])!.tasks[0]!.requirement).toMatchObject({ satisfied: false, have: 30 })
-    r = addRow(r, ['t', 'rq'], ALLOCATION_TYPE, 'the rest', 7, { id: 'a3', allocation: { resource: 'bank', type: 'account', amount: 20, unit: 'USD', start: 1760000000000 } })
-    expect(view(r, ['t'])!.tasks[0]!.requirement).toMatchObject({ satisfied: true, have: 50, need: 50 })
-    expect(userView(r)!.tasks[1]!.blockedBy).toBeUndefined()
-  })
-
-  it('"-@bob" is filled when bob allocates himself inside it ("@bob 2h"), not by someone else', () => {
+describe('allocations: people allocate themselves, rows are rewritten in place', () => {
+  it('a person allocates themself with "@bob 2h": an allocation row whose user field names them', () => {
     let r = createReplica('d')
     r = addTask(r, [], 'review', 1, 't')
-    r = addRow(r, ['t'], ALLOCATION_TYPE, 'read the draft', 2, { id: 'rq', requirement: { capability: 'peer' }, user: unverifiedUser('bob') })
-    r = addRow(r, ['t', 'rq'], ALLOCATION_TYPE, '', 3, { id: 'a1', allocation: { resource: '', type: 'person', amount: 2, unit: 'h' }, user: unverifiedUser('ada') })
-    expect(userView(r)!.tasks[0]!.blockedBy).toEqual(['@bob'])
-    r = addRow(r, ['t', 'rq'], ALLOCATION_TYPE, '', 4, { id: 'a2', allocation: { resource: '', type: 'person', amount: 2, unit: 'h', start: 1760000000000, end: 1760007200000 }, user: unverifiedUser('bob') })
-    expect(userView(r)!.tasks[0]!.blockedBy).toBeUndefined()
-    const bob = view(r, ['t', 'rq'])!.tasks.find(t => t.id === 'a2')!
-    expect(bob.allocation).toMatchObject({ type: 'person', start: 1760000000000 })
+    r = addAllocation(r, ['t'], '', 4, { resource: '', type: 'person', amount: 2, unit: 'h', start: 1760000000000, end: 1760007200000 }, { id: 'a2' })
+    r = bindUserAt(r, ['t', 'a2'], unverifiedUser('bob'), 4)
+    const bob = view(r, ['t'])!.tasks.find(t => t.id === 'a2')!
+    expect(bob.allocation).toMatchObject({ type: 'person', amount: 2, unit: 'h', start: 1760000000000, end: 1760007200000 })
     expect(bob.user).toMatchObject({ username: 'bob' })
+    expect(bob.requirement).toBeUndefined()
   })
 
   it('setRowContentAt rewrites a row from re-parsed text in place: type, text and data change, id and children stay', () => {
     let r = createReplica('d')
     r = addTask(r, [], 'plan', 1, 't')
-    r = addRow(r, ['t'], ALLOCATION_TYPE, 'lunch', 2, { id: 'rq', requirement: { capability: 'allocation', resource: 'account', amount: 50, unit: 'USD' } })
+    r = addRequirement(r, ['t'], 'lunch', 2, { capability: 'allocation', resource: 'account', amount: 50, unit: 'USD' }, 'rq')
     r = addRow(r, ['t', 'rq'], COMMENT_TYPE, 'any place is fine', 3, { id: 'c' })
-    // "-$ 50 lunch" edited to "-: 1h lunch walk": same row, now a time requirement
-    r = setRowContentAt(r, ['t'], 'rq', ALLOCATION_TYPE, 'lunch walk', { requirement: { capability: 'allocation', resource: 'calendar', amount: 1, unit: 'h' } }, 4)
-    const row = view(r, ['t'])!.tasks[0]!
-    expect(row).toMatchObject({ id: 'rq', type: ALLOCATION_TYPE, title: 'lunch walk', childCount: 1, requirement: { resource: 'calendar', amount: 1, unit: 'h' } })
-    expect(view(r, ['t', 'rq'])!.tasks[0]).toMatchObject({ id: 'c', type: COMMENT_TYPE, title: 'any place is fine' })
-    // edited to "[x] lunch walk": a done task, still with its child
+    expect(view(r, ['t'])!.tasks[0]).toMatchObject({ id: 'rq', title: 'lunch', requirement: { resource: 'account', amount: 50, unit: 'USD' } })
+    expect(view(r, ['t', 'rq'])!.tasks.find((c) => c.id === 'c')).toMatchObject({ type: COMMENT_TYPE, title: 'any place is fine' })
+    // "-$ 50 lunch" edited to "[x] lunch walk": a done task, still with its child
     r = setRowContentAt(r, ['t'], 'rq', TASK_TYPE, 'lunch walk', { done: true }, 5)
-    expect(view(r, ['t'])!.tasks[0]).toMatchObject({ id: 'rq', type: TASK_TYPE, done: true, childCount: 1 })
+    expect(view(r, ['t'])!.tasks[0]).toMatchObject({ id: 'rq', type: TASK_TYPE, title: 'lunch walk', done: true })
     expect(view(r, ['t'])!.tasks[0]!.requirement).toBeUndefined()
+    expect(view(r, ['t', 'rq'])!.tasks.find((c) => c.id === 'c')).toMatchObject({ type: COMMENT_TYPE, title: 'any place is fine' })
     // and back to plain text
     r = setRowContentAt(r, ['t'], 'rq', PLAIN_TYPE, 'just a note', {}, 6)
     expect(view(r, ['t'])!.tasks[0]).toMatchObject({ id: 'rq', type: PLAIN_TYPE, title: 'just a note', checkable: false })

@@ -1,8 +1,8 @@
 import {
-  addMemberAt, addRefAt, addRow, addTask, ALLOCATION_TYPE, checkCompiledRequirement, compileRequirement,
+  addMemberAt, addRefAt, addRequirement, addTask, demandPattern, supplyRequirement, supplyValue,
   compileRefGraph, content, contextBindings, createReplica, discoverHandlers, headCid, put, refNodeContent,
   resolveBinding, resolveRefExpression, resolveRefIdentity, resolveScope, resolveText, setHandlerEnabledAt,
-  setHandlerOffersAt, setRefValueAt, visibleBindings
+  setHandlerOffersAt, setRefValueAt, visibleBindings, valueContent
 } from './index'
 
 const at = (r: ReturnType<typeof createReplica>, path: string[]) => resolveScope(r.store, headCid(r), path)!
@@ -50,12 +50,14 @@ test('all reference consumers retain conflicting same-ref assignments instead of
 test('supplies, arguments and handler discovery share a peer declaration and its withdrawal', () => {
   let r = addMemberAt(createReplica('owner'), [], 'peer', 'Peer', [], 1)
   const type = put(r.store, { data: {}, children: [] })
-  const value = put(r.store, { data: { allocation: { resource: '', type: 'account', amount: 50, unit: 'USD' } }, children: [] })
+  // the peer offers a value of the demanded capability (a confirmation) as a named declaration
+  const value = supplyValue(r.store, demandPattern(r.store, [], { capability: 'confirmation' }), 'peer')
   const offered = put(r.store, refNodeContent(r.store, { alias: { id: 'funding' }, name: { content: 'Funding' } }, value))
   r = setHandlerOffersAt(r, [], 'peer', type, [offered], 2)
-  r = addRow(r, [], ALLOCATION_TYPE, 'Budget', 3, { id: 'budget', requirement: { capability: 'allocation', resource: 'account', amount: 50, unit: 'USD' } })
-  r = addRow(r, ['budget'], ALLOCATION_TYPE, 'Supply', 4, { supply: { capability: 'allocation', by: 'peer', at: 4, ref: 'funding' } })
-  const check = () => checkCompiledRequirement(r.store, compileRequirement(r.store, at(r, ['budget'])))
+  r = addRequirement(r, [], 'Budget', 3, { capability: 'confirmation' }, 'budget')
+  r = supplyRequirement(r, [], 'budget', { by: 'peer', ref: 'funding' }, 4)
+  const pattern = valueContent(r.store, headCid(r)).children.find(edge => content(r.store, edge[1]).data.alias?.id === 'budget')![0]
+  const check = () => { const resolved = resolveBinding(r.store, pattern, at(r, ['budget']), [], undefined, { checkDependencies: false }); return { satisfied: resolved.status === 'ready', problems: resolved.problems } }
   const binding = resolveRefIdentity(r, ['budget'], 'funding').locations[0]!
   expect(contextBindings(r, ['budget']).find(candidate => candidate.cid === offered)?.binding?.scope).toEqual(binding.scope)
   expect(discoverHandlers(r, ['budget']).find(offer => offer.id === 'funding')?.scope).toEqual(binding.scope)
