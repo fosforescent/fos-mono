@@ -45,11 +45,6 @@ Vanilla-TS task client for the browser and the Tauri desktop/mobile app (`deskto
 - The market is a peer (`fos:market`); a node is listed iff it is a member there. Listing runs the server's `market` effect; unlisting is removing that member.
 - Generate icons (`public/favicon*.png|ico`, `apple-touch-icon.png`, `icon-192/512.png`, `site.webmanifest`) from the tree logo (`web/assets/logo3-bare.ico`).
 
-## Interaction
-- The tree is Workflowy-style: no add bar; a blank row at the bottom of the view is where the cursor defaults, and Enter there makes a row and stays ready for the next. The selected row is an inline editor; editing shows a row's raw marker text and re-parses it on commit, keeping the row's id and children.
-- Drag moves a row, Alt+drag places a reference, Ctrl/⌘+drag places a deep copy; a row dropped on a breadcrumb goes to the end of that node the same way.
-- Tree, grid, chat and queue views share the same row editor and graph.
-- Long prose pastes become a capture to organize; structured pastes keep their row behavior. A failed organize request keeps the capture as a note.
 ## Running
 ```bash
 cd web && VITE_API_URL=http://localhost:4000 npx vite --port 5199

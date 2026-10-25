@@ -36,7 +36,6 @@ The Node.js/Express API server: authentication, data management, graph operation
 - Organize must keep the original capture input available.
 - Inbound SMS must be signature-verified.
 - Loads refuse rows in another data version: reset the database, nothing is migrated. Saves must not duplicate access links.
-- An account's store is handled one request at a time.
 - Another account's node served to a signed-in user is propose-only.
 - Peer credentials are confined to the `/user/data/peer-sync/*` namespace.
 - User objects read from graphs must be re-verified before acting on them.
@@ -69,22 +68,6 @@ There is no server-owned library and no system account: the standard library is 
 - `FOS_ENABLE_CRON=true` enables cron. **Run it only on one always-on backend instance**: the per-user store lock is process-local. A distributed scheduler/lease is required before enabling it on multiple instances or a scale-to-zero service.
 - The Discord gateway is a persistent socket: it needs min instances ≥ 1 and CPU always allocated. Set channel secrets on Cloud Run with `gcloud run services update --update-secrets`.
 - Media provider calls need live-provider validation in addition to the mocked handler tests.
-
-### Environment Variables
-- `DATABASE_URL` - PostgreSQL connection string
-- `JWT_SECRET` - Secret for JWT token signing
-- `FOS_IDENTITY_SEED` - optional 32-byte seed (hex or base64) of the ed25519 key that attests user objects; derived from `JWT_SECRET` when absent
-- `STRIPE_TOKEN` - Stripe API key
-- `STRIPE_WEBHOOK_SECRET` - Stripe webhook verification
-- `OPENAI_API_KEY` - the optional OpenAI voice provider (`VOICE_PROVIDER=openai`)
-- `POSTMARK_API_TOKEN` - Email service token
-- `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`, `DISCORD_TOKEN`, `CHANNELS_ECHO` - chat channels (optional; adapters without credentials stay off)
-- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` - SMS
-- `GCP_PROJECT_ID`, `VERTEX_LOCATION`, `EMBEDDING_MODEL` - Vertex embeddings for row search (locally `GOOGLE_APPLICATION_CREDENTIALS` must point at a valid credential)
-- `ROW_INDEX_DISABLED=true` - turns off row indexing
-- `MCP_LISTEN=true` - runs open tool requests after saves
-- `WEB_URL` (falls back to `FRONTEND_URL`) - where the web app lives
-- `FOS_ENABLE_CRON=true` - enables cron (see above)
 
 ## TODOs
 - [ ] Optimize Docker build for faster deployments

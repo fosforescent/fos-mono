@@ -207,8 +207,6 @@ For issues or questions:
 4. **Performance**: Configure Cloud CDN if not using Cloudflare
 5. **Cost Optimization**: Review and adjust resource sizes based on actual usage
 6. Test all API endpoints
-7. Migrate production data from OVH to Cloud SQL
-8. Set up budget alerts
-9. Update DNS records (if needed)
-10. Archive old AWS/OVH resources
-11. Document new deployment procedures
+7. Set up budget alerts
+8. Update DNS records (if needed)
+9. Document new deployment procedures
