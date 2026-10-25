@@ -1,5 +1,5 @@
 /** Host-language observer primitives. Availability comes only from scoped ref declarations. */
-import { libAt, resolveScope, valueContent } from './graph'
+import { libAt, resolveScope, rowDone, valueContent } from './graph'
 import { headCid, view } from './replica'
 import { evaluationRecord } from './evaluation'
 import { watchedRefValue, type TriggerObserver } from './triggers'
@@ -102,9 +102,9 @@ export const completionObserver: TriggerObserver = {
       cid = resolveScope(r.store, headCid(r), parent),
       evaluated = evaluationRecord(r, parent)
     if (evaluated?.status === 'committed' && evaluated.started >= t.created) return { id: 'evaluation:' + evaluated.id }
-    const data = cid ? valueContent(r.store, cid).data : null
-    if (data?.todo?.completed && (data.updated?.time ?? 0) >= t.created)
-      return previous?.status === 'finished' && previous.occurrence ? null : { id: 'completion:' + data.updated?.time }
+    const updated = cid ? valueContent(r.store, cid).data.updated?.time ?? 0 : 0
+    if (cid && rowDone(r.store, cid) && updated >= t.created)
+      return previous?.status === 'finished' && previous.occurrence ? null : { id: 'completion:' + updated }
     return previous?.status === 'finished' && previous.occurrence ? { id: '', reset: true } : null
   }
 }

@@ -13,7 +13,7 @@
  */
 import { primitive } from './primitives'
 import { view as viewRows, headCid as rootCid } from './replica'
-import { resolveScope as scopeCid, valueContent as valueAt } from './graph'
+import { resolveScope as scopeCid, rowVocabulary, valueContent as valueAt } from './graph'
 import type { FosStore } from '../dag-implementation/store'
 import type { FosDataContent, FosNodeContent, FosPathElem } from '../types'
 import {
@@ -40,8 +40,8 @@ export type Demand = {
   capability: string
   resource?: ResourceType; amount?: number; unit?: string; start?: number | null; end?: number | null
   options?: string[]
-  /** The value is a container holding a row matching this (a done task typed inside the requirement). */
-  contains?: FosNodeContent
+  /** The value is a container holding a done row (a task typed inside the requirement, then completed). */
+  done?: true
   inputs?: Record<string, string>
 }
 export type Grant = { id: string; cid: string; contract: string; allocation: Allocation; ownerPath: Scope; issuer?: string; lineage: string[] }
@@ -85,8 +85,10 @@ export function demandPattern(store: FosStore, at: Scope, demand: Demand): strin
     data.refAlternatives = true
     for (const label of demand.options) rows.push([empty(store), put(store, { data: { description: { content: label } }, children: [] })])
   }
-  if (demand.contains) rows.push([empty(store), put(store, demand.contains)])
-  return refinePattern(store, at, capability, data, rows, true, !!demand.contains)
+  const done = demand.done && rowVocabulary(store)?.done
+  // a filled done field: void as a pattern is something supplied
+  if (done) rows.push([empty(store), put(store, { data: {}, children: [[done, primitive(store, 'void')]] })])
+  return refinePattern(store, at, capability, data, rows, true, !!demand.done)
 }
 
 /** The pattern of a supplied allocation: a value of the resource and unit; `linear` ones are grants of the contract. */

@@ -194,10 +194,6 @@ export type FosDataContent = {
     approveFulfillment: boolean;
     approvePayment: boolean;
   }
-  todo?: {
-    completed: boolean;
-    time: number;
-  }
   updated?: {
     time: number;
   }

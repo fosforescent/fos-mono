@@ -27,7 +27,7 @@
  *
  * Capabilities as session types over this grammar come later; for now events are independent requests.
  */
-import { createStore } from './graph'
+import { createStore, hasDone, rowDone, withDone } from './graph'
 import { FosStore } from '../dag-implementation/store'
 import { NOTE_TYPE, PLAIN_TYPE, TASK_TYPE, TEMPLATE_TYPE } from './library-types'
 import type { FosPathElem } from '../types'
@@ -388,7 +388,7 @@ function dispatch(r: Replica, event: FosEvent, principal: Principal, now: number
         seen.add(current); visited++
         const value = valueContent(store, current)
         // a done task's subtree is finished; a template's is a definition, not work
-        if ((task && value.data.todo?.completed) || (!!edge && isRowOfType(store, edge, TEMPLATE_TYPE))) continue
+        if ((task && rowDone(store, current)) || (!!edge && isRowOfType(store, edge, TEMPLATE_TYPE))) continue
         const mask = owner ? null : nodeLinkMaskAt(r, absolute(at), principal.peerId)
         const demand = requirement && edge ? requirementViewOf(store, edge, current) : undefined
         if (at.length && (task || (demand && !demand.satisfied))) {
@@ -503,13 +503,13 @@ function dispatch(r: Replica, event: FosEvent, principal: Principal, now: number
           } else draft = renameTask(draft, target.slice(0, -1), target.at(-1)!, text, now)
         } else if (change.operation === 'complete' && typeof change.done === 'boolean') {
           if (!at.length) {
-            if (!scoped || !valueContent(store, source).data.todo) throw new EventError('Completion requires a task path.')
+            if (!scoped || !hasDone(store, source)) throw new EventError('Completion requires a task path.')
             const targetCid = resolveScope(draftStore, headCid(draft), base)!
             if (change.done && taskBlockers(draftStore, targetCid).length) throw new EventError('Task has unmet requirements.')
-            commitRoot(draftStore, updateAtScope(draftStore, headCid(draft), base, value => ({ ...value, data: { ...value.data, todo: { completed: change.done!, time: value.data.todo?.time ?? now } } })), now)
+            commitRoot(draftStore, updateAtScope(draftStore, headCid(draft), base, value => withDone(draftStore, value.data.alias?.id ?? '', value, change.done!, now) ?? value), now)
             draft = { ...draft }; continue
           }
-          if (!valueContent(store, source).data.todo) throw new EventError('Only tasks have a completion state.')
+          if (!hasDone(store, source)) throw new EventError('Only tasks have a completion state.')
           const before = headCid(draft)
           draft = setTaskDone(draft, target.slice(0, -1), target.at(-1)!, change.done, now)
           if (before === headCid(draft) && viewNode(draftStore, descend(draftStore, resolveScope(draftStore, headCid(draft), base)!, at)).done !== change.done) throw new EventError('Task has unmet requirements.')

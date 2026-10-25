@@ -176,7 +176,7 @@ export function parseRequirement(text: string, declarations?: CapabilitySyntax[]
     const rest = (m[1] ?? '').trim()
     const tpl = parseTemplateRef(rest)
     // the value is a container holding a done task
-    return { demand: { capability: 'task', contains: { data: { todo: { completed: true } as never }, children: [] } }, label: tpl ? (tpl.rest || tpl.templateName) : rest, ...(tpl ? { templateName: tpl.templateName } : {}) }
+    return { demand: { capability: 'task', done: true }, label: tpl ? (tpl.rest || tpl.templateName) : rest, ...(tpl ? { templateName: tpl.templateName } : {}) }
   }
   // "-$ 50 lunch": money, 50 of it; "-$ lunch": money, any amount (one allocation of the type fills it)
   const allocationRequirement = (resource: ResourceType, body: string) => {

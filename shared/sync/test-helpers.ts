@@ -21,7 +21,7 @@ import type { Demand } from './arguments'
 import type { FosDataContent } from '../types'
 
 /** A "-[ ] task" demand: the value is a container holding a done task. */
-export const TASK_DEMAND: Demand = { capability: 'task', contains: { data: { todo: { completed: true } } as unknown as FosDataContent, children: [] } }
+export const TASK_DEMAND: Demand = { capability: 'task', done: true }
 
 /** An extension must be declared in a library instance before code can address its field. */
 export function declareTestCapability(r: Replica, name: string, at: Scope = [], data: import('../types').FosDataContent = {}): Replica {

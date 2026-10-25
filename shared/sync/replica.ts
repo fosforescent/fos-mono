@@ -1,5 +1,5 @@
 import { constructPlainRow, constructRow, constructTextRow, fieldEdge, fieldText, fieldValue, fieldValues, isFieldRow, isTextField, rebuildRow, rowRecord, titleField, withFieldValue, withFieldValues, withRowText } from './fields'
-import { createStore, completes, rowTitle, rowVocabulary } from './graph'
+import { createStore, completes, rowTitle, rowVocabulary, withDone } from './graph'
 import { primitive } from './primitives'
 import { sameCapabilityType } from './capabilities'
 import { refValueCompatible } from './scoped-refs'
@@ -90,7 +90,6 @@ import {
   rowEdgeAt,
   scopeNames,
   taskBlockers,
-  taskContent,
   updateAtScope,
   valueCidOf,
   valueContent,
@@ -782,14 +781,8 @@ export function setTaskDone(replica: Replica, at: Scope, taskId: string, done: b
     const taskCid = parent ? findChild(replica.store, parent, taskId) : null
     if (taskCid && taskBlockers(replica.store, taskCid).length) return replica
   }
-  const field = rowVocabulary(replica.store)?.done
-  return updateTask(replica, at, taskId, now, (task) => {
-    // only rows with a done field complete
-    if (!field || !fieldEdge(replica.store, taskId, task, field)) return null
-    const held = fieldValue(replica.store, taskId, task, field)!, unit = put(replica.store, { data: {}, children: [] })
-    if ((held === unit) === done) return null
-    return withFieldValue(replica.store, taskId, task, field, done ? unit : primitive(replica.store, 'void'), now)
-  })
+  // only rows with a done field complete
+  return updateTask(replica, at, taskId, now, task => withDone(replica.store, taskId, task, done, now))
 }
 
 export function renameTask(replica: Replica, at: Scope, taskId: string, title: string, now: number): Replica {

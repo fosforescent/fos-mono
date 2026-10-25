@@ -1,5 +1,5 @@
 import { primitive, primitiveName } from './primitives'
-import { fieldEdge, fieldValue, fieldViews, isFieldRow, isTextField, leafText, rowBody, titleField, typeRows, type FieldView } from './fields'
+import { fieldEdge, fieldValue, fieldViews, isFieldRow, isTextField, leafText, rowBody, titleField, typeRows, type FieldView, fieldRefId, withFieldValue } from './fields'
 import { capabilityDeclarations } from './capability-catalog'
 import { resolveBinding } from './bindings'
 import { bindingProperties, type ScopedBinding } from './scope-bindings'
@@ -401,6 +401,19 @@ export function rowDone(store: FosStore, nodeCid: string): boolean {
   const held = fieldValue(store, id, value, done)
   return !!held && !Object.keys(content(store, held).data).length && !content(store, held).children.length
 }
+/** Whether the row at `nodeCid` has a done field (it completes). */
+export function hasDone(store: FosStore, nodeCid: string): boolean {
+  const done = rowVocabulary(store)?.done, value = valueContent(store, nodeCid)
+  return !!done && !!fieldEdge(store, aliasIdOf(content(store, nodeCid)) ?? aliasIdOf(value) ?? nodeCid, value, done)
+}
+/** Row `id`'s value with its done field holding unit (done) or void; null when it has no done field or already holds that. */
+export function withDone(store: FosStore, id: string, value: FosNodeContent, done: boolean, now: number): FosNodeContent | null {
+  const field = rowVocabulary(store)?.done
+  if (!field || !fieldEdge(store, id, value, field)) return null
+  const unit = put(store, { data: {}, children: [] })
+  if ((fieldValue(store, id, value, field) === unit) === done) return null
+  return withFieldValue(store, id, value, field, done ? unit : primitive(store, 'void'), now)
+}
 
 /** A structural predicate on a constructor's name row; it carries its own graph meaning. */
 export function constructorPattern(store: FosStore, name: string): string {
@@ -789,18 +802,6 @@ export function sameShape(_store: FosStore, a: FosPathElem, b: FosPathElem): boo
 // ---------------------------------------------------------------------------
 // Content constructors
 
-export function taskContent(id: string, title: string, done: boolean, createdAt: number, updatedAt: number): FosNodeContent {
-  return {
-    data: {
-      alias: { id },
-      description: { content: title },
-      todo: { completed: done, time: createdAt },
-      updated: { time: updatedAt }
-    },
-    children: []
-  }
-}
-
 /** What a new row holds besides its text, by its type: a task's done state, a reference's target, a flow entry, … */
 export type RowExtras = {
   done?: boolean
@@ -824,7 +825,6 @@ export type RowExtras = {
  */
 export function rowContent(typeId: string, id: string, text: string, now: number, extra: RowExtras = {}): FosNodeContent {
   const data: FosNodeContent['data'] = { alias: { id }, description: { content: text }, updated: { time: now } }
-  if (typeId === TASK_TYPE) data.todo = { completed: !!extra.done, time: now }
   if (typeId === QUERY_TYPE) data.query = extra.query ?? {}
   if (typeId === RESOURCE_TYPE) {
     data.resource = extra.resource ?? { type: 'inventory', unit: 'unit' }
@@ -887,9 +887,8 @@ export function convertRow(store: FosStore, value: FosNodeContent, typeId: strin
 
 /** Same node as a row of the library type `typeId`: the data of its old type dropped, the new type's added. */
 export function convertRowContent(value: FosNodeContent, typeId: string, now: number, extra: Omit<RowExtras, 'store'> = {}): FosNodeContent {
-  const { todo: _todo, ref: _ref, query: _q, resource: _rs, allocation: _al, ...rest } = value.data
+  const { ref: _ref, query: _q, resource: _rs, allocation: _al, ...rest } = value.data
   const data: FosNodeContent['data'] = { ...rest, updated: { time: now } }
-  if (typeId === TASK_TYPE) data.todo = { completed: !!value.data.todo?.completed, time: value.data.todo?.time ?? now }
   if (typeId === REF_TYPE) data.ref = value.data.ref ?? { id: '' }
   if (typeId === QUERY_TYPE) data.query = value.data.query ?? {}
   if (typeId === RESOURCE_TYPE) {
@@ -1503,7 +1502,7 @@ export function edgeView(store: FosStore, edge: FosPathElem): TaskView | null {
 export function rowView(store: FosStore, nodeCid: string, edge?: FosPathElem): TaskView {
   const identity = content(store, nodeCid)
   const value = valueContent(store, nodeCid)
-  const created = value.data.created?.time ?? value.data.todo?.time ?? value.data.updated?.time ?? 0
+  const created = value.data.created?.time ?? value.data.updated?.time ?? 0
   // a node held by another peer, not loaded yet, stands for it like a reference
   const held = isPeerReference(identity)
   const typeCid = edge ? rowTypeOf(store, edge) : null
@@ -1793,7 +1792,7 @@ export function countNode(store: FosStore, cid: string, ancestors = new Set<stri
     if (isTaskRow(store, edge)) {
       tasks++
       const taskCid = identityCid(store, edge)
-      if (valueContent(store, taskCid).data.todo?.completed) done++
+      if (rowDone(store, taskCid)) done++
       const sub = countNode(store, taskCid, ancestors, counts)
       tasks += sub.tasks; done += sub.done; choices += sub.choices
     } else if (isChoiceEdge(store, edge) && !isBranchChoice(store, content(store, edge[1])) && !isPeerReference(content(store, edge[1]))) {
@@ -2526,7 +2525,7 @@ export function findRowByAlias(store: FosStore, rootCid: string, aliasId: string
  * external targets stay pinned. History, proposals and membership are not inherited. */
 export function copyRowContent(store: FosStore, nodeCid: string, now: number, freshId: () => string, options: { instantiate?: boolean; rootId?: string } = {}): string {
   const { instantiate = false } = options
-  const ids = new Map<string, string>()
+  const ids = new Map<string, string>(), doneField = instantiate ? rowVocabulary(store)?.done : undefined, reopened = new Set<string>()
   const owned = new Set<string>()
   const argumentsToCopy = new Set<string>()
   const definitions = new Set<string>()
@@ -2567,6 +2566,12 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
       if (isRefNode(store, content(store, child)) && (!rowTypeIdOf(store, edge) || left.data.capabilityDefinition)) argumentsToCopy.add(child)
       // Nested templates remain definitions when their containing workflow is instantiated.
       if (rowTypeIdOf(store, edge) === TEMPLATE_TYPE) definitions.add(child)
+      // a field stays a ref of its own, whose id is its row's: it follows the row's new id
+      if (id && isFieldRow(store, id, edge)) {
+        argumentsToCopy.add(child)
+        ids.set(aliasIdOf(content(store, child))!, fieldRefId(ids.get(id)!, edge[0]))
+        if (edge[0] === doneField) reopened.add(child)
+      }
       collect(child)
     }
   }
@@ -2594,7 +2599,6 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
     const type = argumentsToCopy.has(cid)
     const value = type ? identity : stripLink(store, identity)
     const data = { ...value.data, alias: { id: ids.get(aliasIdOf(identity) ?? '') ?? freshId() }, updated: { time: now } }
-    if (instantiate && data.todo) data.todo = { ...data.todo, completed: false, time: now }
     if (instantiate && data.query) data.query = { market: data.query.market }
     if (data.ref && !data.ref.owner) data.ref = { ...data.ref, id: ids.get(data.ref.id) ?? data.ref.id }
     if (data.allocation) data.allocation = { ...data.allocation, resource: ids.get(data.allocation.resource) ?? data.allocation.resource }
@@ -2602,7 +2606,7 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
     const target = refValueCid(store, identity)
     const children = type ? [] : childEdges(value, definitions.has(cid), cid === nodeCid).map(copyEdge)
     if (!type && isHandle(identity) && target) children.push([primitive(store, 'target'), owned.has(target) ? copy(target) : target])
-    let bound = target && owned.has(target) ? copy(target) : target
+    let bound = reopened.has(cid) ? primitive(store, 'void') : target && owned.has(target) ? copy(target) : target
     const alternatives = type && refBranches(store, identity)
     if (alternatives) {
       const record = readChoice(store, alternatives.cid)
