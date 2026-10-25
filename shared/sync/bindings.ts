@@ -138,7 +138,8 @@ export function resolveBinding(store: FosStore, type: string | null, target: str
         return { ...values[0]!, sources: [...sources] }
       }
       if (wanted && !matchesGraph(store, wanted, cid)) return fail('conflict', 'The value does not match the row pattern')
-      const peer = node.data.peerId?.content
+      // a handler a peer hosts (its implementation runs there) needs that peer; a value that only names who supplied it does not
+      const peer = node.children.some(([left]) => left === primitive(store, 'implementation')) ? node.data.peerId?.content : undefined
       if (peer && environment.isPeerActive && !environment.isPeerActive(peer)) return fail('missing', `Peer ${peer} is not active`)
       if (environment.checkDependencies === false) return { status: 'ready', cid, sources: [...sources], problems: [] }
       for (const child of childRows(store, cid).filter(c => isRequirementRow(store, c.edge))) {

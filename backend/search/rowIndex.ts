@@ -10,7 +10,7 @@
  * The embedding function is injected so tests run without Vertex.
  */
 
-import { textOf } from '@fosforescent/shared/sync/fields'
+import { isFieldRow, textOf } from '@fosforescent/shared/sync/fields'
 import { REF_TYPE } from '@fosforescent/shared/sync/index'
 import { createHash } from 'node:crypto'
 import { FosStore } from '@fosforescent/shared/dag-implementation/store'
@@ -35,7 +35,7 @@ export function collectRows(store: FosStore, limit = 5000): IndexedRow[] {
     for (const edge of valueContent(store, cid).children) {
       if (out.length >= limit) return
       // a device root's shipped library is not the account's content
-      if (!isRowEdge(store, edge) || isShippedLibrary(store, path, edge)) continue
+      if (!isRowEdge(store, edge) || isFieldRow(store, edge) || isShippedLibrary(store, path, edge)) continue
       const type = rowTypeIdOf(store, edge) ?? ''
       const id = identityCid(store, edge)
       const identity = content(store, id)

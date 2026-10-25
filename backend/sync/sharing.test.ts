@@ -1,4 +1,5 @@
 import { primitive } from '@fosforescent/shared/sync/primitives'
+import { withLabel } from '@fosforescent/shared/sync/fields'
 import type { Request, Response } from 'express'
 import { verify } from 'jsonwebtoken'
 import { HOME_ID, approvalsOf, handlerResult, sharedLinkAt, addMemberAt, addAllocation, addRequirement, addRow, addTask, addRefAt, createReplica, publish, unpublish, sharedProjection, writeNodeValue, participation, headCid, argumentRefs, content, refValueCid, removeMemberAt, setMemberCapabilitiesAt, renameTask, ensureSharedLink, sharedAddressAt, ensureHomeContext, view, readNodeValue, resolveScope, valueContent, put, withProposal, proposalContent, commitRoot, updateAtScope, putStripped, readProposals, type Replica } from '@fosforescent/shared/sync/index'
@@ -106,19 +107,21 @@ test("a visitor's approval is an approval row of the submission; it merges only 
   const s = setup(), r = s.replicas.host, store = r.store
   const cid = resolveScope(store, headCid(r), ['poll'])!
   const base = putStripped(store, content(store, cid))
-  const proposed = put(store, { ...valueContent(store, cid), data: { ...valueContent(store, cid).data, description: { content: 'Proposed question' } } })
+  const proposed = put(store, withLabel(store, valueContent(store, cid), 'Proposed question'))
   const proposal = put(store, proposalContent(store, 'editor', 'Editor proposal', proposed, base, 5))
   commitRoot(store, updateAtScope(store, headCid(r), ['poll'], value => withProposal(store, value, 'editor', proposal, 'Editor proposal'), 'node'), 6)
   const visit = await s.call('visit', at)
-  expect(visit.body.node.proposals).toHaveLength(1)
-  const id = visit.body.node.proposals[0].id
+  // the poll's options are submissions too; the editor's is one more
+  expect(visit.body.node.proposals).toHaveLength(3)
+  const id = `proposal:${proposal}`
+  expect(visit.body.node.proposals.map((p: { id: string }) => p.id)).toContain(id)
   const saved = await s.call('submit', input(visit.body, { approvals: [id], ranking: [id] }))
   expect(saved.status).toBe(200)
   // the id stays while approvals arrive; the count is the submission's approval rows
-  expect(saved.body.node.proposals.map((p: { id: string }) => p.id)).toEqual([id])
+  expect(saved.body.node.proposals.map((p: { id: string }) => p.id)).toContain(id)
   expect(saved.body.node.counts[id]).toBe(1)
   expect(saved.body.node.mine.approvals).toEqual([id])
-  const open = () => readProposals(s.replicas.host.store, content(s.replicas.host.store, resolveScope(s.replicas.host.store, headCid(s.replicas.host), ['poll'])!)).filter(p => p.status === 'open')
+  const open = () => readProposals(s.replicas.host.store, content(s.replicas.host.store, resolveScope(s.replicas.host.store, headCid(s.replicas.host), ['poll'])!)).filter(p => p.status === 'open' && p.peerId === 'editor')
   expect(approvalsOf(s.replicas.host.store, open()[0]!.cid).map(a => a.approver)).toEqual([saved.body.node.mine.peer])
   // a visitor is no approver under the default rule (the owner and the members that may edit are): nothing merged
   expect(view(s.replicas.host, [])!.tasks.find(t => t.id === 'poll')!.title).toBe('Lunch?')
@@ -159,9 +162,9 @@ test('the public read endpoint serves the projection for embeds without recordin
   // a note publishes its title line, and its body as a Markdown row of its own
   expect(ok.body.node).toMatchObject({ title: 'A post', type: 'note' })
   expect(ok.body.node.rows).toEqual([
-    { id: 'post/field/body', title: '', depth: 0, type: 'markdown', body: '# A post\n\nWith a **body**.' },
+    { id: 'post:body', title: '', depth: 0, type: 'markdown', body: '# A post\n\nWith a **body**.' },
     { id: 'part', title: 'Part', depth: 0, type: 'note' },
-    { id: 'part/field/body', title: '', depth: 1, type: 'markdown', body: '## Part\n\nMore.' }
+    { id: 'part:body', title: '', depth: 1, type: 'markdown', body: '## Part\n\nMore.' }
   ])
   expect(ok.body.node.mine).toBeUndefined()
   expect(ok.headers['Cache-Control']).toBe('public, max-age=60')

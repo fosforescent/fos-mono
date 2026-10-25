@@ -177,7 +177,9 @@ export function isFieldRow(store: FosStore, edge: FosPathElem): boolean {
 }
 /** Row `id`'s ref for `field` among the rows of `value`, or null. */
 export function fieldEdge(store: FosStore, value: FosNodeContent, field: string): FosPathElem | null {
-  return value.children.find(edge => edge[0] === field && isFieldRow(store, edge)) ?? null
+  return value.children.find(edge => edge[0] === field && isFieldRow(store, edge))
+    // a compiled value (no identities) holds its fields as [field, value] rows; a child row always has an identity
+    ?? value.children.find(edge => edge[0] === field && !store.table.get(edge[1])?.data.alias) ?? null
 }
 /** What row `id` holds for `field` (through its ref): void for an open hole, null when the row has no such field. */
 export function fieldValue(store: FosStore, value: FosNodeContent, field: string): string | null {
@@ -268,18 +270,18 @@ function textFields(store: FosStore, type: string): string[] {
   return typeRows(store, type).map(([field]) => field).filter(field => isTextField(store, field))
 }
 /**
- * A row's whole text: a plain row's own text; else its last text field holding text (a note's body), its title when
- * that is the only one. Empty when it holds none.
+ * A row's whole text: a plain row's own text; else its body (a note's), else its title (with no type: its last text
+ * field holding text); else the title its ref carries itself (an argument row's). Empty when it holds none.
  */
 export function rowText(store: FosStore, nodeCid: string, type: string | null): string {
   if (type && isTextField(store, type)) return leafText(store, nodeCid) ?? ''
   const value = content(store, valueOf(store, nodeCid))
-  const fields = type ? textFields(store, type) : value.children.filter(edge => isFieldRow(store, edge) && isTextField(store, edge[0])).map(([field]) => field)
-  for (const field of [...fields].reverse()) {
+  const fields = type ? [bodyField(store, type), titleField(store, type)].filter((field): field is string => !!field) : value.children.filter(edge => isFieldRow(store, edge) && isTextField(store, edge[0])).map(([field]) => field).reverse()
+  for (const field of fields) {
     const held = fieldValue(store, value, field), text = held ? leafText(store, held) : null
     if (text) return text
   }
-  return type ? '' : textOf(store, nodeCid) ?? ''
+  return refTitle(store, content(store, nodeCid)) ?? (type ? '' : textOf(store, nodeCid) ?? '')
 }
 /** The body of a row: its last text field when the type has a title field before it (a note's body), else null. */
 export function rowBody(store: FosStore, nodeCid: string, type: string): string | null {

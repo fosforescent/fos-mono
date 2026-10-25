@@ -1620,7 +1620,9 @@ export function withInputs(store: FosStore, pattern: string, inputs: Record<stri
     const value = textValue(store, text)
     const index = children.findIndex(([, right]) => { const ref = store.table.get(right); return !!ref && isRefNode(store, ref) && ref.data.name?.content === name })
     const left = index >= 0 ? children[index]![0] : primitive(store, 'string')
-    const row: FosPathElem = [left, put(store, refNodeContent(store, { alias: { id: hashContent({ data: { name: { content: `input:${name}` } }, children: [] }) }, name: { content: name } }, value))]
+    // filling a declared input keeps that ref: the refined pattern is still one of its capability
+    const alias = (index >= 0 ? content(store, children[index]![1]).data.alias : undefined) ?? { id: hashContent({ data: { name: { content: `input:${name}` } }, children: [] }) }
+    const row: FosPathElem = [left, put(store, refNodeContent(store, { alias, name: { content: name } }, value))]
     children = index >= 0 ? children.map((edge, i) => i === index ? row : edge) : [...children, row]
   }
   return put(store, { ...node, children })

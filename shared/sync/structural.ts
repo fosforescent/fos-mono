@@ -157,6 +157,10 @@ export function match(store: FosStore, pattern: string, value: string, options: 
       if (!key && isRefNode(store, P)) {
         const target = refValueCid(store, P)
         if (target) return go(target, v, key, depth + 1, state)
+        // a ref declared in the pattern with no value yet (an input) is a named hole, like a compiled placeholder
+        const bound = state.bindings.get(p)
+        if (bound) return bound === v || (go(bound, v, key, depth + 1, state) && go(v, bound, key, depth + 1, state)) ? state : null
+        return { bindings: new Map(state.bindings).set(p, v), fillers: state.fillers }
       }
       // a tag is a unit type parameterized by its name: what it holds is unit (present) or void (absent)
       if (!key && tagName(store, p) !== null && (v === never || isUnit(V))) return state

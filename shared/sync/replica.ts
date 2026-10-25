@@ -1,4 +1,4 @@
-import { constructPlainRow, typeRows, withoutRefTitle, constructRow, constructTextRow, fieldEdge, fieldText, fieldValue, fieldValues, isFieldRow, isTextField, rebuildRow, rowRecord, titleField, withFieldValue, withFieldValues, withRowText, labelRow, refTitle, withLabel, withRefTitle, isLeafType, textValue, leafOfType } from './fields'
+import { constructPlainRow, typeRows, withRefTitle, withoutRefTitle, constructRow, constructTextRow, fieldEdge, fieldText, fieldValue, fieldValues, isFieldRow, isTextField, rebuildRow, rowRecord, titleField, withFieldValue, withFieldValues, withRowText, labelRow, refTitle, withLabel, withRefTitle, isLeafType, textValue, leafOfType } from './fields'
 import { createStore, completes, libraryNode, rowTitle, rowVocabulary, withDone } from './graph'
 import { primitive } from './primitives'
 import { sameCapabilityType } from './capabilities'
@@ -351,7 +351,8 @@ export function addTask(replica: Replica, at: Scope, title: string, now: number,
  * a plain row is its text). A reference stands for another row; a bank is a ref whose value holds its grants.
  */
 function newRowContent(store: FosStore, type: string, typeId: string, id: string, text: string, now: number, extras: Omit<RowExtras, 'store'>): FosNodeContent {
-  if (typeId === REF_TYPE) return referenceRowContent(store, id, now, extras)
+  // a reference's text is the title its ref carries itself
+  if (typeId === REF_TYPE) return text ? withRefTitle(store, referenceRowContent(store, id, now, extras), text) : referenceRowContent(store, id, now, extras)
   // a row whose left is a ref calls it: its right holds the call's arguments, filled later
   if (isRefNode(store, content(store, type))) return { data: { alias: { id }, created: { time: now }, updated: { time: now } }, children: text ? [labelRow(store, text)] : [] }
   const values = new Map<string, string>(), done = rowVocabulary(store)?.done

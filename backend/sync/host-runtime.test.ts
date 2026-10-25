@@ -1,4 +1,4 @@
-import { handlerOfferId } from '@fosforescent/shared/sync/index'
+import { handlerOfferId, definitionCapability, tagNode } from '@fosforescent/shared/sync/index'
 import { membershipPathAt } from '@fosforescent/shared/sync/index'
 import { standardHostRef } from './host-runtime'
 import { capabilityNames, libAt, SERVER_TRANSPORT_CAPABILITIES, RELAY_QUEUE_ID, addMemberAt, addRelayMessage, addTask, createReplica, ensureHomeContext, view, HOME_ID } from '@fosforescent/shared/sync/index'
@@ -9,11 +9,11 @@ import { put, primitiveRef, addRefCall, addRefAt, evaluationSteps, updateAtScope
 test('a host registers and discovers a custom ref pattern without a capability name', async () => {
   let calls = 0
   const runtime = createHostRuntime([{ peerId: 'fos', ref: {
-    id: 'extension:render', type: store => put(store, { data: { name: { content: 'Rendering pattern' } }, children: [] }),
+    id: 'extension:render', capability: store => tagNode(store, 'rendering'),
   }, run: () => async () => { calls++; return {} } }])
   let replica = ensureHomeContext(createReplica('owner'), 1, runtime.hostOffers())
   replica = await runtime.onLoad({ userId: 1, replica, path: [], branches: [], now: 2 })
-  const handler = runtime.handlers[0]!, type = handler.ref!.type(replica.store, [])
+  const handler = runtime.handlers[0]!, type = definitionCapability(handler.ref!, replica.store, [])
   const step = { path: [], row: { typeCid: type } } as unknown as EvaluationStep
   expect(runtime.executors(step, replica)).toEqual([handler])
   expect(runtime.providers(step, replica, handler)).toEqual(['fos'])
@@ -41,13 +41,13 @@ test('advertised capabilities are exactly transport facts plus registered handle
 test('a ref row is the registration: an empty host catalogue discovers it and removal withdraws it', async () => {
   const runtime = createHostRuntime([])
   let r = createReplica('host'), calls = 0
-  const definition = { id: 'direct:render', label: 'render', capability: (store: typeof r.store) => put(store, { data: {}, children: [] }) }
+  const definition = { id: 'direct:render', label: 'render', capability: (store: typeof r.store) => tagNode(store, 'render') }
   const primitive = { peerId: 'host', ref: definition, run: () => async () => { calls++; return {} } }
   const value = primitiveRef(r.store, 'host', definition, primitive)
   r = addRefCall(r, [], value, 1, 'call')
   const step = evaluationSteps(r, ['call'])[0]!
   expect(runtime.executors(step, r)).toEqual([])
-  r = addRefAt(r, [], 'registration', definition.type(r.store), 2, value, 'renderer')
+  r = addRefAt(r, [], 'registration', definition.capability(r.store), 2, value, 'renderer')
   expect(runtime.executors(step, r)).toEqual([primitive])
   expect(runtime.providers(step, r, primitive)).toEqual(['host'])
   expect(await runtime.active('host', 1, r, ['call'])).toBe(true)
