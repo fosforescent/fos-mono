@@ -2,8 +2,6 @@
 
 export type FosDataContent = {
   /** A constructor row's parameter, optionally bound from the caller's environment. */
-  /** Presentation and invocation contract of an observer ref, supplied by its declaration. */
-  triggerDefinition?: { label: string; icon: string; mode: 'instantiate' | 'resume'; hidden?: boolean; schedule?: { field: string; input: 'datetime-local' | 'text'; label: string } };
   scalar?: { type: 'text' | 'number' | 'peer' | 'time' | 'boolean' | 'null'; value: string | number | boolean | null };
   presentation?: { sequence?: boolean; icon?: string };
   created?: { time: number };

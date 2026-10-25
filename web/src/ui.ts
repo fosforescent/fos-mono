@@ -1,3 +1,4 @@
+import { isTriggerLeft } from '../../shared/sync/capabilities'
 import { TEXT_MASK } from '../../shared/sync/node-provider'
 import { textOf } from '../../shared/sync/fields'
 import { primitive } from '../../shared/sync/primitives'
@@ -828,7 +829,7 @@ function constructorOptions(app: App): ConstructorItem[] {
     { id: 'trigger:public', label: 'Public template endpoint', icon: 'broadcast', output: 'trigger', group: 'triggers' },
     { id: 'trigger:users', label: 'Fos template endpoint', icon: 'user-check', output: 'trigger', group: 'triggers' },
     ...ROW_SEEDS.map(([label, seed, icon]) => ({ id: `seed:${seed}`, label, icon, output: 'row', group: 'device' })),
-    ...app.handlerOffers().filter(o => !content(app.state.replica.store,o.type).data.triggerDefinition).map(o => { const presentation = capabilityPresentation(app.state.replica.store, o.type); return { id: `handler:${o.cid}`, label: o.label, icon: presentation.icon ?? 'handler', description: presentation.description, output: o.type === primitive(app.state.replica.store, 'template') ? 'template' : o.capability ?? o.type, group: offerGroup(o.peerId) } }),
+    ...app.handlerOffers().filter(o => !isTriggerLeft(app.state.replica.store, o.type)).map(o => { const presentation = capabilityPresentation(app.state.replica.store, o.type); return { id: `handler:${o.cid}`, label: o.label, icon: presentation.icon ?? 'handler', description: presentation.description, output: o.type === primitive(app.state.replica.store, 'template') ? 'template' : o.capability ?? o.type, group: offerGroup(o.peerId) } }),
     ...(canVerifySpecifications(app,app.constructorContext()) ? [{id:'verify-specifications',label:'Verify specifications',icon:'verify',output:'tool',group:'device'}] : []),
     { id: 'feature-specification', label: 'Feature specification', icon: 'specification', output: 'note', group: 'device' },
     ...CONSTRUCTORS.map(c => ({ ...c, output: c.id === 'integration' ? 'peer' : c.id === 'repository' ? 'repo' : c.id, group: c.id === 'repository' ? github : 'device' })),

@@ -1,7 +1,9 @@
 /** Names are a standard-library/wire adapter. Ref resolution uses pattern identities. */
-import type { FosDataContent } from '../types'
+import { capabilityDeclarations } from './capability-catalog'
+import { primitiveName } from './primitives'
+import { textOf } from './fields'
 import type { FosStore } from '../dag-implementation/store'
-import { matchesGraph } from './structural'
+import { matchesGraph, tagName, capabilityName } from './structural'
 import { libAt, libraryNode, valueContent, type Scope } from './graph'
 export { libAt } from './graph'
 
@@ -16,13 +18,26 @@ export { capabilityName } from './structural'
 export function executeLeft(store: FosStore, at: Scope): string { return libAt(store, at).capabilities.execute! }
 export function isExecuteLeft(store: FosStore, left: string | null | undefined): boolean { return !!left && left === libraryNode(store, 'capabilities.execute') }
 
+/** How a trigger is shown and what it starts: a new instance of its template, or (`resume`) the evaluation waiting on it. */
+export type TriggerDefinition = { label: string; icon: string; mode: 'instantiate' | 'resume'; hidden?: boolean; schedule?: { field: string; input: 'datetime-local' | 'text'; label: string } }
 /**
- * The trigger definition a row's left carries: a trigger capability's pattern (`timer`, `ref-change`, …), or one
- * observer's offer of it (a trigger pinned to that declaration; the offer's value keeps the definition).
+ * The trigger a row's left is: a trigger capability's pattern (`timer`, `ref-change`, …) or one observer's offer of it
+ * (a value carrying the pattern's rows). The ref the capability is assigned to says it is a trigger and how it is
+ * shown; its schedule is the pattern's own input (a cron expression, a time).
  */
-export function triggerDefinitionOf(store: FosStore, left: string | null | undefined): NonNullable<FosDataContent['triggerDefinition']> | undefined {
+export function triggerDefinitionOf(store: FosStore, left: string | null | undefined): TriggerDefinition | undefined {
   if (!left || !store.table.has(left)) return undefined
-  return valueContent(store, left).data.triggerDefinition
+  const name = capabilityName(store, left)
+  const declaration = name ? capabilityDeclarations(store).find(d => d.name === name) : undefined
+  const ref = declaration && store.table.get(declaration.ref)
+  if (!ref) return undefined
+  const tagged = (tag: string) => ref.children.some(([key, right]) => tagName(store, key) === tag && !store.table.get(right)?.children.length)
+  if (!tagged('trigger')) return undefined
+  const icon = ref.children.find(([key]) => key === libraryNode(store, 'icon'))
+  const input = valueContent(store, declaration.cid).children.find(([type, hole]) => primitiveName(store, type) !== null && !!store.table.get(hole)?.data.name)
+  const field = input && store.table.get(input[1])!.data.name!.content
+  return { label: declaration.label, icon: (icon && textOf(store, icon[1])) ?? 'trigger', mode: tagged('resume') ? 'resume' : 'instantiate', ...(tagged('hidden') ? { hidden: true } : {}),
+    ...(input && field ? { schedule: { field, input: primitiveName(store, input[0]) === 'number' ? 'datetime-local' as const : 'text' as const, label: field } } : {}) }
 }
 /** A trigger row: its left is a trigger capability. */
 export function isTriggerLeft(store: FosStore, left: string | null | undefined): boolean { return !!triggerDefinitionOf(store, left) }

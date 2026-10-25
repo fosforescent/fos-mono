@@ -92,7 +92,7 @@ const types: Record<string, string> = {
  * tag, its inputs refs declared in it (`[string, ref to]`: the left types the hole). A requirement row asks for one (`[mail<to: bob>, ref → unit]`); a handler is a
  * value matching it. What a menu shows (its title, syntax, icon) is on the ref, never in the pattern.
  */
-type Capability = { label: string; syntax: string[]; inputs?: Array<[string, string?]>; time?: string[]; icon?: string; hidden?: true }
+type Capability = { label: string; syntax: string[]; inputs?: Array<[string, string?]>; time?: string[]; icon?: string; hidden?: true; trigger?: 'instantiate' | 'resume' }
 const capabilities: Record<string, Capability> = {
   approve: { label: 'attested approvals', syntax: ['approve'] }, edit: { label: 'edit (propose and decide proposals)', syntax: ['edit'] },
   persist: { label: 'persist storage', syntax: ['persist'] }, task: { label: 'task', syntax: ['task'] }, notify: { label: 'notify', syntax: ['notify'] },
@@ -115,12 +115,12 @@ const capabilities: Record<string, Capability> = {
 }
 // the triggers: what starts an evaluation (their own inputs say when)
 Object.assign(capabilities, {
-  cron: { label: 'Cron trigger', syntax: ['cron'], icon: 'repeat', inputs: [['expression']] },
-  timer: { label: 'Timer trigger', syntax: ['timer'], icon: 'hourglass', time: ['due'] },
-  request: { label: 'On request', syntax: ['request'], icon: 'request' },
-  'task-completion': { label: 'Child evaluation', syntax: ['task-completion'], icon: 'flag' },
-  'ref-change': { label: 'Reference change', syntax: ['ref-change'], icon: 'link', hidden: true },
-  response: { label: 'On response', syntax: ['response'], icon: 'reply', hidden: true },
+  cron: { label: 'Cron trigger', syntax: ['cron'], icon: 'repeat', inputs: [['expression']], trigger: 'instantiate' },
+  timer: { label: 'Timer trigger', syntax: ['timer'], icon: 'hourglass', time: ['due'], trigger: 'instantiate' },
+  request: { label: 'On request', syntax: ['request'], icon: 'request', trigger: 'instantiate' },
+  'task-completion': { label: 'Child evaluation', syntax: ['task-completion'], icon: 'flag', trigger: 'instantiate' },
+  'ref-change': { label: 'Reference change', syntax: ['ref-change'], icon: 'link', hidden: true, trigger: 'instantiate' },
+  response: { label: 'On response', syntax: ['response'], icon: 'reply', hidden: true, trigger: 'resume' },
 } satisfies Record<string, Capability>)
 const capability = (capabilityName: string, c: Capability) => tagged(capabilityName,
   ...(c.inputs ?? []).map(([input, value]): FosPathElem => [string, ref(input, value === undefined ? null : text(value))]),
@@ -130,7 +130,9 @@ const capabilityRef = (capabilityName: string, c: Capability, pattern: string) =
   const own = ref(capabilityName, pattern), id = content(own).data.alias!.id
   const titled = put({ data: { alias: { id: hashContent({ data: { alias: { id } }, children: [[title, title]] }) } }, children: [[P('target'), fill('title', c.label)], [P('alias'), unit]] })
   return put({ ...content(own), children: [...content(own).children, [title, titled], ...c.syntax.map((s): FosPathElem => [syntax, fill('syntax', s)]),
-    ...(c.icon ? [[icon, fill('fontAwesomeId', c.icon)] as FosPathElem] : []), ...(c.hidden ? [[tagOf('hidden'), unit] as FosPathElem] : [])] })
+    ...(c.icon ? [[icon, fill('fontAwesomeId', c.icon)] as FosPathElem] : []), ...(c.hidden ? [[tagOf('hidden'), unit] as FosPathElem] : []),
+    // a trigger starts evaluations: a new instance of its template, or (resume) the one waiting on it
+    ...(c.trigger ? [[tagOf('trigger'), unit] as FosPathElem] : []), ...(c.trigger === 'resume' ? [[tagOf('resume'), unit] as FosPathElem] : [])] })
 }
 const capabilityGroup = node(...Object.entries(capabilities).map(([capabilityName, c]): FosPathElem => {
   const pattern = capability(capabilityName, c)

@@ -20,7 +20,8 @@ import { readGraphValue } from './node-values'
 import { rowWithLeft, writeRowValue } from './row-values'
 /** A presentation label; it must never select an observer implementation. */
 export type TriggerKind = string
-export type TriggerDefinition = NonNullable<import('../types').FosDataContent['triggerDefinition']>
+import type { TriggerDefinition } from './capabilities'
+export type { TriggerDefinition }
 export type TriggerContext = { replica: Replica; path: Scope; config: NodeTrigger; now: number; previous: TriggerState | null }
 export type TriggerEvent = { id: string; reset?: boolean; state?: Partial<TriggerState> }
 export type TriggerObserver = { validate?(context: TriggerContext): void; observe(context: TriggerContext): TriggerEvent | null }
