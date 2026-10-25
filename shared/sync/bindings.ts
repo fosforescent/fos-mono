@@ -10,9 +10,8 @@ import {
 import { type Replica } from './replica'
 import { sameCapabilityType } from './capabilities'
 import { bindingProperties, visibleBindings, bindingTree, bindingAvailable, bindingAssignments, submissionRef, type ScopedBinding } from './scope-bindings'
-import { matchesGraph, patternHasStructure } from './structural'
+import { matchesGraph } from './structural'
 import { patternIsValuePredicate } from './scoped-refs'
-import { isNegative } from './parameters'
 import { parseRefExpression, resolveRefExpression, resolveRefIdentity, nodeOccurrence, textRefExpressions, type RefAccess } from './ref-paths'
 
 export type BindingEnvironment = HandlerEnvironment & RefAccess & {
@@ -57,11 +56,8 @@ export function contextBindings(r: Replica, at: Scope, environment: BindingEnvir
 export function resolveBinding(store: FosStore, type: string | null, target: string | ScopedBinding | null, candidates: BindingCandidate[] = [], name?: string, environment: BindingEnvironment = {}): BindingResolution {
   const sources = new Set<string>(), active = new Set<string>()
   const fail = (status: BindingResolution['status'], message: string): BindingResolution => ({ status, sources: [...sources], problems: [message] })
-  // A pattern with structure selects by the candidate's value; a bare capability selects by the candidate's declared type.
-  // A negative declaration asks for a value; it is never a value to select. Otherwise a pattern with structure selects
-  // by the candidate's value and a bare capability by the candidate's declared type.
-  const compatible = (declared: string, wanted: string | null, cid: string): boolean => wanted !== null && !isNegative(store, declared) &&
-    (patternHasStructure(store, wanted) ? matchesGraph(store, wanted, cid) : matchesGraph(store, wanted, declared, { side: 'left' }))
+  // a candidate is selected by its value: a handler is a value of the capability it fills; a hole is no value to select
+  const compatible = (_declared: string, wanted: string | null, cid: string): boolean => wanted !== null && matchesGraph(store, wanted, cid)
   const choose = (wanted: string | null, label?: string, excluded?: string, anonymous = false): BindingResolution => {
     const matches = [...new Set(candidates.filter(c => c.cid !== excluded && (!label || c.binding?.nameVisible !== false) &&
       (label && c.name === label || compatible(c.type, wanted, c.cid) && (!label || anonymous && (!c.name || !!c.refIds)))).map(c => c.cid))]

@@ -4,6 +4,7 @@
  * step's outputs to and what it proposes for the refs it was passed. It never writes the tree; the evaluator submits
  * its answers as the evaluation's pending writes and publishes them when the evaluation commits.
  */
+import { isOutputDeclaration } from './structural'
 import { refTitle } from './fields'
 import type { FosStore } from '../dag-implementation/store'
 import type { FosDataContent, FosNodeContent } from '../types'
@@ -12,7 +13,6 @@ import { headCid, type Replica } from './replica'
 import type { BindingEnvironment } from './bindings'
 import { bindingProperties, type BindingLocation } from './scope-bindings'
 import { resolveRefExpression, resolveRefIdentity } from './ref-paths'
-import { isOutputPattern } from './parameters'
 import { assertCompiledGraph, compileInstructions, compileRefGraph } from './ref-compiler'
 
 /** An output the step declares: the pattern its value must satisfy and what the declaration itself says (an amount, a title). */
@@ -47,7 +47,7 @@ export function compileOperands(r: Replica, path: Scope, environment: BindingEnv
   // A requirement step's own hole is its output `self`: the primitive fills the requirement by answering it.
   const parent = path.length ? resolveScope(store, headCid(r), path.slice(0, -1)) : null
   const own = parent ? bindingProperties({ store, cid: parent, path: path.slice(0, -1) }, environment).bindings.find(binding => binding.id === path.at(-1)) : undefined
-  if (own && isOutputPattern(store, own.pattern)) {
+  if (own && isOutputDeclaration(store, own.pattern)) {
     const { alias: _alias, ref: _ref, refExpression: _expression, refRole: _role, updated: _updated, ...data } = content(store, own.cid).data
     outputs.self = { pattern: own.pattern, data, ...titled(content(store, own.cid)) }
     sources.self = own
@@ -72,7 +72,7 @@ export function compileOperands(r: Replica, path: Scope, environment: BindingEnv
       source = found.locations[0]
     }
     sources[name] = source
-    if (node.data.refRole === 'output' || isOutputPattern(store, binding.pattern)) {
+    if (node.data.refRole === 'output' || isOutputDeclaration(store, binding.pattern)) {
       const { alias: _alias, ref: _ref, refExpression: _expression, refRole: _role, updated: _updated, ...data } = node.data
       outputs[name] = { pattern: binding.pattern, data, ...titled(node) }
       continue

@@ -6,7 +6,7 @@
  * handler goes through, and its local meaning is attached to the primitive its value names.
  */
 import { labelRow } from './fields'
-import { matchesGraph, tag } from './structural'
+import { matchesGraph, tag, capabilityName } from './structural'
 import { putNode, type FosStore } from '../dag-implementation/store'
 import { content, enclosingScopes, handlerOfferId, libAt, put, refNodeContent, isRefNode, type Scope } from './graph'
 import { addMemberAt, addRow, headCid, setHandlerOffersAt, type Replica } from './replica'
@@ -76,8 +76,7 @@ export type Primitive = { implementation: string; host: string }
 export function handlerRef(store: FosStore, host: string, definition: Pick<PrimitiveDefinition, 'id' | 'label' | 'capability'>, at: Scope = [], name = definition.id): string {
   const type = definitionCapability(definition, store, at), label = definition.label ?? definition.id
   const named = primitive(store, definition.id)
-  const { alias: _alias, capabilityDefinition: _capability, ...properties } = content(store, type).data
-  if (_capability) delete properties.name
+  const { alias: _alias, name: _name, ...properties } = content(store, type).data
   // a handler is a value of its capability: it carries the capability's tag, and the primitive that gives it meaning here
   const value = put(store, { data: { ...properties, peerId: { content: host } }, children: [...content(store, type).children, tag(store, type), [primitive(store, 'implementation'), named], labelRow(store, label)] })
   return put(store, refNodeContent(store, { alias: { id: handlerOfferId(host, type, name) }, name: { content: label } }, value, []))
@@ -203,7 +202,7 @@ export function matchesInstructionRef(replica: Replica, step: EvaluationStep, of
     if (!refSubmissions(replica.store, offered.cid).some(cid => expected.includes(cid))) return false
   }
   // the offer's capability generalizes the row's left: a refined pattern (a requirement for 50 USD) is still a row of its capability
-  const refined = !!replica.store.table.get(wanted)?.data.capabilityDefinition
+  const refined = capabilityName(replica.store, wanted) !== null
   return !!offered.cid && ((refined && matchesGraph(replica.store, offered.type, wanted, { side: 'left' })) || matchesGraph(replica.store, wanted, offered.cid))
 }
 

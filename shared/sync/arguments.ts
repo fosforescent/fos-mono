@@ -1,9 +1,8 @@
 /**
  * Arguments: the one kind of row that asks for or supplies a value. An argument row is `[pattern, ref]`, a
- * declaration whose pattern is a capability refined with what is demanded. Its polarity says which way the value
- * goes: a pattern with a `negative` row asks (a requirement: the ref is a hole until a value satisfying the pattern
- * is bound to it); one without supplies (an allocation: the ref holds the value). Supplying a requirement is binding
- * its ref, the way every ref is bound: a submission that is accepted.
+ * declaration whose pattern is a capability refined with what is demanded. A requirement asks: its ref is a hole (no
+ * submission) until a value satisfying the pattern is bound to it; an allocation supplies: its ref holds the value.
+ * Supplying a requirement is binding its ref, the way every ref is bound: a submission that is accepted.
  *
  * A value that pins a checking contract (a grant: a child row whose left is the `allocate` capability) is linear. It
  * is bound only by an invocation of that contract's handler, which consumes it from its owner (a bank: a ref row
@@ -18,15 +17,14 @@ import { resolveScope as scopeCid, rowVocabulary, valueContent as valueAt } from
 import type { FosStore } from '../dag-implementation/store'
 import type { FosDataContent, FosNodeContent, FosPathElem } from '../types'
 import {
-  allocationContract, argumentSatisfied, bookkeepingOf, commitRoot, content, enclosingScopes, findEdge, grantEntries, identityCid, isRefNode, isRowEdge,
+  allocationContract, argumentSatisfied, bookkeepingOf, isRequirementRow, commitRoot, content, enclosingScopes, findEdge, grantEntries, identityCid, isRefNode, isRowEdge,
   isRowOfType, libAt, newId, ownerContract, patternOptions, put, refNodeContent, refValueCid, resolveScope, rowEdgeAt, updateAtScope, valueContent, withInputs, type ResourceType, type Scope
 } from './graph'
 import { addRow, edit, editNode, headCid, proposeRefAt, type Replica } from './replica'
 import { acceptSubmission } from './approvals'
 import { contextBindings, resolveBinding, type BindingEnvironment, type BindingResolution } from './bindings'
 import { resolveRefExpression, resolveRefIdentity } from './ref-paths'
-import { isNegative } from './parameters'
-import { isClassifyingRow, isKindRow, tag, tagsOf, valueOfPattern } from './structural'
+import { tag, tagName, tagsOf, valueOfPattern } from './structural'
 import { transactionValue } from './transactions'
 import { REF_TYPE, RESOURCE_TYPE } from './library-types'
 import type { PrimitiveFunction } from './operands'
@@ -57,19 +55,16 @@ export function contractPin(store: FosStore, contract: string): FosPathElem { re
 /** The quantity-conservation capability of the library in scope: the contract grants pin and banks declare. */
 export function allocateCapability(store: FosStore, at: Scope): string { return libAt(store, at).capabilities.allocate! }
 
-/** A capability refined: the capability's node with `data` added and `rows` appended, inverted when `negative`. */
-export function refinePattern(store: FosStore, at: Scope, capability: string, data: FosDataContent, rows: FosPathElem[], negative: boolean, container = false): string {
-  // the refinement carries its capability as a tag: what the value is a value of, by the node's identity
+/**
+ * A capability refined: its rows with `rows` added (and `data`, until the allocation is rows). Refining changes the left:
+ * a value of the refinement carries the capability's rows and the refinement's. A container pattern (the value is the
+ * rows the person types inside the requirement) keeps only the capability's tag of the capability's rows.
+ */
+export function refinePattern(store: FosStore, capability: string, data: FosDataContent, rows: FosPathElem[], container = false): string {
   const base = content(store, capability)
   const { alias: _alias, ...rest } = base.data
-  if (!container) rows = [tag(store, capability), ...rows]
-  const polarity: FosPathElem[] = negative ? [[libAt(store, at).field('negative'), empty(store)]] : []
-  // a sum of options replaces the capability's own open rows: the options are the alternatives
-  // A container pattern (the value is rows the person adds inside the requirement) demands only those rows, none of
-  // the capability's kind rows: a container is not a value of the capability, and a bare capability's hole is
-  // filled by its handler, never by rows typed inside it.
-  const kept = data.refAlternatives ? base.children.filter(edge => isClassifyingRow(store, edge, base) || isKindRow(store, edge)) : container ? [] : base.children
-  return put(store, { data: { ...rest, ...data }, children: [...kept, ...rows, ...polarity] })
+  const kept = container ? base.children.filter(([left]) => tagName(store, left) !== null) : base.children
+  return put(store, { data: { ...rest, ...data }, children: [...kept, ...rows] })
 }
 
 /** The pattern a requirement's value must satisfy: the demanded capability, refined. Resources demand authority: a grant of the contract. */
@@ -89,14 +84,14 @@ export function demandPattern(store: FosStore, at: Scope, demand: Demand): strin
   const done = demand.done && rowVocabulary(store)?.done
   // a filled done field: void as a pattern is something supplied
   if (done) rows.push([empty(store), put(store, { data: {}, children: [[done, primitive(store, 'void')]] })])
-  return refinePattern(store, at, capability, data, rows, true, !!demand.done)
+  return refinePattern(store, capability, data, rows, !!demand.done)
 }
 
 /** The pattern of a supplied allocation: a value of the resource and unit; `linear` ones are grants of the contract. */
 export function allocationPattern(store: FosStore, at: Scope, allocation: Pick<Allocation, 'type' | 'unit'>, linear: boolean): string {
   const capability = libAt(store, at).capabilities.allocation!
-  return refinePattern(store, at, capability, { allocation: { resource: '', type: allocation.type, unit: allocation.unit } as Allocation },
-    linear ? [contractPin(store, allocateCapability(store, at))] : [], false)
+  return refinePattern(store, capability, { allocation: { resource: '', type: allocation.type, unit: allocation.unit } as Allocation },
+    linear ? [contractPin(store, allocateCapability(store, at))] : [])
 }
 
 /** Whether a pattern demands a grant: it pins the allocate contract. */
@@ -111,7 +106,7 @@ export function argumentRow(store: FosStore, pattern: string, id: string, now: n
   return [pattern, put(store, title !== undefined ? withRefTitle(store, ref, title) : ref)]
 }
 
-/** Add a requirement under `at`: an argument row asking for what `demand` says, titled `text`. */
+/** Add a requirement under `at`: a row asking for what `demand` says (its ref a hole), titled `text`. */
 export function addRequirement(r: Replica, at: Scope, text: string, now: number, demand: Demand, id = newId()): Replica {
   const store = r.store, pattern = demand.inputs ? withInputs(store, demandPattern(store, at, demand), demand.inputs) : demandPattern(store, at, demand)
   const row = argumentRow(store, pattern, id, now, null, {}, text)
@@ -132,10 +127,9 @@ export function addAllocation(r: Replica, at: Scope, text: string, now: number, 
   return edit(r, at, now, node => ({ ...node, children: [...node.children, row] }))
 }
 
-/** Whether the row `[pattern, cid]` is an argument row asking for a value it does not hold yet. */
+/** Whether the row `[pattern, cid]` is a requirement whose ref holds nothing that satisfies it yet. */
 export function isOpenRequirement(store: FosStore, edge: FosPathElem): boolean {
-  const left = edge[0]
-  return isRowEdge(store, edge) && isNegative(store, left) && !argumentSatisfied(store, identityCid(store, edge), left)
+  return isRequirementRow(store, edge) && !argumentSatisfied(store, identityCid(store, edge), edge[0])
 }
 
 // ---------------------------------------------------------------------------
@@ -172,6 +166,11 @@ export function bindIssuedAuthority(r: Replica, path: Scope, grant: string, by: 
   return bindAccepted(r, path, grant, by, now)
 }
 
+/** Make the row at `path` ask for its left instead of supplying it: its ref holds nothing (a hole). */
+export function askAt(r: Replica, path: Scope, now: number): Replica {
+  return editNode(r, path, now, node => refNodeContent(r.store, { ...node.data, updated: { time: now } }, null, bookkeepingOf(r.store, node)))
+}
+
 /**
  * Supply the requirement at `at`/`id`: bind its ref. `ref` names a row visible from the requirement that fulfils it
  * (a done task, an allocation), `choice` picks one of its options, otherwise the supplier's answer is a value of the
@@ -180,7 +179,7 @@ export function bindIssuedAuthority(r: Replica, path: Scope, grant: string, by: 
 export function supplyRequirement(r: Replica, at: Scope, id: string, supply: { by: string; ref?: string; receipt?: string; choice?: number }, now: number): Replica {
   const store = r.store, path = [...at, id], parent = resolveScope(store, headCid(r), at)
   const edge = parent ? findEdge(store, valueContent(store, parent), `a:${id}`) : undefined
-  if (!edge || !isRowEdge(store, edge) || !isNegative(store, edge[0])) throw new Error('Supply a requirement row.')
+  if (!edge || !isRequirementRow(store, edge)) throw new Error('Supply a requirement row.')
   const pattern = edge[0]
   let value: string
   if (supply.ref !== undefined) {
@@ -203,8 +202,8 @@ export function supplyRequirement(r: Replica, at: Scope, id: string, supply: { b
 export function supplyValue(store: FosStore, pattern: string, by: string, receipt?: string): string {
   return valueOfPattern(store, pattern, { peerId: { content: by } }, [labelRow(store, receipt ? `${by}: ${receipt}` : `by ${by}`)], contractsOf(store, pattern))
 }
-/** The contract tags of a pattern: every tag but the capability it refines (the first). */
-function contractsOf(store: FosStore, pattern: string): string[] { return tagsOf(store, content(store, pattern)).slice(1) }
+/** The contracts a pattern pins (the capability whose handler checks its values). */
+function contractsOf(store: FosStore, pattern: string): string[] { return tagsOf(store, content(store, pattern)) }
 
 /** Who supplied the argument at `path`: the peer its value names, else the author or supplier of the row it refers to; null when unbound. */
 export function argumentSupplier(r: Replica, path: Scope): string | null {

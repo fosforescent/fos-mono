@@ -14,6 +14,7 @@ import { FOS_DATA_VERSION } from '../shared/version'
 
 const store: FosStore = { table: new Map(), rootNodeId: '', implementations: new Map() }
 const put = (node: FosNodeContent) => putNode(store, node)
+const content = (cid: string) => store.table.get(cid)!
 const unit = put({ data: {}, children: [] })
 const P = (name: string) => primitive(store, name)
 const name = P('name'), string = P('string'), number = P('number'), boolean = P('boolean'), never = P('void')
@@ -81,8 +82,12 @@ const types: Record<string, string> = {
   text: string, number, time: number, boolean, peer
 }
 
-/** The capabilities: what a requirement row asks for (`[capability<inputs>, void]`, its right the handler's answer). */
-type Capability = { label: string; syntax: string[]; inputs?: Array<[string, string?]>; trigger?: NonNullable<FosNodeContent['data']['triggerDefinition']> }
+/**
+ * The capabilities: a capability is a ref whose value is a pattern with holes (`mail<to, subject>`): told apart by its
+ * tag, its inputs refs declared in it (`[string, ref to]`: the left types the hole). A requirement row asks for one (`[mail<to: bob>, ref → unit]`); a handler is a
+ * value matching it. What a menu shows (its title, syntax, icon) is on the ref, never in the pattern.
+ */
+type Capability = { label: string; syntax: string[]; inputs?: Array<[string, string?]>; time?: string[]; icon?: string; hidden?: true }
 const capabilities: Record<string, Capability> = {
   approve: { label: 'attested approvals', syntax: ['approve'] }, edit: { label: 'edit (propose and decide proposals)', syntax: ['edit'] },
   persist: { label: 'persist storage', syntax: ['persist'] }, task: { label: 'task', syntax: ['task'] }, notify: { label: 'notify', syntax: ['notify'] },
@@ -103,18 +108,29 @@ const capabilities: Record<string, Capability> = {
   sync: { label: 'traverse and sync', syntax: ['sync'] }, http: { label: 'http', syntax: ['http'] }, 'send-payment': { label: 'send payment', syntax: ['send-payment'] },
   direct: { label: 'direct connect', syntax: ['direct'] }, read: { label: 'read', syntax: ['read'] },
 }
-// the trigger capabilities keep their trigger definitions as data until triggers are rows
-const old = require('../.fos/library.json') as { nodes: FosNodesData }
-for (const value of Object.values(old.nodes)) {
-  const definition = value.data.capabilityDefinition, trigger = value.data.triggerDefinition
-  if (definition && trigger) capabilities[definition.name] = { label: definition.label, syntax: definition.syntax ?? [definition.name], trigger }
+// the triggers: what starts an evaluation (their own inputs say when)
+Object.assign(capabilities, {
+  cron: { label: 'Cron trigger', syntax: ['cron'], icon: 'repeat', inputs: [['expression']] },
+  timer: { label: 'Timer trigger', syntax: ['timer'], icon: 'hourglass', time: ['due'] },
+  request: { label: 'On request', syntax: ['request'], icon: 'request' },
+  'task-completion': { label: 'Child evaluation', syntax: ['task-completion'], icon: 'flag' },
+  'ref-change': { label: 'Reference change', syntax: ['ref-change'], icon: 'link', hidden: true },
+  response: { label: 'On response', syntax: ['response'], icon: 'reply', hidden: true },
+} satisfies Record<string, Capability>)
+const capability = (capabilityName: string, c: Capability) => tagged(capabilityName,
+  ...(c.inputs ?? []).map(([input, value]): FosPathElem => [string, ref(input, value === undefined ? null : text(value))]),
+  ...(c.time ?? []).map((input): FosPathElem => [number, ref(input)]))
+/** The ref a capability is assigned to: its pattern as its value, its title, syntax and icon as its own rows. */
+const capabilityRef = (capabilityName: string, c: Capability, pattern: string) => {
+  const own = ref(capabilityName, pattern), id = content(own).data.alias!.id
+  const titled = put({ data: { alias: { id: hashContent({ data: { alias: { id } }, children: [[title, title]] }) } }, children: [[P('target'), fill('title', c.label)], [P('alias'), unit]] })
+  return put({ ...content(own), children: [...content(own).children, [title, titled], ...c.syntax.map((s): FosPathElem => [syntax, fill('syntax', s)]),
+    ...(c.icon ? [[icon, fill('fontAwesomeId', c.icon)] as FosPathElem] : []), ...(c.hidden ? [[tagOf('hidden'), unit] as FosPathElem] : [])] })
 }
-const capability = (capabilityName: string, c: Capability) => put({
-  data: c.trigger ? { triggerDefinition: c.trigger } : {},
-  children: [[name, text(capabilityName)], [label, fill('label', c.label)], ...c.syntax.map((s): FosPathElem => [syntax, fill('syntax', s)]),
-    ...(c.inputs ?? []).map(([input, value]): FosPathElem => [ref(input, value === undefined ? null : text(value)), string])]
-})
-const capabilityGroup = node(...Object.entries(capabilities).map(([capabilityName, c]): FosPathElem => [capability(capabilityName, c), ref(capabilityName)]))
+const capabilityGroup = node(...Object.entries(capabilities).map(([capabilityName, c]): FosPathElem => {
+  const pattern = capability(capabilityName, c)
+  return [pattern, capabilityRef(capabilityName, c, pattern)]
+}))
 
 const library = node(
   ...Object.entries(types).map(([field, value]): FosPathElem => [unit, ref(field, value)]),

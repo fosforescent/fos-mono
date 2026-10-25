@@ -23,7 +23,6 @@ import type { FosContextData, FosNodeContent, FosPathElem } from '../types'
 import { COMMENT_TYPE, NOTE_TYPE, PLAIN_TYPE, QUERY_TYPE, REF_TYPE, RESOURCE_TYPE, TASK_TYPE, TEMPLATE_TYPE } from './library-types'
 import { knownUser, publishPeerKey, userType, withUserField, type UserRecord } from './users'
 import { membershipPath, withMembershipRow, homeIdOf, isValueSubmission, settingOf, isRequirementRow } from './graph'
-import { isNegative } from './parameters'
 import {
   withMainBranchPolicy, libAt, refValueCid, putRefValueBranches, selectBranch, isBranchChoice, branchEdge, branchSelection, readChoice, scopeBranches,
   HOME_ID,

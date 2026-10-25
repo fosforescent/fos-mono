@@ -18,7 +18,6 @@ import { AUDIENCE_LABEL, audiencePeer } from '../../shared/sync/sharing'
 import { SETTING_LABELS, settingKeyOf } from './settings'
 import { combobox } from './combobox'
 import { iconSvg } from './icons'
-import { isNegative } from '../../shared/sync/parameters'
 import { libAt } from '../../shared/sync/graph'
 import { capabilityPresentation } from './capability-presentation'
 import { openTimeBlockPicker, type TimeBank } from './timeblocks'
@@ -759,7 +758,7 @@ function termMatches(app: App, options: ConstructorItem[], term: CapabilityTerm,
       if (parsed.extras?.allocation) return !row.requirement && row.allocation?.type === parsed.extras.allocation.type
       return row.type === parsed.type && !row.requirement
     }
-    if (id.startsWith('name:')) return (row.type === id.slice(5) || row.type === `capabilities.${id.slice(5)}`) && (!!row.typeCid && isNegative(app.state.replica.store, row.typeCid)) === negative
+    if (id.startsWith('name:')) return (row.type === id.slice(5) || row.type === `capabilities.${id.slice(5)}`) && !!row.requirement === negative
     if (id.startsWith('library:')) return row.template?.id === id.slice(8)
     if (id.startsWith('peer-row:')) return row.construction?.handler === id.slice(9) || row.construction?.peerId === id.slice(9)
     if (id.startsWith('scope:')) return row.typeCid === id.slice(6) || row.requirement?.capability === item?.label
@@ -2526,7 +2525,7 @@ function renderRow(task: TaskView, at: Scope, depth: number, index: number, sibl
     const presentation = capabilityPresentation(state.replica.store, task.typeCid), glyph = presentation.icon ?? typeIcon(task)
     if (glyph) { const icon = span('row-type-icon', ''); icon.innerHTML = iconSvg(glyph) ?? ''; if (!icon.childElementCount) icon.textContent = glyph; left.append(icon); left.classList.add('has-icon') }
     type.title = presentation.description || `${type.textContent} row`; left.append(type)
-    if (isNegative(state.replica.store, task.typeCid)) { left.classList.add('negative'); left.append(span('polarity-tag', '−')) }
+    if (task.requirement) { left.classList.add('negative'); left.append(span('polarity-tag', '−')) }
   }
   if (inputs?.some(ref => !ref.received)) left.append(constructedRowBody(task, inputs, [...state.view, ...at, task.id], app, 'left'))
   const leftTags = span('row-left-tags', '')

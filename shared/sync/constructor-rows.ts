@@ -2,16 +2,15 @@
  * Rows made by a constructor node: [constructor, right]. The constructor's rows declare refs, [parameters, ref]; the
  * right node assigns them, a ref with the same alias. The rows combine: an assignment on the right fills the
  * constructor's ref (run time), a value on the left's ref is its default (fixed with the constructor, compile time).
- * Parameters such as `negative` (sent) or none (received) say which way each ref goes; see parameters.ts.
+ * A ref declared as an output is received (filled at run time); the others are assigned first.
  */
 import { textValue } from './fields'
 import type { FosPathElem } from '../types'
 import { commitRoot, content, findEdge, identityCid, isRefNode, put, refNodeContent, refValueCid, resolveScope, updateAtScope, valueContent, withRowTemplate, type Scope } from './graph'
 import { headCid, type Replica } from './replica'
-import { isNegative, primitiveOf } from './parameters'
 import { assertCompiledGraph, compileInstructions } from './ref-compiler'
 
-export type OpenRef = { cid: string; alias: string; name: string; left: string; defaultValue: string | null; sent: boolean; received: boolean }
+export type OpenRef = { cid: string; alias: string; name: string; left: string; defaultValue: string | null; received: boolean }
 
 /** The refs a row's left declares in its rows (through a ref on the left, such as a pinned handler, to its value). */
 export function openRefs(store: Replica['store'], constructor: string): OpenRef[] {
@@ -20,8 +19,7 @@ export function openRefs(store: Replica['store'], constructor: string): OpenRef[
   return node.children.flatMap(([left, right]) => {
     const ref = store.table.get(right)
     if (!ref || !isRefNode(store, ref) || !ref.data.alias) return []
-    const primitive = primitiveOf(store, left) !== null
-    return [{ cid: right, alias: ref.data.alias.id, name: ref.data.name?.content ?? ref.data.alias.id, left, defaultValue: refValueCid(store, ref), sent: primitive && isNegative(store, left), received: primitive && !isNegative(store, left) }]
+    return [{ cid: right, alias: ref.data.alias.id, name: ref.data.name?.content ?? ref.data.alias.id, left, defaultValue: refValueCid(store, ref), received: ref.data.refRole === 'output' }]
   })
 }
 
@@ -58,7 +56,7 @@ export function compileConstructorCall(r: Replica, row: Scope) {
     const name = content(r.store, ref.cid).data.name?.content
     const cid = put(r.store, refNodeContent(r.store, name === undefined ? {} : { name: { content: name } }, value))
     edits.set(cid, ref.alias)
-    return { cid, type, name: name ?? '', sent: ref.sent, received: ref.received }
+    return { cid, type, name: name ?? '', received: ref.received }
   })
   const cid = put(r.store, { data: {}, children: args.map(arg => [arg.type, arg.cid]) })
   assertCompiledGraph(r.store, [cid])

@@ -7,8 +7,7 @@ import type { FosStore } from '../dag-implementation/store'
 import { importNodes, reachableNodes, content, findAliasEdge, identityCid, isBranchChoice, isMemberEdge, isProposalEdge, isRowEdge, put, putBranches, readChoice, isRefNode, refValueCid, resolveScope, selectedBranchValue, valueContent, type Scope } from './graph'
 import { addRefAt, headCid, type Replica } from './replica'
 import { argumentRefs } from './bindings'
-import { isTagRow, matchesGraph } from './structural'
-import { isOutputPattern } from './parameters'
+import { isTagRow, matchesGraph, isOutputDeclaration, capabilityName } from './structural'
 import { resolveRefExpression, resolveRefIdentity, type RefAccess, type RefLocation } from './ref-paths'
 import { bindingAssignments, type ScopedBinding } from './scope-bindings'
 
@@ -85,7 +84,7 @@ export function compileRefGraph(r: Replica, cid: string, at: Scope = [], options
     try {
       const previousHoleCount = holes.length
       // a sum of options on a refined capability (a choice pattern) is a pattern, not a ref with alternative handlers
-      if (node.data.refAlternatives && options.selected && !node.data.capabilityDefinition) {
+      if (node.data.refAlternatives && options.selected && capabilityName(store, cid) === null) {
         const values = [...new Set(node.children.map(([, value]) => value))]
         return values.length === 1 ? walk(store, values[0]!, path, role, depth + 1, type) : hole(id, type, path, values.length ? 'ambiguous' : 'unbound', role)
       }
@@ -156,7 +155,7 @@ export function compileRefGraph(r: Replica, cid: string, at: Scope = [], options
         // A constructor is kept by identity (a form's field types stay the types its definition names) unless it contains refs of its own to compile.
         const instruction = containsRef(store, edge[0]) ? walk(store, edge[0], childPath, role, depth + 1) : edge[0]
         if (instruction === edge[0]) locations.push({ source: edge[0], path: childPath, cid: instruction })
-        const childRole = isOutputPattern(store, edge[0]) ? 'output' : role
+        const childRole = isOutputDeclaration(store, edge[0]) ? 'output' : role
         children.push([instruction, walk(store, edge[1], childPath, childRole, depth + 1, isRowEdge(store, edge) ? edge[0] : type)])
       }
       const { alias: _alias, updated: _updated, ref: _ref, refExpression: _expression, refRole: _role, ...data } = node.data

@@ -1,7 +1,7 @@
 /** Evaluation uses ordinary typed refs for its journal and ordinary tasks for compensation. */
+import { isOutputDeclaration } from './structural'
 import { primitive } from './primitives'
 import { compileOperands, type PrimitiveFunction } from './operands'
-import { isOutputPattern } from './parameters'
 import type { BindingLocation } from './scope-bindings'
 import { proposeTransactionWrite } from './transactions'
 import { copyOuterScope } from './graph'
@@ -228,11 +228,11 @@ function problems(r: Replica, step: EvaluationStep, driver: EvaluationDriver): s
   const executors = driver.executors(step), selected = selectExecutor(executors)
   if (selected.executor === null && selected.problem) issues.push(selected.problem)
   if (instructionPrimitives(r, step).length && !executors.length) issues.push('The instruction primitive has no available executor on this host.')
-  // a received ref (a primitive without `negative`) is filled at run time, so it does not hold the step back
+  // a declared output is filled at run time, so it does not hold the step back
   issues.push(...compileInstructions(r, step.path, { canRead: driver.canRead }).blocking.map(hole => `Unfilled instruction ref: ${hole.id} (${hole.reason})`))
   const candidates = contextBindings(r, step.path, driver)
-  // a negative argument (a requirement) is the step's own to fill: an output, never an input it needs first
-  for (const arg of argumentRefs(r.store, cid).filter(a => !settingOf(r.store, content(r.store, a.cid)) && content(r.store, a.cid).data.refRole !== 'output' && !isOutputPattern(r.store, a.type))) {
+  // a requirement is the step's own to fill: an output, never an input it needs first
+  for (const arg of argumentRefs(r.store, cid).filter(a => !settingOf(r.store, content(r.store, a.cid)) && content(r.store, a.cid).data.refRole !== 'output' && !isOutputDeclaration(r.store, a.type))) {
     issues.push(...resolveBinding(r.store, arg.type, arg.cid, candidates, undefined, { ...driver, scope: { replica: r, path: step.path } }).problems)
   }
   issues.push(...resolveText(r, step.path, rowText(r.store, cid, null), [], driver).bindings.flatMap(b => b.problems))
@@ -260,7 +260,7 @@ const instruction = (r: Replica, path: Scope) => {
   // Output properties are supplied by the effect too. Track their enclosing declaration identities.
   // a declared output (a requirement's result, a handler's return) is the effect's to fill, not part of the instruction
   const input = (a: { cid: string; type: string; name?: string; refIds?: string[] }) => !settingOf(r.store, content(r.store, a.cid)) &&
-    content(r.store, a.cid).data.refRole !== 'output' && !isOutputPattern(r.store, a.type)
+    content(r.store, a.cid).data.refRole !== 'output' && !isOutputDeclaration(r.store, a.type)
   const candidates = contextBindings(r, path)
   const resolved = args.filter(input).map(arg => {
     const value = resolveBinding(r.store, arg.type, arg.cid, candidates, undefined, { scope: { replica: r, path } })

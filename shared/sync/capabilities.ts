@@ -7,10 +7,7 @@ export { libAt } from './graph'
 
 export { capabilityDeclarations } from './capability-catalog'
 
-export function capabilityName(store: FosStore, cid: string): string | null {
-  const node = store.table.get(cid)
-  return node?.data.capabilityDefinition?.name ?? null
-}
+export { capabilityName } from './structural'
 
 /**
  * The evaluator is the `execute` capability's handler: a node's execute row (a row whose left is that capability)
@@ -43,7 +40,7 @@ export function sameCapabilityType(store: FosStore, a: string | null | undefined
   return matchesGraph(store, a, b, { side: 'left' }) && matchesGraph(store, b, a, { side: 'left' })
 }
 
-export type CapabilitySyntax = Pick<NonNullable<FosDataContent['capabilityDefinition']>, 'name' | 'syntax'>
+export type CapabilitySyntax = { name: string; syntax?: string[] }
 /** Parsing is syntax for a declared ref; extensions can supply their own declarations. */
 export function parseCapabilityName(text: string, declarations: CapabilitySyntax[] = []): { capability: string; rest: string } | null {
   for (const declaration of declarations) for (const token of declaration.syntax ?? [declaration.name]) {

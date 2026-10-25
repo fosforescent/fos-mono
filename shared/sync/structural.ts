@@ -2,9 +2,9 @@
 import { primitive, primitiveName } from './primitives'
 import type { FosStore } from '../dag-implementation/store'
 import type { FosNodeContent, FosPathElem } from '../types'
-import { content, isBookkeepingEdge, isBranchChoice, isChoiceEdge, isHandle, isRefNode, put, readChoice, refValueCid } from './graph'
+import { content, isBookkeepingEdge, isBranchChoice, isChoiceEdge, isHandle, isRefNode, libraryNode, put, readChoice, refValueCid, typeIdOf } from './graph'
 
-const incidental = new Set(['alias', 'created', 'updated', 'position', 'presentation', 'parameter', 'capabilityDefinition', 'triggerDefinition'])
+const incidental = new Set(['alias', 'created', 'updated', 'position', 'presentation'])
 function properties(pattern: unknown, value: unknown): boolean {
   if (pattern === null || typeof pattern !== 'object') return Object.is(pattern, value)
   if (!value || typeof value !== 'object' || Array.isArray(pattern) !== Array.isArray(value)) return false
@@ -14,56 +14,59 @@ function properties(pattern: unknown, value: unknown): boolean {
 /** A constructor's name row: a string for people and the library's field index, never part of what a value must be. */
 export function isNameRow(store: FosStore, edge: FosPathElem): boolean { return edge[0] === primitive(store, 'name') }
 
+const isUnit = (node: FosNodeContent | undefined): boolean => !!node && !Object.keys(node.data).length && !node.children.length
+/** The name a tag node carries (`tag<"mail">`: the field constructor named tag with its alias filled), or null. */
+export function tagName(store: FosStore, cid: string): string | null {
+  const rows = store.table.get(cid)?.children ?? []
+  if (!rows.some(([left, right]) => left === primitive(store, 'name') && store.table.get(right)?.data.scalar?.value === 'tag')) return null
+  for (const [left, right] of rows) {
+    const scalar = store.table.get(right)?.data.scalar
+    if (left !== primitive(store, 'name') && isRefNode(store, content(store, left)) && scalar?.type === 'text' && typeof scalar.value === 'string') return scalar.value
+  }
+  return null
+}
+/** A tag of `name`: the library's tag constructor with its alias filled; the same node the library's tagged types carry. */
+export function tagNode(store: FosStore, name: string): string {
+  const constructor = libraryNode(store, 'tag')
+  if (!constructor) throw new Error('The library in this scope has no tag constructor.')
+  const text = put(store, { data: { scalar: { type: 'text', value: name } }, children: [] })
+  return put(store, { data: {}, children: content(store, constructor).children.map(([left, right]): FosPathElem => right === primitive(store, 'string') ? [left, text] : [left, right]) })
+}
 /**
- * A tag row `[node, unit]`: a node (a capability) on the left and the empty unit on the right. What a value is tagged
- * with is told by the node's identity alone; nothing in it is read as text.
+ * The capability a pattern is (or refines): the name of the tag it carries. The library's own types are tagged too
+ * (Home, a query): those are row types, not capabilities.
+ */
+export function capabilityName(store: FosStore, cid: string): string | null {
+  const type = typeIdOf(store, cid)
+  if (type && !type.startsWith('capabilities.')) return null
+  for (const [left, right] of store.table.get(cid)?.children ?? []) {
+    if (!isUnit(store.table.get(right))) continue
+    const name = tagName(store, left)
+    if (name) return name
+  }
+  return null
+}
+
+/**
+ * A pin `[capability, unit]`: a capability on the left of a value's row, the empty unit on the right. It ties a value
+ * to the capability whose handler checks it (a grant to its allocate contract); told by the node's identity alone.
  */
 export function isTagRow(store: FosStore, edge: FosPathElem): boolean {
-  const left = store.table.get(edge[0]), right = store.table.get(edge[1])
-  return !!left?.data.capabilityDefinition && !!right && !Object.keys(right.data).length && !right.children.length
+  return isUnit(store.table.get(edge[1])) && capabilityName(store, edge[0]) !== null
 }
+/** Whether a declaration `[pattern, ref]` is the row's to fill (an output) rather than an operand it needs first: a capability pattern, which its handler fills. */
+export function isOutputDeclaration(store: FosStore, pattern: string): boolean { return capabilityName(store, pattern) !== null }
 export function unit(store: FosStore): string { return put(store, { data: {}, children: [] }) }
 export function tag(store: FosStore, node: string): FosPathElem { return [node, unit(store)] }
-
-/**
- * A pattern's classifying rows say which way its value goes (a `negative` parameter) and, on a capability pattern
- * (whose identity its tag carries), what it is called; they are not structure a value has to witness. A form's name
- * row stays a literal of the form. Everything else a pattern's rows say, a value of it carries.
- */
-export function isClassifyingRow(store: FosStore, edge: FosPathElem, pattern?: FosNodeContent): boolean {
-  return !!store.table.get(edge[0])?.data.parameterDefinition || (!!pattern?.data.capabilityDefinition && isNameRow(store, edge))
-}
-
-/** Whether a pattern constrains values at all: data of its own, or rows beyond its classifying ones. A bare capability does not. */
-export function patternHasStructure(store: FosStore, pattern: string): boolean {
-  const node = store.table.get(pattern)
-  if (!node) return false
-  if (Object.keys(node.data).some(name => !incidental.has(name) && name !== 'form' && name !== 'name' && name !== 'description')) return true
-  return node.children.some(edge => !isBookkeepingEdge(store, edge) && !isClassifyingRow(store, edge, node) && !isKindRow(store, edge))
-}
-/**
- * A pattern's kind rows: what makes a value one of its kind rather than a constraint on the value's content. Its tags
- * (`[capability, unit]`: which capability it is a value of, which contract checks it), its slots (a named ref on the
- * left: the argument its rows take) and its declared inputs (a ref on the right). A value of the pattern carries them;
- * a refinement (an amount, an option, a row the value must contain) does not count.
- */
-export function isKindRow(store: FosStore, edge: FosPathElem): boolean {
-  if (isTagRow(store, edge)) return true
-  const left = store.table.get(edge[0]), right = store.table.get(edge[1])
-  return (!!left && isRefNode(store, left)) || (!!right && isRefNode(store, right))
-}
-/** The capabilities a pattern or value is tagged with, by node. */
+/** The capabilities a value is pinned to, by node. */
 export function tagsOf(store: FosStore, node: FosNodeContent): string[] { return node.children.filter(edge => isTagRow(store, edge)).map(([left]) => left) }
 /**
- * A value of `pattern`: it carries the pattern's kind rows besides its own content, except contract tags (`contracts`),
- * which only the contract's handler puts on a value.
+ * A value of `pattern`: it carries the pattern's rows (its tag, inputs and refinements) besides its own, except the pins
+ * in `contracts`, which only the contract's handler puts on a value.
  */
 export function valueOfPattern(store: FosStore, pattern: string, data: FosNodeContent['data'], rows: FosPathElem[] = [], contracts: string[] = []): string {
-  const node = store.table.get(pattern)
-  const kind = node?.children.filter(edge => isKindRow(store, edge) && !isClassifyingRow(store, edge, node) && !(isTagRow(store, edge) && contracts.includes(edge[0]))) ?? []
-  // a bare capability carries no tag of its own; its values are tagged with it
-  const own: FosPathElem[] = node?.data.capabilityDefinition && !tagsOf(store, node).length ? [tag(store, pattern)] : []
-  return put(store, { data, children: [...own, ...kind, ...rows] })
+  const carried = (store.table.get(pattern)?.children ?? []).filter(edge => !isBookkeepingEdge(store, edge) && !(isTagRow(store, edge) && contracts.includes(edge[0])))
+  return put(store, { data, children: [...carried, ...rows] })
 }
 
 /** What a match bound: each named hole (a compiled placeholder) to the value it met. */
@@ -161,7 +164,7 @@ export function match(store: FosStore, pattern: string, value: string, options: 
       const leaf = primitiveName(store, p)
       if (leaf && leaves[leaf]) return leaves[leaf](V.data.scalar) ? state : null
       if (P.data.scalar && !(V.data.scalar && V.data.scalar.type === P.data.scalar.type && Object.is(V.data.scalar.value, P.data.scalar.value))) return null
-      const required = Object.fromEntries(Object.entries(P.data).filter(([name]) => name !== 'scalar' && !incidental.has(name) && !(P.data.capabilityDefinition && ['name', 'description'].includes(name))))
+      const required = Object.fromEntries(Object.entries(P.data).filter(([name]) => name !== 'scalar' && !incidental.has(name)))
       if (!properties(required, V.data)) return null
       const wanted = rows(P), available = rows(V), used = new Set<number>()
       const assign = (index: number, current: Match): Match | null => {

@@ -54,7 +54,6 @@ export * from './title'
 export * from './title-request'
 export * from './pattern-bindings'
 export * from './unify'
-export * from './parameters'
 export * from './constructor-rows'
 
 export * from './arguments'

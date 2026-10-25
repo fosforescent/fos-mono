@@ -1,4 +1,5 @@
 /** Test helpers. */
+import { tagNode } from './structural'
 import { primitive } from './primitives'
 import { supplyValue } from './arguments'
 import type { PrimitiveFunction } from './operands'
@@ -27,10 +28,8 @@ export const TASK_DEMAND: Demand = { capability: 'task', done: true }
 export function declareTestCapability(r: Replica, name: string, at: Scope = [], data: import('../types').FosDataContent = {}): Replica {
   const store = r.store, binding = libraryBindingAt(store, at)!, library = content(store, binding.library)
   const group = libAt(store, at).field('capabilities'), namespace = content(store, group)
-  const operation = primitive(store, 'name')
-  const kind = put(store, { data: { scalar: { type: 'text', value: `capabilities.${name}` } }, children: [] })
-  const type = put(store, { data: { capabilityDefinition: { name, label: name }, ...data }, children: [[operation, kind]] })
-  const declaration = put(store, refNodeContent(store, { name: { content: name } }, null))
+  const type = put(store, { data, children: [[tagNode(store, name), put(store, { data: {}, children: [] })]] })
+  const declaration = put(store, refNodeContent(store, { name: { content: name } }, type))
   const nextGroup = put(store, { ...namespace, children: [...namespace.children.filter(([, right]) => content(store, right).data.name?.content !== name), [type, declaration]] })
   const nextLibrary = put(store, { ...library, children: library.children.map(([left, right]) => [left, right === group ? nextGroup : right]) })
   commitRoot(store, updateAtScope(store, headCid(r), at, node => {

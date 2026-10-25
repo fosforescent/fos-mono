@@ -47,12 +47,11 @@ import { readGraphValue } from './node-values'
  */
 
 
-import { capabilityName, sameCapabilityType, isExecuteLeft, isHandlerStateLeft, isTriggerLeft } from './capabilities'
+import { sameCapabilityType, isExecuteLeft, isHandlerStateLeft, isTriggerLeft } from './capabilities'
 import * as COMPILED_LIBRARY from './library.generated.json'
 import { libraryNames, type LibraryNames } from '../library-names'
 import { DEVICE_ROOT_TYPE, DOCUMENT_ROOT_TYPE, HOME_TYPE, LIBRARY_TYPE, PLAIN_TYPE, QUERY_TYPE, REF_TYPE, RESOURCE_TYPE, TASK_TYPE, TEMPLATE_TYPE } from './library-types'
-import { isNegative } from './parameters'
-import { isClassifyingRow, isKindRow, isTagRow, tag, tagsOf, valueOfPattern } from './structural'
+import { capabilityName, isTagRow, tag, tagName, tagsOf, valueOfPattern } from './structural'
 import { userOf, userPeerId, type UserRecord } from './users'
 import { putNode, type FosStore } from '../dag-implementation/store'
 import { hashContent, isCurrentCid, verifyCid } from '../dag-implementation/cid'
@@ -491,11 +490,11 @@ export function rowsOfType(store: FosStore, cid: string, typeId: string): Array<
 export function isTemplateType(store: FosStore, typeCid: string): boolean {
   if (!store.table.has(typeCid)) return false
   // a capability pattern (refined with inputs) declares refs too, but it is an instruction, never a template to instantiate
-  if (content(store, typeCid).data.capabilityDefinition) return false
+  if (capabilityName(store, typeCid) !== null) return false
   return valueContent(store, typeCid).children.some(edge => {
     if (!isRowEdge(store, edge) || isChoiceEdge(store, edge)) return false
     const identity = content(store, identityCid(store, edge))
-    return !!identity.data.alias && !identity.data.ref && !valueContent(store, identityCid(store, edge)).data.parameter
+    return !!identity.data.alias && !identity.data.ref
   })
 }
 
@@ -1466,7 +1465,7 @@ export function rowView(store: FosStore, nodeCid: string, edge?: FosPathElem): T
     done: task && rowDone(store, nodeCid),
     createdAt: created,
     updatedAt: value.data.updated?.time ?? created,
-    childCount: value.children.filter((e) => isRowEdge(store, e) && !isFieldRow(store, rowId, e) && !(isKindRow(store, e) && !content(store, identityCid(store, e)).data.alias)).length,
+    childCount: value.children.filter((e) => isRowEdge(store, e) && !isFieldRow(store, rowId, e)).length,
     childChoices: value.children.filter((e) => isChoiceEdge(store, e)).length,
     subtreeTasks: sub.tasks,
     subtreeDone: sub.done,
@@ -1500,7 +1499,7 @@ export function rowView(store: FosStore, nodeCid: string, edge?: FosPathElem): T
     view.branches = { selected: branchSelection(store, nodeCid), names: record.options.map(o => o.peerId), mergeRequests: requests.map(o => o.peerId), mergeTargets: Object.fromEntries(requests.map(o => [o.peerId, mergeRequestTarget(store, o.requestMerge!, record.defaultName ?? 'main')])) }
   }
   // a requirement's @user is part of its declaration; an answer that carries one (an attested user) refines it
-  const asks = !!typeCid && isNegative(store, typeCid) && isRefNode(store, identity)
+  const asks = !!edge && isRequirementRow(store, edge)
   const user = asks ? userOf(store, value) ?? userOf(store, identity) : userOf(store, value)
   if (user) view.user = user
   const requirement = !held && edge ? requirementViewOf(store, edge, nodeCid, user) : undefined
@@ -1520,18 +1519,25 @@ export function capabilityNameOf(store: FosStore, type: string | null | undefine
   const id = typeIdOf(store, type)
   return id?.startsWith('capabilities.') ? id.slice('capabilities.'.length) : null
 }
-/** A requirement row: an argument row whose pattern is negative (it asks for a value) and whose right is the ref that holds it. */
+/**
+ * A requirement row: `[capability, ref]`, a ref whose left is a capability pattern (refined with what is asked). It is
+ * open while its ref holds nothing that satisfies the pattern (a hole: no submission yet); supplying it is a submission
+ * to that ref. A row holding an allocation (an amount, a grant) supplies one rather than asking.
+ */
 export function isRequirementRow(store: FosStore, edge: FosPathElem): boolean {
   const left = isRowEdge(store, edge) ? rowTypeOf(store, edge) : null
-  return !!left && isNegative(store, left) && isRefNode(store, content(store, identityCid(store, edge)))
+  const identity = store.table.get(identityCid(store, edge))
+  return !!left && !!identity && isRefNode(store, identity) && capabilityName(store, left) !== null && !isAllocationRow(store, edge)
 }
 /**
- * An allocation row: a row whose pattern is a positive allocation. In the tree its right is a ref holding the amount
+ * An allocation row: a row of an allocation pattern holding an amount. In the tree its right is a ref holding the amount
  * (a grant when a bank issued it: a handle); inside a bank's value its right is the grant itself, an element of the set.
  */
 export function isAllocationRow(store: FosStore, edge: FosPathElem): boolean {
-  const left = isRowEdge(store, edge) ? rowTypeOf(store, edge) : null
-  return !!left && !isNegative(store, left) && !!content(store, left).data.allocation
+  const left = store.table.get(edge[0]), right = store.table.get(edge[1])
+  if (!left?.data.allocation || !right) return false
+  const held = isRefNode(store, right) ? refValueCid(store, right) : edge[1]
+  return !!held && !!store.table.get(held)?.data.allocation
 }
 
 /** What a requirement demands, read from its pattern, and whether its value satisfies it. */
@@ -1550,7 +1556,7 @@ export type RequirementView = {
 export function patternOptions(store: FosStore, pattern: string): string[] {
   const node = content(store, pattern)
   if (!node.data.refAlternatives) return []
-  return node.children.filter(edge => !isClassifyingRow(store, edge, node) && !isKindRow(store, edge))
+  return node.children.filter(([, option]) => !isRefNode(store, content(store, option)) && textOf(store, option) !== null && tagName(store, option) === null)
     .map(([, option]) => textOf(store, option) ?? '')
 }
 /** The named inputs a pattern carries: its rows whose right is a named ref, with the text each holds. */
@@ -1600,7 +1606,7 @@ export function requirementViewOf(store: FosStore, edge: FosPathElem, cid: strin
   if (!isRequirementRow(store, edge)) return undefined
   const pattern = rowTypeOf(store, edge)!, node = content(store, pattern), allocation = node.data.allocation, inputs = patternInputs(store, pattern)
   // linear: the pattern is tagged with a second capability, the contract that checks the grant it demands
-  const view: RequirementView = { capability: node.data.capabilityDefinition?.name ?? null, satisfied: argumentSatisfied(store, cid, pattern), summary: '', linear: tagsOf(store, node).length > 1, inputs,
+  const view: RequirementView = { capability: capabilityName(store, pattern), satisfied: argumentSatisfied(store, cid, pattern), summary: '', linear: tagsOf(store, node).length > 0, inputs,
     ...(allocation ? { resource: allocation.type, ...(allocation.amount !== undefined ? { amount: allocation.amount } : {}), ...(allocation.unit ? { unit: allocation.unit } : {}),
       ...(allocation.start !== undefined ? { start: allocation.start } : {}), ...(allocation.end !== undefined ? { end: allocation.end } : {}) } : {}),
     ...(node.data.refAlternatives ? { options: patternOptions(store, pattern) } : {}),
@@ -1778,8 +1784,6 @@ export function viewNode(store: FosStore, cid: string, constructors = false): No
     if (isFieldRow(store, ownId, edge)) continue
     // a library instance is the library's binding, a container, not one of the node's rows (Settings lists it)
     if (isRowEdge(store, edge) && !constructors && isLibraryInstance(store, content(store, identityCid(store, edge)))) continue
-    // the rows a value carries as a value of its pattern (a capability's slots and inputs) are not the node's rows
-    if (isKindRow(store, edge) && !content(store, identityCid(store, edge)).data.alias) continue
     // a handler's own state rows (the evaluator's journal) and a value's contract pin are not rows of the node either
     if (isRowEdge(store, edge) && (isHandlerStateLeft(store, edge[0]) || isTagRow(store, edge))) continue
     if (isRowEdge(store, edge)) {
@@ -2464,7 +2468,7 @@ export function copyRowContent(store: FosStore, nodeCid: string, now: number, fr
     for (const edge of childEdges(stripLink(store, identity), definitions.has(cid), cid === nodeCid)) {
       const child = identityCid(store, edge)
       const left = content(store, edge[0])
-      if (isRefNode(store, content(store, child)) && (!rowTypeIdOf(store, edge) || left.data.capabilityDefinition)) argumentsToCopy.add(child)
+      if (isRefNode(store, content(store, child)) && (!rowTypeIdOf(store, edge) || capabilityName(store, edge[0]) !== null)) argumentsToCopy.add(child)
       // Nested templates remain definitions when their containing workflow is instantiated.
       if (isRowOfType(store, edge, TEMPLATE_TYPE)) definitions.add(child)
       // a field stays a ref of its own, whose id is its row's: it follows the row's new id

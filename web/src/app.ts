@@ -1,7 +1,7 @@
+import { askAt } from '../../shared/sync/arguments'
 import { textValue, textOf as fieldTextOf } from '../../shared/sync/fields'
 import { primitive } from '../../shared/sync/primitives'
 import { resourceHandlers } from '../../shared/sync/resource-bindings'
-import { invertPolarity } from '../../shared/sync/parameters'
 import { capabilityPresentation } from './capability-presentation'
 import { setLibraryArg } from '../../shared/sync/library'
 import { nodeTransportAt, offerNodeTransport, type NodeTransport } from '../../shared/sync/primitives'
@@ -37,7 +37,7 @@ import { requestPeerNode } from './api'
 import { membershipSyncContext, sendPullRequest, UNKNOWN_PROVIDER, type NodeSyncContext } from '../../shared/sync/node-sync'
 import { parsePastedRows } from './paste'
 import { ORGANIZE_PEER, captureNoteText, requestOrganize, organizedRowCount, typeAt } from '../../shared/sync/organize'
-import { valueOfPattern } from '../../shared/sync/structural'
+import { valueOfPattern, tagNode } from '../../shared/sync/structural'
 import { NOTE_TYPE } from '../../shared/sync/published-types'
 import { microphoneError, recordedType, recordingMimeType, recordingUnsupported } from './recording'
 import { SETTING_LABELS, settingKeyOf } from './settings'
@@ -2525,7 +2525,7 @@ export class App {
     if (!binding) return []
     return [...namesInLibrary(r.store, binding.library).byName].filter(([, node]) => !isTemplateType(r.store, node)).map(([name, node]) => {
       const value = valueContent(r.store, node)
-      return { name, node, label: value.data.capabilityDefinition?.label ?? name, ...capabilityPresentation(r.store, node) }
+      return { name, node, label: name, ...capabilityPresentation(r.store, node) }
     })
   }
   /** A row made from the node the library names `name` where the row goes (the name resolves in that scope). */
@@ -2643,9 +2643,8 @@ export class App {
       if (parsed.peer !== undefined) r = this.peerRowReplica(r, target, parsed.peer)
       if (parsed.construct) r = constructAt(r, target, libAt(r.store, target.slice(0, -1)).capabilities[parsed.construct.capability]!, parsed.construct.values, this.now())
       if (inverted) {
-        const constructor = rowConstructor(r, target)
-        if (!constructor) throw new Error('The row has no capability to invert.')
-        r = constructAt(r, target, invertPolarity(r.store, constructor, libAt(r.store, parent).field('negative')), {}, this.now())
+        // the inverse of supplying a capability is asking for it: the row's ref a hole
+        r = askAt(r, target, this.now())
       }
       if (repo) { r = bindRepository(r, target, repo, this.now()); r = this.withIntegrationPeer(r, target, 'github') }
       if (localDirectory) {
@@ -3153,7 +3152,7 @@ export class App {
     const label = name.trim()
     if (!label || label.length > 200) { this.notify('error', 'Give the capability a name (at most 200 characters).'); return }
     if (this.scopeCapabilities(at).some(c => c.name === label)) { this.notify('info', `“${label}” is already declared here.`); return }
-    const type = put(this.state.replica.store, { data: { capabilityDefinition: { name: label, label } }, children: [] })
+    const type = put(this.state.replica.store, { data: {}, children: [[tagNode(this.state.replica.store, label), put(this.state.replica.store, { data: {}, children: [] })]] })
     this.edit(addRefAt(this.state.replica, at, newId(), type, this.now(), null, label))
   }
   /** Capabilities declared by name in the scope of `at` (not the library's): what `declareCapability` made, here or above. */
@@ -3163,8 +3162,7 @@ export class App {
     const seen = new Set<string>([...this.libraryNames(at).map(n => n.node), ...capabilityDeclarations(store, at).map(d => d.cid)])
     // declarations, filled or not: a capability nothing provides yet is still one rows can ask for
     return bindingLayers(this.state.replica, at).flatMap(layer => layer.bindings).flatMap(binding => {
-      const definition = binding.store.table.get(binding.pattern)?.data.capabilityDefinition
-      if (!definition || !binding.name || seen.has(binding.pattern)) return []
+      if (capabilityName(binding.store, binding.pattern) === null || !binding.name || seen.has(binding.pattern)) return []
       seen.add(binding.pattern)
       return [{ name: binding.name, type: binding.pattern }]
     })

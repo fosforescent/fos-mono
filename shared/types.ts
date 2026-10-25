@@ -2,9 +2,6 @@
 
 export type FosDataContent = {
   /** A constructor row's parameter, optionally bound from the caller's environment. */
-  parameter?: { name: string; from?: string[] };
-  /** Host interpretation of a parameter key; field names must not supply this meaning. */
-  parameterDefinition?: { kind: 'primitive' | 'negative' };
   /** Presentation and invocation contract of an observer ref, supplied by its declaration. */
   triggerDefinition?: { label: string; icon: string; mode: 'instantiate' | 'resume'; hidden?: boolean; schedule?: { field: string; input: 'datetime-local' | 'text'; label: string } };
   scalar?: { type: 'text' | 'number' | 'peer' | 'time' | 'boolean' | 'null'; value: string | number | boolean | null };
@@ -84,13 +81,6 @@ export type FosDataContent = {
   /** A named code behavior. `builtin:*` ones are retired (the library compiler refuses them): types are told apart by graph identity. */
   behavior?: {
     content: string
-  },
-  /** Standard-library adapter metadata. Custom patterns need no registered name. */
-  capabilityDefinition?: {
-    name: string
-    label: string
-    legacy?: string
-    syntax?: string[]
   },
   /** A property path is code/data in the same ref shape as an explicitly bound input. */
   refExpression?: import('./sync/ref-paths').RefExpression,
